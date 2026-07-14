@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SIMA-KAI | Kartu Aset</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: { extend: { fontFamily: { mono: ['Consolas', 'Monaco', 'monospace'] } } }
+        }
+    </script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body { font-family: 'Segoe UI', system-ui, sans-serif; }
+
+        /* Status badge */
+        .badge-so  { background: #dcfce7; color: #15803d; border: 1px solid #86efac; }
+        .badge-tso { background: #fee2e2; color: #b91c1c; border: 1px solid #fca5a5; }
+        .badge-baru { background: #dbeafe; color: #1d4ed8; border: 1px solid #93c5fd; }
+
+        /* Tab underline */
+        .tab-active { border-bottom: 2px solid #2563eb; color: #2563eb; font-weight: 700; }
+
+        /* Smooth skeleton shimmer */
+        @keyframes shimmer { 0%{background-position:-400px 0} 100%{background-position:400px 0} }
+        .skeleton {
+            background: linear-gradient(90deg, #e5e7eb 25%, #f3f4f6 50%, #e5e7eb 75%);
+            background-size: 800px 100%;
+            animation: shimmer 1.4s infinite;
+            border-radius: 6px;
+        }
+
+        /* Pulse dot for live status */
+        @keyframes pulse-ring { 0%{transform:scale(.8);opacity:.8} 100%{transform:scale(1.5);opacity:0} }
+        .pulse-dot::before {
+            content:'';
+            display:block; position:absolute;
+            width:100%; height:100%;
+            border-radius:50%;
+            background: currentColor;
+            animation: pulse-ring 1.4s ease-out infinite;
+        }
+        .pulse-dot { position: relative; }
+    </style>
+</head>
+
+<body class="bg-gray-50 min-h-screen flex flex-col items-center pb-12">
+
+    <!-- ── HEADER ──────────────────────────────────────────── -->
+    <header class="w-full bg-white border-b border-gray-200 shadow-sm sticky top-0 z-10">
+        <div class="max-w-lg mx-auto px-4 py-3 flex items-center gap-3">
+            <i class="fas fa-train text-blue-600 text-xl"></i>
+            <div>
+                <p class="text-xs text-gray-400 leading-none">PT Kereta Api Indonesia</p>
+                <h1 class="text-sm font-bold text-gray-800 leading-tight">SIMA-KAI &mdash; Kartu Aset</h1>
+            </div>
+            <!-- Login shortcut for staff -->
+            <a href="index.html"
+               class="ml-auto text-xs text-blue-600 font-semibold flex items-center gap-1 hover:underline">
+                <i class="fas fa-sign-in-alt"></i> Login Sistem
+            </a>
+        </div>
+    </header>
+
+    <!-- ── MAIN CARD ───────────────────────────────────────── -->
+    <main class="w-full max-w-lg px-4 mt-6 space-y-4" id="main-content">
+
+        <!-- Asset identity card -->
+        <div class="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden" id="asset-card">
+
+            <!-- Top colour strip — changes with status -->
+            <div class="h-1.5 w-full" id="status-strip"></div>
+
+            <!-- Loading skeleton -->
+            <div id="skeleton" class="p-5 space-y-3">
+                <div class="skeleton h-4 w-24"></div>
+                <div class="skeleton h-7 w-3/4"></div>
+                <div class="skeleton h-4 w-1/2"></div>
+                <div class="skeleton h-4 w-2/3"></div>
+            </div>
+
+            <!-- Real content (hidden until data loads) -->
+            <div id="asset-info" class="hidden p-5">
+                <div class="flex justify-between items-start gap-2">
+                    <div class="min-w-0">
+                        <p class="text-xs text-gray-400 font-mono mb-1" id="info-uid">—</p>
+                        <h2 class="text-lg font-black font-mono text-gray-800 break-all leading-tight" id="info-kode-id">—</h2>
+                        <p class="text-sm text-gray-600 mt-1" id="info-alat">—</p>
+                    </div>
+                    <!-- Status badge -->
+                    <span id="info-status-badge"
+                          class="shrink-0 px-3 py-1 rounded-full text-sm font-bold flex items-center gap-1.5">
+                        <span class="pulse-dot w-2 h-2 rounded-full inline-block"></span>
+                        <span id="info-status-text">—</span>
+                    </span>
+                </div>
+
+                <!-- Detail grid -->
+                <dl class="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 text-sm border-t border-gray-100 pt-4">
+                    <div>
+                        <dt class="text-xs text-gray-400 uppercase tracking-wide">Lokasi</dt>
+                        <dd class="font-semibold text-gray-700 mt-0.5" id="info-lokasi">—</dd>
+                    </div>
+                    <div>
+                        <dt class="text-xs text-gray-400 uppercase tracking-wide">Unit</dt>
+                        <dd class="font-semibold text-gray-700 mt-0.5" id="info-unit">—</dd>
+                    </div>
+                    <div>
+                        <dt class="text-xs text-gray-400 uppercase tracking-wide">Tahun Pengadaan</dt>
+                        <dd class="font-semibold text-gray-700 mt-0.5" id="info-tahun">—</dd>
+                    </div>
+                    <div>
+                        <dt class="text-xs text-gray-400 uppercase tracking-wide">Pemeriksaan Terakhir</dt>
+                        <dd class="font-semibold text-gray-700 mt-0.5" id="info-last-updated">Belum ada</dd>
+                    </div>
+                </dl>
+
+                <p class="text-xs text-gray-400 mt-3" id="info-last-teknisi"></p>
+            </div>
+
+            <!-- Error state (hidden until error) -->
+            <div id="asset-error" class="hidden p-8 text-center space-y-3">
+                <i class="fas fa-exclamation-triangle text-4xl text-yellow-400"></i>
+                <p class="font-bold text-gray-700">Aset tidak ditemukan</p>
+                <p class="text-sm text-gray-500" id="error-message">UID tidak valid atau aset sudah di-afkir.</p>
+            </div>
+        </div>
+
+        <!-- ── 2 PRIMARY ACTION BUTTONS ───────────────────── -->
+        <div id="action-buttons" class="hidden grid grid-cols-2 gap-3">
+            <button id="btn-form-perbaikan"
+                    class="flex flex-col items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white rounded-2xl py-5 shadow transition-all font-bold">
+                <i class="fas fa-tools text-2xl"></i>
+                <span class="text-sm leading-tight text-center">Form<br>Perbaikan</span>
+            </button>
+            <button id="btn-history-card"
+                    class="flex flex-col items-center justify-center gap-2 bg-white hover:bg-gray-50 active:scale-95 text-gray-700 rounded-2xl py-5 shadow border border-gray-200 transition-all font-bold">
+                <i class="fas fa-history text-2xl text-purple-600"></i>
+                <span class="text-sm leading-tight text-center text-gray-700">History<br>Card</span>
+            </button>
+        </div>
+
+        <!-- ── INLINE REPAIR FORM (collapsed by default) ─── -->
+        <div id="section-form" class="hidden bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
+            <div class="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+                <h3 class="font-bold text-gray-800 flex items-center gap-2">
+                    <i class="fas fa-tools text-blue-500"></i> Form Perbaikan
+                </h3>
+                <button id="close-form" class="text-gray-400 hover:text-red-500 text-lg">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+
+            <!-- Auth gate: user must log in to submit a repair report -->
+            <div id="form-auth-gate" class="p-5 text-center space-y-3">
+                <i class="fas fa-lock text-3xl text-gray-300"></i>
+                <p class="text-sm text-gray-600">Untuk mencatat perbaikan, masuk terlebih dahulu.</p>
+                <a href="index.html"
+                   class="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold px-5 py-2.5 rounded-xl transition text-sm">
+                    <i class="fas fa-sign-in-alt"></i> Masuk ke SIMA-KAI
+                </a>
+                <p class="text-xs text-gray-400">Setelah login, buka kembali QR ini untuk melanjutkan.</p>
+            </div>
+
+            <!-- Actual form — visible only when authToken exists in sessionStorage -->
+            <form id="repair-form" class="hidden p-5 space-y-4" novalidate>
+                <input type="hidden" id="form-uid">
+                <div class="grid grid-cols-2 gap-4">
+                    <div class="col-span-2">
+                        <label class="block text-xs font-semibold text-gray-500 mb-1">Tanggal Perbaikan</label>
+                        <input type="date" id="form-tanggal" required
+                               class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-400 focus:outline-none">
+                    </div>
+                    <div class="col-span-2">
+                        <label class="block text-xs font-semibold text-gray-500 mb-1">Nama Teknisi</label>
+                        <input type="text" id="form-teknisi" required placeholder="Nama lengkap"
+                               class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-400 focus:outline-none">
+                    </div>
+                </div>
+
+                <!-- Kondisi buttons -->
+                <div>
+                    <label class="block text-xs font-semibold text-gray-500 mb-2">Kondisi Setelah Perbaikan</label>
+                    <div class="flex gap-3">
+                        <button type="button" data-status="SO"
+                                class="landing-status-btn flex-1 py-2.5 rounded-xl font-bold text-sm border-2 border-green-400 text-green-600 hover:bg-green-50 transition">
+                            ✅ SO (Siap Operasi)
+                        </button>
+                        <button type="button" data-status="TSO"
+                                class="landing-status-btn flex-1 py-2.5 rounded-xl font-bold text-sm border-2 border-red-400 text-red-600 hover:bg-red-50 transition">
+                            ❌ TSO (Tidak Siap)
+                        </button>
+                    </div>
+                    <input type="hidden" id="form-kondisi">
+                </div>
+
+                <div>
+                    <label class="block text-xs font-semibold text-gray-500 mb-1">Keterangan</label>
+                    <textarea id="form-keterangan" rows="3" placeholder="Uraian singkat perbaikan yang dilakukan..."
+                              class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-400 focus:outline-none resize-none"></textarea>
+                </div>
+
+                <button type="submit" id="btn-submit-repair"
+                        class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl transition flex items-center justify-center gap-2">
+                    <i class="fas fa-save"></i> Simpan Laporan
+                </button>
+            </form>
+        </div>
+
+        <!-- ── HISTORY CARD (collapsed by default) ────────── -->
+        <div id="section-history" class="hidden bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
+            <div class="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+                <h3 class="font-bold text-gray-800 flex items-center gap-2">
+                    <i class="fas fa-history text-purple-500"></i> History Card
+                </h3>
+                <button id="close-history" class="text-gray-400 hover:text-red-500 text-lg">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div id="history-body" class="divide-y divide-gray-100 max-h-96 overflow-y-auto">
+                <div class="p-6 text-center text-gray-400 text-sm">
+                    <i class="fas fa-spinner fa-spin mr-2"></i> Memuat riwayat...
+                </div>
+            </div>
+            <p class="text-xs text-center text-gray-400 py-3 border-t border-gray-100">
+                Menampilkan 10 entri terakhir
+            </p>
+        </div>
+
+    </main>
+
+    <!-- ── TOAST ──────────────────────────────────────────── -->
+    <div id="toast" class="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 hidden">
+        <div id="toast-inner"
+             class="px-5 py-3 rounded-xl shadow-lg text-white font-semibold text-sm flex items-center gap-2 transition-all">
+        </div>
+    </div>
+
+    <script>
+    // ──────────────────────────────────────────────────────────────
+    // CONFIG
+    // ──────────────────────────────────────────────────────────────
+    const API_BASE = window.location.origin + '/api';
+
+    const UNIT_LABELS = { A: 'Jalan Rel', B: 'Jembatan', C: 'Mekanik', D: 'Balaiyasa' };
+
+    // ──────────────────────────────────────────────────────────────
+    // HELPERS
+    // ──────────────────────────────────────────────────────────────
+    function qs(sel, root = document) { return root.querySelector(sel); }
+
+    let _toastTimer;
+    function showToast(msg, type = 'info') {
+        const t  = qs('#toast');
+        const ti = qs('#toast-inner');
+        const colors = { success: 'bg-green-600', error: 'bg-red-600', info: 'bg-blue-600', warning: 'bg-yellow-500' };
+        const icons  = { success: 'fa-check-circle', error: 'fa-exclamation-circle', info: 'fa-info-circle', warning: 'fa-exclamation-triangle' };
+        ti.className = `px-5 py-3 rounded-xl shadow-lg text-white font-semibold text-sm flex items-center gap-2 ${colors[type]}`;
+        ti.innerHTML = `<i class="fas ${icons[type]}"></i> ${msg}`;
+        t.classList.remove('hidden');
+        clearTimeout(_toastTimer);
+        _toastTimer = setTimeout(() => t.classList.add('hidden'), 3500);
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    // READ UID FROM URL
+    // ──────────────────────────────────────────────────────────────
+    const params = new URLSearchParams(window.location.search);
+    const uid    = params.get('uid');
+
+    if (!uid) {
+        showError('Parameter UID tidak ada di URL. Pastikan QR code dipindai dengan benar.');
+    } else {
+        loadAsset(uid);
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    // LOAD ASSET (public endpoint — no auth)
+    // ──────────────────────────────────────────────────────────────
+    async function loadAsset(uid) {
+        try {
+            const res = await fetch(`${API_BASE}/public/aset/${uid}`);
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                throw new Error(err.detail || `HTTP ${res.status}`);
+            }
+            const data = await res.json();
+            renderAsset(data);
+        } catch (e) {
+            showError(e.message);
+        }
+    }
+
+    function renderAsset(data) {
+        // Hide skeleton, reveal content
+        qs('#skeleton').classList.add('hidden');
+        qs('#asset-info').classList.remove('hidden');
+        qs('#action-buttons').classList.remove('hidden');
+
+        // Status strip colour
+        const strip = qs('#status-strip');
+        strip.className = 'h-1.5 w-full ' + (
+            data.status === 'SO'   ? 'bg-green-400' :
+            data.status === 'TSO'  ? 'bg-red-400'   : 'bg-blue-400'
+        );
+
+        // Fields
+        qs('#info-uid').textContent      = data.uid;
+        qs('#info-kode-id').textContent  = data.kode_id;
+        qs('#info-alat').textContent     = data.alat;
+        qs('#info-lokasi').textContent   = data.lokasi;
+        qs('#info-unit').textContent     = UNIT_LABELS[data.unit_peruntukan] || data.unit_peruntukan || '—';
+        qs('#info-tahun').textContent    = data.tahun_pembelian ? `${data.tahun_pembelian + 2000}` : '—';
+        qs('#info-last-updated').textContent = data.last_updated || 'Belum ada catatan';
+
+        if (data.last_teknisi) {
+            qs('#info-last-teknisi').textContent = `Teknisi terakhir: ${data.last_teknisi}`;
+        }
+
+        // Status badge
+        const badge = qs('#info-status-badge');
+        const dot   = qs('.pulse-dot', badge);
+        qs('#info-status-text').textContent = data.status;
+
+        if (data.status === 'SO') {
+            badge.className = 'shrink-0 px-3 py-1 rounded-full text-sm font-bold flex items-center gap-1.5 badge-so';
+            dot.style.color = '#16a34a';
+        } else if (data.status === 'TSO') {
+            badge.className = 'shrink-0 px-3 py-1 rounded-full text-sm font-bold flex items-center gap-1.5 badge-tso';
+            dot.style.color = '#dc2626';
+        } else {
+            badge.className = 'shrink-0 px-3 py-1 rounded-full text-sm font-bold flex items-center gap-1.5 badge-baru';
+            dot.style.color = '#2563eb';
+        }
+
+        // Pre-fill UID in the form
+        qs('#form-uid').value = data.uid;
+        document.title       = `${data.kode_id} | SIMA-KAI`;
+
+        // Check if already logged in; if so, show the real form
+        const token = sessionStorage.getItem('authToken');
+        if (token) {
+            qs('#form-auth-gate').classList.add('hidden');
+            qs('#repair-form').classList.remove('hidden');
+
+            // Pre-fill today's date
+            qs('#form-tanggal').valueAsDate = new Date();
+
+            // Pre-fill technician from session
+            const savedUser = sessionStorage.getItem('activeUser');
+            if (savedUser) qs('#form-teknisi').value = savedUser;
+        }
+    }
+
+    function showError(msg) {
+        qs('#skeleton').classList.add('hidden');
+        qs('#asset-error').classList.remove('hidden');
+        qs('#error-message').textContent = msg;
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    // ACTION BUTTONS
+    // ──────────────────────────────────────────────────────────────
+    qs('#btn-form-perbaikan').addEventListener('click', () => {
+        qs('#section-history').classList.add('hidden');
+        qs('#section-form').classList.toggle('hidden');
+        qs('#section-form').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+
+    qs('#btn-history-card').addEventListener('click', () => {
+        qs('#section-form').classList.add('hidden');
+        const histSection = qs('#section-history');
+        histSection.classList.toggle('hidden');
+        if (!histSection.classList.contains('hidden')) {
+            loadHistory(uid);
+            histSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+    });
+
+    qs('#close-form').addEventListener('click', () => {
+        qs('#section-form').classList.add('hidden');
+    });
+
+    qs('#close-history').addEventListener('click', () => {
+        qs('#section-history').classList.add('hidden');
+    });
+
+    // ──────────────────────────────────────────────────────────────
+    // STATUS BUTTONS (SO / TSO) in the inline form
+    // ──────────────────────────────────────────────────────────────
+    document.querySelectorAll('.landing-status-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const status = btn.dataset.status;
+            qs('#form-kondisi').value = status;
+
+            document.querySelectorAll('.landing-status-btn').forEach(b => {
+                if (b.dataset.status === status) {
+                    b.classList.add(status === 'SO' ? 'bg-green-100' : 'bg-red-100');
+                    b.classList.remove('opacity-50');
+                } else {
+                    b.classList.remove('bg-green-100', 'bg-red-100');
+                    b.classList.add('opacity-50');
+                }
+            });
+        });
+    });
+
+    // ──────────────────────────────────────────────────────────────
+    // SUBMIT REPAIR FORM
+    // ──────────────────────────────────────────────────────────────
+    qs('#repair-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+
+        const kondisi = qs('#form-kondisi').value;
+        if (!kondisi) {
+            showToast('Pilih kondisi alat (SO / TSO) terlebih dahulu.', 'warning');
+            return;
+        }
+
+        const token   = sessionStorage.getItem('authToken');
+        const payload = {
+            aset_uid:         qs('#form-uid').value,
+            tanggal_perbaikan: qs('#form-tanggal').value,
+            teknisi:          qs('#form-teknisi').value.trim(),
+            status_baru:      kondisi,
+            keterangan:       qs('#form-keterangan').value.trim() || '—',
+        };
+
+        if (!payload.teknisi) {
+            showToast('Isi nama teknisi terlebih dahulu.', 'warning');
+            return;
+        }
+
+        const btn = qs('#btn-submit-repair');
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Menyimpan...';
+        btn.disabled  = true;
+
+        try {
+            const res = await fetch(`${API_BASE}/perbaikan`, {
+                method:  'POST',
+                headers: {
+                    'Content-Type':  'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify(payload)
+            });
+
+            if (!res.ok) {
+                if (res.status === 401) {
+                    showToast('Sesi habis. Silakan login ulang.', 'error');
+                    return;
+                }
+                const err = await res.json().catch(() => ({}));
+                throw new Error(err.detail || 'Gagal menyimpan laporan.');
+            }
+
+            showToast('Laporan perbaikan berhasil disimpan!', 'success');
+            qs('#repair-form').reset();
+            qs('#form-kondisi').value = '';
+            document.querySelectorAll('.landing-status-btn').forEach(b => {
+                b.classList.remove('bg-green-100', 'bg-red-100', 'opacity-50');
+            });
+
+            // Refresh asset card and history
+            loadAsset(uid);
+            qs('#section-form').classList.add('hidden');
+
+        } catch (err) {
+            showToast(err.message, 'error');
+        } finally {
+            btn.innerHTML = '<i class="fas fa-save"></i> Simpan Laporan';
+            btn.disabled  = false;
+        }
+    });
+
+    // ──────────────────────────────────────────────────────────────
+    // LOAD HISTORY (public endpoint)
+    // ──────────────────────────────────────────────────────────────
+    async function loadHistory(uid) {
+        const body = qs('#history-body');
+        body.innerHTML = `<div class="p-6 text-center text-gray-400 text-sm"><i class="fas fa-spinner fa-spin mr-2"></i> Memuat riwayat...</div>`;
+
+        try {
+            const res = await fetch(`${API_BASE}/public/riwayat/${uid}`);
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const history = await res.json();
+
+            if (history.length === 0) {
+                body.innerHTML = `<div class="p-6 text-center text-gray-400 text-sm">Belum ada riwayat perbaikan.</div>`;
+                return;
+            }
+
+            body.innerHTML = history.map(h => `
+                <div class="px-5 py-3 flex items-start gap-3">
+                    <div class="shrink-0 mt-0.5">
+                        <span class="inline-block w-2 h-2 rounded-full mt-1.5 ${h.kondisi === 'SO' ? 'bg-green-400' : 'bg-red-400'}"></span>
+                    </div>
+                    <div class="flex-1 min-w-0">
+                        <div class="flex justify-between items-start gap-2">
+                            <span class="text-xs text-gray-400">${h.date}</span>
+                            <span class="text-xs font-bold px-2 py-0.5 rounded-full ${h.kondisi === 'SO' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}">
+                                ${h.kondisi}
+                            </span>
+                        </div>
+                        <p class="text-sm font-semibold text-gray-700 mt-0.5">${h.teknisi}</p>
+                        <p class="text-xs text-gray-500">${h.upt}</p>
+                        <p class="text-xs text-gray-500 mt-1 italic">${h.keterangan !== '—' ? h.keterangan : ''}</p>
+                    </div>
+                </div>
+            `).join('');
+
+        } catch (e) {
+            body.innerHTML = `<div class="p-6 text-center text-red-400 text-sm">Gagal memuat riwayat: ${e.message}</div>`;
+        }
+    }
+    </script>
+</body>
+</html>

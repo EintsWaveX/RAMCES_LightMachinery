@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SIMA-KAI | Warehouse Monitoring</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: { extend: { fontFamily: { consolas: ['Consolas', 'Monaco', 'monospace'] } } }
+        }
+    </script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        .dark ::-webkit-scrollbar-thumb { background: #475569; }
+        .consolas-input { font-family: 'Consolas', monospace; }
+        .status-btn.active.so  { background-color: #22c55e !important; color: white !important; opacity: 1 !important; }
+        .status-btn.active.tso { background-color: #ef4444 !important; color: white !important; opacity: 1 !important; }
+        .status-btn.inactive   { background-color: #9ca3af !important; color: #f3f4f6 !important; opacity: 0.5 !important; }
+
+        /* QR print styles — only the label area prints */
+        @media print {
+            body > *:not(#qr-print-area) { display: none !important; }
+            #qr-print-area {
+                display: flex !important;
+                position: fixed;
+                inset: 0;
+                align-items: center;
+                justify-content: center;
+                background: white;
+            }
+        }
+    </style>
+    <script>
+        (function() {
+            const saved = localStorage.getItem('theme');
+            const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+            if (saved === 'dark' || (!saved && prefersDark)) {
+                document.documentElement.classList.add('dark');
+            }
+            if (sessionStorage.getItem('activeUser') && sessionStorage.getItem('authToken')) {
+                document.addEventListener('DOMContentLoaded', function() {
+                    document.getElementById('auth-view').classList.add('hidden');
+                });
+            }
+        })();
+    </script>
+</head>
+<body class="bg-gray-50 text-gray-900 dark:bg-gray-900 dark:text-gray-100 transition-colors duration-200 flex h-screen overflow-hidden">
+
+    <!-- AUTHENTICATION VIEW -->
+    <div id="auth-view" class="fixed inset-0 z-50 bg-gray-50 dark:bg-gray-900 flex items-center justify-center">
+        <div class="bg-white dark:bg-gray-800 p-8 rounded-xl shadow-2xl w-full max-w-md border border-gray-200 dark:border-gray-700">
+            <div class="text-center mb-8">
+                <i class="fas fa-train text-4xl text-blue-600 dark:text-blue-400 mb-2"></i>
+                <h2 class="text-3xl font-bold text-gray-800 dark:text-gray-100">SIMA-KAI</h2>
+                <p class="text-sm text-gray-500">Sistem Informasi Manajemen Aset</p>
+            </div>
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-semibold mb-2">Username</label>
+                    <input type="text" id="login-username" class="consolas-input w-full p-3 border rounded-lg dark:bg-gray-700 dark:border-gray-600 focus:ring-2 focus:ring-blue-500">
+                </div>
+                <div>
+                    <label class="block text-sm font-semibold mb-2">Password</label>
+                    <input type="password" id="login-password" class="consolas-input w-full p-3 border rounded-lg dark:bg-gray-700 dark:border-gray-600 focus:ring-2 focus:ring-blue-500">
+                </div>
+                <button type="button" id="btn-login" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg transition-colors mt-4">
+                    <i class="fas fa-sign-in-alt mr-2"></i> Login
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MAIN APP -->
+    <div id="main-app" class="flex w-full h-full hidden">
+
+        <!-- Sidebar -->
+        <aside id="sidebar" class="w-64 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 flex flex-col transition-all duration-300">
+            <div class="p-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
+                <h1 class="text-lg font-bold truncate">SIMA-KAI</h1>
+                <button id="close-sidebar-btn" class="lg:hidden text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">
+                    <i class="fas fa-bars"></i>
+                </button>
+            </div>
+            <nav class="flex-1 p-4 space-y-2 overflow-y-auto">
+                <button data-target="dashboard" class="nav-btn w-full flex items-center p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
+                    <i class="fas fa-chart-pie w-6"></i> <span>Dashboard Utama</span>
+                </button>
+                <button data-target="input" class="nav-btn w-full flex items-center p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
+                    <i class="fas fa-plus-square w-6"></i> <span>Input Alat Kerja</span>
+                </button>
+                <button data-target="database" class="nav-btn w-full flex items-center p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
+                    <i class="fas fa-database w-6"></i> <span>Database & Edit</span>
+                </button>
+                <button data-target="history" class="nav-btn w-full flex items-center p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
+                    <i class="fas fa-history w-6"></i> <span>History Card</span>
+                </button>
+                <button data-target="usermanagement" id="nav-user-management" class="nav-btn w-full flex items-center p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 hidden text-purple-600 dark:text-purple-400 font-bold border border-purple-200 dark:border-purple-900 mt-4">
+                    <i class="fas fa-users-cog w-6"></i> <span>Manajemen User</span>
+                </button>
+            </nav>
+            <div class="p-4 border-t border-gray-200 dark:border-gray-700 space-y-2">
+                <button id="theme-toggle-btn" class="w-full flex items-center justify-center p-2 bg-gray-200 dark:bg-gray-700 rounded-lg">
+                    <i class="fas fa-moon dark:hidden"></i><i class="fas fa-sun hidden dark:block text-yellow-400"></i><span class="ml-2">Theme</span>
+                </button>
+                <button id="logout-btn" class="w-full flex items-center justify-center p-2 bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded-lg">
+                    <i class="fas fa-sign-out-alt"></i><span class="ml-2">Logout</span>
+                </button>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="flex-1 flex flex-col h-screen overflow-hidden">
+            <header class="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 p-4 flex justify-between items-center shadow-sm z-10">
+                <button id="open-sidebar-btn" class="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">
+                    <i class="fas fa-bars text-xl"></i>
+                </button>
+                <div class="flex items-center space-x-4">
+                    <span class="font-medium text-sm border-r pr-4 dark:border-gray-600">User: <span id="current-username">...</span></span>
+                    <i class="fas fa-user-circle text-2xl text-blue-500"></i>
+                </div>
+            </header>
+
+            <div class="flex-1 overflow-y-auto p-6 relative" id="view-container">
+
+                <!-- VIEW: DASHBOARD -->
+                <section id="view-dashboard" class="view-section max-w-6xl mx-auto hidden space-y-6">
+                    <div class="bg-gradient-to-r from-blue-600 to-blue-800 rounded-2xl p-8 text-white shadow-lg flex justify-between items-center">
+                        <div>
+                            <h2 class="text-3xl font-bold mb-2" id="welcome-message">Selamat Datang, ---</h2>
+                            <p class="text-blue-100 opacity-90">Pantau kesiapan dan kondisi aset alat kerja secara real-time.</p>
+                        </div>
+                        <i class="fas fa-chart-line text-6xl opacity-20 hidden md:block"></i>
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <div class="bg-white dark:bg-gray-800 p-6 rounded-xl shadow border border-gray-200 dark:border-gray-700">
+                            <div class="flex justify-between items-start">
+                                <div>
+                                    <p class="text-sm text-gray-500 font-bold">TOTAL ASET AKTIF</p>
+                                    <h3 class="text-4xl font-black mt-2 text-blue-600 dark:text-blue-400" id="stat-total">0</h3>
+                                </div>
+                                <div class="p-3 bg-blue-100 dark:bg-blue-900/30 rounded-lg text-blue-600 dark:text-blue-400"><i class="fas fa-boxes text-xl"></i></div>
+                            </div>
+                        </div>
+                        <div class="bg-white dark:bg-gray-800 p-6 rounded-xl shadow border border-gray-200 dark:border-gray-700">
+                            <div class="flex justify-between items-start">
+                                <div>
+                                    <p class="text-sm text-gray-500 font-bold">KONDISI SO (SIAP OPERASI)</p>
+                                    <h3 class="text-4xl font-black mt-2 text-green-500" id="stat-so">0</h3>
+                                </div>
+                                <div class="p-3 bg-green-100 dark:bg-green-900/30 rounded-lg text-green-600 dark:text-green-400"><i class="fas fa-check-circle text-xl"></i></div>
+                            </div>
+                        </div>
+                        <div class="bg-white dark:bg-gray-800 p-6 rounded-xl shadow border border-gray-200 dark:border-gray-700">
+                            <div class="flex justify-between items-start">
+                                <div>
+                                    <p class="text-sm text-gray-500 font-bold">KONDISI TSO (TIDAK SIAP)</p>
+                                    <h3 class="text-4xl font-black mt-2 text-red-500" id="stat-tso">0</h3>
+                                </div>
+                                <div class="p-3 bg-red-100 dark:bg-red-900/30 rounded-lg text-red-600 dark:text-red-400"><i class="fas fa-times-circle text-xl"></i></div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- VIEW: INPUT ALAT KERJA BARU -->
+                <section id="view-input" class="view-section max-w-4xl mx-auto hidden">
+                    <h2 class="text-2xl font-bold mb-6 border-b pb-2 dark:border-gray-700">Input Data Alat Kerja Baru</h2>
+                    <form id="form-input-baru" class="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6 space-y-6">
+                        <div>
+                            <label class="block text-sm font-semibold mb-2">1. Alat Kerja</label>
+                            <select id="in-alat" required class="consolas-input w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600"></select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-semibold mb-2">2. Pengadaan</label>
+                            <div class="flex space-x-6 consolas-input">
+                                <label class="flex items-center space-x-2"><input type="radio" name="in-pengadaan" value="1" required class="w-4 h-4 text-blue-600"> <span>PUSAT (1)</span></label>
+                                <label class="flex items-center space-x-2"><input type="radio" name="in-pengadaan" value="2" class="w-4 h-4 text-blue-600"> <span>DAOP/DIVRE (2)</span></label>
+                            </div>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-semibold mb-2">3. Tanggal Pembelian</label>
+                            <input type="date" id="in-tanggal" required class="consolas-input w-full md:w-1/2 p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-semibold mb-2">4. Unit Peruntukan</label>
+                            <div class="flex flex-wrap gap-4 consolas-input">
+                                <label class="flex items-center space-x-2"><input type="radio" name="in-unit" value="A" required class="w-4 h-4 text-blue-600"> <span>JALAN REL (A)</span></label>
+                                <label class="flex items-center space-x-2"><input type="radio" name="in-unit" value="B" class="w-4 h-4 text-blue-600"> <span>JEMBATAN (B)</span></label>
+                                <label class="flex items-center space-x-2"><input type="radio" name="in-unit" value="C" class="w-4 h-4 text-blue-600"> <span>MEKANIK (C)</span></label>
+                                <label class="flex items-center space-x-2"><input type="radio" name="in-unit" value="D" class="w-4 h-4 text-blue-600"> <span>BALAIYASA (D)</span></label>
+                            </div>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-semibold mb-2">5. Lokasi (DAOP/DIVRE/BALAIYASA)</label>
+                            <select id="in-lokasi" required class="consolas-input w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600"></select>
+                        </div>
+                        <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg transition-colors">
+                            <i class="fas fa-save mr-2"></i> Submit Data
+                        </button>
+                    </form>
+                </section>
+
+                <!-- VIEW: DATABASE SEARCH -->
+                <section id="view-database" class="view-section hidden h-full flex flex-col">
+                    <div class="flex gap-4 mb-4">
+                        <input type="text" id="search-db" placeholder="Cari ID, Alat, atau Lokasi..." class="w-full p-3 border rounded-lg shadow-sm dark:bg-gray-800 dark:border-gray-700 consolas-input">
+                        <select id="filter-mode" class="p-3 border rounded-lg shadow-sm dark:bg-gray-800 dark:border-gray-700 font-semibold">
+                            <option value="public">🌍 Publik (Semua Aset)</option>
+                            <option value="local">👤 Lokal (Aset Saya)</option>
+                        </select>
+                    </div>
+                    <div id="db-cards-container" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 overflow-y-auto pb-20"></div>
+                </section>
+
+                <!-- VIEW: EDIT CARD -->
+                <section id="view-edit" class="view-section hidden bg-white dark:bg-gray-800 rounded-xl shadow-2xl p-6 md:p-8 min-h-full">
+                    <div class="flex justify-between items-center border-b pb-4 mb-6 dark:border-gray-700">
+                        <div>
+                            <h2 class="text-3xl font-bold text-blue-600 dark:text-blue-400">Perbaikan Alat Kerja</h2>
+                            <p class="font-mono mt-1 text-lg" id="edit-subtitle">ID: ---</p>
+                        </div>
+                        <button id="close-edit-btn" class="text-gray-400 hover:text-red-500 text-2xl"><i class="fas fa-times"></i></button>
+                    </div>
+                    <form id="form-edit" class="space-y-6">
+                        <input type="hidden" id="edit-uid">
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div>
+                                <label class="block text-sm font-semibold mb-2">Tanggal Perbaikan</label>
+                                <input type="date" id="edit-tanggal" required class="consolas-input w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-semibold mb-2">Teknisi</label>
+                                <input type="text" id="edit-teknisi" required class="consolas-input w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600" placeholder="Nama Teknisi">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-semibold mb-2">Lokasi Perbaikan</label>
+                                <select id="edit-lokasi" required class="consolas-input w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600"></select>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-semibold mb-2">UPT Pengirim</label>
+                                <select id="edit-upt" required class="consolas-input w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600">
+                                    <option value="">Pilih Lokasi Perbaikan Dahulu...</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-semibold mb-2">Kondisi Alat Kerja</label>
+                            <div class="flex gap-4">
+                                <button type="button" id="btn-so"  data-status="SO"  class="status-btn flex-1 py-3 rounded-lg font-bold border-2 border-green-500 text-green-600 dark:text-green-400">SO</button>
+                                <button type="button" id="btn-tso" data-status="TSO" class="status-btn flex-1 py-3 rounded-lg font-bold border-2 border-red-500   text-red-600   dark:text-red-400">TSO</button>
+                            </div>
+                            <input type="hidden" id="edit-kondisi" required>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-semibold mb-2">Keterangan (Opsional)</label>
+                            <textarea id="edit-keterangan" rows="3" class="consolas-input w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600"></textarea>
+                        </div>
+                        <button type="submit" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-lg transition-colors">
+                            <i class="fas fa-check-circle mr-2"></i> Update Data
+                        </button>
+                    </form>
+                </section>
+
+                <!-- VIEW: HISTORY -->
+                <section id="view-history" class="view-section hidden h-full flex flex-col">
+                    <input type="text" id="search-history" placeholder="Cari History ID..." class="w-full p-3 mb-6 border rounded-lg shadow-sm dark:bg-gray-800 dark:border-gray-700 consolas-input">
+                    <div id="history-cards-container" class="grid grid-cols-1 lg:grid-cols-2 gap-4 overflow-y-auto pb-20"></div>
+                </section>
+
+                <!-- VIEW: HISTORY DETAIL -->
+                <section id="view-history-detail" class="view-section hidden bg-white dark:bg-gray-800 rounded-xl shadow-2xl p-6 md:p-8 min-h-full">
+                    <div class="flex justify-between items-center border-b pb-4 mb-6 dark:border-gray-700">
+                        <div>
+                            <h2 class="text-2xl font-bold text-gray-800 dark:text-gray-100">Riwayat Perbaikan</h2>
+                            <p class="font-mono mt-1 text-lg text-blue-500" id="hist-detail-subtitle">ID: ---</p>
+                        </div>
+                        <button id="close-hist-btn" class="text-gray-400 hover:text-red-500 text-2xl"><i class="fas fa-times"></i></button>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left border-collapse">
+                            <thead>
+                                <tr class="bg-gray-100 dark:bg-gray-700">
+                                    <th class="p-3 border dark:border-gray-600">NO.</th>
+                                    <th class="p-3 border dark:border-gray-600">TANGGAL</th>
+                                    <th class="p-3 border dark:border-gray-600">UPT PENGIRIM</th>
+                                    <th class="p-3 border dark:border-gray-600">PETUGAS</th>
+                                    <th class="p-3 border dark:border-gray-600">STATUS</th>
+                                    <th class="p-3 border dark:border-gray-600">KETERANGAN</th>
+                                </tr>
+                            </thead>
+                            <tbody id="hist-table-body" class="font-mono text-sm"></tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <!-- VIEW: MANAJEMEN USER -->
+                <section id="view-usermanagement" class="view-section max-w-4xl mx-auto hidden">
+                    <h2 class="text-2xl font-bold mb-6 border-b pb-2 dark:border-gray-700 text-purple-600 dark:text-purple-400">
+                        <i class="fas fa-users-cog mr-2"></i>Registrasi User Baru
+                    </h2>
+                    <form id="form-register-user" class="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6 space-y-6 border border-gray-200 dark:border-gray-700">
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div>
+                                <label class="block text-sm font-semibold mb-2">Username Baru</label>
+                                <input type="text" id="reg-username" required class="consolas-input w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-semibold mb-2">Password Temporer</label>
+                                <input type="password" id="reg-password" required class="consolas-input w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-semibold mb-2">Role Akses</label>
+                                <select id="reg-role" required class="w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600">
+                                    <option value="ADMIN_DAOP" id="opt-admin-daop">ADMIN DAOP (Manajemen Wilayah)</option>
+                                    <option value="TEKNISI">TEKNISI (Laporan Lapangan)</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-semibold mb-2">Penempatan Region (Wajib)</label>
+                                <select id="reg-region" required class="consolas-input w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600"></select>
+                            </div>
+                        </div>
+                        <button type="submit" class="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 rounded-lg transition-colors">
+                            <i class="fas fa-user-plus mr-2"></i> Daftarkan User
+                        </button>
+                    </form>
+                </section>
+
+            </div><!-- end #view-container -->
+        </main>
+    </div><!-- end #main-app -->
+
+    <!-- ============================================================ -->
+    <!-- QR CODE MODAL                                                -->
+    <!-- ============================================================ -->
+    <div id="qr-modal" class="hidden fixed inset-0 z-[90] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-sm border border-gray-200 dark:border-gray-700">
+
+            <!-- Modal header -->
+            <div class="flex justify-between items-center p-5 border-b dark:border-gray-700">
+                <div>
+                    <h3 class="text-lg font-bold text-gray-800 dark:text-gray-100">
+                        <i class="fas fa-qrcode mr-2 text-blue-500"></i>Label QR Aset
+                    </h3>
+                    <p class="text-xs text-gray-500 font-mono mt-0.5" id="qr-modal-subtitle">---</p>
+                </div>
+                <button id="close-qr-modal" class="text-gray-400 hover:text-red-500 text-xl">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+
+            <!-- QR label preview — this exact div is also used for PNG export -->
+            <div class="p-6 flex flex-col items-center">
+                <div id="qr-label-preview" class="bg-white border-2 border-gray-800 rounded-xl p-4 w-64 flex flex-col items-center gap-3 shadow-lg">
+                    <!-- Top: system name -->
+                    <div class="w-full text-center border-b border-gray-300 pb-2">
+                        <p class="text-xs font-bold text-gray-500 tracking-widest">SIMA-KAI</p>
+                        <p class="text-[10px] text-gray-400">Sistem Informasi Manajemen Aset</p>
+                    </div>
+                    <!-- QR canvas — filled by JS -->
+                    <canvas id="qr-canvas" width="180" height="180"></canvas>
+                    <!-- Asset info below QR -->
+                    <div class="w-full text-center border-t border-gray-300 pt-2 space-y-0.5">
+                        <p class="text-xs font-black text-gray-800 font-mono tracking-tight" id="qr-label-kodeid">---</p>
+                        <p class="text-[10px] text-gray-500" id="qr-label-alat">---</p>
+                        <p class="text-[10px] text-gray-400" id="qr-label-lokasi">---</p>
+                        <p class="text-[9px] text-gray-400 mt-1">Scan untuk Form Perbaikan & Riwayat</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Action buttons -->
+             <!-- Landing URL display + copy -->
+            <div class="mx-5 mb-4 flex items-center gap-2 bg-gray-100 dark:bg-gray-700 rounded-lg px-3 py-2">
+                <a id="qr-landing-link"
+                href="#" target="_blank" rel="noopener"
+                class="flex-1 min-w-0 text-xs font-mono text-blue-600 dark:text-blue-400 hover:underline truncate"
+                title="Buka di tab baru">
+                    <span id="qr-landing-link-text">—</span>
+                </a>
+                <button id="btn-copy-link"
+                        title="Salin link"
+                        class="shrink-0 text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 transition p-1 rounded">
+                    <i class="fas fa-copy"></i>
+                </button>
+            </div>
+
+            <!-- Download buttons -->
+            <div class="flex gap-3 px-5 pb-5">
+                <button id="btn-qr-download-png" class="flex-1 flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 rounded-lg transition-colors text-sm">
+                    <i class="fas fa-image"></i> Unduh PNG
+                </button>
+                <button id="btn-qr-download-pdf" class="flex-1 flex items-center justify-center gap-2 bg-gray-700 hover:bg-gray-800 dark:bg-gray-600 dark:hover:bg-gray-500 text-white font-bold py-2.5 rounded-lg transition-colors text-sm">
+                    <i class="fas fa-file-pdf"></i> Unduh PDF
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Hidden area used only during PDF/print export -->
+    <div id="qr-print-area" class="hidden"></div>
+
+    <!-- Toast Notifications -->
+    <div id="toast-container" class="fixed top-4 right-4 z-[100] flex flex-col gap-2"></div>
+
+    <!-- Confirm Modal -->
+    <div id="confirm-modal" class="hidden fixed inset-0 z-[100] bg-black/50 backdrop-blur-sm flex items-center justify-center transition-opacity">
+        <div class="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-2xl max-w-sm w-full border border-gray-200 dark:border-gray-700">
+            <h3 class="text-xl font-bold mb-2 text-gray-900 dark:text-gray-100" id="confirm-title">
+                <i class="fas fa-exclamation-triangle text-yellow-500 mr-2"></i>Konfirmasi
+            </h3>
+            <p class="mb-6 text-gray-600 dark:text-gray-400" id="confirm-message">Apakah Anda yakin?</p>
+            <div class="flex justify-end gap-3">
+                <button id="confirm-cancel" class="px-4 py-2 bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-200 rounded-lg font-bold transition">Batal</button>
+                <button id="confirm-ok"     class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold transition">Yakin</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- QR generation library (tiny, no build step needed) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <!-- App Logic -->
+    <script src="app.js"></script>
+</body>
+</html>
