@@ -2,62 +2,22 @@
 const API_BASE_URL = '/api';
 
 // ── SERVER CONFIG ─────────────────────────────────────────────────────────
-// Set to your ngrok URL when tunneling, or null to use window.location.host.
-// When using Live Server for frontend dev, set this to 'localhost:8000' so
-// WebSocket and API calls always reach uvicorn regardless of which port
-// the page is served from.
-const NGROK_BASE_URL = 'https://ac9b-114-10-146-213.ngrok-free.app';
-const BACKEND_WS_HOST = NGROK_BASE_URL
-    ? NGROK_BASE_URL.replace(/^https?:\/\//, '')
-    : 'localhost:8000'; 
-// ── SERVER CONFIG ─────────────────────────────────────────────────────────
-// Set to your ngrok URL when tunneling, or null to use window.location.host.
-// When using Live Server for frontend dev, set this to 'localhost:8000' so
-// WebSocket and API calls always reach uvicorn regardless of which port
-// the page is served from.
+let NGROK_BASE_URL  = '';
+let BACKEND_WS_HOST = '';
 
-const alatKerjaData = [
-    { name: 'GENSET', code: 'GEN' }, { name: 'PORTABLE BALLAST TAMPER', code: 'PBT' },
-    { name: 'MESIN BOR', code: 'BOR' }, { name: 'IMPACT WRENCH', code: 'IMP' },
-    { name: 'RAIL GRINDING MACHINE', code: 'RGM' }, { name: 'TRACK GEOMTERY TROLLEY', code: 'TGT' },
-    { name: 'ULTRASONIC MEASUREMENT', code: 'USM' }, { name: 'RAIL FLAW DETECTOR', code: 'RFD' },
-    { name: 'TRACK GAUGE', code: 'TRG' }
-];
+// These are now fetched from the DB on login — see fetchMasterData()
+let alatKerjaData = [];
+let lokasiData    = [];
+let uptDatabase   = [];
 
-const lokasiData = [
-    { name: 'DAOP 1 JAKARTA', code: 'D1' }, { name: 'DAOP 2 BANDUNG', code: 'D2' },
-    { name: 'DAOP 3 CIREBON', code: 'D3' }, { name: 'DAOP 4 SEMARANG', code: 'D4' },
-    { name: 'DAOP 5 PURWOKERTO', code: 'D5' }, { name: 'DAOP 6 YOGYAKARTA', code: 'D6' },
-    { name: 'DAOP 7 MADIUN', code: 'D7' }, { name: 'DAOP 8 SURABAYA', code: 'D8' },
-    { name: 'DAOP 9 JEMBER', code: 'D9' }, { name: 'DIVRE I SUMATERA UTARA', code: 'VI' },
-    { name: 'DIVRE II SUMATERA BARAT', code: 'VII' }, { name: 'DIVRE III PALEMBANG', code: 'VIII' },
-    { name: 'DIVRE IV TANJUNGKARANG', code: 'VIV' }, { name: 'BALAIYASA CIREBONPRUNJAKAN', code: 'BY1' },
-    { name: 'BALAIYASA PRABUMULIH', code: 'BY2' }, { name: 'BALAIYASA KIARACONDONG', code: 'BY3' }
-];
+let _wsNgrokFailed = false;
+let _wsRetryCount = 0;
 
-const uptDatabase = [
-    {"upt":"JR 1.1 Jakartakota","lokasi":"D1"},{"upt":"JR 1.2 Tanjungpriuk","lokasi":"D1"},{"upt":"JR 1.3 Pasarsenen","lokasi":"D1"},{"upt":"JR 1.4 Manggarai","lokasi":"D1"},{"upt":"JR 1.5 Tanahabang","lokasi":"D1"},{"upt":"JR 1.6 Duri","lokasi":"D1"},{"upt":"JR 1.7 Tangerang","lokasi":"D1"},{"upt":"JR 1.8 Jatinegara","lokasi":"D1"},{"upt":"JR 1.9 Bekasi","lokasi":"D1"},{"upt":"JR 1.10 Cikarang","lokasi":"D1"},{"upt":"JR 1.11 Lemahabang","lokasi":"D1"},{"upt":"JR 1.12 Karawang","lokasi":"D1"},{"upt":"JR 1.13 Cikampek","lokasi":"D1"},{"upt":"JR 1.14 Pasarminggu","lokasi":"D1"},{"upt":"JR 1.15 Depok","lokasi":"D1"},{"upt":"JR 1.16 Citayam","lokasi":"D1"},{"upt":"JR 1.17 Bogor","lokasi":"D1"},{"upt":"JR 1.18 Cigombong","lokasi":"D1"},{"upt":"JR 1.19 Sukabumi","lokasi":"D1"},{"upt":"JR 1.20 Kebayoran","lokasi":"D1"},{"upt":"JR 1.21 Parungpanjang","lokasi":"D1"},{"upt":"JR 1.22 Tigaraksa","lokasi":"D1"},{"upt":"JR 1.23 Rangkasbitung","lokasi":"D1"},{"upt":"JR 1.24 Catang","lokasi":"D1"},{"upt":"JR 1.25 Cilegon","lokasi":"D1"},
-    {"upt":"JR 2.1 Cibungur","lokasi":"D2"},{"upt":"JR 2.2 Purwakarta","lokasi":"D2"},{"upt":"JR 2.3 Rendeh","lokasi":"D2"},{"upt":"JR 2.4 Padalarang","lokasi":"D2"},{"upt":"JR 2.5 Cibeber","lokasi":"D2"},{"upt":"JR 2.6 Cianjur","lokasi":"D2"},{"upt":"JR 2.7 Bandung","lokasi":"D2"},{"upt":"JR 2.8 Kiaracondong","lokasi":"D2"},{"upt":"JR 2.9 Cicalengka","lokasi":"D2"},{"upt":"JR 2.10 Cibatu","lokasi":"D2"},{"upt":"JR 2.11 Ciawi","lokasi":"D2"},{"upt":"JR 2.12 Tasikmalaya","lokasi":"D2"},{"upt":"JR 2.13 Banjar","lokasi":"D2"},
-    {"upt":"JR 3.1 Pabuaran","lokasi":"D3"},{"upt":"JR 3.2 Pasirbungur","lokasi":"D3"},{"upt":"JR 3.3 Pegadenbaru","lokasi":"D3"},{"upt":"JR 3.4 Haurgeulis","lokasi":"D3"},{"upt":"JR 3.5 Terisi","lokasi":"D3"},{"upt":"JR 3.6 Jatibarang","lokasi":"D3"},{"upt":"JR 3.7 Arjawinangun","lokasi":"D3"},{"upt":"JR 3.8 Cirebon","lokasi":"D3"},{"upt":"JR 3.9 Cirebonprujakan","lokasi":"D3"},{"upt":"JR 3.10 Babakan","lokasi":"D3"},{"upt":"JR 3.11 Tanjung","lokasi":"D3"},{"upt":"JR 3.12 Bulakamba","lokasi":"D3"},{"upt":"JR 3.13 Brebes","lokasi":"D3"},{"upt":"JR 3.14 Sindanglaut","lokasi":"D3"},{"upt":"JR 3.15 Ciledug","lokasi":"D3"},{"upt":"JR 3.16 Ketanggungan","lokasi":"D3"},{"upt":"JR 3.17 Songgom","lokasi":"D3"},
-    {"upt":"JR 4.1 Tegal","lokasi":"D4"},{"upt":"JR 4.2 Pemalang","lokasi":"D4"},{"upt":"JR 4.3 Petarukan","lokasi":"D4"},{"upt":"JR 4.4 Pekalongan","lokasi":"D4"},{"upt":"JR 4.5 Batang","lokasi":"D4"},{"upt":"JR 4.6 Kuripan","lokasi":"D4"},{"upt":"JR 4.7 Weleri","lokasi":"D4"},{"upt":"JR 4.8 Kalibodri","lokasi":"D4"},{"upt":"JR 4.9 Kaliwungu","lokasi":"D4"},{"upt":"JR 4.10 Semarangponcol","lokasi":"D4"},{"upt":"JR 4.11 Brumbung","lokasi":"D4"},{"upt":"JR 4.12 Gubug","lokasi":"D4"},{"upt":"JR 4.13 Karangjati","lokasi":"D4"},{"upt":"JR 4.14 Gambringan","lokasi":"D4"},{"upt":"JR 4.15 Penunggalan","lokasi":"D4"},{"upt":"JR 4.16 Kradenan","lokasi":"D4"},{"upt":"JR 4.17 Doplang","lokasi":"D4"},{"upt":"JR 4.18 Randublatung","lokasi":"D4"},{"upt":"JR 4.19 Cepu","lokasi":"D4"},{"upt":"JR 4.20 Kedungjati","lokasi":"D4"},{"upt":"JR 4.21 Gundih","lokasi":"D4"},{"upt":"JR 4.22 Ambarawa","lokasi":"D4"},
-    {"upt":"JR 5.1 Slawi","lokasi":"D5"},{"upt":"JR 5.2 Prupuk","lokasi":"D5"},{"upt":"JR 5.3 Bumiayu","lokasi":"D5"},{"upt":"JR 5.4 Legok","lokasi":"D5"},{"upt":"JR 5.5 Purwokerto","lokasi":"D5"},{"upt":"JR 5.6 Kebasen","lokasi":"D5"},{"upt":"JR 5.7 Langen","lokasi":"D5"},{"upt":"JR 5.8 Jeruk Legi","lokasi":"D5"},{"upt":"JR 5.9 Cilacap","lokasi":"D5"},{"upt":"JR 5.10 Kroya","lokasi":"D5"},{"upt":"JR 5.11 Tambak","lokasi":"D5"},{"upt":"JR 5.12 Gombong","lokasi":"D5"},{"upt":"JR 5.13 Kebumen","lokasi":"D5"},{"upt":"JR 5.14 Kutoarjo","lokasi":"D5"},
-    {"upt":"JR 6.1 Jenar","lokasi":"D6"},{"upt":"JR 6.2 Wojo","lokasi":"D6"},{"upt":"JR 6.3 Wates","lokasi":"D6"},{"upt":"JR 6.4 Yogyakarta","lokasi":"D6"},{"upt":"JR 6.5 Brambanan","lokasi":"D6"},{"upt":"JR 6.6 Klaten","lokasi":"D6"},{"upt":"JR 6.7 Delanggu","lokasi":"D6"},{"upt":"JR 6.8 Solobalapan","lokasi":"D6"},{"upt":"JR 6.9 Wonogiri","lokasi":"D6"},{"upt":"JR 6.10 Sumberlawang","lokasi":"D6"},{"upt":"JR 6.11 Palur","lokasi":"D6"},{"upt":"JR 6.12 Sragen","lokasi":"D6"},{"upt":"JR 6.13 Kebonromo","lokasi":"D6"},
-    {"upt":"JR 7.1 Sumobito","lokasi":"D7"},{"upt":"JR 7.2 Jombang","lokasi":"D7"},{"upt":"JR 7.3 Kertosono","lokasi":"D7"},{"upt":"JR 7.4 Nganjuk","lokasi":"D7"},{"upt":"JR 7.5 Bagor","lokasi":"D7"},{"upt":"JR 7.6 Caruban","lokasi":"D7"},{"upt":"JR 7.7 Madiun","lokasi":"D7"},{"upt":"JR 7.8 Magetan","lokasi":"D7"},{"upt":"JR 7.9 Ngawi","lokasi":"D7"},{"upt":"JR 7.10 Walikukun","lokasi":"D7"},{"upt":"JR 7.11 Blitar","lokasi":"D7"},{"upt":"JR 7.12 Tulungagung","lokasi":"D7"},{"upt":"JR 7.13 Kediri","lokasi":"D7"},
-    {"upt":"JR 8.1 Tobo","lokasi":"D8"},{"upt":"JR 8.2 Bojonegoro","lokasi":"D8"},{"upt":"JR 8.3 Sumberrejo","lokasi":"D8"},{"upt":"JR 8.4 Babat","lokasi":"D8"},{"upt":"JR 8.5 Sumlaran","lokasi":"D8"},{"upt":"JR 8.6 Lamongan","lokasi":"D8"},{"upt":"JR 8.7 Cerme","lokasi":"D8"},{"upt":"JR 8.8 Kandangan","lokasi":"D8"},{"upt":"JR 8.9 Surabayapasarturi","lokasi":"D8"},{"upt":"JR 8.10 Sidotopo","lokasi":"D8"},{"upt":"JR 8.11 Surabayagubeng","lokasi":"D8"},{"upt":"JR 8.12 Sepanjang","lokasi":"D8"},{"upt":"JR 8.13 Mojokerto","lokasi":"D8"},{"upt":"JR 8.14 Sidoarjo","lokasi":"D8"},{"upt":"JR 8.15 Bangil","lokasi":"D8"},{"upt":"JR 8.16 Lawang","lokasi":"D8"},{"upt":"JR 8.17 Malang","lokasi":"D8"},{"upt":"JR 8.18 Wlingi","lokasi":"D8"},
-    {"upt":"JR 9.1 Pasuruan","lokasi":"D9"},{"upt":"JR 9.2 Probolinggo","lokasi":"D9"},{"upt":"JR 9.3 Klakah","lokasi":"D9"},{"upt":"JR 9.4 Tanggul","lokasi":"D9"},{"upt":"JR 9.5 Jember","lokasi":"D9"},{"upt":"JR 9.6 Kalisat","lokasi":"D9"},{"upt":"JR 9.7 Kalibaru","lokasi":"D9"},{"upt":"JR 9.8 Rogojampi","lokasi":"D9"},
-    {"upt":"JR I.1 Medan","lokasi":"VI"},{"upt":"JR I.2 Ujungbaru","lokasi":"VI"},{"upt":"JR I.3 Araskabu","lokasi":"VI"},{"upt":"JR I.4 Perbaungan","lokasi":"VI"},{"upt":"JR I.5 Tebingtinggi","lokasi":"VI"},{"upt":"JR I.6 Siantar","lokasi":"VI"},{"upt":"JR I.7 Perlanaan","lokasi":"VI"},{"upt":"JR I.8 Seibejangkar","lokasi":"VI"},{"upt":"JR I.9 Kisaran","lokasi":"VI"},{"upt":"JR I.10 Telukdalam","lokasi":"VI"},{"upt":"JR I.11 Mambang Muda","lokasi":"VI"},{"upt":"JR I.12 Rantauprapat","lokasi":"VI"},{"upt":"JR I.13 Binjai","lokasi":"VI"},{"upt":"JR I.14 Stabat","lokasi":"VI"},{"upt":"JR I.15 Pangkalan Brandan","lokasi":"VI"},{"upt":"JR I.16 Tanjung Gading","lokasi":"VI"},{"upt":"JR I.17 Lhokseumawe","lokasi":"VI"},
-    {"upt":"JR II.1 Padang","lokasi":"VII"},{"upt":"JR II.2 Lubuk Alung","lokasi":"VII"},
-    {"upt":"JR III.1 Kertapati","lokasi":"VIII"},{"upt":"JR III.2 Simpang","lokasi":"VIII"},{"upt":"JR III.3 Payakabung","lokasi":"VIII"},{"upt":"JR III.4 Serdang","lokasi":"VIII"},{"upt":"JR III.5 Glumbang","lokasi":"VIII"},{"upt":"JR III.6 Lembak","lokasi":"VIII"},{"upt":"JR III.7 Prabumulih","lokasi":"VIII"},{"upt":"JR III.8 Prabumulih Baru","lokasi":"VIII"},{"upt":"JR III.9 Penimur","lokasi":"VIII"},{"upt":"JR III.10 Niru","lokasi":"VIII"},{"upt":"JR III.11 Blimbing Pendopo","lokasi":"VIII"},{"upt":"JR III.12 Gunung Megang","lokasi":"VIII"},{"upt":"JR III.13 Ujanmas","lokasi":"VIII"},{"upt":"JR III.14 Muaraenim","lokasi":"VIII"},{"upt":"JR III.15 Tanjungenim Baru","lokasi":"VIII"},{"upt":"JR III.16 Banjarsari","lokasi":"VIII"},{"upt":"JR III.17 Sukacinta","lokasi":"VIII"},{"upt":"JR III.18 Lahat","lokasi":"VIII"},{"upt":"JR III.19 Sukarame","lokasi":"VIII"},{"upt":"JR III.20 Saung Naga","lokasi":"VIII"},{"upt":"JR III.21 Tebingtinggi","lokasi":"VIII"},{"upt":"JR III.22 Lubuklinggau","lokasi":"VIII"},
-    {"upt":"JR IV.1 Tanjungkarang","lokasi":"VIV"},{"upt":"JR IV.2 Rejosari","lokasi":"VIV"},{"upt":"JR IV.3 Bekri","lokasi":"VIV"},{"upt":"JR IV.4 Blambangan Pagar","lokasi":"VIV"},{"upt":"JR IV.5 Kotabumi","lokasi":"VIV"},{"upt":"JR IV.6 Ketapang","lokasi":"VIV"},{"upt":"JR IV.7 Negararatu","lokasi":"VIV"},{"upt":"JR IV.8 Tulungbuyut","lokasi":"VIV"},{"upt":"JR IV.9 Negeri Agung","lokasi":"VIV"},{"upt":"JR IV.10 Blambangan Umpu","lokasi":"VIV"},{"upt":"JR IV.11 Waytuba","lokasi":"VIV"},{"upt":"JR IV.12 Martapura","lokasi":"VIV"},{"upt":"JR IV.13 Sepancar","lokasi":"VIV"},{"upt":"JR IV.14 Baturaja","lokasi":"VIV"},{"upt":"JR IV.15 Blimbing Airkaka","lokasi":"VIV"},{"upt":"JR IV.16 Peninjawan","lokasi":"VIV"},{"upt":"JR IV.17 Pagergunung","lokasi":"VIV"},{"upt":"JR IV.18 Tanjungrambang","lokasi":"VIV"},
-    {"upt":"BY Cirebonprunjakan","lokasi":"BY1"},
-    {"upt":"BY Prabumulih","lokasi":"BY2"},
-    {"upt":"BY Kiaracondong","lokasi":"BY3"}
-];
+let db = [];
 
 let activeHistoryUid = null;
 let currentUser = sessionStorage.getItem('activeUser');
 let authToken = sessionStorage.getItem('authToken');
-let db = [];
 
 // Track the QR currently shown in the modal (for export)
 let _qrActiveItem = null;
@@ -72,19 +32,80 @@ let _qrActiveItem = null;
 
 // --- INISIALISASI UTAMA ---
 document.addEventListener("DOMContentLoaded", async () => {
+    await fetchConfig();
     populateSelects();
     setupEventListeners();
+    fetchLoginRegions();
+
+    document.getElementById('login-username')?.addEventListener('blur', async () => {
+        const username = document.getElementById('login-username').value.trim();
+        if (!username) return;
+
+        try {
+            const res = await fetch('/api/master/lokasi');
+            // If fetch ok, check if user exists by attempting a peek
+            // We show extra fields preemptively — server decides on submit
+            document.getElementById('login-extra-fields').classList.remove('hidden');
+        } catch(e) {
+            // silently ignore
+        }
+    });
 
     if (currentUser && authToken) {
         checkAuth();
-        await fetchAsetFromServer();
     } else {
         forceLogout(false);
     }
 });
 
+async function fetchConfig() {
+    try {
+        const res  = await fetch('/api/config');
+        const data = await res.json();
+        NGROK_BASE_URL  = data.ngrok_url || '';
+        BACKEND_WS_HOST = NGROK_BASE_URL
+            ? NGROK_BASE_URL.replace(/^https?:\/\//, '').replace(/\/$/, '')
+            : window.location.host;
+    } catch (e) {
+        NGROK_BASE_URL  = '';
+        BACKEND_WS_HOST = window.location.host; // always set a valid fallback
+    }
+}
+
+async function fetchMasterData() {
+    try {
+        const [alatRes, lokasiRes, uptRes] = await Promise.all([
+            fetch(`${API_BASE_URL}/master/alat`),
+            fetch(`${API_BASE_URL}/master/lokasi`),
+            fetch(`${API_BASE_URL}/master/upt`),
+        ]);
+
+        if (alatRes.ok)   alatKerjaData = (await alatRes.json()).map(a => ({ name: a.nama,       code: a.kode }));
+        if (lokasiRes.ok) lokasiData    = (await lokasiRes.json()).map(l => ({ name: l.nama_lokasi, code: l.kode_lokasi }));
+        if (uptRes.ok)    uptDatabase   = (await uptRes.json()).map(u => ({ upt: u.nama_upt,     lokasi: u.kode_lokasi }));
+
+        // Re-populate all selects now that data is loaded
+        populateSelects();
+    } catch (e) {
+        showToast("Gagal memuat data master. Beberapa dropdown mungkin kosong.", "warning");
+    }
+}
+
+async function fetchLoginRegions() {
+    try {
+        const res = await fetch('/api/master/lokasi');
+        if (!res.ok) return;
+        const data = await res.json();
+        const sel  = document.getElementById('login-region');
+        if (!sel) return;
+        sel.innerHTML = data.map(l => `<option value="${l.kode_lokasi}">${l.nama_lokasi}</option>`).join('');
+    } catch (e) {
+        // master data not seeded yet — leave as "Memuat..."
+    }
+}
+
 // --- LOGIKA AUTENTIKASI ---
-function checkAuth() {
+async function checkAuth() {
     if (currentUser && authToken) {
         const payload = getJwtPayload(authToken);
         const role = payload ? payload.role : 'TEKNISI';
@@ -93,92 +114,83 @@ function checkAuth() {
         document.getElementById('main-app').classList.remove('hidden');
         document.getElementById('current-username').innerText = currentUser;
 
-        setupWebSocket();
-
-        if (role === 'SUPER_ADMIN' || role === 'ADMIN_DAOP') {
-            const navAdmin = document.getElementById('nav-user-management');
-            if (navAdmin) navAdmin.classList.remove('hidden');
-            const optAdmin = document.getElementById('opt-admin-daop');
-            if (role === 'ADMIN_DAOP' && optAdmin) optAdmin.disabled = true;
+        if (role === 'SUPER_ADMIN') {
+            const navMaster = document.getElementById('nav-masterdata');
+            if (navMaster) navMaster.classList.remove('hidden');
         }
-
         if (role === 'TEKNISI') {
-            const viewInput = document.getElementById('view-input');
-            if (viewInput) {
-                viewInput.innerHTML = `
-                    <div class="flex flex-col items-center justify-center h-96 text-center space-y-4">
-                        <div class="p-6 bg-red-100 dark:bg-red-900/30 rounded-full">
-                            <i class="fas fa-ban text-6xl text-red-400 dark:text-red-500"></i>
-                        </div>
-                        <h2 class="text-2xl font-bold text-gray-700 dark:text-gray-300">Akses Dibatasi</h2>
-                        <p class="text-gray-500 dark:text-gray-400 max-w-sm">
-                            Halaman ini hanya dapat diakses oleh <span class="font-semibold text-red-500">Admin</span>.<br>
-                            Silakan hubungi admin wilayah Anda untuk input data alat kerja baru.
-                        </p>
-                        <span class="px-4 py-1 bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-400 rounded-full text-sm font-mono">
-                            Role: TEKNISI
-                        </span>
-                    </div>
-                `;
-            }
+            const navInput = document.getElementById('nav-input');
+            if (navInput) navInput.classList.add('hidden');
         }
 
         const welcomeMsg = document.getElementById('welcome-message');
         if (welcomeMsg) welcomeMsg.innerText = `Selamat Datang, ${currentUser}`;
 
         switchView('dashboard');
+
+        await fetchMasterData(); // fetch before setupWebSocket so selects are ready
+        setupWebSocket();
+        await fetchAsetFromServer();
     } else {
-        document.getElementById('auth-view').classList.remove('auth-preload');
         document.getElementById('main-app').classList.add('hidden');
     }
 }
 
 async function handleLogin() {
-    const user = document.getElementById('login-username').value.trim();
-    const pass = document.getElementById('login-password').value.trim();
+    const user   = document.getElementById('login-username').value.trim();
+    const role   = document.getElementById('login-role')?.value   || 'TEKNISI';
+    const region = document.getElementById('login-region')?.value || '';
+    const regionText = document.getElementById('login-region')?.selectedOptions[0]?.text || region;
+    const roleText   = document.getElementById('login-role')?.selectedOptions[0]?.text   || role;
 
-    if (!user || !pass) {
-        showToast("Username atau password tidak boleh kosong!", "warning");
+    if (!user) {
+        showToast("Username tidak boleh kosong!", "warning");
         return;
     }
 
-    try {
-        const formData = new URLSearchParams();
-        formData.append('username', user);
-        formData.append('password', pass);
+    // Single confirmation before proceeding
+    const confirmed = await customConfirm(
+        `Masuk sebagai "${user}"?\nRole: ${roleText}\nRegion: ${regionText}`
+    );
+    if (!confirmed) return;
 
+    try {
         const response = await fetch(`${API_BASE_URL}/login`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-            body: formData
+            headers: {
+                'Content-Type': 'application/json',
+                'ngrok-skip-browser-warning': 'true',
+            },
+            body: JSON.stringify({
+                username:        user,
+                role:            role,
+                assigned_region: region || null
+            })
         });
 
         if (!response.ok) {
             const err = await response.json();
-            let errorMessage = "Login gagal.";
-            if (Array.isArray(err.detail)) {
-                errorMessage = err.detail.map(e => e.msg).join(', ');
-            } else if (err.detail) {
-                errorMessage = err.detail;
-            }
-            throw new Error(errorMessage);
+            throw new Error(err.detail || "Login gagal.");
         }
 
         const data = await response.json();
-
         currentUser = user;
-        authToken = data.access_token;
+        authToken   = data.access_token;
         sessionStorage.setItem('activeUser', user);
-        sessionStorage.setItem('authToken', authToken);
+        sessionStorage.setItem('authToken',  authToken);
 
-        showToast(`Berhasil login sebagai ${user}`, 'success');
-
+        showToast(
+            data.already_existed
+                ? `Berhasil login sebagai ${user}!`
+                : `Akun "${user}" berhasil dibuat & login!`,
+            'success'
+        );
         document.getElementById('login-username').value = '';
-        document.getElementById('login-password').value = '';
+        document.getElementById('login-extra-fields').classList.add('hidden');
 
-        checkAuth();
-        setupWebSocket();
+        await checkAuth();
         fetchAsetFromServer();
+
     } catch (error) {
         showToast(error.message, 'error');
     }
@@ -201,14 +213,14 @@ function forceLogout(reloadPage = false) {
     authView.classList.remove('hidden');
 
     const u = document.getElementById('login-username');
-    const p = document.getElementById('login-password');
+    // const p = document.getElementById('login-password');
     if (u) u.value = '';
-    if (p) p.value = '';
+    // if (p) p.value = '';
 
     activeHistoryUid = null;
 
-    const navAdmin = document.getElementById('nav-user-management');
-    if (navAdmin) navAdmin.classList.add('hidden');
+    // const navAdmin = document.getElementById('nav-user-management');
+    // if (navAdmin) navAdmin.classList.add('hidden');
 
     if (window._wsHeartbeat) clearInterval(window._wsHeartbeat);
     if (window._ws && window._ws.readyState === WebSocket.OPEN) {
@@ -330,6 +342,9 @@ function switchView(viewId) {
     if (viewId === 'database' || viewId === 'history') {
         fetchAsetFromServer();
     }
+    if (viewId === 'masterdata') {
+
+    }
 }
 
 function setupEventListeners() {
@@ -339,10 +354,25 @@ function setupEventListeners() {
     });
 
     // Auth
+    // Disable region selector for SUPER_ADMIN role
     document.getElementById('btn-login')?.addEventListener('click', handleLogin);
     const triggerEnter = (e) => { if (e.key === 'Enter') handleLogin(); };
     document.getElementById('login-username')?.addEventListener('keypress', triggerEnter);
-    document.getElementById('login-password')?.addEventListener('keypress', triggerEnter);
+    // document.getElementById('login-password')?.addEventListener('keypress', triggerEnter);
+    document.getElementById('login-role')?.addEventListener('change', (e) => {
+        const regionSel = document.getElementById('login-region');
+        if (!regionSel) return;
+        if (e.target.value === 'SUPER_ADMIN') {
+            regionSel.disabled = true;
+            regionSel.innerHTML = '<option value="">Semua Region</option>';
+        } else {
+            regionSel.disabled = false;
+            // Re-populate from lokasiData since it may have been cleared
+            regionSel.innerHTML = lokasiData.map(l =>
+                `<option value="${l.code}">${l.name}</option>`
+            ).join('');
+        }
+    });
 
     // Sidebar & Theme
     document.getElementById('open-sidebar-btn')?.addEventListener('click', toggleSidebar);
@@ -353,6 +383,27 @@ function setupEventListeners() {
         localStorage.setItem('theme', html.classList.contains('dark') ? 'dark' : 'light');
     });
     document.getElementById('logout-btn')?.addEventListener('click', () => forceLogout(true));
+    document.getElementById('delete-account-btn')?.addEventListener('click', async () => {
+        const confirmed = await customConfirm(
+            `Apakah Anda yakin ingin menghapus akun "${currentUser}"? Tindakan ini tidak dapat dibatalkan.`
+        );
+        if (!confirmed) return;
+
+        // Second confirmation
+        const reconfirmed = await customConfirm(
+            `Konfirmasi terakhir: akun "${currentUser}" akan dihapus permanen dari sistem.`
+        );
+        if (!reconfirmed) return;
+
+        try {
+            const response = await apiFetch('/users/me', { method: 'DELETE' });
+            if (!response.ok) throw new Error("Gagal menghapus akun.");
+            showToast("Akun berhasil dihapus.", 'success');
+            setTimeout(() => forceLogout(true), 1500);
+        } catch (error) {
+            showToast(error.message, 'error');
+        }
+    });
 
     // Search & Filter
     document.getElementById('search-db')?.addEventListener('input', renderDbCards);
@@ -461,29 +512,6 @@ function setupEventListeners() {
         }
     });
 
-    document.getElementById('form-register-user')?.addEventListener('submit', async function(e) {
-        e.preventDefault();
-
-        const payload = {
-            username:        document.getElementById('reg-username').value.trim(),
-            password:        document.getElementById('reg-password').value.trim(),
-            role:            document.getElementById('reg-role').value,
-            assigned_region: document.getElementById('reg-region').value
-        };
-
-        try {
-            const response = await apiFetch('/users/create', { method: 'POST', body: JSON.stringify(payload) });
-            if (!response.ok) {
-                const err = await response.json();
-                throw new Error(err.detail || "Gagal membuat user");
-            }
-            showToast(`User ${payload.username} berhasil didaftarkan!`, 'success');
-            this.reset();
-        } catch (error) {
-            if (error.message !== "Unauthorized") showToast(error.message, 'error');
-        }
-    });
-
     // ── QR MODAL LISTENERS ───────────────────────────────────────────────────
 
     // Copy landing link to clipboard
@@ -525,10 +553,12 @@ function setupWebSocket() {
     if (window._wsHeartbeat) clearInterval(window._wsHeartbeat);
 
     const protocol = NGROK_BASE_URL ? 'wss' : 'ws';
-    const ws = new WebSocket(`${protocol}://${BACKEND_WS_HOST}/ws/updates`);
+    const wsUrl = `${protocol}://${BACKEND_WS_HOST}/ws/updates`;
+    const ws = new WebSocket(NGROK_BASE_URL ? `${wsUrl}?ngrok-skip-browser-warning=true` : wsUrl);
 
     ws.onopen = () => {
         console.log("WebSocket connected.");
+        _wsRetryCount = 0; // ← ADD THIS LINE
         window._wsHeartbeat = setInterval(() => {
             if (ws.readyState === WebSocket.OPEN) ws.send("ping");
         }, 25000);
@@ -539,12 +569,22 @@ function setupWebSocket() {
     };
 
     ws.onclose = () => {
-        console.log("WebSocket closed. Retrying in 3s...");
+        console.log("WebSocket closed.");
         clearInterval(window._wsHeartbeat);
-        setTimeout(setupWebSocket, 3000);
+        if (authToken && (!NGROK_BASE_URL || !_wsNgrokFailed)) {
+            console.log("Retrying in 3s...");
+            setTimeout(setupWebSocket, 3000);
+        }
     };
 
-    ws.onerror = () => ws.close();
+    ws.onerror = (event) => {
+        console.warn("WebSocket error:", event);
+        if (NGROK_BASE_URL && !_wsNgrokFailed) {
+            _wsNgrokFailed = true;
+            showToast("Ngrok tunnel tidak aktif. Pastikan ngrok berjalan sebelum menggunakan fitur live-sync.", "warning");
+        }
+        ws.close();
+    };
 
     window._ws = ws;
 }
@@ -606,7 +646,7 @@ window.openHistoryDetail = async (uid) => {
             tbody.innerHTML = history.map(h => `
                 <tr class="border-b dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50">
                     <td class="p-3">${h.no}</td>
-                    <td class="p-3">${h.date}</td>
+                    <td class="p-3">${formatUtcToLocal(h.date)}</td>
                     <td class="p-3">${h.upt}</td>
                     <td class="p-3">${h.teknisi}</td>
                     <td class="p-3 font-bold ${h.kondisi === 'SO' ? 'text-green-500' : 'text-red-500'}">${h.kondisi}</td>
@@ -664,10 +704,14 @@ function renderDbCards() {
                         class="flex-1 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 py-2 rounded font-bold hover:bg-blue-200 dark:hover:bg-blue-800 transition text-sm">
                         <i class="fas fa-edit"></i> UPDATE
                     </button>
+                    
+                    
                     <button onclick="window.openQrModal('${item.uid}')"
                         class="flex-1 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 py-2 rounded font-bold hover:bg-gray-200 dark:hover:bg-gray-600 transition text-sm">
                         <i class="fas fa-qrcode"></i> QR LABEL
                     </button>
+                    
+
                 </div>
             </div>
         `;
@@ -709,6 +753,352 @@ function renderHistoryCards() {
         `;
     });
 }
+
+// ── MASTER DATA UI ─────────────────────────────────────────────────────────
+
+// Tab switching
+document.querySelectorAll('.master-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+        const target = tab.dataset.tab;
+
+        // Update tab styles
+        document.querySelectorAll('.master-tab').forEach(t => {
+            t.classList.toggle('border-emerald-500', t.dataset.tab === target);
+            t.classList.toggle('text-emerald-600',   t.dataset.tab === target);
+            t.classList.toggle('dark:text-emerald-400', t.dataset.tab === target);
+            t.classList.toggle('border-transparent',  t.dataset.tab !== target);
+        });
+
+        // Show correct panel
+        document.querySelectorAll('.master-tab-panel').forEach(p => p.classList.add('hidden'));
+        document.getElementById(`master-tab-${target}`)?.classList.remove('hidden');
+
+        // Load data for the active tab
+        if (target === 'alat')   loadMasterAlat();
+        if (target === 'lokasi') loadMasterLokasi();
+        if (target === 'upt')    loadMasterUpt();
+    });
+});
+
+// Auto-open first tab when navigating to masterdata view
+const origSwitchView = switchView;
+// Monkey-patch switchView to trigger first tab on masterdata
+const _switchViewOrig = switchView;
+window._masterDataLoaded = false;
+
+// Override: when switching to masterdata, activate first tab
+document.querySelectorAll('.nav-btn').forEach(btn => {
+    if (btn.dataset.target === 'masterdata') {
+        btn.addEventListener('click', () => {
+            // Activate Alat tab by default
+            setTimeout(() => {
+                document.querySelector('.master-tab[data-tab="alat"]')?.click();
+            }, 50);
+        }, { once: false });
+    }
+});
+
+// ── LOAD FUNCTIONS ────────────────────────────────────────────────
+
+async function loadMasterAlat() {
+    const tbody = document.getElementById('table-alat');
+    if (!tbody) return;
+    tbody.innerHTML = `<tr><td colspan="4" class="px-4 py-6 text-center text-gray-400 text-sm"><i class="fas fa-spinner fa-spin mr-2"></i>Memuat...</td></tr>`;
+
+    try {
+        const res  = await apiFetch('/master/alat');
+        const data = await res.json();
+
+        if (!data.length) {
+            tbody.innerHTML = `<tr><td colspan="4" class="px-4 py-6 text-center text-gray-400 text-sm">Belum ada data alat.</td></tr>`;
+            return;
+        }
+
+        tbody.innerHTML = data.map(a => `
+            <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                <td class="px-4 py-3 font-mono font-bold text-blue-600 dark:text-blue-400">${a.kode}</td>
+                <td class="px-4 py-3 font-semibold">${a.nama}</td>
+                <td class="px-4 py-3 text-gray-500 text-xs">${a.deskripsi || '—'}</td>
+                <td class="px-4 py-3 text-right">
+                    <button onclick="window.openMasterEdit('alat','${a.kode}','${a.nama}','${a.deskripsi || ''}')"
+                        class="text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 px-3 py-1 rounded-lg font-bold hover:bg-blue-200 transition">
+                        <i class="fas fa-edit mr-1"></i>Edit
+                    </button>
+                </td>
+            </tr>
+        `).join('');
+    } catch (e) {
+        tbody.innerHTML = `<tr><td colspan="4" class="px-4 py-6 text-center text-red-400 text-sm">Gagal memuat data.</td></tr>`;
+    }
+}
+
+async function loadMasterLokasi() {
+    const tbody = document.getElementById('table-lokasi');
+    if (!tbody) return;
+    tbody.innerHTML = `<tr><td colspan="4" class="px-4 py-6 text-center text-gray-400 text-sm"><i class="fas fa-spinner fa-spin mr-2"></i>Memuat...</td></tr>`;
+
+    try {
+        const res  = await apiFetch('/master/lokasi');
+        const data = await res.json();
+
+        if (!data.length) {
+            tbody.innerHTML = `<tr><td colspan="4" class="px-4 py-6 text-center text-gray-400 text-sm">Belum ada data lokasi.</td></tr>`;
+            return;
+        }
+
+        tbody.innerHTML = data.map(l => `
+            <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                <td class="px-4 py-3 font-mono font-bold text-blue-600 dark:text-blue-400">${l.kode_lokasi}</td>
+                <td class="px-4 py-3 font-semibold">${l.nama_lokasi}</td>
+                <td class="px-4 py-3">
+                    <span class="text-xs px-2 py-0.5 rounded-full font-bold
+                        ${l.tipe_lokasi === 'DAOP'      ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300' :
+                          l.tipe_lokasi === 'DIVRE'     ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300' :
+                          l.tipe_lokasi === 'BALAIYASA' ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300' :
+                                                          'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300'}">
+                        ${l.tipe_lokasi}
+                    </span>
+                </td>
+                <td class="px-4 py-3 text-right">
+                    <button onclick="window.openMasterEdit('lokasi','${l.kode_lokasi}','${l.nama_lokasi}','${l.tipe_lokasi}')"
+                        class="text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 px-3 py-1 rounded-lg font-bold hover:bg-blue-200 transition">
+                        <i class="fas fa-edit mr-1"></i>Edit
+                    </button>
+                </td>
+            </tr>
+        `).join('');
+    } catch (e) {
+        tbody.innerHTML = `<tr><td colspan="4" class="px-4 py-6 text-center text-red-400 text-sm">Gagal memuat data.</td></tr>`;
+    }
+}
+
+async function loadMasterUpt() {
+    const tbody = document.getElementById('table-upt');
+    if (!tbody) return;
+    tbody.innerHTML = `<tr><td colspan="4" class="px-4 py-6 text-center text-gray-400 text-sm"><i class="fas fa-spinner fa-spin mr-2"></i>Memuat...</td></tr>`;
+
+    // Also populate the lokasi select in the add form
+    const lokasiSel = document.getElementById('new-upt-lokasi');
+    if (lokasiSel && lokasiData.length) {
+        lokasiSel.innerHTML = lokasiData.map(l =>
+            `<option value="${l.code}">${l.name} (${l.code})</option>`
+        ).join('');
+    }
+
+    try {
+        const res  = await apiFetch('/master/upt');
+        const data = await res.json();
+
+        if (!data.length) {
+            tbody.innerHTML = `<tr><td colspan="4" class="px-4 py-6 text-center text-gray-400 text-sm">Belum ada data UPT.</td></tr>`;
+            return;
+        }
+
+        tbody.innerHTML = data.map(u => `
+            <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                <td class="px-4 py-3 text-gray-400 text-xs font-mono">${u.id}</td>
+                <td class="px-4 py-3 font-semibold">${u.nama_upt}</td>
+                <td class="px-4 py-3 text-sm text-gray-500 font-mono">${u.kode_lokasi}</td>
+                <td class="px-4 py-3 text-right">
+                    <button onclick="window.openMasterEdit('upt',${u.id},'${u.nama_upt}','${u.kode_lokasi}')"
+                        class="text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 px-3 py-1 rounded-lg font-bold hover:bg-blue-200 transition">
+                        <i class="fas fa-edit mr-1"></i>Edit
+                    </button>
+                </td>
+            </tr>
+        `).join('');
+    } catch (e) {
+        tbody.innerHTML = `<tr><td colspan="4" class="px-4 py-6 text-center text-red-400 text-sm">Gagal memuat data.</td></tr>`;
+    }
+}
+
+// ── ADD FORMS ─────────────────────────────────────────────────────
+
+document.getElementById('form-add-alat')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const kode      = document.getElementById('new-alat-kode').value.trim().toUpperCase();
+    const nama      = document.getElementById('new-alat-nama').value.trim();
+    const deskripsi = document.getElementById('new-alat-deskripsi').value.trim();
+    if (!kode || !nama) return showToast('Kode dan Nama wajib diisi.', 'warning');
+
+    try {
+        const res = await apiFetch('/master/alat', { method: 'POST', body: JSON.stringify({ kode, nama, deskripsi: deskripsi || null }) });
+        if (!res.ok) { const err = await res.json(); throw new Error(err.detail); }
+        showToast('Alat berhasil ditambahkan.', 'success');
+        e.target.reset();
+        await loadMasterAlat();
+        await fetchMasterData(); // refresh dropdowns
+    } catch (err) {
+        showToast(err.message, 'error');
+    }
+});
+
+document.getElementById('form-add-lokasi')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const kode_lokasi = document.getElementById('new-lokasi-kode').value.trim().toUpperCase();
+    const nama_lokasi = document.getElementById('new-lokasi-nama').value.trim();
+    const tipe_lokasi = document.getElementById('new-lokasi-tipe').value;
+    if (!kode_lokasi || !nama_lokasi) return showToast('Kode dan Nama wajib diisi.', 'warning');
+
+    try {
+        const res = await apiFetch('/master/lokasi', { method: 'POST', body: JSON.stringify({ kode_lokasi, nama_lokasi, tipe_lokasi }) });
+        if (!res.ok) { const err = await res.json(); throw new Error(err.detail); }
+        showToast('Lokasi berhasil ditambahkan.', 'success');
+        e.target.reset();
+        await loadMasterLokasi();
+        await fetchMasterData();
+    } catch (err) {
+        showToast(err.message, 'error');
+    }
+});
+
+document.getElementById('form-add-upt')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const nama_upt    = document.getElementById('new-upt-nama').value.trim();
+    const kode_lokasi = document.getElementById('new-upt-lokasi').value;
+    if (!nama_upt || !kode_lokasi) return showToast('Nama UPT dan Lokasi wajib diisi.', 'warning');
+
+    try {
+        const res = await apiFetch('/master/upt', { method: 'POST', body: JSON.stringify({ nama_upt, kode_lokasi }) });
+        if (!res.ok) { const err = await res.json(); throw new Error(err.detail); }
+        showToast('UPT berhasil ditambahkan.', 'success');
+        e.target.reset();
+        await loadMasterUpt();
+        await fetchMasterData();
+    } catch (err) {
+        showToast(err.message, 'error');
+    }
+});
+
+// ── EDIT MODAL ────────────────────────────────────────────────────
+
+let _masterEditCtx = null; // { type, id, ... }
+
+window.openMasterEdit = (type, id, val1, val2) => {
+    _masterEditCtx = { type, id, val1, val2 };
+    const title  = document.getElementById('master-edit-title');
+    const fields = document.getElementById('master-edit-fields');
+
+    if (type === 'alat') {
+        title.textContent = `Edit Alat: ${id}`;
+        fields.innerHTML = `
+            <div>
+                <label class="block text-xs font-semibold mb-1">Nama Alat</label>
+                <input id="edit-field-nama" value="${val1}"
+                    class="consolas-input w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600">
+            </div>
+            <div>
+                <label class="block text-xs font-semibold mb-1">Deskripsi (opsional)</label>
+                <input id="edit-field-deskripsi" value="${val2}"
+                    class="w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600">
+            </div>
+        `;
+    } else if (type === 'lokasi') {
+        title.textContent = `Edit Lokasi: ${id}`;
+        fields.innerHTML = `
+            <div>
+                <label class="block text-xs font-semibold mb-1">Nama Lokasi</label>
+                <input id="edit-field-nama" value="${val1}"
+                    class="consolas-input w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600">
+            </div>
+            <div>
+                <label class="block text-xs font-semibold mb-1">Tipe</label>
+                <select id="edit-field-tipe" class="w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600">
+                    ${['DAOP','DIVRE','BALAIYASA','PUSAT'].map(t =>
+                        `<option value="${t}" ${val2 === t ? 'selected' : ''}>${t}</option>`
+                    ).join('')}
+                </select>
+            </div>
+        `;
+    } else if (type === 'upt') {
+        title.textContent = `Edit UPT #${id}`;
+        fields.innerHTML = `
+            <div>
+                <label class="block text-xs font-semibold mb-1">Nama UPT</label>
+                <input id="edit-field-nama" value="${val1}"
+                    class="consolas-input w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600">
+            </div>
+            <div>
+                <label class="block text-xs font-semibold mb-1">Lokasi</label>
+                <select id="edit-field-lokasi" class="w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600">
+                    ${lokasiData.map(l =>
+                        `<option value="${l.code}" ${val2 === l.code ? 'selected' : ''}>${l.name} (${l.code})</option>`
+                    ).join('')}
+                </select>
+            </div>
+        `;
+    }
+
+    document.getElementById('master-edit-modal').classList.remove('hidden');
+};
+
+document.getElementById('close-master-edit')?.addEventListener('click', () => {
+    document.getElementById('master-edit-modal').classList.add('hidden');
+    _masterEditCtx = null;
+});
+
+document.getElementById('btn-master-edit-save')?.addEventListener('click', async () => {
+    if (!_masterEditCtx) return;
+    const { type, id } = _masterEditCtx;
+
+    try {
+        let res;
+        if (type === 'alat') {
+            const nama      = document.getElementById('edit-field-nama').value.trim();
+            const deskripsi = document.getElementById('edit-field-deskripsi').value.trim();
+            res = await apiFetch(`/master/alat/${id}`, { method: 'PUT', body: JSON.stringify({ kode: id, nama, deskripsi: deskripsi || null }) });
+        } else if (type === 'lokasi') {
+            const nama_lokasi = document.getElementById('edit-field-nama').value.trim();
+            const tipe_lokasi = document.getElementById('edit-field-tipe').value;
+            res = await apiFetch(`/master/lokasi/${id}`, { method: 'PUT', body: JSON.stringify({ kode_lokasi: id, nama_lokasi, tipe_lokasi }) });
+        } else if (type === 'upt') {
+            const nama_upt    = document.getElementById('edit-field-nama').value.trim();
+            const kode_lokasi = document.getElementById('edit-field-lokasi').value;
+            res = await apiFetch(`/master/upt/${id}`, { method: 'PUT', body: JSON.stringify({ nama_upt, kode_lokasi }) });
+        }
+
+        if (!res.ok) { const err = await res.json(); throw new Error(err.detail); }
+        showToast('Data berhasil diperbarui.', 'success');
+        document.getElementById('master-edit-modal').classList.add('hidden');
+        _masterEditCtx = null;
+
+        if (type === 'alat')   { await loadMasterAlat();   await fetchMasterData(); }
+        if (type === 'lokasi') { await loadMasterLokasi(); await fetchMasterData(); }
+        if (type === 'upt')    { await loadMasterUpt();    await fetchMasterData(); }
+
+    } catch (err) {
+        showToast(err.message, 'error');
+    }
+});
+
+document.getElementById('btn-master-edit-deactivate')?.addEventListener('click', async () => {
+    if (!_masterEditCtx) return;
+    const { type, id, val1 } = _masterEditCtx;
+
+    const confirmed = await customConfirm(
+        `Nonaktifkan "${val1}"?\n\nData yang sudah menggunakan referensi ini tidak akan terpengaruh, tapi tidak bisa dipilih untuk entri baru.`
+    );
+    if (!confirmed) return;
+
+    try {
+        let res;
+        if (type === 'alat')   res = await apiFetch(`/master/alat/${id}`,   { method: 'DELETE' });
+        if (type === 'lokasi') res = await apiFetch(`/master/lokasi/${id}`,  { method: 'DELETE' });
+        if (type === 'upt')    res = await apiFetch(`/master/upt/${id}`,     { method: 'DELETE' });
+
+        if (!res.ok) { const err = await res.json(); throw new Error(err.detail); }
+        showToast('Data berhasil dinonaktifkan.', 'success');
+        document.getElementById('master-edit-modal').classList.add('hidden');
+        _masterEditCtx = null;
+
+        if (type === 'alat')   { await loadMasterAlat();   await fetchMasterData(); }
+        if (type === 'lokasi') { await loadMasterLokasi(); await fetchMasterData(); }
+        if (type === 'upt')    { await loadMasterUpt();    await fetchMasterData(); }
+
+    } catch (err) {
+        showToast(err.message, 'error');
+    }
+});
 
 // ── QR MODAL ───────────────────────────────────────────────────────────────
 
@@ -993,4 +1383,28 @@ function customConfirm(message) {
             resolve(true);
         };
     });
+}
+
+/**
+ * Convert a UTC datetime string from the server to the user's local time.
+ * Input:  "2025-07-16 08:30:00"  (UTC, as returned by strftime in main.py)
+ * Output: "16 Juli 2025 15:30:00" (local, formatted in Indonesian)
+ */
+function formatUtcToLocal(utcStr) {
+    if (!utcStr) return '—';
+    // Replace space with 'T' and append 'Z' so the browser parses it as UTC
+    const date = new Date(utcStr.replace(' ', 'T') + 'Z');
+    if (isNaN(date)) return utcStr; // fallback if unparseable
+
+    const bulan = [
+        'Januari','Februari','Maret','April','Mei','Juni',
+        'Juli','Agustus','September','Oktober','November','Desember'
+    ];
+    const d = date.getDate();
+    const m = bulan[date.getMonth()];
+    const y = date.getFullYear();
+    const hh = String(date.getHours()).padStart(2, '0');
+    const mm = String(date.getMinutes()).padStart(2, '0');
+    const ss = String(date.getSeconds()).padStart(2, '0');
+    return `${d} ${m} ${y} ${hh}:${mm}:${ss}`;
 }

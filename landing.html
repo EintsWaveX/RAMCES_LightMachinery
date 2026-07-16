@@ -6,6 +6,13 @@
     <title>SIMA-KAI | Kartu Aset</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
+        (function () {
+            const saved = localStorage.getItem('theme');
+            const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+            if (saved === 'dark' || (!saved && prefersDark)) {
+                document.documentElement.classList.add('dark');
+            }
+        })();
         tailwind.config = {
             darkMode: 'class',
             theme: { extend: { fontFamily: { mono: ['Consolas', 'Monaco', 'monospace'] } } }
@@ -43,23 +50,53 @@
             animation: pulse-ring 1.4s ease-out infinite;
         }
         .pulse-dot { position: relative; }
+
+        /* Dark-mode support for additional widgets */
+        .dark #section-form,
+        .dark #section-history {
+            background-color: #111827;
+            border-color: #374151;
+        }
+        .dark #section-form .border-gray-100 {
+            border-color: #374151;
+        }
+        .dark #section-form input,
+        .dark #section-form textarea {
+            background-color: #1f2937;
+            border-color: #374151;
+            color: #e5e7eb;
+        }
+        .dark #section-form input::placeholder,
+        .dark #section-form textarea::placeholder {
+            color: #9ca3af;
+        }
+        .dark #section-history .text-gray-400 {
+            color: #9ca3af;
+        }
+        .dark #section-history .text-gray-700,
+        .dark #asset-error .text-gray-700 {
+            color: #e5e7eb;
+        }
+        .dark #asset-error .text-gray-500 {
+            color: #9ca3af;
+        }
     </style>
 </head>
 
-<body class="bg-gray-50 min-h-screen flex flex-col items-center pb-12">
+<body class="bg-gray-50 dark:bg-gray-900 min-h-screen flex flex-col items-center pb-12">
 
     <!-- ── HEADER ──────────────────────────────────────────── -->
-    <header class="w-full bg-white border-b border-gray-200 shadow-sm sticky top-0 z-10">
+    <header class="w-full bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 shadow-sm sticky top-0 z-10">
         <div class="max-w-lg mx-auto px-4 py-3 flex items-center gap-3">
             <i class="fas fa-train text-blue-600 text-xl"></i>
             <div>
                 <p class="text-xs text-gray-400 leading-none">PT Kereta Api Indonesia</p>
-                <h1 class="text-sm font-bold text-gray-800 leading-tight">SIMA-KAI &mdash; Kartu Aset</h1>
+                <h1 class="text-sm font-bold text-gray-800 dark:text-gray-100 leading-tight">SIMA-KAI &mdash; Kartu Aset</h1>
             </div>
             <!-- Login shortcut for staff -->
             <a href="index.html"
                class="ml-auto text-xs text-blue-600 font-semibold flex items-center gap-1 hover:underline">
-                <i class="fas fa-sign-in-alt"></i> Login Sistem
+                <i class="fas fa-sign-in-alt"></i> Akses ke SIMA-KAI
             </a>
         </div>
     </header>
@@ -68,7 +105,7 @@
     <main class="w-full max-w-lg px-4 mt-6 space-y-4" id="main-content">
 
         <!-- Asset identity card -->
-        <div class="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden" id="asset-card">
+        <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 overflow-hidden" id="asset-card">
 
             <!-- Top colour strip — changes with status -->
             <div class="h-1.5 w-full" id="status-strip"></div>
@@ -86,8 +123,8 @@
                 <div class="flex justify-between items-start gap-2">
                     <div class="min-w-0">
                         <p class="text-xs text-gray-400 font-mono mb-1" id="info-uid">—</p>
-                        <h2 class="text-lg font-black font-mono text-gray-800 break-all leading-tight" id="info-kode-id">—</h2>
-                        <p class="text-sm text-gray-600 mt-1" id="info-alat">—</p>
+                        <h2 class="text-lg font-black font-mono text-gray-800 dark:text-gray-100 break-all leading-tight" id="info-kode-id">—</h2>
+                        <p class="text-sm text-gray-600 dark:text-gray-400 mt-1" id="info-alat">—</p>
                     </div>
                     <!-- Status badge -->
                     <span id="info-status-badge"
@@ -101,19 +138,19 @@
                 <dl class="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 text-sm border-t border-gray-100 pt-4">
                     <div>
                         <dt class="text-xs text-gray-400 uppercase tracking-wide">Lokasi</dt>
-                        <dd class="font-semibold text-gray-700 mt-0.5" id="info-lokasi">—</dd>
+                        <dd class="font-semibold text-gray-700 dark:text-gray-300 mt-0.5" id="info-lokasi">—</dd>
                     </div>
                     <div>
                         <dt class="text-xs text-gray-400 uppercase tracking-wide">Unit</dt>
-                        <dd class="font-semibold text-gray-700 mt-0.5" id="info-unit">—</dd>
+                        <dd class="font-semibold text-gray-700 dark:text-gray-300 mt-0.5" id="info-unit">—</dd>
                     </div>
                     <div>
                         <dt class="text-xs text-gray-400 uppercase tracking-wide">Tahun Pengadaan</dt>
-                        <dd class="font-semibold text-gray-700 mt-0.5" id="info-tahun">—</dd>
+                        <dd class="font-semibold text-gray-700 dark:text-gray-300 mt-0.5" id="info-tahun">—</dd>
                     </div>
                     <div>
                         <dt class="text-xs text-gray-400 uppercase tracking-wide">Pemeriksaan Terakhir</dt>
-                        <dd class="font-semibold text-gray-700 mt-0.5" id="info-last-updated">Belum ada</dd>
+                        <dd class="font-semibold text-gray-700 dark:text-gray-300 mt-0.5" id="info-last-updated">Belum ada</dd>
                     </div>
                 </dl>
 
@@ -145,7 +182,7 @@
         <!-- ── INLINE REPAIR FORM (collapsed by default) ─── -->
         <div id="section-form" class="hidden bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
             <div class="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-                <h3 class="font-bold text-gray-800 flex items-center gap-2">
+                <h3 class="font-bold text-gray-800 dark:text-gray-100 flex items-center gap-2">
                     <i class="fas fa-tools text-blue-500"></i> Form Perbaikan
                 </h3>
                 <button id="close-form" class="text-gray-400 hover:text-red-500 text-lg">
@@ -158,7 +195,7 @@
                 <i class="fas fa-lock text-3xl text-gray-300"></i>
                 <p class="text-sm text-gray-600">Untuk mencatat perbaikan, masuk terlebih dahulu.</p>
                 <a href="index.html"
-                   class="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold px-5 py-2.5 rounded-xl transition text-sm">
+                class="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold px-5 py-2.5 rounded-xl transition text-sm">
                     <i class="fas fa-sign-in-alt"></i> Masuk ke SIMA-KAI
                 </a>
                 <p class="text-xs text-gray-400">Setelah login, buka kembali QR ini untuk melanjutkan.</p>
@@ -171,18 +208,34 @@
                     <div class="col-span-2">
                         <label class="block text-xs font-semibold text-gray-500 mb-1">Tanggal Perbaikan</label>
                         <input type="date" id="form-tanggal" required
-                               class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-400 focus:outline-none">
+                            class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-400 focus:outline-none">
                     </div>
                     <div class="col-span-2">
                         <label class="block text-xs font-semibold text-gray-500 mb-1">Nama Teknisi</label>
                         <input type="text" id="form-teknisi" required placeholder="Nama lengkap"
-                               class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-400 focus:outline-none">
+                            class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-400 focus:outline-none">
+                    </div>
+                    <!-- NEW: Lokasi Perbaikan -->
+                    <div class="col-span-2">
+                        <label class="block text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1">Lokasi Perbaikan</label>
+                        <select id="form-lokasi" required
+                                class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-400 focus:outline-none dark:bg-gray-800 dark:border-gray-600 dark:text-gray-100">
+                            <option value="">Pilih Lokasi Perbaikan...</option>
+                        </select>
+                    </div>
+                    <!-- NEW: UPT Pengirim -->
+                    <div class="col-span-2">
+                        <label class="block text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1">UPT Pengirim</label>
+                        <select id="form-upt" required
+                                class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-400 focus:outline-none dark:bg-gray-800 dark:border-gray-600 dark:text-gray-100">
+                            <option value="">Pilih Lokasi Perbaikan Dahulu...</option>
+                        </select>
                     </div>
                 </div>
 
                 <!-- Kondisi buttons -->
                 <div>
-                    <label class="block text-xs font-semibold text-gray-500 mb-2">Kondisi Setelah Perbaikan</label>
+                    <label class="block text-xs font-semibold text-gray-500 mb-2">Kondisi Alat Kerja</label>
                     <div class="flex gap-3">
                         <button type="button" data-status="SO"
                                 class="landing-status-btn flex-1 py-2.5 rounded-xl font-bold text-sm border-2 border-green-400 text-green-600 hover:bg-green-50 transition">
@@ -199,7 +252,7 @@
                 <div>
                     <label class="block text-xs font-semibold text-gray-500 mb-1">Keterangan</label>
                     <textarea id="form-keterangan" rows="3" placeholder="Uraian singkat perbaikan yang dilakukan..."
-                              class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-400 focus:outline-none resize-none"></textarea>
+                            class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-400 focus:outline-none resize-none"></textarea>
                 </div>
 
                 <button type="submit" id="btn-submit-repair"
@@ -212,7 +265,7 @@
         <!-- ── HISTORY CARD (collapsed by default) ────────── -->
         <div id="section-history" class="hidden bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
             <div class="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-                <h3 class="font-bold text-gray-800 flex items-center gap-2">
+                <h3 class="font-bold text-gray-800 dark:text-gray-100 flex items-center gap-2">
                     <i class="fas fa-history text-purple-500"></i> History Card
                 </h3>
                 <button id="close-history" class="text-gray-400 hover:text-red-500 text-lg">
@@ -246,6 +299,9 @@
 
     const UNIT_LABELS = { A: 'Jalan Rel', B: 'Jembatan', C: 'Mekanik', D: 'Balaiyasa' };
 
+    let lokasiData = [];
+    let uptDatabase = [];
+
     // ──────────────────────────────────────────────────────────────
     // HELPERS
     // ──────────────────────────────────────────────────────────────
@@ -264,13 +320,241 @@
         _toastTimer = setTimeout(() => t.classList.add('hidden'), 3500);
     }
 
+    // ── NEW: Fetch master data for dropdowns ────────────────────
+    async function fetchMasterData() {
+        try {
+            const [lokasiRes, uptRes] = await Promise.all([
+                fetch(`${API_BASE}/master/lokasi`),
+                fetch(`${API_BASE}/master/upt`),
+            ]);
+
+            if (lokasiRes.ok) {
+                const data = await lokasiRes.json();
+                lokasiData = data.map(l => ({ name: l.nama_lokasi, code: l.kode_lokasi }));
+                populateLokasiDropdown();
+            }
+            if (uptRes.ok) {
+                const data = await uptRes.json();
+                uptDatabase = data.map(u => ({ upt: u.nama_upt, lokasi: u.kode_lokasi }));
+            }
+        } catch (e) {
+            console.warn('Gagal memuat data master untuk dropdown:', e);
+        }
+    }
+
+    // ── NEW: Populate Lokasi dropdown ────────────────────────────
+    function populateLokasiDropdown() {
+        const sel = document.getElementById('form-lokasi');
+        if (!sel) return;
+        sel.innerHTML = '<option value="">Pilih Lokasi Perbaikan...</option>' +
+            lokasiData.map(l => `<option value="${l.code}">${l.name}</option>`).join('');
+    }
+
+    // ── NEW: Update UPT dropdown based on selected lokasi ────────
+    function updateUptDropdown(lokasiCode) {
+        const uptSelect = document.getElementById('form-upt');
+        if (!uptSelect) return;
+
+        if (!lokasiCode) {
+            uptSelect.innerHTML = '<option value="">Pilih Lokasi Perbaikan Dahulu...</option>';
+            return;
+        }
+
+        const matches = uptDatabase.filter(u => u.lokasi === lokasiCode);
+        if (matches.length > 0) {
+            uptSelect.innerHTML = '<option value="">Pilih UPT...</option>' +
+                matches.map(m => `<option value="${m.upt}">${m.upt}</option>`).join('');
+        } else {
+            uptSelect.innerHTML = '<option value="Lainnya">Lainnya / Tidak ada data UPT</option>';
+        }
+    }
+
     // ──────────────────────────────────────────────────────────────
     // READ UID FROM URL
     // ──────────────────────────────────────────────────────────────
     const params = new URLSearchParams(window.location.search);
-    const uid    = params.get('uid');
+    const uid = params.get('uid');
 
-    if (!uid) {
+    // Gate: must be logged in before showing asset data
+    const _token = sessionStorage.getItem('authToken');
+    const _username = sessionStorage.getItem('activeUser');
+
+    if (!_token || !_username) {
+        // Not logged in — replace entire page content with login form
+        document.getElementById('main-content').innerHTML = `
+            <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 p-8 space-y-4">
+                <div class="text-center space-y-2">
+                    <i class="fas fa-lock text-4xl text-gray-300"></i>
+                    <h2 class="text-lg font-bold text-gray-700 dark:text-gray-100">Login Diperlukan</h2>
+                    <p class="text-sm text-gray-500 dark:text-gray-400">Masuk terlebih dahulu untuk melihat kartu aset ini.</p>
+                </div>
+                <div class="space-y-3 text-left pt-2">
+                    <input type="text" id="gate-username" placeholder="Username"
+                        class="w-full border dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-blue-400 focus:outline-none">
+
+                    <div id="gate-extra-fields" class="hidden space-y-3">
+                        <select id="gate-role"
+                            class="w-full border dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-blue-400 focus:outline-none">
+                            <option value="TEKNISI">TEKNISI (Laporan Lapangan)</option>
+                            <option value="ADMIN_DAOP">ADMIN DAOP (Manajemen Wilayah)</option>
+                            <option value="SUPER_ADMIN">SUPER ADMIN</option>
+                        </select>
+                        <select id="gate-region"
+                            class="w-full border dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-blue-400 focus:outline-none">
+                            <option value="">Memuat region...</option>
+                        </select>
+                        <p class="text-xs text-yellow-600 dark:text-yellow-400 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg p-2">
+                            <i class="fas fa-info-circle mr-1"></i>
+                            Mohon untuk melengkapi data di atas untuk mendaftar/masuk otomatis.
+                        </p>
+                    </div>
+
+                    <button id="gate-login-btn"
+                        class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 rounded-xl transition text-sm flex items-center justify-center gap-2">
+                        <i class="fas fa-sign-in-alt"></i> Masuk
+                    </button>
+                    <p id="gate-error" class="text-xs text-red-500 text-center hidden"></p>
+                </div>
+            </div>
+        `;
+
+        // Fetch regions for the dropdown
+        fetch(`${API_BASE}/master/lokasi`)
+            .then(r => r.ok ? r.json() : [])
+            .then(data => {
+                const sel = document.getElementById('gate-region');
+                if (sel && data.length) {
+                    sel.innerHTML = data.map(l =>
+                        `<option value="${l.kode_lokasi}">${l.nama_lokasi}</option>`
+                    ).join('');
+                }
+            })
+            .catch(() => { });
+
+        // Show extra fields on blur if username has value
+        document.getElementById('gate-username').addEventListener('blur', () => {
+            const username = document.getElementById('gate-username').value.trim();
+            const extra = document.getElementById('gate-extra-fields');
+            if (username) extra.classList.remove('hidden');
+            else extra.classList.add('hidden');
+        });
+
+        document.getElementById('gate-role')?.addEventListener('change', (e) => {
+            const regionSel = document.getElementById('gate-region');
+            if (!regionSel) return;
+            if (e.target.value === 'SUPER_ADMIN') {
+                regionSel.disabled = true;
+                regionSel.innerHTML = '<option value="">Semua Region</option>';
+            } else {
+                regionSel.disabled = false;
+                fetch(`${API_BASE}/master/lokasi`)
+                    .then(r => r.ok ? r.json() : [])
+                    .then(data => {
+                        regionSel.innerHTML = data.map(l =>
+                            `<option value="${l.kode_lokasi}">${l.nama_lokasi}</option>`
+                        ).join('');
+                    })
+                    .catch(() => { });
+            }
+        });
+
+        // Shared login handler
+        async function gateLogin() {
+            const username = document.getElementById('gate-username').value.trim();
+            const role = document.getElementById('gate-role')?.value || 'TEKNISI';
+            const region = document.getElementById('gate-region')?.value || '';
+            const regionText = document.getElementById('gate-region')?.selectedOptions[0]?.text || region;
+            const roleText = document.getElementById('gate-role')?.selectedOptions[0]?.text || role;
+            const errEl = document.getElementById('gate-error');
+
+            if (!username) {
+                errEl.textContent = 'Isi username terlebih dahulu.';
+                errEl.classList.remove('hidden');
+                return;
+            }
+
+            // Single confirmation modal
+            const confirmBox = document.createElement('div');
+            confirmBox.className = 'fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4';
+            confirmBox.innerHTML = `
+                <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-6 w-full max-w-sm space-y-4 border border-gray-200 dark:border-gray-700">
+                    <h3 class="font-bold text-gray-800 dark:text-gray-100 flex items-center gap-2">
+                        <i class="fas fa-sign-in-alt text-blue-500"></i> Konfirmasi Login
+                    </h3>
+                    <div class="text-sm text-gray-600 dark:text-gray-400 space-y-1 bg-gray-50 dark:bg-gray-700 rounded-xl p-3">
+                        <p><span class="font-semibold text-gray-700 dark:text-gray-300">Username:</span> ${username}</p>
+                        <p><span class="font-semibold text-gray-700 dark:text-gray-300">Role:</span> ${roleText}</p>
+                        <p><span class="font-semibold text-gray-700 dark:text-gray-300">Region:</span> ${regionText || '—'}</p>
+                    </div>
+                    <div class="flex gap-3">
+                        <button id="gate-confirm-cancel"
+                            class="flex-1 py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-xl font-bold text-sm hover:bg-gray-300 dark:hover:bg-gray-600 transition">
+                            Batal
+                        </button>
+                        <button id="gate-confirm-ok"
+                            class="flex-1 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-sm transition">
+                            Masuk
+                        </button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(confirmBox);
+
+            const proceed = await new Promise(resolve => {
+                document.getElementById('gate-confirm-ok').onclick = () => { document.body.removeChild(confirmBox); resolve(true); };
+                document.getElementById('gate-confirm-cancel').onclick = () => { document.body.removeChild(confirmBox); resolve(false); };
+            });
+            if (!proceed) return;
+
+            const btn = document.getElementById('gate-login-btn');
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Masuk...';
+            btn.disabled = true;
+            errEl.classList.add('hidden');
+
+            try {
+                const res = await fetch(`${API_BASE}/login`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'ngrok-skip-browser-warning': 'true'
+                    },
+                    body: JSON.stringify({
+                        username: username,
+                        role: role,
+                        assigned_region: region || null
+                    })
+                });
+                if (!res.ok) {
+                    const e = await res.json().catch(() => ({}));
+                    throw new Error(e.detail || 'Login gagal.');
+                }
+                const data = await res.json();
+                sessionStorage.setItem('authToken', data.access_token);
+                sessionStorage.setItem('activeUser', username);
+
+                showToast(
+                    data.already_existed
+                        ? `Berhasil login sebagai ${username}!`
+                        : `Akun "${username}" berhasil dibuat & login!`,
+                    'success'
+                );
+
+                setTimeout(() => window.location.reload(), 1000);
+
+            } catch (e) {
+                errEl.textContent = e.message;
+                errEl.classList.remove('hidden');
+                btn.innerHTML = '<i class="fas fa-sign-in-alt"></i> Masuk';
+                btn.disabled = false;
+            }
+        }
+
+        document.getElementById('gate-login-btn').addEventListener('click', gateLogin);
+        document.getElementById('gate-username').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') gateLogin();
+        });
+
+    } else if (!uid) {
         showError('Parameter UID tidak ada di URL. Pastikan QR code dipindai dengan benar.');
     } else {
         loadAsset(uid);
@@ -313,10 +597,17 @@
         qs('#info-lokasi').textContent   = data.lokasi;
         qs('#info-unit').textContent     = UNIT_LABELS[data.unit_peruntukan] || data.unit_peruntukan || '—';
         qs('#info-tahun').textContent    = data.tahun_pembelian ? `${data.tahun_pembelian + 2000}` : '—';
-        qs('#info-last-updated').textContent = data.last_updated || 'Belum ada catatan';
+        qs('#info-last-updated').textContent = data.last_updated
+            ? formatUtcToLocal(data.last_updated)
+            : 'Belum ada catatan';
 
         if (data.last_teknisi) {
             qs('#info-last-teknisi').textContent = `Teknisi terakhir: ${data.last_teknisi}`;
+            // const mutasiEl = document.getElementById('info-last-mutasi');
+            // if (data.last_mutasi && mutasiEl) {
+            //     mutasiEl.textContent = `Dimutasi: ${data.last_mutasi.dari} → ${data.last_mutasi.ke} (${formatUtcToLocal(data.last_mutasi.waktu)})`;
+            //     mutasiEl.parentElement.classList.remove('hidden');
+            // }
         }
 
         // Status badge
@@ -351,6 +642,18 @@
             // Pre-fill technician from session
             const savedUser = sessionStorage.getItem('activeUser');
             if (savedUser) qs('#form-teknisi').value = savedUser;
+
+            // ── NEW: Fetch master data for dropdowns ──
+            fetchMasterData();
+
+            // ── NEW: Add event listener for Lokasi change ──
+            const lokasiSelect = document.getElementById('form-lokasi');
+            if (lokasiSelect) {
+                lokasiSelect.addEventListener('change', (e) => {
+                    const locCode = e.target.value;
+                    updateUptDropdown(locCode);
+                });
+            }
         }
     }
 
@@ -414,34 +717,56 @@
         e.preventDefault();
 
         const kondisi = qs('#form-kondisi').value;
+        const lokasi = qs('#form-lokasi').value;
+        const upt = qs('#form-upt').value;
+        const teknisi = qs('#form-teknisi').value.trim();
+
+        // Validate all required fields
         if (!kondisi) {
             showToast('Pilih kondisi alat (SO / TSO) terlebih dahulu.', 'warning');
             return;
         }
 
-        const token   = sessionStorage.getItem('authToken');
-        const payload = {
-            aset_uid:         qs('#form-uid').value,
-            tanggal_perbaikan: qs('#form-tanggal').value,
-            teknisi:          qs('#form-teknisi').value.trim(),
-            status_baru:      kondisi,
-            keterangan:       qs('#form-keterangan').value.trim() || '—',
-        };
+        if (!lokasi) {
+            showToast('Pilih Lokasi Perbaikan terlebih dahulu.', 'warning');
+            return;
+        }
 
-        if (!payload.teknisi) {
+        if (!upt) {
+            showToast('Pilih UPT Pengirim terlebih dahulu.', 'warning');
+            return;
+        }
+
+        if (!teknisi) {
             showToast('Isi nama teknisi terlebih dahulu.', 'warning');
             return;
         }
 
+        const token = sessionStorage.getItem('authToken');
+        if (!token) {
+            showToast('Sesi habis. Silakan login ulang.', 'error');
+            return;
+        }
+
+        const payload = {
+            aset_uid: qs('#form-uid').value,
+            tanggal_perbaikan: qs('#form-tanggal').value,
+            lokasi_perbaikan: lokasi,
+            upt_perbaikan: upt,
+            teknisi: teknisi,
+            status_baru: kondisi,
+            keterangan: qs('#form-keterangan').value.trim() || '—',
+        };
+
         const btn = qs('#btn-submit-repair');
         btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Menyimpan...';
-        btn.disabled  = true;
+        btn.disabled = true;
 
         try {
             const res = await fetch(`${API_BASE}/perbaikan`, {
-                method:  'POST',
+                method: 'POST',
                 headers: {
-                    'Content-Type':  'application/json',
+                    'Content-Type': 'application/json',
                     'Authorization': `Bearer ${token}`
                 },
                 body: JSON.stringify(payload)
@@ -457,21 +782,36 @@
             }
 
             showToast('Laporan perbaikan berhasil disimpan!', 'success');
+            
             qs('#repair-form').reset();
             qs('#form-kondisi').value = '';
+            document.querySelectorAll('.landing-status-btn').forEach(b => {
+                b.classList.remove('bg-green-100', 'bg-red-100', 'opacity-50');
+            })
+
+            // Reset dropdowns to default state
+            const lokasiSelect = document.getElementById('form-lokasi');
+            if (lokasiSelect) {
+                lokasiSelect.value = '';
+            }
+            const uptSelect = document.getElementById('form-upt');
+            if (uptSelect) {
+                uptSelect.innerHTML = '<option value="">Pilih Lokasi Perbaikan Dahulu...</option>';
+            }
+
             document.querySelectorAll('.landing-status-btn').forEach(b => {
                 b.classList.remove('bg-green-100', 'bg-red-100', 'opacity-50');
             });
 
             // Refresh asset card and history
-            loadAsset(uid);
+            await loadAsset(uid);
             qs('#section-form').classList.add('hidden');
 
         } catch (err) {
             showToast(err.message, 'error');
         } finally {
             btn.innerHTML = '<i class="fas fa-save"></i> Simpan Laporan';
-            btn.disabled  = false;
+            btn.disabled = false;
         }
     });
 
@@ -499,7 +839,7 @@
                     </div>
                     <div class="flex-1 min-w-0">
                         <div class="flex justify-between items-start gap-2">
-                            <span class="text-xs text-gray-400">${h.date}</span>
+                            <span class="text-xs text-gray-400">${formatUtcToLocal(h.date)}</span>
                             <span class="text-xs font-bold px-2 py-0.5 rounded-full ${h.kondisi === 'SO' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}">
                                 ${h.kondisi}
                             </span>
@@ -514,6 +854,24 @@
         } catch (e) {
             body.innerHTML = `<div class="p-6 text-center text-red-400 text-sm">Gagal memuat riwayat: ${e.message}</div>`;
         }
+    }
+
+    function formatUtcToLocal(utcStr) {
+        if (!utcStr) return '—';
+        const date = new Date(utcStr.replace(' ', 'T') + 'Z');
+        if (isNaN(date)) return utcStr;
+
+        const bulan = [
+            'Januari','Februari','Maret','April','Mei','Juni',
+            'Juli','Agustus','September','Oktober','November','Desember'
+        ];
+        const d  = date.getDate();
+        const m  = bulan[date.getMonth()];
+        const y  = date.getFullYear();
+        const hh = String(date.getHours()).padStart(2, '0');
+        const mm = String(date.getMinutes()).padStart(2, '0');
+        const ss = String(date.getSeconds()).padStart(2, '0');
+        return `${d} ${m} ${y} ${hh}:${mm}:${ss}`;
     }
     </script>
 </body>
