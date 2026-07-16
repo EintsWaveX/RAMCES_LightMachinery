@@ -10,6 +10,7 @@ let alatKerjaData = [];
 let lokasiData    = [];
 let uptDatabase   = [];
 
+let _currentRole = '';  // set in checkAuth, used by renderDbCards for mutasi button visibility
 let _wsNgrokFailed = false;
 let _wsRetryCount = 0;
 
@@ -110,6 +111,8 @@ async function checkAuth() {
         const payload = getJwtPayload(authToken);
         const role = payload ? payload.role : 'TEKNISI';
 
+        _currentRole = role;
+
         document.getElementById('auth-view').classList.add('hidden');
         document.getElementById('main-app').classList.remove('hidden');
         document.getElementById('current-username').innerText = currentUser;
@@ -181,8 +184,8 @@ async function handleLogin() {
 
         showToast(
             data.already_existed
-                ? `Berhasil login sebagai ${user}!`
-                : `Akun "${user}" berhasil dibuat & login!`,
+                ? `Berhasil masuk sebagai ${user}!`
+                : `Berhasil membuat akun dan masuk sebagai "${user}"!`,
             'success'
         );
         document.getElementById('login-username').value = '';
@@ -276,12 +279,17 @@ async function fetchAsetFromServer() {
         updateDashboardStats();
         if (!document.getElementById('view-database').classList.contains('hidden')) renderDbCards();
         if (!document.getElementById('view-history').classList.contains('hidden')) renderHistoryCards();
+        if (!document.getElementById('view-history').classList.contains('hidden')) {
+            loadHistorySummary().then(() => {
+                if (_historyMode === 'mutasi') renderMutasiCards();
+            });
+        }
 
         if (activeHistoryUid && !document.getElementById('view-history-detail').classList.contains('hidden')) {
             window.openHistoryDetail(activeHistoryUid);
         }
     } catch (error) {
-        showToast("Koneksi ke server gagal", 'error');
+        showToast("Koneksi ke server gagal! Mencoba menghubungkan kembali...", 'error');
     }
 }
 
@@ -339,11 +347,20 @@ function switchView(viewId) {
         else btn.classList.remove('bg-gray-200', 'dark:bg-gray-700');
     });
 
+    if (viewId === 'masterdata') {
+        // Populate master data tables.
+    }
     if (viewId === 'database' || viewId === 'history') {
         fetchAsetFromServer();
     }
-    if (viewId === 'masterdata') {
-
+    if (viewId === 'history') {
+        loadHistorySummary().then(() => {
+            if (_historyMode === 'repair') renderHistoryCards();
+            else renderMutasiCards();
+        });
+    }
+    if (viewId === 'laporan') {
+        initLaporanView();
     }
 }
 
@@ -377,6 +394,7 @@ function setupEventListeners() {
     // Sidebar & Theme
     document.getElementById('open-sidebar-btn')?.addEventListener('click', toggleSidebar);
     document.getElementById('close-sidebar-btn')?.addEventListener('click', toggleSidebar);
+    document.getElementById('sidebar-overlay')?.addEventListener('click', toggleSidebar);
     document.getElementById('theme-toggle-btn')?.addEventListener('click', () => {
         const html = document.documentElement;
         html.classList.toggle('dark');
@@ -513,7 +531,7 @@ function setupEventListeners() {
     });
 
     // ── QR MODAL LISTENERS ───────────────────────────────────────────────────
-
+    
     // Copy landing link to clipboard
     document.getElementById('btn-copy-link')?.addEventListener('click', async () => {
         const linkText = document.getElementById('qr-landing-link-text')?.textContent;
@@ -539,12 +557,87 @@ function setupEventListeners() {
     document.getElementById('qr-modal')?.addEventListener('click', (e) => {
         if (e.target === document.getElementById('qr-modal')) closeQrModal();
     });
-
+    
     // Download PNG
     document.getElementById('btn-qr-download-png')?.addEventListener('click', downloadQrPng);
-
+    
     // Download PDF (print-based)
     document.getElementById('btn-qr-download-pdf')?.addEventListener('click', downloadQrPdf);
+    
+    // ── HISTORY UI CONTROLS LISTENERS ────────────────────────────────────────
+    
+    // History mode toggle
+    document.getElementById('hist-tab-repair')?.addEventListener('click', () => {
+        _historyMode = 'repair';
+        document.getElementById('hist-tab-repair').className =
+            'hist-tab-btn flex-1 px-5 py-2.5 text-sm font-bold bg-purple-600 text-white transition flex items-center gap-2 justify-center';
+        document.getElementById('hist-tab-mutasi').className =
+        'hist-tab-btn flex-1 px-5 py-2.5 text-sm font-bold bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition flex items-center gap-2 justify-center';
+        document.getElementById('history-cards-container').classList.remove('hidden');
+        document.getElementById('history-mutasi-container').classList.add('hidden');
+        renderHistoryCards();
+    });
+
+    document.getElementById('hist-tab-mutasi')?.addEventListener('click', () => {
+        _historyMode = 'mutasi';
+        document.getElementById('hist-tab-mutasi').className =
+        'hist-tab-btn flex-1 px-5 py-2.5 text-sm font-bold bg-orange-500 text-white transition flex items-center gap-2 justify-center';
+        document.getElementById('hist-tab-repair').className =
+            'hist-tab-btn flex-1 px-5 py-2.5 text-sm font-bold bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition flex items-center gap-2 justify-center';
+            document.getElementById('history-cards-container').classList.add('hidden');
+        document.getElementById('history-mutasi-container').classList.remove('hidden');
+        renderMutasiCards();
+    });
+
+    // Detail sub-tab listeners
+    document.getElementById('detail-tab-repair')?.addEventListener('click', () => {
+        switchDetailTab('repair', activeHistoryUid);
+    });
+    document.getElementById('detail-tab-mutasi')?.addEventListener('click', () => {
+        switchDetailTab('mutasi', activeHistoryUid);
+    });
+
+    // Mutasi modal
+    document.getElementById('close-mutasi-modal')?.addEventListener('click', () => {
+        document.getElementById('mutasi-modal').classList.add('hidden');
+    });
+    document.getElementById('mutasi-modal')?.addEventListener('click', (e) => {
+        if (e.target === document.getElementById('mutasi-modal'))
+            document.getElementById('mutasi-modal').classList.add('hidden');
+    });
+
+    document.getElementById('btn-submit-mutasi')?.addEventListener('click', async () => {
+        const uid        = document.getElementById('mutasi-uid').value;
+        const lokasiTuju = document.getElementById('mutasi-lokasi-tuju').value;
+        const alasan     = document.getElementById('mutasi-alasan').value.trim();
+
+        if (!lokasiTuju) return showToast('Pilih lokasi tujuan terlebih dahulu.', 'warning');
+
+        const btn  = document.getElementById('btn-submit-mutasi');
+        const orig = btn.innerHTML;
+        btn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> Memproses...`;
+        btn.disabled  = true;
+
+        try {
+            const res = await apiFetch('/mutasi', {
+                method: 'POST',
+                body: JSON.stringify({ aset_uid: uid, kode_lokasi_tuju: lokasiTuju, alasan: alasan || null })
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.detail || 'Gagal memproses mutasi.');
+
+            showToast(data.message, 'success');
+            document.getElementById('mutasi-modal').classList.add('hidden');
+            // Refresh both the db list and history summary
+            await fetchAsetFromServer();
+            await loadHistorySummary();
+        } catch (e) {
+            showToast(e.message, 'error');
+        } finally {
+            btn.innerHTML = orig;
+            btn.disabled  = false;
+        }
+    });
 }
 
 // ── WEBSOCKET ──────────────────────────────────────────────────────────────
@@ -597,12 +690,16 @@ document.addEventListener("visibilitychange", () => {
 });
 
 function toggleSidebar() {
-    const sidebar = document.getElementById('sidebar');
-    if (sidebar) {
-        sidebar.classList.toggle('-ml-64');
-        sidebar.classList.toggle('absolute');
-        sidebar.classList.toggle('z-50');
-        sidebar.classList.toggle('h-full');
+    const sidebar  = document.getElementById('sidebar');
+    const overlay  = document.getElementById('sidebar-overlay');
+    const isOpen   = sidebar.classList.contains('open');
+
+    if (isOpen) {
+        sidebar.classList.remove('open');
+        overlay.classList.remove('active');
+    } else {
+        sidebar.classList.add('open');
+        overlay.classList.add('active');
     }
 }
 
@@ -623,71 +720,149 @@ window.openEdit = (uid) => {
     switchView('edit');
 };
 
-window.openHistoryDetail = async (uid) => {
+window.openHistoryDetail = async (uid, tab = 'repair') => {
     activeHistoryUid = uid;
-    const item = db.find(x => x.uid === uid);
+    const item = _historySummary.find(x => x.uid === uid) || db.find(x => x.uid === uid);
     if (!item) return;
 
     document.getElementById('hist-detail-subtitle').innerText = `${item.uid} | ${item.kode_id}`;
-    const tbody = document.getElementById('hist-table-body');
-    tbody.innerHTML = `<tr><td colspan="6" class="p-4 text-center text-gray-500"><i class="fas fa-spinner fa-spin mr-2"></i> Mengambil data dari server...</td></tr>`;
-
     switchView('history-detail');
+    switchDetailTab(tab, uid);
+};
+
+function switchDetailTab(tab, uid) {
+    // Update tab button styles
+    document.getElementById('detail-tab-repair').className =
+        `detail-tab-btn px-5 py-2 text-sm font-bold border-b-2 transition ${
+            tab === 'repair'
+                ? 'border-purple-500 text-purple-600 dark:text-purple-400'
+                : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
+        }`;
+    document.getElementById('detail-tab-mutasi').className =
+        `detail-tab-btn px-5 py-2 text-sm font-bold border-b-2 transition ${
+            tab === 'mutasi'
+                ? 'border-orange-500 text-orange-600 dark:text-orange-400'
+                : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
+        }`;
+
+    document.getElementById('detail-panel-repair').classList.toggle('hidden', tab !== 'repair');
+    document.getElementById('detail-panel-mutasi').classList.toggle('hidden', tab !== 'mutasi');
+
+    if (tab === 'repair') loadDetailRepair(uid);
+    if (tab === 'mutasi') loadDetailMutasi(uid);
+}
+
+async function loadDetailRepair(uid) {
+    const tbody = document.getElementById('hist-table-body');
+    tbody.innerHTML = `<tr><td colspan="6" class="p-4 text-center text-gray-500"><i class="fas fa-spinner fa-spin mr-2"></i>Mengambil data...</td></tr>`;
+    try {
+        const res = await apiFetch(`/riwayat/${uid}`);
+        if (!res.ok) throw new Error("Gagal mengambil riwayat.");
+        const history = await res.json();
+        if (!history.length) {
+            tbody.innerHTML = `<tr><td colspan="6" class="p-4 text-center text-gray-500">Belum ada riwayat perbaikan.</td></tr>`;
+            return;
+        }
+        tbody.innerHTML = history.map(h => `
+            <tr class="border-b dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                <td class="p-3">${h.no}</td>
+                <td class="p-3 font-mono text-xs">${formatUtcToLocal(h.date)}</td>
+                <td class="p-3">${h.upt}</td>
+                <td class="p-3">${h.teknisi}</td>
+                <td class="p-3 font-bold ${h.kondisi === 'SO' ? 'text-green-500' : 'text-red-500'}">${h.kondisi}</td>
+                <td class="p-3 whitespace-pre-wrap">${h.keterangan}</td>
+            </tr>
+        `).join('');
+    } catch (e) {
+        if (e.message !== 'Unauthorized')
+            tbody.innerHTML = `<tr><td colspan="6" class="p-4 text-center text-red-500">${e.message}</td></tr>`;
+    }
+}
+
+async function loadDetailMutasi(uid) {
+    const timeline  = document.getElementById('mutasi-timeline');
+    const originBar = document.getElementById('mutasi-origin-bar');
+    timeline.innerHTML  = `<div class="text-center text-gray-400 py-6"><i class="fas fa-spinner fa-spin mr-2"></i>Mengambil data...</div>`;
+    originBar.innerHTML = '';
 
     try {
-        const response = await apiFetch(`/riwayat/${uid}`);
-        if (!response.ok) throw new Error("Gagal mengambil riwayat dari database.");
+        const res = await apiFetch(`/mutasi/${uid}`);
+        if (!res.ok) throw new Error("Gagal mengambil riwayat mutasi.");
+        const data = await res.json();
 
-        const history = await response.json();
+        // Origin + status bar
+        const returnedBadge = data.sudah_kembali
+            ? `<span class="bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 px-3 py-1 rounded-full text-xs font-bold">✓ Sudah Kembali ke Asal</span>`
+            : `<span class="bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 px-3 py-1 rounded-full text-xs font-bold">⟳ Belum Kembali ke Asal</span>`;
+        originBar.innerHTML = `
+            <div class="flex-1 min-w-0">
+                <p class="text-xs text-gray-400">Lokasi Asal</p>
+                <p class="font-bold text-gray-700 dark:text-gray-200">${data.original_lokasi}</p>
+            </div>
+            <div class="flex-1 min-w-0">
+                <p class="text-xs text-gray-400">Lokasi Sekarang</p>
+                <p class="font-bold text-gray-700 dark:text-gray-200">${data.lokasi_sekarang}</p>
+            </div>
+            ${returnedBadge}
+        `;
 
-        if (history.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="6" class="p-4 text-center text-gray-500">Belum ada riwayat perbaikan untuk alat ini.</td></tr>`;
-        } else {
-            tbody.innerHTML = history.map(h => `
-                <tr class="border-b dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50">
-                    <td class="p-3">${h.no}</td>
-                    <td class="p-3">${formatUtcToLocal(h.date)}</td>
-                    <td class="p-3">${h.upt}</td>
-                    <td class="p-3">${h.teknisi}</td>
-                    <td class="p-3 font-bold ${h.kondisi === 'SO' ? 'text-green-500' : 'text-red-500'}">${h.kondisi}</td>
-                    <td class="p-3 whitespace-pre-wrap">${h.keterangan}</td>
-                </tr>
-            `).join('');
+        if (!data.mutasi.length) {
+            timeline.innerHTML = `<div class="text-center text-gray-400 py-6">Belum ada riwayat mutasi.</div>`;
+            return;
         }
-    } catch (error) {
-        if (error.message !== "Unauthorized") {
-            tbody.innerHTML = `<tr><td colspan="6" class="p-4 text-center text-red-500">Error memuat data: ${error.message}</td></tr>`;
-        }
+
+        // Timeline entries
+        timeline.innerHTML = data.mutasi.map((m, i) => `
+            <div class="flex gap-4 items-start">
+                <div class="flex flex-col items-center">
+                    <div class="w-8 h-8 rounded-full bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400 flex items-center justify-center text-xs font-bold shrink-0">${i + 1}</div>
+                    ${i < data.mutasi.length - 1 ? '<div class="w-0.5 flex-1 bg-gray-200 dark:bg-gray-700 mt-1"></div>' : ''}
+                </div>
+                <div class="bg-gray-50 dark:bg-gray-700/50 rounded-xl p-4 flex-1 mb-2 space-y-1 text-sm">
+                    <div class="flex justify-between items-start gap-2">
+                        <span class="font-bold text-orange-600 dark:text-orange-400">${m.lokasi_asal} → ${m.lokasi_tuju}</span>
+                        ${m.delta ? `<span class="text-xs text-blue-500 font-mono shrink-0">+${m.delta}</span>` : ''}
+                    </div>
+                    <p class="text-xs text-gray-500 font-mono">${formatUtcToLocal(m.created_at)}</p>
+                    <p class="text-xs text-gray-600 dark:text-gray-400"><span class="font-semibold">Oleh:</span> ${m.dilakukan_oleh}</p>
+                    <p class="text-xs text-gray-600 dark:text-gray-400 italic">${m.alasan}</p>
+                </div>
+            </div>
+        `).join('');
+    } catch (e) {
+        if (e.message !== 'Unauthorized')
+            timeline.innerHTML = `<div class="text-center text-red-400 py-6">${e.message}</div>`;
     }
-};
+}
 
 function renderDbCards() {
     const container   = document.getElementById('db-cards-container');
     const searchInput = document.getElementById('search-db');
     const modeSelect  = document.getElementById('filter-mode');
-
     if (!container) return;
 
     const searchQ = searchInput ? searchInput.value.toLowerCase() : '';
-    const mode    = modeSelect  ? modeSelect.value              : 'public';
+    const mode    = modeSelect ? modeSelect.value : 'public';
+    const isAdmin = _currentRole === 'SUPER_ADMIN' || _currentRole === 'ADMIN_DAOP';
 
     container.innerHTML = '';
 
-    let filtered = db.filter(item => {
+    db.filter(item => {
         const matchSearch = item.kode_id.toLowerCase().includes(searchQ) ||
                             item.uid.toLowerCase().includes(searchQ)     ||
                             item.alat.toLowerCase().includes(searchQ);
-
-        const itemCreator  = (item.creator   || "").toLowerCase();
-        const loggedInUser = (currentUser || "").toLowerCase();
-        const matchMode    = (mode === 'public') ? true : (itemCreator === loggedInUser);
-
+        const matchMode = mode === 'public' ? true :
+            (item.creator || '').toLowerCase() === (currentUser || '').toLowerCase();
         return matchSearch && matchMode;
-    });
-
-    filtered.forEach(item => {
+    }).forEach(item => {
         const statusColor = item.status === 'SO'  ? 'text-green-500' :
                             item.status === 'TSO' ? 'text-red-500'   : 'text-blue-500';
+
+        const mutasiBtn = isAdmin ? `
+            <button onclick="window.openMutasiModal('${item.uid}')"
+                class="flex-1 bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 py-2 rounded font-bold hover:bg-orange-200 dark:hover:bg-orange-800 transition text-sm">
+                <i class="fas fa-exchange-alt"></i> MUTASI
+            </button>` : '';
 
         container.innerHTML += `
             <div class="bg-white dark:bg-gray-800 p-5 rounded-xl shadow border border-gray-200 dark:border-gray-700 flex flex-col justify-between">
@@ -697,61 +872,134 @@ function renderDbCards() {
                         <span class="text-sm font-bold ${statusColor}"><i class="fas fa-circle text-xs mr-1"></i>${item.status}</span>
                     </div>
                     <h3 class="text-lg font-bold font-mono text-blue-600 dark:text-blue-400 break-words">${item.kode_id}</h3>
-                    <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">${item.alat} - ${item.lokasi}</p>
+                    <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">${item.alat} — ${item.lokasi}</p>
                 </div>
                 <div class="mt-4 flex gap-2">
                     <button onclick="window.openEdit('${item.uid}')"
                         class="flex-1 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 py-2 rounded font-bold hover:bg-blue-200 dark:hover:bg-blue-800 transition text-sm">
                         <i class="fas fa-edit"></i> UPDATE
                     </button>
-                    
-                    
+                    ${mutasiBtn}
                     <button onclick="window.openQrModal('${item.uid}')"
                         class="flex-1 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 py-2 rounded font-bold hover:bg-gray-200 dark:hover:bg-gray-600 transition text-sm">
-                        <i class="fas fa-qrcode"></i> QR LABEL
+                        <i class="fas fa-qrcode"></i> QR
                     </button>
-                    
-
                 </div>
             </div>
         `;
     });
 }
 
+// ── HISTORY VIEW STATE ─────────────────────────────────────────────────────
+let _historyMode = 'repair'; // 'repair' | 'mutasi'
+let _historySummary = [];    // cached from /api/history/summary
+
+async function loadHistorySummary() {
+    try {
+        const res = await apiFetch('/history/summary');
+        if (res.ok) _historySummary = await res.json();
+    } catch (e) { /* silent */ }
+}
+
 function renderHistoryCards() {
     const container   = document.getElementById('history-cards-container');
     const searchInput = document.getElementById('search-history');
-
     if (!container) return;
 
-    const searchQ = searchInput ? searchInput.value.toLowerCase() : '';
+    const searchQ = (searchInput?.value || '').toLowerCase();
 
-    container.innerHTML = '';
-    let filtered = db.filter(item =>
+    const filtered = _historySummary.filter(item =>
         item.kode_id.toLowerCase().includes(searchQ) ||
         item.uid.toLowerCase().includes(searchQ)
     );
 
-    filtered.forEach(item => {
-        container.innerHTML += `
-            <div class="bg-white dark:bg-gray-800 p-5 rounded-xl shadow border border-gray-200 dark:border-gray-700">
-                <div class="flex justify-between border-b dark:border-gray-700 pb-3 mb-3">
-                    <div>
-                        <p class="text-xs text-gray-500">UID: ${item.uid}</p>
-                        <h3 class="text-lg font-bold font-mono text-purple-600 dark:text-purple-400">${item.kode_id}</h3>
-                    </div>
+    if (!filtered.length) {
+        container.innerHTML = `<div class="col-span-2 text-center text-gray-400 py-12"><i class="fas fa-inbox text-3xl mb-2 block"></i>Tidak ada data.</div>`;
+        return;
+    }
+
+    container.innerHTML = filtered.map(item => {
+        const r = item.repair;
+        const statusColor = item.status === 'SO'  ? 'text-green-500' :
+                            item.status === 'TSO' ? 'text-red-500'   : 'text-blue-500';
+        const kondisiColor = r.latest_kondisi === 'SO'  ? 'text-green-500' :
+                             r.latest_kondisi === 'TSO' ? 'text-red-500'   : 'text-blue-400';
+
+        return `
+        <div class="bg-white dark:bg-gray-800 p-5 rounded-xl shadow border border-gray-200 dark:border-gray-700 flex flex-col gap-3">
+            <div class="flex justify-between items-start border-b dark:border-gray-700 pb-3">
+                <div>
+                    <p class="text-xs text-gray-400 font-mono">${item.uid}</p>
+                    <h3 class="text-base font-bold font-mono text-purple-600 dark:text-purple-400">${item.kode_id}</h3>
+                    <p class="text-xs text-gray-500 mt-0.5">${item.alat} — ${item.lokasi}</p>
                 </div>
-                <div class="grid grid-cols-2 gap-2 text-sm mb-4">
-                    <div><span class="text-gray-500">Merk/Alat:</span> <br><b>${item.alat}</b></div>
-                    <div><span class="text-gray-500">Status Terkini:</span> <br><b><span class="${item.status === 'SO' ? 'text-green-500' : 'text-red-500'} font-bold">${item.status}</span></b></div>
-                </div>
-                <button onclick="window.openHistoryDetail('${item.uid}')"
-                    class="mt-4 w-full bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 py-2 rounded font-bold hover:bg-purple-200 dark:hover:bg-purple-800 transition">
-                    <i class="fas fa-list"></i> VIEW HISTORY
-                </button>
+                <span class="text-sm font-bold ${statusColor} shrink-0"><i class="fas fa-circle text-xs mr-1"></i>${item.status}</span>
             </div>
-        `;
-    });
+            ${r.latest_date ? `
+            <div class="space-y-1 text-xs text-gray-600 dark:text-gray-400">
+                <div class="flex gap-2"><span class="text-gray-400 w-20 shrink-0">Tgl Terakhir</span><span class="font-mono">${formatUtcToLocal(r.latest_date)}</span></div>
+                <div class="flex gap-2"><span class="text-gray-400 w-20 shrink-0">Teknisi</span><span class="font-semibold text-gray-700 dark:text-gray-200">${r.latest_teknisi || '—'}</span></div>
+                <div class="flex gap-2"><span class="text-gray-400 w-20 shrink-0">Kondisi</span><span class="font-bold ${kondisiColor}">${r.latest_kondisi}</span></div>
+                <div class="flex gap-2"><span class="text-gray-400 w-20 shrink-0">Keterangan</span><span class="italic">${r.latest_keterangan || '—'}</span></div>
+            </div>` : `<p class="text-xs text-gray-400 italic">Belum ada riwayat perbaikan.</p>`}
+            <button onclick="window.openHistoryDetail('${item.uid}', 'repair')"
+                class="w-full bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 py-2 rounded-lg font-bold hover:bg-purple-200 dark:hover:bg-purple-800 transition text-sm">
+                <i class="fas fa-list mr-1"></i> Lihat Riwayat Lengkap
+            </button>
+        </div>`;
+    }).join('');
+}
+
+function renderMutasiCards() {
+    const container   = document.getElementById('history-mutasi-container');
+    const searchInput = document.getElementById('search-history');
+    if (!container) return;
+
+    const searchQ = (searchInput?.value || '').toLowerCase();
+
+    // Only show assets that have at least one mutation
+    const filtered = _historySummary.filter(item =>
+        item.mutasi &&
+        (item.kode_id.toLowerCase().includes(searchQ) || item.uid.toLowerCase().includes(searchQ))
+    );
+
+    if (!filtered.length) {
+        container.innerHTML = `<div class="col-span-2 text-center text-gray-400 py-12"><i class="fas fa-exchange-alt text-3xl mb-2 block"></i>Belum ada riwayat mutasi.</div>`;
+        return;
+    }
+
+    container.innerHTML = filtered.map(item => {
+        const m = item.mutasi;
+        const returnedBadge = m.sudah_kembali
+            ? `<span class="bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 text-xs px-2 py-0.5 rounded-full font-bold">✓ Sudah Kembali</span>`
+            : `<span class="bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 text-xs px-2 py-0.5 rounded-full font-bold">⟳ Belum Kembali</span>`;
+
+        return `
+        <div class="bg-white dark:bg-gray-800 p-5 rounded-xl shadow border border-gray-200 dark:border-gray-700 flex flex-col gap-3">
+            <div class="flex justify-between items-start border-b dark:border-gray-700 pb-3">
+                <div>
+                    <p class="text-xs text-gray-400 font-mono">${item.uid}</p>
+                    <h3 class="text-base font-bold font-mono text-orange-600 dark:text-orange-400">${item.kode_id}</h3>
+                    <p class="text-xs text-gray-500 mt-0.5">${item.alat}</p>
+                </div>
+                ${returnedBadge}
+            </div>
+            <div class="space-y-1 text-xs text-gray-600 dark:text-gray-400">
+                <div class="flex gap-2"><span class="text-gray-400 w-24 shrink-0">Lokasi Asal</span><span class="font-semibold text-gray-700 dark:text-gray-200">${m.original_lokasi}</span></div>
+                <div class="flex gap-2"><span class="text-gray-400 w-24 shrink-0">Lokasi Kini</span><span class="font-semibold">${item.lokasi}</span></div>
+                <div class="flex gap-2"><span class="text-gray-400 w-24 shrink-0">Tgl Mutasi</span><span class="font-mono">${formatUtcToLocal(m.latest_date)}</span></div>
+                <div class="flex gap-2"><span class="text-gray-400 w-24 shrink-0">Tujuan</span><span>${m.latest_lokasi_tuju || '—'}</span></div>
+                <div class="flex gap-2"><span class="text-gray-400 w-24 shrink-0">Oleh</span><span class="font-semibold text-gray-700 dark:text-gray-200">${m.latest_oleh || '—'}</span></div>
+                <div class="flex gap-2"><span class="text-gray-400 w-24 shrink-0">Alasan</span><span class="italic">${m.latest_alasan || '—'}</span></div>
+                ${m.delta ? `<div class="flex gap-2"><span class="text-gray-400 w-24 shrink-0">Jeda Mutasi</span><span class="font-mono text-blue-500">${m.delta}</span></div>` : ''}
+                <div class="flex gap-2"><span class="text-gray-400 w-24 shrink-0">Total Mutasi</span><span class="font-bold">${m.count}×</span></div>
+            </div>
+            <button onclick="window.openHistoryDetail('${item.uid}', 'mutasi')"
+                class="w-full bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 py-2 rounded-lg font-bold hover:bg-orange-200 dark:hover:bg-orange-800 transition text-sm">
+                <i class="fas fa-route mr-1"></i> Lihat Timeline Mutasi
+            </button>
+        </div>`;
+    }).join('');
 }
 
 // ── MASTER DATA UI ─────────────────────────────────────────────────────────
@@ -1100,6 +1348,325 @@ document.getElementById('btn-master-edit-deactivate')?.addEventListener('click',
     }
 });
 
+// ── LAPORAN & EXPORT ───────────────────────────────────────────────────────
+
+let _exportData = { active: [], afkir: [] }; // raw from server
+let _exportFiltered = [];                      // after applying filters
+
+// Called when switching to laporan view
+async function initLaporanView() {
+    // Populate lokasi filter from loaded master data
+    const lokasiSel = document.getElementById('exp-filter-lokasi');
+    if (lokasiSel && lokasiData.length) {
+        lokasiSel.innerHTML = '<option value="">Semua Lokasi</option>' +
+            lokasiData.map(l => `<option value="${l.code}">${l.name}</option>`).join('');
+    }
+
+    // Set default date range: last 12 months → today
+    const today = new Date();
+    const yearAgo = new Date();
+    yearAgo.setFullYear(today.getFullYear() - 1);
+    const fmt = d => d.toISOString().split('T')[0];
+
+    const fromEl = document.getElementById('exp-date-from');
+    const toEl   = document.getElementById('exp-date-to');
+    if (fromEl && !fromEl.value) fromEl.value = fmt(yearAgo);
+    if (toEl   && !toEl.value)   toEl.value   = fmt(today);
+
+    await fetchExportData();
+}
+
+async function fetchExportData() {
+    const previewCount = document.getElementById('exp-preview-count');
+    if (previewCount) previewCount.innerHTML = `<i class="fas fa-spinner fa-spin mr-1"></i> Mengambil data...`;
+
+    try {
+        const res  = await apiFetch('/export/riwayat');
+        if (!res.ok) throw new Error("Gagal mengambil data export.");
+        _exportData = await res.json();
+
+        // Update afkir stat
+        const afkirStat = document.getElementById('exp-stat-afkir');
+        if (afkirStat) {
+            // Count unique afkir asset UIDs
+            const afkirUids = new Set(_exportData.afkir.map(r => r.uid));
+            afkirStat.textContent = afkirUids.size;
+        }
+
+        applyExportFilters();
+    } catch (e) {
+        if (previewCount) previewCount.innerHTML = `<i class="fas fa-exclamation-circle mr-1 text-red-400"></i> Gagal memuat data.`;
+    }
+}
+
+function applyExportFilters() {
+    const dateFrom   = document.getElementById('exp-date-from')?.value  || '';
+    const dateTo     = document.getElementById('exp-date-to')?.value    || '';
+    const lokasi     = document.getElementById('exp-filter-lokasi')?.value || '';
+    const kondisi    = document.getElementById('exp-filter-kondisi')?.value || '';
+
+    function filterRows(rows) {
+        return rows.filter(r => {
+            // Date filter — compare against tanggal string (YYYY-MM-DD prefix)
+            if (dateFrom && r.tanggal !== '—' && r.tanggal.slice(0, 10) < dateFrom) return false;
+            if (dateTo   && r.tanggal !== '—' && r.tanggal.slice(0, 10) > dateTo)   return false;
+            // Lokasi filter matches lokasi_aset
+            if (lokasi   && r.lokasi_aset !== lokasiData.find(l => l.code === lokasi)?.name) return false;
+            // Kondisi filter matches last kondisi on the row
+            if (kondisi  && r.kondisi !== kondisi) return false;
+            return true;
+        });
+    }
+
+    const filteredActive = filterRows(_exportData.active);
+    const filteredAfkir  = filterRows(_exportData.afkir);
+    _exportFiltered = { active: filteredActive, afkir: filteredAfkir };
+
+    // Update summary stats from the in-memory db (already loaded)
+    const statTotal = document.getElementById('exp-stat-total');
+    const statSo    = document.getElementById('exp-stat-so');
+    const statTso   = document.getElementById('exp-stat-tso');
+    if (statTotal) statTotal.textContent = db.length;
+    if (statSo)    statSo.textContent    = db.filter(x => x.status === 'SO').length;
+    if (statTso)   statTso.textContent   = db.filter(x => x.status === 'TSO').length;
+
+    // Update preview count
+    const total = filteredActive.length + filteredAfkir.length;
+    const previewCount = document.getElementById('exp-preview-count');
+    if (previewCount) {
+        previewCount.innerHTML =
+            `<i class="fas fa-info-circle mr-1"></i> ` +
+            `<strong>${filteredActive.length}</strong> baris aset aktif + ` +
+            `<strong>${filteredAfkir.length}</strong> baris aset afkir ` +
+            `(<strong>${total}</strong> total) akan diekspor.`;
+    }
+
+    renderExportPreview(filteredActive);
+}
+
+function renderExportPreview(rows) {
+    const tbody = document.getElementById('exp-preview-body');
+    const label = document.getElementById('exp-preview-label');
+    if (!tbody) return;
+    if (label) label.textContent = 'Aset Aktif — 10 baris pertama';
+
+    const preview = rows.slice(0, 10);
+    if (!preview.length) {
+        tbody.innerHTML = `<tr><td colspan="8" class="px-3 py-4 text-center text-gray-400">Tidak ada data dengan filter ini.</td></tr>`;
+        return;
+    }
+
+    tbody.innerHTML = preview.map(r => `
+        <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50">
+            <td class="px-3 py-2">${r.no ?? '—'}</td>
+            <td class="px-3 py-2">${r.tanggal}</td>
+            <td class="px-3 py-2 font-bold text-blue-600 dark:text-blue-400">${r.kode_id}</td>
+            <td class="px-3 py-2">${r.alat}</td>
+            <td class="px-3 py-2">${r.lokasi_aset}</td>
+            <td class="px-3 py-2">${r.upt}</td>
+            <td class="px-3 py-2">${r.teknisi}</td>
+            <td class="px-3 py-2 font-bold ${r.kondisi === 'SO' ? 'text-green-500' : r.kondisi === 'TSO' ? 'text-red-500' : 'text-blue-500'}">${r.kondisi}</td>
+        </tr>
+    `).join('');
+}
+
+// Wire filter inputs to re-apply on change
+['exp-date-from','exp-date-to','exp-filter-lokasi','exp-filter-kondisi'].forEach(id => {
+    document.getElementById(id)?.addEventListener('change', applyExportFilters);
+});
+
+// ── EXCEL EXPORT ──────────────────────────────────────────────────
+
+document.getElementById('btn-export-excel')?.addEventListener('click', async () => {
+    if (!window.XLSX) {
+        showToast('Library Excel belum siap, tunggu sebentar.', 'warning');
+        return;
+    }
+
+    const btn = document.getElementById('btn-export-excel');
+    const orig = btn.innerHTML;
+    btn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> Membuat file...`;
+    btn.disabled  = true;
+
+    try {
+        const headers = ['No','Tanggal','UID Aset','Kode ID','Alat','Lokasi Aset','Lokasi Perbaikan','UPT','Teknisi','Kondisi','Keterangan'];
+
+        function rowsToSheet(rows) {
+            const data = [headers, ...rows.map(r => [
+                r.no ?? '', r.tanggal, r.uid, r.kode_id, r.alat,
+                r.lokasi_aset, r.lokasi_perbaikan, r.upt,
+                r.teknisi, r.kondisi, r.keterangan
+            ])];
+            const ws = XLSX.utils.aoa_to_sheet(data);
+
+            // Column widths
+            ws['!cols'] = [
+                {wch:5},{wch:20},{wch:16},{wch:22},{wch:24},
+                {wch:22},{wch:18},{wch:24},{wch:20},{wch:8},{wch:32}
+            ];
+
+            // Bold header row
+            const range = XLSX.utils.decode_range(ws['!ref']);
+            for (let C = range.s.c; C <= range.e.c; C++) {
+                const cell = ws[XLSX.utils.encode_cell({ r: 0, c: C })];
+                if (cell) cell.s = { font: { bold: true } };
+            }
+            return ws;
+        }
+
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, rowsToSheet(_exportFiltered.active), 'Riwayat Perbaikan');
+        XLSX.utils.book_append_sheet(wb, rowsToSheet(_exportFiltered.afkir),  'Aset Afkir');
+
+        const dateStr = new Date().toISOString().slice(0,10);
+        XLSX.writeFile(wb, `SIMAKAI_Laporan_${dateStr}.xlsx`);
+        showToast('File Excel berhasil diunduh.', 'success');
+    } catch (e) {
+        console.error(e);
+        showToast('Gagal membuat file Excel.', 'error');
+    } finally {
+        btn.innerHTML = orig;
+        btn.disabled  = false;
+    }
+});
+
+// ── PDF EXPORT ────────────────────────────────────────────────────
+
+document.getElementById('btn-export-pdf')?.addEventListener('click', async () => {
+    if (!window.jspdf) {
+        showToast('Library PDF belum siap, tunggu sebentar.', 'warning');
+        return;
+    }
+
+    const btn = document.getElementById('btn-export-pdf');
+    const orig = btn.innerHTML;
+    btn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> Membuat PDF...`;
+    btn.disabled  = true;
+
+    try {
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+
+        const dateStr  = new Date().toLocaleDateString('id-ID', { day:'2-digit', month:'long', year:'numeric' });
+        const columns  = ['No','Tanggal','Kode ID','Alat','Lokasi Aset','Lok. Perbaikan','UPT','Teknisi','Kondisi','Keterangan'];
+
+        function buildBody(rows) {
+            return rows.map(r => [
+                r.no ?? '—', r.tanggal, r.kode_id, r.alat,
+                r.lokasi_aset, r.lokasi_perbaikan, r.upt,
+                r.teknisi, r.kondisi, r.keterangan
+            ]);
+        }
+
+        // ── Page 1+: Active assets ──
+        doc.setFontSize(14);
+        doc.setFont('helvetica', 'bold');
+        doc.text('SIMA-KAI — Laporan Riwayat Perbaikan Alat Kerja', 14, 14);
+        doc.setFontSize(9);
+        doc.setFont('helvetica', 'normal');
+        doc.text(`Dicetak: ${dateStr}  |  Total baris: ${_exportFiltered.active.length}`, 14, 20);
+
+        doc.autoTable({
+            head: [columns],
+            body: buildBody(_exportFiltered.active),
+            startY: 25,
+            styles:       { fontSize: 7, cellPadding: 2, overflow: 'linebreak' },
+            headStyles:   { fillColor: [37, 99, 235], textColor: 255, fontStyle: 'bold' },
+            alternateRowStyles: { fillColor: [241, 245, 249] },
+            columnStyles: {
+                0: { cellWidth: 8 },   // No
+                1: { cellWidth: 28 },  // Tanggal
+                2: { cellWidth: 28 },  // Kode ID
+                3: { cellWidth: 24 },  // Alat
+                4: { cellWidth: 28 },  // Lokasi Aset
+                5: { cellWidth: 20 },  // Lok. Perbaikan
+                6: { cellWidth: 30 },  // UPT
+                7: { cellWidth: 22 },  // Teknisi
+                8: { cellWidth: 12 },  // Kondisi
+                9: { cellWidth: 'auto' } // Keterangan
+            },
+            didDrawCell: (data) => {
+                // Colour the Kondisi column
+                if (data.section === 'body' && data.column.index === 8) {
+                    const val = data.cell.raw;
+                    if (val === 'SO')  { doc.setTextColor(22, 163, 74);  }
+                    if (val === 'TSO') { doc.setTextColor(220, 38,  38);  }
+                    doc.setFontSize(7);
+                    doc.text(val, data.cell.x + 2, data.cell.y + 4);
+                    doc.setTextColor(0, 0, 0); // reset
+                }
+            }
+        });
+
+        // ── Afkir section on new page ──
+        if (_exportFiltered.afkir.length > 0) {
+            doc.addPage();
+            doc.setFontSize(14);
+            doc.setFont('helvetica', 'bold');
+            doc.text('SIMA-KAI — Riwayat Perbaikan Aset Afkir (Tidak Aktif)', 14, 14);
+            doc.setFontSize(9);
+            doc.setFont('helvetica', 'normal');
+            doc.text(`Dicetak: ${dateStr}  |  Total baris: ${_exportFiltered.afkir.length}`, 14, 20);
+
+            doc.autoTable({
+                head: [columns],
+                body: buildBody(_exportFiltered.afkir),
+                startY: 25,
+                styles:       { fontSize: 7, cellPadding: 2, overflow: 'linebreak' },
+                headStyles:   { fillColor: [107, 114, 128], textColor: 255, fontStyle: 'bold' },
+                alternateRowStyles: { fillColor: [249, 250, 251] },
+                columnStyles: {
+                    0: { cellWidth: 8 },
+                    1: { cellWidth: 28 },
+                    2: { cellWidth: 28 },
+                    3: { cellWidth: 24 },
+                    4: { cellWidth: 28 },
+                    5: { cellWidth: 20 },
+                    6: { cellWidth: 30 },
+                    7: { cellWidth: 22 },
+                    8: { cellWidth: 12 },
+                    9: { cellWidth: 'auto' }
+                },
+            });
+        }
+
+        const fileDate = new Date().toISOString().slice(0,10);
+        doc.save(`SIMAKAI_Laporan_${fileDate}.pdf`);
+        showToast('File PDF berhasil diunduh.', 'success');
+    } catch (e) {
+        console.error(e);
+        showToast('Gagal membuat file PDF.', 'error');
+    } finally {
+        btn.innerHTML = orig;
+        btn.disabled  = false;
+    }
+});
+
+window.openMutasiModal = (uid) => {
+    const item = db.find(x => x.uid === uid);
+    if (!item) return;
+
+    document.getElementById('mutasi-uid').value = uid;
+    document.getElementById('mutasi-modal-subtitle').innerText = `${item.uid} | ${item.kode_id}`;
+    document.getElementById('mutasi-lokasi-asal').textContent = item.lokasi;
+
+    // Populate destination dropdown
+    // ADMIN_DAOP: only their own region. SUPER_ADMIN: all.
+    const tujuSel = document.getElementById('mutasi-lokasi-tuju');
+    const options = _currentRole === 'ADMIN_DAOP'
+        ? lokasiData.filter(l => l.code === (getJwtPayload(authToken)?.assigned_region || ''))
+        : lokasiData.filter(l => l.code !== item.kode_lokasi); // exclude current
+
+    tujuSel.innerHTML = '<option value="">Pilih Lokasi Tujuan...</option>' +
+        lokasiData
+            .filter(l => l.code !== item.kode_lokasi) // never show current lokasi as option
+            .map(l => `<option value="${l.code}">${l.name}</option>`)
+            .join('');
+
+    document.getElementById('mutasi-alasan').value = '';
+    document.getElementById('mutasi-modal').classList.remove('hidden');
+};
+
 // ── QR MODAL ───────────────────────────────────────────────────────────────
 
 /**
@@ -1351,17 +1918,16 @@ function showToast(message, type = 'info') {
     else if (type === 'error')   { colorClass = 'bg-red-500';    iconClass = 'fa-exclamation-circle'; }
     else if (type === 'warning') { colorClass = 'bg-yellow-500'; iconClass = 'fa-exclamation-triangle'; }
 
-    toast.className = `${colorClass} text-white px-6 py-3 rounded-lg shadow-lg transform transition-all duration-300 translate-x-full opacity-0 flex items-center gap-3 font-semibold z-50 mb-2`;
+    toast.className = `${colorClass} text-white px-5 py-3 rounded-xl shadow-lg transform transition-all duration-300 opacity-0 translate-y-4 sm:translate-y-0 sm:translate-x-full flex items-center gap-3 font-semibold`;
     toast.innerHTML = `<i class="fas ${iconClass} text-xl"></i> <span>${message}</span>`;
 
     container.appendChild(toast);
 
     requestAnimationFrame(() => {
-        setTimeout(() => toast.classList.remove('translate-x-full', 'opacity-0'), 10);
+        setTimeout(() => toast.classList.remove('opacity-0', 'translate-y-4', 'sm:translate-x-full'), 10);
     });
-
     setTimeout(() => {
-        toast.classList.add('translate-x-full', 'opacity-0');
+        toast.classList.add('opacity-0', 'translate-y-4', 'sm:translate-x-full');
         setTimeout(() => toast.remove(), 300);
     }, 4000);
 }

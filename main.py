@@ -377,6 +377,7 @@ async def create_aset(
         kode_id=aset_in.kode_id,
         kode_alat=aset_in.kode_alat,
         kode_lokasi=aset_in.kode_lokasi,
+        original_kode_lokasi=aset_in.kode_lokasi,  # ADD: set once, never changed
         pengadaan=aset_in.pengadaan,
         tahun_pembelian=aset_in.tahun_pembelian,
         unit_peruntukan=aset_in.unit_peruntukan,
@@ -423,8 +424,9 @@ def get_all_aset(
             "uid":     a.uid,
             "kode_id": a.kode_id,
             "status":  a.status_kondisi,
-            "alat":    a.alat_ref.nama          if a.alat_ref   else a.kode_alat,
+            "alat":    a.alat_ref.nama           if a.alat_ref   else a.kode_alat,
             "lokasi":  a.lokasi_ref.nama_lokasi  if a.lokasi_ref else a.kode_lokasi,
+            "kode_lokasi": a.kode_lokasi,
             "creator": a.creator
         }
         for a in asets
@@ -550,9 +552,96 @@ def get_riwayat_aset(
         for i, r in enumerate(riwayat, start=1)
     ]
 
+
+@app.get("/api/history/summary")
+def get_history_summary(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    """
+    Returns enriched asset list for the History Card view.
+    Each asset includes latest repair info and latest mutation info.
+    Used to populate both the Perbaikan and Mutasi history card grids.
+    """
+    asets = db.query(models.Aset).filter_by(is_afkir=False).all()
+    results = []
+
+    for a in asets:
+        # Latest repair
+        latest_repair = (
+            db.query(models.RiwayatPerbaikan)
+            .filter_by(aset_uid=a.uid)
+            .order_by(models.RiwayatPerbaikan.created_at.desc())
+            .first()
+        )
+
+        # All mutations (asc for delta, desc[-1] for latest)
+        all_mutasi = (
+            db.query(models.RiwayatMutasi)
+            .filter_by(aset_uid=a.uid)
+            .order_by(models.RiwayatMutasi.created_at.asc())
+            .all()
+        )
+        latest_mutasi = all_mutasi[-1] if all_mutasi else None
+
+        original_kode = a.original_kode_lokasi or a.kode_lokasi
+        sudah_kembali = a.kode_lokasi == original_kode
+
+        # Delta between last two mutations (or since creation if only one)
+        if len(all_mutasi) >= 2:
+            delta_secs = int((all_mutasi[-1].created_at - all_mutasi[-2].created_at).total_seconds())
+        elif len(all_mutasi) == 1:
+            delta_secs = int((all_mutasi[0].created_at - a.created_at).total_seconds())
+        else:
+            delta_secs = None
+
+        results.append({
+            "uid":      a.uid,
+            "kode_id":  a.kode_id,
+            "alat":     a.alat_ref.nama          if a.alat_ref   else a.kode_alat,
+            "lokasi":   a.lokasi_ref.nama_lokasi  if a.lokasi_ref else a.kode_lokasi,
+            "status":   a.status_kondisi,
+            "creator":  a.creator,
+
+            # Repair summary
+            "repair": {
+                "latest_date":      latest_repair.created_at.strftime("%Y-%m-%d %H:%M:%S") if latest_repair else None,
+                "latest_teknisi":   latest_repair.teknisi    if latest_repair else None,
+                "latest_keterangan": latest_repair.keterangan if latest_repair else None,
+                "latest_kondisi":   latest_repair.status_baru if latest_repair else a.status_kondisi,
+            },
+
+            # Mutation summary
+            "mutasi": {
+                "count":            len(all_mutasi),
+                "latest_date":      latest_mutasi.created_at.strftime("%Y-%m-%d %H:%M:%S") if latest_mutasi else None,
+                "latest_lokasi_tuju": latest_mutasi.lokasi_tuju.nama_lokasi if (latest_mutasi and latest_mutasi.lokasi_tuju) else None,
+                "latest_oleh":      latest_mutasi.dilakukan_oleh if latest_mutasi else None,
+                "latest_alasan":    latest_mutasi.alasan if latest_mutasi else None,
+                "delta":            _format_delta(delta_secs) if delta_secs is not None else None,
+                "sudah_kembali":    sudah_kembali,
+                "original_lokasi":  a.original_lokasi_ref.nama_lokasi if a.original_lokasi_ref else original_kode,
+            } if all_mutasi else None,
+        })
+
+    return results
+
 # ==================================================================
 # MUTASI (ASSET RELOCATION) — absorbed from main_.py
 # ==================================================================
+
+def _format_delta(seconds: int) -> str:
+    """Human-readable time difference for mutation intervals."""
+    if seconds < 60:
+        return f"{seconds} detik"
+    elif seconds < 3600:
+        return f"{seconds // 60} menit"
+    elif seconds < 86400:
+        return f"{seconds // 3600} jam {(seconds % 3600) // 60} menit"
+    else:
+        days = seconds // 86400
+        hours = (seconds % 86400) // 3600
+        return f"{days} hari {hours} jam"
 
 @app.post("/api/mutasi")
 async def submit_mutasi(
@@ -658,31 +747,118 @@ def get_mutasi_by_aset(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)
 ):
-    """
-    Mutation history for a single asset.
-    Returns an empty list if the asset has never been relocated.
-    """
-    if not db.query(models.Aset).filter_by(uid=aset_uid).first():
+    aset = db.query(models.Aset).filter_by(uid=aset_uid).first()
+    if not aset:
         raise HTTPException(status_code=404, detail="Aset tidak ditemukan.")
 
     mutasi = (
         db.query(models.RiwayatMutasi)
         .filter_by(aset_uid=aset_uid)
-        .order_by(models.RiwayatMutasi.created_at.desc())
+        .order_by(models.RiwayatMutasi.created_at.asc())  # asc for delta calc
         .all()
     )
 
-    return [
-        {
+    original_kode  = aset.original_kode_lokasi or aset.kode_lokasi
+    original_nama  = (
+        aset.original_lokasi_ref.nama_lokasi
+        if aset.original_lokasi_ref
+        else original_kode
+    )
+    sudah_kembali  = aset.kode_lokasi == original_kode
+
+    results = []
+    for i, m in enumerate(mutasi):
+        # Time delta from previous mutation (or creation for the first one)
+        if i == 0:
+            prev_time = aset.created_at
+        else:
+            prev_time = mutasi[i - 1].created_at
+        delta_secs = int((m.created_at - prev_time).total_seconds())
+        delta_str  = _format_delta(delta_secs)
+
+        results.append({
             "id":             m.id,
             "lokasi_asal":    m.lokasi_asal.nama_lokasi if m.lokasi_asal else m.kode_lokasi_asal,
             "lokasi_tuju":    m.lokasi_tuju.nama_lokasi if m.lokasi_tuju else m.kode_lokasi_tuju,
             "dilakukan_oleh": m.dilakukan_oleh,
             "alasan":         m.alasan or "—",
             "created_at":     m.created_at.strftime("%Y-%m-%d %H:%M:%S"),
-        }
-        for m in mutasi
-    ]
+            "delta":          delta_str,  # time since last mutation
+        })
+
+    return {
+        "mutasi":          results,
+        "original_lokasi": original_nama,
+        "sudah_kembali":   sudah_kembali,
+        "lokasi_sekarang": aset.lokasi_ref.nama_lokasi if aset.lokasi_ref else aset.kode_lokasi,
+    }
+    
+# ---------------------------------------------------------
+# ENDPOINT: EXPORT DATA — all repair history, all roles
+# Returns active and afkir asset repair history separately
+# ---------------------------------------------------------
+@app.get("/api/export/riwayat")
+def export_riwayat(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    """
+    Returns full repair history for export.
+    Split into active and afkir asset entries.
+    Accessible by all authenticated roles.
+    """
+    def build_rows(asets):
+        rows = []
+        for a in asets:
+            nama_alat   = a.alat_ref.nama           if a.alat_ref   else a.kode_alat
+            nama_lokasi = a.lokasi_ref.nama_lokasi  if a.lokasi_ref else a.kode_lokasi
+
+            riwayat = (
+                db.query(models.RiwayatPerbaikan)
+                .filter_by(aset_uid=a.uid)
+                .order_by(models.RiwayatPerbaikan.created_at.asc())
+                .all()
+            )
+
+            if not riwayat:
+                # Include asset with no repair history as a single empty row
+                rows.append({
+                    "no":               None,
+                    "tanggal":          "—",
+                    "uid":              a.uid,
+                    "kode_id":          a.kode_id,
+                    "alat":             nama_alat,
+                    "lokasi_aset":      nama_lokasi,
+                    "lokasi_perbaikan": "—",
+                    "upt":              "—",
+                    "teknisi":          "—",
+                    "kondisi":          a.status_kondisi,
+                    "keterangan":       "Belum ada riwayat perbaikan",
+                })
+            else:
+                for i, r in enumerate(riwayat, start=1):
+                    rows.append({
+                        "no":               i,
+                        "tanggal":          r.created_at.strftime("%Y-%m-%d %H:%M:%S"),
+                        "uid":              a.uid,
+                        "kode_id":          a.kode_id,
+                        "alat":             nama_alat,
+                        "lokasi_aset":      nama_lokasi,
+                        "lokasi_perbaikan": r.lokasi_perbaikan or "—",
+                        "upt":              r.upt_perbaikan    or "—",
+                        "teknisi":          r.teknisi,
+                        "kondisi":          r.status_baru,
+                        "keterangan":       r.keterangan       or "—",
+                    })
+        return rows
+
+    active_asets = db.query(models.Aset).filter_by(is_afkir=False).all()
+    afkir_asets  = db.query(models.Aset).filter_by(is_afkir=True).all()
+
+    return {
+        "active": build_rows(active_asets),
+        "afkir":  build_rows(afkir_asets),
+    }
 
 # ==================================================================
 # PUBLIC ENDPOINTS — no auth, used by landing.html after QR scan

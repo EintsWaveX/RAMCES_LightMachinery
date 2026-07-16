@@ -4,6 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SIMA-KAI | Warehouse Monitoring</title>
+    <!-- SheetJS for Excel export -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <!-- jsPDF + AutoTable for PDF export -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         tailwind.config = {
@@ -21,7 +26,73 @@
         .status-btn.active.so  { background-color: #22c55e !important; color: white !important; opacity: 1 !important; }
         .status-btn.active.tso { background-color: #ef4444 !important; color: white !important; opacity: 1 !important; }
         .status-btn.inactive   { background-color: #9ca3af !important; color: #f3f4f6 !important; opacity: 0.5 !important; }
+
+        /* Toast: bottom-center on mobile, top-right on desktop */
+        #toast-container {
+            position: fixed;
+            z-index: 100;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            /* mobile default: bottom center */
+            bottom: 1.5rem;
+            left: 50%;
+            transform: translateX(-50%);
+            align-items: center;
+            width: max-content;
+            max-width: calc(100vw - 2rem);
+        }
+        @media (min-width: 640px) {
+            #toast-container {
+                bottom: auto;
+                top: 1rem;
+                right: 1rem;
+                left: auto;
+                transform: none;
+                align-items: flex-end;
+                width: auto;
+                max-width: none;
+            }
+        }
+        
+        /* Sidebar overlay blur for mobile */
+        #sidebar-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            z-index: 40;
+            background: rgba(0,0,0,0.4);
+            backdrop-filter: blur(4px);
+            -webkit-backdrop-filter: blur(4px);
+        }
+        #sidebar-overlay.active { display: block; }
         html.is-authed #auth-view { display: none !important; }
+
+        /* Sidebar mobile: hidden off-screen by default, slides in */
+        @media (max-width: 1023px) {
+            #sidebar {
+                position: fixed;
+                top: 0; left: 0;
+                height: 100%;
+                z-index: 50;
+                transform: translateX(-100%);
+                transition: transform 0.3s ease;
+            }
+            #sidebar.open {
+                transform: translateX(0);
+            }
+            /* Hide delete button when sidebar is closed on mobile */
+            #delete-account-btn {
+                opacity: 0;
+                pointer-events: none;
+                transition: opacity 0.1s ease;
+            }
+            #sidebar.open #delete-account-btn {
+                opacity: 1;
+                pointer-events: auto;
+                transition: opacity 0.2s ease 0.2s; /* delay matches slide-in */
+            }
+        }
 
         /* QR print styles — only the label area prints */
         @media print {
@@ -109,6 +180,8 @@
         </div>
     </div>
 
+    <div id="sidebar-overlay"></div>
+    
     <!-- MAIN APP -->
     <div id="main-app" class="flex w-full h-full hidden">
 
@@ -131,10 +204,13 @@
                     <i class="fas fa-plus-square w-6"></i> <span>Input Alat Kerja</span>
                 </button>
                 <button data-target="database" class="nav-btn w-full flex items-center p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
-                    <i class="fas fa-database w-6"></i> <span>Database & Edit</span>
+                    <i class="fas fa-database w-6"></i> <span>Lihat dan Edit Database</span>
                 </button>
                 <button data-target="history" class="nav-btn w-full flex items-center p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
-                    <i class="fas fa-history w-6"></i> <span>History Card</span>
+                    <i class="fas fa-history w-6"></i> <span>Riwayat Perbaikan</span>
+                </button>
+                <button data-target="laporan" class="nav-btn w-full flex items-center p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
+                    <i class="fas fa-file-export w-6"></i> <span>Laporan & Export</span>
                 </button>
                 <!-- <button data-target="usermanagement" id="nav-user-management" class="nav-btn w-full flex items-center p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 hidden text-purple-600 dark:text-purple-400 font-bold border border-purple-200 dark:border-purple-900 mt-4">
                     <i class="fas fa-users-cog w-6"></i> <span>Manajemen User</span>
@@ -308,33 +384,183 @@
 
                 <!-- VIEW: HISTORY -->
                 <section id="view-history" class="view-section hidden h-full flex flex-col">
-                    <input type="text" id="search-history" placeholder="Cari History ID..." class="w-full p-3 mb-6 border rounded-lg shadow-sm dark:bg-gray-800 dark:border-gray-700 consolas-input">
-                    <div id="history-cards-container" class="grid grid-cols-1 lg:grid-cols-2 gap-4 overflow-y-auto pb-20"></div>
+                    <!-- Search + mode toggle -->
+                    <div class="flex flex-col sm:flex-row gap-3 mb-4">
+                        <input type="text" id="search-history"
+                            placeholder="Cari UID atau Kode ID..."
+                            class="flex-1 p-3 border rounded-lg shadow-sm dark:bg-gray-800 dark:border-gray-700 consolas-input">
+                        <div class="flex rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700 shadow-sm shrink-0">
+                            <button id="hist-tab-repair"
+                                class="hist-tab-btn flex-1 px-5 py-2.5 text-sm font-bold bg-purple-600 text-white transition flex items-center gap-2 justify-center">
+                                <i class="fas fa-tools"></i> Perbaikan
+                            </button>
+                            <button id="hist-tab-mutasi"
+                                class="hist-tab-btn flex-1 px-5 py-2.5 text-sm font-bold bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition flex items-center gap-2 justify-center">
+                                <i class="fas fa-exchange-alt"></i> Mutasi
+                            </button>
+                        </div>
+                    </div>
+                    <!-- Card grids — only one visible at a time -->
+                    <div id="history-cards-container"  class="grid grid-cols-1 lg:grid-cols-2 gap-4 overflow-y-auto pb-20"></div>
+                    <div id="history-mutasi-container" class="grid grid-cols-1 lg:grid-cols-2 gap-4 overflow-y-auto pb-20 hidden"></div>
                 </section>
 
                 <!-- VIEW: HISTORY DETAIL -->
                 <section id="view-history-detail" class="view-section hidden bg-white dark:bg-gray-800 rounded-xl shadow-2xl p-6 md:p-8 min-h-full">
-                    <div class="flex justify-between items-center border-b pb-4 mb-6 dark:border-gray-700">
+                    <div class="flex justify-between items-center border-b pb-4 mb-4 dark:border-gray-700">
                         <div>
-                            <h2 class="text-2xl font-bold text-gray-800 dark:text-gray-100">Riwayat Perbaikan</h2>
-                            <p class="font-mono mt-1 text-lg text-blue-500" id="hist-detail-subtitle">ID: ---</p>
+                            <h2 class="text-2xl font-bold text-gray-800 dark:text-gray-100">Riwayat Aset</h2>
+                            <p class="font-mono mt-0.5 text-base text-blue-500" id="hist-detail-subtitle">ID: ---</p>
                         </div>
                         <button id="close-hist-btn" class="text-gray-400 hover:text-red-500 text-2xl"><i class="fas fa-times"></i></button>
                     </div>
-                    <div class="overflow-x-auto">
-                        <table class="w-full text-left border-collapse">
-                            <thead>
-                                <tr class="bg-gray-100 dark:bg-gray-700">
-                                    <th class="p-3 border dark:border-gray-600">NO.</th>
-                                    <th class="p-3 border dark:border-gray-600">TANGGAL</th>
-                                    <th class="p-3 border dark:border-gray-600">UPT PENGIRIM</th>
-                                    <th class="p-3 border dark:border-gray-600">PETUGAS</th>
-                                    <th class="p-3 border dark:border-gray-600">STATUS</th>
-                                    <th class="p-3 border dark:border-gray-600">KETERANGAN</th>
-                                </tr>
-                            </thead>
-                            <tbody id="hist-table-body" class="font-mono text-sm"></tbody>
-                        </table>
+
+                    <!-- Sub-tabs -->
+                    <div class="flex border-b dark:border-gray-700 mb-5 gap-1">
+                        <button id="detail-tab-repair" class="detail-tab-btn px-5 py-2 text-sm font-bold border-b-2 border-purple-500 text-purple-600 dark:text-purple-400 transition">
+                            <i class="fas fa-tools mr-1"></i> Perbaikan
+                        </button>
+                        <button id="detail-tab-mutasi" class="detail-tab-btn px-5 py-2 text-sm font-bold border-b-2 border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition">
+                            <i class="fas fa-exchange-alt mr-1"></i> Mutasi
+                        </button>
+                    </div>
+
+                    <!-- PANEL: Repair table -->
+                    <div id="detail-panel-repair">
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left border-collapse">
+                                <thead>
+                                    <tr class="bg-gray-100 dark:bg-gray-700">
+                                        <th class="p-3 border dark:border-gray-600">NO.</th>
+                                        <th class="p-3 border dark:border-gray-600">TANGGAL</th>
+                                        <th class="p-3 border dark:border-gray-600">UPT PENGIRIM</th>
+                                        <th class="p-3 border dark:border-gray-600">PETUGAS</th>
+                                        <th class="p-3 border dark:border-gray-600">STATUS</th>
+                                        <th class="p-3 border dark:border-gray-600">KETERANGAN</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="hist-table-body" class="font-mono text-sm"></tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- PANEL: Mutation timeline -->
+                    <div id="detail-panel-mutasi" class="hidden space-y-3">
+                        <!-- Origin + status badge injected by JS -->
+                        <div id="mutasi-origin-bar" class="bg-gray-50 dark:bg-gray-700/50 rounded-xl p-4 flex flex-wrap gap-4 items-center text-sm mb-2"></div>
+                        <div id="mutasi-timeline" class="space-y-3"></div>
+                    </div>
+                </section>
+
+                <!-- VIEW: LAPORAN & EXPORT -->
+                <section id="view-laporan" class="view-section max-w-3xl mx-auto hidden space-y-6">
+                    <div class="flex items-center justify-between border-b pb-3 dark:border-gray-700">
+                        <h2 class="text-2xl font-bold text-gray-800 dark:text-gray-100">
+                            <i class="fas fa-file-export mr-2 text-blue-500"></i>Laporan & Export
+                        </h2>
+                    </div>
+
+                    <!-- Summary stats (populated by JS) -->
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4" id="laporan-stats">
+                        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 text-center">
+                            <p class="text-xs text-gray-500 font-bold uppercase">Total Aset Aktif</p>
+                            <h3 class="text-3xl font-black mt-1 text-blue-600 dark:text-blue-400" id="exp-stat-total">—</h3>
+                        </div>
+                        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 text-center">
+                            <p class="text-xs text-gray-500 font-bold uppercase">Kondisi SO</p>
+                            <h3 class="text-3xl font-black mt-1 text-green-500" id="exp-stat-so">—</h3>
+                        </div>
+                        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 text-center">
+                            <p class="text-xs text-gray-500 font-bold uppercase">Kondisi TSO</p>
+                            <h3 class="text-3xl font-black mt-1 text-red-500" id="exp-stat-tso">—</h3>
+                        </div>
+                        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 text-center">
+                            <p class="text-xs text-gray-500 font-bold uppercase">Aset Afkir</p>
+                            <h3 class="text-3xl font-black mt-1 text-gray-400" id="exp-stat-afkir">—</h3>
+                        </div>
+                    </div>
+
+                    <!-- Export card -->
+                    <div class="bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 p-6 space-y-5">
+                        <h3 class="font-bold text-gray-700 dark:text-gray-200 flex items-center gap-2">
+                            <i class="fas fa-sliders-h text-blue-500"></i> Filter Export
+                        </h3>
+
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-xs font-semibold mb-1 text-gray-500">Dari Tanggal</label>
+                                <input type="date" id="exp-date-from"
+                                    class="consolas-input w-full p-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-semibold mb-1 text-gray-500">Sampai Tanggal</label>
+                                <input type="date" id="exp-date-to"
+                                    class="consolas-input w-full p-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-semibold mb-1 text-gray-500">Lokasi Aset</label>
+                                <select id="exp-filter-lokasi"
+                                    class="w-full p-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600">
+                                    <option value="">Semua Lokasi</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-semibold mb-1 text-gray-500">Kondisi</label>
+                                <select id="exp-filter-kondisi"
+                                    class="w-full p-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600">
+                                    <option value="">Semua Kondisi</option>
+                                    <option value="SO">SO (Siap Operasi)</option>
+                                    <option value="TSO">TSO (Tidak Siap)</option>
+                                    <option value="BARU">BARU</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <!-- Preview count -->
+                        <p class="text-sm text-gray-500 dark:text-gray-400" id="exp-preview-count">
+                            <i class="fas fa-info-circle mr-1"></i> Memuat data...
+                        </p>
+
+                        <!-- Export buttons -->
+                        <div class="flex flex-col sm:flex-row gap-3 pt-2">
+                            <button id="btn-export-excel"
+                                class="flex-1 flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 rounded-xl transition">
+                                <i class="fas fa-file-excel text-lg"></i>
+                                <span>Export Excel (.xlsx)</span>
+                            </button>
+                            <button id="btn-export-pdf"
+                                class="flex-1 flex items-center justify-center gap-2 bg-red-600 hover:bg-red-700 text-white font-bold py-3 rounded-xl transition">
+                                <i class="fas fa-file-pdf text-lg"></i>
+                                <span>Export PDF</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Preview table (first 10 rows) -->
+                    <div class="bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+                        <div class="px-5 py-3 border-b dark:border-gray-700 flex justify-between items-center">
+                            <h3 class="text-sm font-bold text-gray-600 dark:text-gray-300">
+                                <i class="fas fa-eye mr-1"></i> Preview (10 baris pertama)
+                            </h3>
+                            <span class="text-xs text-gray-400" id="exp-preview-label">Aset Aktif</span>
+                        </div>
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-xs text-left">
+                                <thead class="bg-gray-50 dark:bg-gray-700 text-gray-500 dark:text-gray-400 uppercase">
+                                    <tr>
+                                        <th class="px-3 py-2">No</th>
+                                        <th class="px-3 py-2">Tanggal</th>
+                                        <th class="px-3 py-2">Kode ID</th>
+                                        <th class="px-3 py-2">Alat</th>
+                                        <th class="px-3 py-2">Lokasi Aset</th>
+                                        <th class="px-3 py-2">UPT</th>
+                                        <th class="px-3 py-2">Teknisi</th>
+                                        <th class="px-3 py-2">Kondisi</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="exp-preview-body" class="divide-y dark:divide-gray-700 font-mono"></tbody>
+                            </table>
+                        </div>
                     </div>
                 </section>
 
@@ -383,17 +609,19 @@
                             </button>
                         </form>
                         <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
-                            <table class="w-full text-sm text-left">
-                                <thead class="bg-gray-50 dark:bg-gray-700 text-xs uppercase text-gray-500 dark:text-gray-400">
-                                    <tr>
-                                        <th class="px-4 py-3">Kode</th>
-                                        <th class="px-4 py-3">Nama Alat</th>
-                                        <th class="px-4 py-3">Deskripsi</th>
-                                        <th class="px-4 py-3 text-right">Aksi</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="table-alat" class="divide-y dark:divide-gray-700"></tbody>
-                            </table>
+                            <div class="overflow-x-auto">
+                                <table class="w-full text-sm text-left">
+                                    <thead class="bg-gray-50 dark:bg-gray-700 text-xs uppercase text-gray-500 dark:text-gray-400">
+                                        <tr>
+                                            <th class="px-4 py-3">Kode</th>
+                                            <th class="px-4 py-3">Nama Alat</th>
+                                            <th class="px-4 py-3">Deskripsi</th>
+                                            <th class="px-4 py-3 text-right">Aksi</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="table-alat" class="divide-y dark:divide-gray-700"></tbody>
+                                </table>
+                            </div>
                         </div>
                     </div>
 
@@ -424,17 +652,19 @@
                             </button>
                         </form>
                         <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
-                            <table class="w-full text-sm text-left">
-                                <thead class="bg-gray-50 dark:bg-gray-700 text-xs uppercase text-gray-500 dark:text-gray-400">
-                                    <tr>
-                                        <th class="px-4 py-3">Kode</th>
-                                        <th class="px-4 py-3">Nama Lokasi</th>
-                                        <th class="px-4 py-3">Tipe</th>
-                                        <th class="px-4 py-3 text-right">Aksi</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="table-lokasi" class="divide-y dark:divide-gray-700"></tbody>
-                            </table>
+                            <div class="overflow-x-auto">
+                                <table class="w-full text-sm text-left">
+                                    <thead class="bg-gray-50 dark:bg-gray-700 text-xs uppercase text-gray-500 dark:text-gray-400">
+                                        <tr>
+                                            <th class="px-4 py-3">Kode</th>
+                                            <th class="px-4 py-3">Nama Lokasi</th>
+                                            <th class="px-4 py-3">Tipe</th>
+                                            <th class="px-4 py-3 text-right">Aksi</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="table-lokasi" class="divide-y dark:divide-gray-700"></tbody>
+                                </table>
+                            </div>
                         </div>
                     </div>
 
@@ -455,17 +685,19 @@
                             </button>
                         </form>
                         <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
-                            <table class="w-full text-sm text-left">
-                                <thead class="bg-gray-50 dark:bg-gray-700 text-xs uppercase text-gray-500 dark:text-gray-400">
-                                    <tr>
-                                        <th class="px-4 py-3">ID</th>
-                                        <th class="px-4 py-3">Nama UPT</th>
-                                        <th class="px-4 py-3">Lokasi</th>
-                                        <th class="px-4 py-3 text-right">Aksi</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="table-upt" class="divide-y dark:divide-gray-700"></tbody>
-                            </table>
+                            <div class="overflow-x-auto">
+                                <table class="w-full text-sm text-left">
+                                    <thead class="bg-gray-50 dark:bg-gray-700 text-xs uppercase text-gray-500 dark:text-gray-400">
+                                        <tr>
+                                            <th class="px-4 py-3">ID</th>
+                                            <th class="px-4 py-3">Nama UPT</th>
+                                            <th class="px-4 py-3">Lokasi</th>
+                                            <th class="px-4 py-3 text-right">Aksi</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="table-upt" class="divide-y dark:divide-gray-700"></tbody>
+                                </table>
+                            </div>
                         </div>
                     </div>
 
@@ -488,43 +720,48 @@
                         </div>
                     </div>
                 </section>
-
-                <!-- VIEW: MANAJEMEN USER -->
-                <!-- <section id="view-usermanagement" class="view-section max-w-4xl mx-auto hidden">
-                    <h2 class="text-2xl font-bold mb-6 border-b pb-2 dark:border-gray-700 text-purple-600 dark:text-purple-400">
-                        <i class="fas fa-users-cog mr-2"></i>Registrasi User Baru
-                    </h2>
-                    <form id="form-register-user" class="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6 space-y-6 border border-gray-200 dark:border-gray-700">
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            <div>
-                                <label class="block text-sm font-semibold mb-2">Username Baru</label>
-                                <input type="text" id="reg-username" required class="consolas-input w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600">
-                            </div>
-                            <div>
-                                <label class="block text-sm font-semibold mb-2">Password Temporer</label>
-                                <input type="password" id="reg-password" required class="consolas-input w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600">
-                            </div>
-                            <div>
-                                <label class="block text-sm font-semibold mb-2">Role Akses</label>
-                                <select id="reg-role" required class="w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600">
-                                    <option value="ADMIN_DAOP" id="opt-admin-daop">ADMIN DAOP (Manajemen Wilayah)</option>
-                                    <option value="TEKNISI">TEKNISI (Laporan Lapangan)</option>
-                                </select>
-                            </div>
-                            <div>
-                                <label class="block text-sm font-semibold mb-2">Penempatan Region (Wajib)</label>
-                                <select id="reg-region" required class="consolas-input w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600"></select>
-                            </div>
-                        </div>
-                        <button type="submit" class="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 rounded-lg transition-colors">
-                            <i class="fas fa-user-plus mr-2"></i> Daftarkan User
-                        </button>
-                    </form>
-                </section> -->
-
             </div><!-- end #view-container -->
         </main>
     </div><!-- end #main-app -->
+
+    <!-- MUTASI MODAL -->
+    <div id="mutasi-modal" class="hidden fixed inset-0 z-[90] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-md border border-gray-200 dark:border-gray-700">
+            <div class="flex justify-between items-center p-5 border-b dark:border-gray-700">
+                <div>
+                    <h3 class="text-lg font-bold text-gray-800 dark:text-gray-100">
+                        <i class="fas fa-exchange-alt mr-2 text-orange-500"></i>Mutasi Aset
+                    </h3>
+                    <p class="text-xs text-gray-500 font-mono mt-0.5" id="mutasi-modal-subtitle">---</p>
+                </div>
+                <button id="close-mutasi-modal" class="text-gray-400 hover:text-red-500 text-xl">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="p-5 space-y-4">
+                <input type="hidden" id="mutasi-uid">
+                <div>
+                    <label class="block text-xs font-semibold mb-1 text-gray-500">Lokasi Asal (Saat Ini)</label>
+                    <p class="font-semibold text-gray-700 dark:text-gray-200 bg-gray-100 dark:bg-gray-700 rounded-lg px-3 py-2 text-sm" id="mutasi-lokasi-asal">—</p>
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold mb-1 text-gray-500">Lokasi Tujuan</label>
+                    <select id="mutasi-lokasi-tuju" class="w-full p-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 focus:ring-2 focus:ring-orange-400">
+                        <option value="">Pilih Lokasi Tujuan...</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold mb-1 text-gray-500">Alasan Mutasi (Opsional)</label>
+                    <textarea id="mutasi-alasan" rows="3" placeholder="Contoh: BKO perbaikan rel di wilayah DAOP 1"
+                        class="w-full p-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 focus:ring-2 focus:ring-orange-400 resize-none text-sm"></textarea>
+                </div>
+                <button id="btn-submit-mutasi"
+                    class="w-full bg-orange-500 hover:bg-orange-600 text-white font-bold py-3 rounded-xl transition flex items-center justify-center gap-2">
+                    <i class="fas fa-paper-plane"></i> Proses Mutasi
+                </button>
+            </div>
+        </div>
+    </div>
 
     <!-- ============================================================ -->
     <!-- QR CODE MODAL                                                -->
@@ -597,7 +834,7 @@
     <div id="qr-print-area" class="hidden"></div>
 
     <!-- Toast Notifications -->
-    <div id="toast-container" class="fixed top-4 right-4 z-[100] flex flex-col gap-2"></div>
+    <div id="toast-container"></div>
 
     <!-- Confirm Modal -->
     <div id="confirm-modal" class="hidden fixed inset-0 z-[100] bg-black/50 backdrop-blur-sm flex items-center justify-center transition-opacity">

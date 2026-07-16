@@ -22,7 +22,7 @@ class Lokasi(Base):
     tipe_lokasi = Column(String(50), nullable=False)  # 'PUSAT', 'DAOP', 'DIVRE', 'BALAIYASA'
     aktif       = Column(Boolean, default=True)
 
-    asets = relationship("Aset", back_populates="lokasi_ref")
+    asets = relationship("Aset", back_populates="lokasi_ref", foreign_keys="[Aset.kode_lokasi]")
     upts  = relationship("MasterUPT", back_populates="lokasi_ref")
 
 
@@ -53,24 +53,26 @@ class Aset(Base):
 
     # uid: internal surrogate key (e.g. WH-ABC12345)
     # kode_id: human-readable asset code (e.g. BOR-1-26-A-D2), unique
-    uid             = Column(String(50), primary_key=True, index=True)
-    kode_id         = Column(String(50), unique=True, nullable=False, index=True)
+    uid                  = Column(String(50), primary_key=True, index=True)
+    kode_id              = Column(String(50), unique=True, nullable=False, index=True)
 
-    kode_alat       = Column(String(10), ForeignKey("master_alat.kode"))
-    kode_lokasi     = Column(String(10), ForeignKey("lokasi.kode_lokasi"))
+    kode_alat            = Column(String(10), ForeignKey("master_alat.kode"))
+    kode_lokasi          = Column(String(10), ForeignKey("lokasi.kode_lokasi"))
+    original_kode_lokasi = Column(String(10), ForeignKey("lokasi.kode_lokasi"), nullable=True)
 
-    pengadaan       = Column(String(20))   # '1' = PUSAT, '2' = DAOP/DIVRE
-    tahun_pembelian = Column(Integer)
-    unit_peruntukan = Column(String(10))   # 'A', 'B', 'C', 'D'
-    status_kondisi  = Column(String(20), default="BARU")  # 'BARU', 'SO', 'TSO'
-    is_afkir        = Column(Boolean, default=False)
-    created_at      = Column(DateTime, default=datetime.utcnow)
-    creator         = Column(String(50))
+    pengadaan            = Column(String(20))   # '1' = PUSAT, '2' = DAOP/DIVRE
+    tahun_pembelian      = Column(Integer)
+    unit_peruntukan      = Column(String(10))   # 'A', 'B', 'C', 'D'
+    status_kondisi       = Column(String(20), default="BARU")  # 'BARU', 'SO', 'TSO'
+    is_afkir             = Column(Boolean, default=False)
+    created_at           = Column(DateTime, default=datetime.utcnow)
+    creator              = Column(String(50))
 
-    alat_ref   = relationship("MasterAlat",       back_populates="asets")
-    lokasi_ref = relationship("Lokasi",           back_populates="asets")
-    riwayat    = relationship("RiwayatPerbaikan", back_populates="aset_ref")
-    mutasi     = relationship("RiwayatMutasi",    back_populates="aset_ref")
+    alat_ref             = relationship("MasterAlat",       back_populates="asets")
+    lokasi_ref           = relationship("Lokasi",           back_populates="asets", foreign_keys=[kode_lokasi])
+    original_lokasi_ref  = relationship("Lokasi",           foreign_keys=[original_kode_lokasi])
+    riwayat              = relationship("RiwayatPerbaikan", back_populates="aset_ref")
+    mutasi               = relationship("RiwayatMutasi",    back_populates="aset_ref")
 
 
 class RiwayatPerbaikan(Base):
