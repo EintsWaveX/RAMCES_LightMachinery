@@ -113,6 +113,9 @@ async function checkAuth() {
 
         _currentRole = role;
 
+        const filterModeEl = document.getElementById('filter-mode');
+        if (filterModeEl) filterModeEl.style.display = role === 'TEKNISI' ? 'none' : '';
+
         document.getElementById('auth-view').classList.add('hidden');
         document.getElementById('main-app').classList.remove('hidden');
         document.getElementById('current-username').innerText = currentUser;
@@ -437,16 +440,17 @@ function setupEventListeners() {
 
     // Dynamic UPT select
     document.getElementById('edit-lokasi')?.addEventListener('change', (e) => {
-        const locCode  = e.target.value;
+        const locCode   = e.target.value;
         const uptSelect = document.getElementById('edit-upt');
-        const matches  = uptDatabase.filter(u => u.lokasi === locCode);
+        const matches   = uptDatabase.filter(u => u.lokasi === locCode);
 
-        if (uptSelect) {
-            if (matches.length > 0) {
-                uptSelect.innerHTML = matches.map(m => `<option value="${m.upt}">${m.upt}</option>`).join('');
-            } else {
-                uptSelect.innerHTML = `<option value="Lainnya">Lainnya / Tidak ada data UPT</option>`;
-            }
+        uptSelect.innerHTML = '<option value="">Pilih UPT...</option>';
+        uptSelect.value = '';
+
+        if (matches.length > 0) {
+            uptSelect.innerHTML = '<option value="">Pilih UPT...</option>' + matches.map(m => `<option value="${m.upt}">${m.upt}</option>`).join('');
+        } else {
+            uptSelect.innerHTML = `<option value="Lainnya">Lainnya / Tidak ada data UPT</option>`;
         }
     });
 
@@ -689,17 +693,46 @@ document.addEventListener("visibilitychange", () => {
     }
 });
 
+window.addEventListener('resize', () => {
+    const sidebar     = document.getElementById('sidebar');
+    const overlay     = document.getElementById('sidebar-overlay');
+    const mainContent = document.getElementById('main-content-area');
+    if (!sidebar) return;
+
+    if (window.innerWidth >= 1024) {
+        // Desktop: remove mobile overlay, keep sidebar open state as margin
+        overlay.classList.remove('active');
+        if (sidebar.classList.contains('open')) {
+            mainContent.classList.add('sidebar-open');
+        }
+    } else {
+        // Mobile: remove desktop margin shift, revert to overlay behavior
+        mainContent.classList.remove('sidebar-open');
+        if (sidebar.classList.contains('open')) {
+            overlay.classList.add('active');
+        }
+    }
+});
+
 function toggleSidebar() {
-    const sidebar  = document.getElementById('sidebar');
-    const overlay  = document.getElementById('sidebar-overlay');
-    const isOpen   = sidebar.classList.contains('open');
+    const sidebar     = document.getElementById('sidebar');
+    const overlay     = document.getElementById('sidebar-overlay');
+    const mainContent = document.getElementById('main-content-area');
+    const isOpen      = sidebar.classList.contains('open');
+    const isDesktop   = window.innerWidth >= 1024;
 
     if (isOpen) {
         sidebar.classList.remove('open');
         overlay.classList.remove('active');
+        if (isDesktop) mainContent.classList.remove('sidebar-open');
     } else {
         sidebar.classList.add('open');
-        overlay.classList.add('active');
+        if (isDesktop) {
+            mainContent.classList.add('sidebar-open');
+            // No overlay on desktop
+        } else {
+            overlay.classList.add('active');
+        }
     }
 }
 
@@ -841,8 +874,11 @@ function renderDbCards() {
     const modeSelect  = document.getElementById('filter-mode');
     if (!container) return;
 
+    const isTeknisi = _currentRole === 'TEKNISI';
+    if (modeSelect) modeSelect.style.display = isTeknisi ? 'none' : ''
+
     const searchQ = searchInput ? searchInput.value.toLowerCase() : '';
-    const mode    = modeSelect ? modeSelect.value : 'public';
+    const mode    = isTeknisi ? 'public' : (modeSelect ? modeSelect.value : 'public');
     const isAdmin = _currentRole === 'SUPER_ADMIN' || _currentRole === 'ADMIN_DAOP';
 
     container.innerHTML = '';
@@ -873,6 +909,15 @@ function renderDbCards() {
                     </div>
                     <h3 class="text-lg font-bold font-mono text-blue-600 dark:text-blue-400 break-words">${item.kode_id}</h3>
                     <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">${item.alat} — ${item.lokasi}</p>
+                    ${item.original_kode_lokasi && item.kode_lokasi !== item.original_kode_lokasi ? `
+                    <p class="text-xs mt-1 flex items-center gap-1">
+                        <i class="fas fa-exchange-alt text-orange-400"></i>
+                        <span class="text-orange-500 dark:text-orange-400 font-semibold">Status Mutasi: Sedang di luar lokasi asal</span>
+                    </p>` : item.original_kode_lokasi ? `
+                    <p class="text-xs mt-1 flex items-center gap-1">
+                        <i class="fas fa-check-circle text-green-400"></i>
+                        <span class="text-green-600 dark:text-green-400 font-semibold">Status Mutasi: Di lokasi asal</span>
+                    </p>` : ''}
                 </div>
                 <div class="mt-4 flex gap-2">
                     <button onclick="window.openEdit('${item.uid}')"

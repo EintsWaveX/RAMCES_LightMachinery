@@ -427,6 +427,7 @@ def get_all_aset(
             "alat":    a.alat_ref.nama           if a.alat_ref   else a.kode_alat,
             "lokasi":  a.lokasi_ref.nama_lokasi  if a.lokasi_ref else a.kode_lokasi,
             "kode_lokasi": a.kode_lokasi,
+            "original_kode_lokasi": a.original_kode_lokasi,
             "creator": a.creator
         }
         for a in asets
