@@ -27,6 +27,7 @@ class UserResponse(BaseModel):
 class Token(BaseModel):
     access_token: str
     token_type:   str
+    already_existed: Optional[bool] = None
 
 
 # ── MASTER DATA ───────────────────────────────────────────────────
@@ -34,13 +35,16 @@ class Token(BaseModel):
 class MasterAlatCreate(BaseModel):
     kode:      str
     nama:      str
+    tanggal_pembelian: Optional[date] = None
     deskripsi: Optional[str] = None
 
 class MasterAlatResponse(BaseModel):
     kode:      str
     nama:      str
+    tanggal_pembelian: Optional[date] = None
     deskripsi: Optional[str] = None
     aktif:     bool
+    
     class Config:
         from_attributes = True
 

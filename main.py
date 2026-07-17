@@ -216,6 +216,110 @@ def delete_own_account(
     return {"message": f"Akun {current_user.username} berhasil dihapus."}
 
 # ==================================================================
+# ── USER MANAGEMENT ───────────────────────────────────────────────
+# ==================================================================
+
+@app.get("/api/users")
+def get_all_users(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    """
+    Returns user list filtered by role:
+    - SUPER_ADMIN: sees all users
+    - ADMIN_DAOP: sees only users in their own region
+    - TEKNISI: forbidden
+    """
+    if current_user.role == "TEKNISI":
+        raise HTTPException(status_code=403, detail="Akses ditolak.")
+
+    query = db.query(models.User)
+    if current_user.role == "ADMIN_DAOP":
+        query = query.filter(
+            models.User.assigned_region == current_user.assigned_region,
+            models.User.role.in_(["ADMIN_DAOP", "TEKNISI"])
+        )
+
+    return [
+        {
+            "id":              u.id,
+            "username":        u.username,
+            "role":            u.role,
+            "assigned_region": u.assigned_region,
+            "aktif":           True  # all rows in DB are active; soft-delete via separate flag if added
+        }
+        for u in query.order_by(models.User.role, models.User.username).all()
+    ]
+
+
+@app.put("/api/users/{user_id}")
+def update_user(
+    user_id: int,
+    data: schemas.UserCreate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    """
+    Update a user's role and/or region.
+    ADMIN_DAOP can only edit TEKNISI in their own region.
+    SUPER_ADMIN can edit anyone except themselves (to prevent self-lockout).
+    """
+    if current_user.role == "TEKNISI":
+        raise HTTPException(status_code=403, detail="Akses ditolak.")
+
+    target = db.query(models.User).filter_by(id=user_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="User tidak ditemukan.")
+
+    if current_user.role == "ADMIN_DAOP":
+        if target.assigned_region != current_user.assigned_region:
+            raise HTTPException(status_code=403, detail="Hanya bisa mengedit user di region Anda.")
+        if target.role not in ["ADMIN_DAOP", "TEKNISI"]:
+            raise HTTPException(status_code=403, detail="Tidak bisa mengedit SUPER_ADMIN.")
+        # Lock region to current admin's region
+        data.assigned_region = current_user.assigned_region
+
+    if current_user.id == target.id:
+        raise HTTPException(status_code=400, detail="Tidak bisa mengedit akun sendiri di sini. Gunakan fitur hapus akun.")
+
+    target.role            = data.role
+    target.assigned_region = data.assigned_region
+    db.commit()
+    return {"message": f"User {target.username} berhasil diperbarui."}
+
+
+@app.delete("/api/users/{user_id}")
+def delete_user(
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    """
+    Soft-delete a user by removing them from the DB.
+    ADMIN_DAOP: can only delete TEKNISI in their region.
+    SUPER_ADMIN: can delete anyone except themselves.
+    """
+    if current_user.role == "TEKNISI":
+        raise HTTPException(status_code=403, detail="Akses ditolak.")
+
+    target = db.query(models.User).filter_by(id=user_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="User tidak ditemukan.")
+
+    if current_user.id == target.id:
+        raise HTTPException(status_code=400, detail="Gunakan fitur 'Hapus Akun' untuk menghapus akun sendiri.")
+
+    if current_user.role == "ADMIN_DAOP":
+        if target.assigned_region != current_user.assigned_region:
+            raise HTTPException(status_code=403, detail="Hanya bisa menghapus user di region Anda.")
+        if target.role not in ["ADMIN_DAOP", "TEKNISI"]:
+            raise HTTPException(status_code=403, detail="Tidak bisa menghapus SUPER_ADMIN.")
+
+    db.delete(target)
+    db.commit()
+    return {"message": f"User {target.username} berhasil dihapus."}
+
+# ==================================================================
 # WEBSOCKET
 # ==================================================================
 
@@ -246,7 +350,7 @@ def get_master_alat(db: Session = Depends(get_db)):
 def create_master_alat(data: schemas.MasterAlatCreate, db: Session = Depends(get_db)):
     if db.query(models.MasterAlat).filter_by(kode=data.kode).first():
         raise HTTPException(status_code=400, detail="Kode alat sudah ada.")
-    db.add(models.MasterAlat(kode=data.kode, nama=data.nama, deskripsi=data.deskripsi))
+    db.add(models.MasterAlat(kode=data.kode, nama=data.nama, tanggal_pembelian=data.tanggal_pembelian, deskripsi=data.deskripsi))
     db.commit()
     return {"message": f"Alat {data.nama} berhasil ditambahkan."}
 
@@ -256,6 +360,7 @@ def update_master_alat(kode: str, data: schemas.MasterAlatCreate, db: Session = 
     if not item:
         raise HTTPException(status_code=404, detail="Kode alat tidak ditemukan.")
     item.nama      = data.nama
+    item.tanggal_pembelian = data.tanggal_pembelian
     item.deskripsi = data.deskripsi
     db.commit()
     return {"message": f"Alat {kode} berhasil diperbarui."}

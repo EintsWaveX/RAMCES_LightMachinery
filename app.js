@@ -384,13 +384,10 @@ function setupEventListeners() {
         if (!regionSel) return;
         if (e.target.value === 'SUPER_ADMIN') {
             regionSel.disabled = true;
-            regionSel.innerHTML = '<option value="">Semua Region</option>';
+            regionSel.innerHTML = '<option value="">Semua Region (tidak diperlukan)</option>';
         } else {
             regionSel.disabled = false;
-            // Re-populate from lokasiData since it may have been cleared
-            regionSel.innerHTML = lokasiData.map(l =>
-                `<option value="${l.code}">${l.name}</option>`
-            ).join('');
+            fetchLoginRegions(); // re-fetch from API to guarantee correct shape
         }
     });
 
@@ -873,7 +870,7 @@ function renderDbCards() {
     const searchInput = document.getElementById('search-db');
     const modeSelect  = document.getElementById('filter-mode');
     if (!container) return;
-
+    
     const isTeknisi = _currentRole === 'TEKNISI';
     if (modeSelect) modeSelect.style.display = isTeknisi ? 'none' : ''
 
@@ -883,6 +880,15 @@ function renderDbCards() {
 
     container.innerHTML = '';
 
+    const filtered = _historySummary.filter(item =>
+        item.kode_id.toLowerCase().includes(searchQ) ||
+        item.uid.toLowerCase().includes(searchQ)
+    );
+    if (!filtered.length) {
+        container.innerHTML = `<div class="col-span-3 text-center text-gray-400 py-12"><i class="fas fa-inbox text-3xl mb-2 block"></i>Belum ada data penambahan aset alat kerja.</div>`;
+        return;
+    }
+
     db.filter(item => {
         const matchSearch = item.kode_id.toLowerCase().includes(searchQ) ||
                             item.uid.toLowerCase().includes(searchQ)     ||
@@ -890,6 +896,10 @@ function renderDbCards() {
         const matchMode = mode === 'public' ? true :
             (item.creator || '').toLowerCase() === (currentUser || '').toLowerCase();
         return matchSearch && matchMode;
+    }).sort((a, b) => {
+        const av = (a[_sortField] || '').toString().toLowerCase();
+        const bv = (b[_sortField] || '').toString().toLowerCase();
+        return _sortDir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av);
     }).forEach(item => {
         const statusColor = item.status === 'SO'  ? 'text-green-500' :
                             item.status === 'TSO' ? 'text-red-500'   : 'text-blue-500';
@@ -959,7 +969,7 @@ function renderHistoryCards() {
     );
 
     if (!filtered.length) {
-        container.innerHTML = `<div class="col-span-2 text-center text-gray-400 py-12"><i class="fas fa-inbox text-3xl mb-2 block"></i>Tidak ada data.</div>`;
+        container.innerHTML = `<div class="col-span-2 text-center text-gray-400 py-12"><i class="fas fa-inbox text-3xl mb-2 block"></i>Belum ada riwayat perbaikan.</div>`;
         return;
     }
 
@@ -1067,6 +1077,7 @@ document.querySelectorAll('.master-tab').forEach(tab => {
         document.getElementById(`master-tab-${target}`)?.classList.remove('hidden');
 
         // Load data for the active tab
+        if (target === 'users')  loadMasterUsers();
         if (target === 'alat')   loadMasterAlat();
         if (target === 'lokasi') loadMasterLokasi();
         if (target === 'upt')    loadMasterUpt();
@@ -1085,7 +1096,7 @@ document.querySelectorAll('.nav-btn').forEach(btn => {
         btn.addEventListener('click', () => {
             // Activate Alat tab by default
             setTimeout(() => {
-                document.querySelector('.master-tab[data-tab="alat"]')?.click();
+                document.querySelector('.master-tab[data-tab="users"]')?.click();
             }, 50);
         }, { once: false });
     }
@@ -1112,8 +1123,9 @@ async function loadMasterAlat() {
                 <td class="px-4 py-3 font-mono font-bold text-blue-600 dark:text-blue-400">${a.kode}</td>
                 <td class="px-4 py-3 font-semibold">${a.nama}</td>
                 <td class="px-4 py-3 text-gray-500 text-xs">${a.deskripsi || '—'}</td>
+                <td class="px-4 py-3 text-gray-500 text-xs font-mono">${a.tanggal_pembelian || '—'}</td>
                 <td class="px-4 py-3 text-right">
-                    <button onclick="window.openMasterEdit('alat','${a.kode}','${a.nama}','${a.deskripsi || ''}')"
+                    <button onclick="window.openMasterEdit('alat','${a.kode}','${a.nama}','${a.deskripsi || ''}','${a.tanggal_pembelian || ''}')"
                         class="text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 px-3 py-1 rounded-lg font-bold hover:bg-blue-200 transition">
                         <i class="fas fa-edit mr-1"></i>Edit
                     </button>
@@ -1205,17 +1217,109 @@ async function loadMasterUpt() {
     }
 }
 
+async function loadMasterUsers() {
+    const tbody = document.getElementById('table-users');
+    if (!tbody) return;
+
+    const regionSel = document.getElementById('new-user-region');
+    if (regionSel && lokasiData.length) {
+        regionSel.innerHTML = lokasiData.map(l =>
+            `<option value="${l.code}">${l.name} (${l.code})</option>`
+        ).join('');
+    }
+    const addFormWrap = document.getElementById('add-user-form-wrap');
+    if (addFormWrap) {
+        addFormWrap.classList.toggle('hidden', _currentRole !== 'SUPER_ADMIN');
+    }
+    
+    tbody.innerHTML = `<tr><td colspan="4" class="px-4 py-6 text-center text-gray-400 text-sm"><i class="fas fa-spinner fa-spin mr-2"></i>Memuat...</td></tr>`;
+
+    try {
+        const res  = await apiFetch('/users');
+        if (!res.ok) throw new Error();
+        const data = await res.json();
+
+        if (!data.length) {
+            tbody.innerHTML = `<tr><td colspan="4" class="px-4 py-6 text-center text-gray-400 text-sm">Belum ada data pengguna.</td></tr>`;
+            return;
+        }
+
+        const roleColors = {
+            SUPER_ADMIN: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300',
+            ADMIN_DAOP:  'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300',
+            TEKNISI:     'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300',
+        };
+
+        tbody.innerHTML = data.map(u => `
+            <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                <td class="px-4 py-3 font-semibold font-mono">${u.username}</td>
+                <td class="px-4 py-3">
+                    <span class="text-xs px-2 py-0.5 rounded-full font-bold ${roleColors[u.role] || 'bg-gray-100 text-gray-700'}">
+                        ${u.role}
+                    </span>
+                </td>
+                <td class="px-4 py-3 text-sm text-gray-500 font-mono">${u.assigned_region || '—'}</td>
+                <td class="px-4 py-3 text-right">
+                    <button onclick="window.openMasterEdit('users',${u.id},'${u.username}','${u.role}','${u.assigned_region || ''}')"
+                        class="text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 px-3 py-1 rounded-lg font-bold hover:bg-blue-200 transition">
+                        <i class="fas fa-edit mr-1"></i>Edit
+                    </button>
+                </td>
+            </tr>
+        `).join('');
+    } catch (e) {
+        tbody.innerHTML = `<tr><td colspan="4" class="px-4 py-6 text-center text-red-400 text-sm">Gagal memuat data pengguna.</td></tr>`;
+    }
+}
+
+// ── SORT MODAL ────────────────────────────────────────────────────
+
+let _sortField = 'kode_id';
+let _sortDir   = 'asc';
+
+document.getElementById('btn-sort-db')?.addEventListener('click', () => {
+    document.getElementById('sort-modal').classList.remove('hidden');
+});
+
+document.getElementById('close-sort-modal')?.addEventListener('click', () => {
+    document.getElementById('sort-modal').classList.add('hidden');
+});
+
+document.querySelectorAll('.sort-dir-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        _sortDir = btn.dataset.dir;
+        document.querySelectorAll('.sort-dir-btn').forEach(b => {
+            const active = b.dataset.dir === _sortDir;
+            b.classList.toggle('border-blue-500', active);
+            b.classList.toggle('bg-blue-50',      active);
+            b.classList.toggle('dark:bg-blue-900/20', active);
+            b.classList.toggle('text-blue-700',   active);
+            b.classList.toggle('dark:text-blue-300', active);
+            b.classList.toggle('border-transparent', !active);
+            b.classList.toggle('text-gray-500',   !active);
+        });
+    });
+});
+
+document.getElementById('btn-apply-sort')?.addEventListener('click', () => {
+    _sortField = document.getElementById('sort-field').value;
+    document.getElementById('sort-modal').classList.add('hidden');
+    renderDbCards();
+});
+
 // ── ADD FORMS ─────────────────────────────────────────────────────
 
 document.getElementById('form-add-alat')?.addEventListener('submit', async (e) => {
     e.preventDefault();
     const kode      = document.getElementById('new-alat-kode').value.trim().toUpperCase();
     const nama      = document.getElementById('new-alat-nama').value.trim();
+    document.getElementById('new-alat-tanggal').value = '';
     const deskripsi = document.getElementById('new-alat-deskripsi').value.trim();
     if (!kode || !nama) return showToast('Kode dan Nama wajib diisi.', 'warning');
 
     try {
-        const res = await apiFetch('/master/alat', { method: 'POST', body: JSON.stringify({ kode, nama, deskripsi: deskripsi || null }) });
+        const tanggal = document.getElementById('new-alat-tanggal').value || null;
+        const res = await apiFetch('/master/alat', { method: 'POST', body: JSON.stringify({ kode, nama, deskripsi: deskripsi || null, tanggal_pembelian: tanggal }) });
         if (!res.ok) { const err = await res.json(); throw new Error(err.detail); }
         showToast('Alat berhasil ditambahkan.', 'success');
         e.target.reset();
@@ -1267,12 +1371,47 @@ document.getElementById('form-add-upt')?.addEventListener('submit', async (e) =>
 
 let _masterEditCtx = null; // { type, id, ... }
 
-window.openMasterEdit = (type, id, val1, val2) => {
-    _masterEditCtx = { type, id, val1, val2 };
+window.openMasterEdit = (type, id, val1, val2, val3) => {
+    _masterEditCtx = { type, id, val1, val2, val3 };
     const title  = document.getElementById('master-edit-title');
     const fields = document.getElementById('master-edit-fields');
+    const deactivateBtn = document.getElementById('btn-master-edit-deactivate');
 
-    if (type === 'alat') {
+    // Reset deactivate button label
+    deactivateBtn.innerHTML = '<i class="fas fa-ban mr-1"></i> Nonaktifkan';
+
+    if (type === 'users') {
+        title.textContent = `Edit Pengguna: ${val1}`;
+        deactivateBtn.innerHTML = '<i class="fas fa-user-slash mr-1"></i> Hapus User';
+        fields.innerHTML = `
+            <div>
+                <label class="block text-xs font-semibold mb-1">Username</label>
+                <input value="${val1}" disabled
+                    class="w-full p-2 border rounded-md bg-gray-100 dark:bg-gray-600 dark:border-gray-500 text-gray-500 cursor-not-allowed">
+            </div>
+            <div>
+                <label class="block text-xs font-semibold mb-1">Password</label>
+                <input disabled placeholder="(belum digunakan)"
+                    class="w-full p-2 border rounded-md bg-gray-100 dark:bg-gray-600 dark:border-gray-500 text-gray-400 cursor-not-allowed italic">
+            </div>
+            <div>
+                <label class="block text-xs font-semibold mb-1">Role</label>
+                <select id="edit-field-role" class="w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600">
+                    ${['TEKNISI','ADMIN_DAOP','SUPER_ADMIN'].map(r =>
+                        `<option value="${r}" ${val2 === r ? 'selected' : ''}>${r}</option>`
+                    ).join('')}
+                </select>
+            </div>
+            <div>
+                <label class="block text-xs font-semibold mb-1">Region</label>
+                <select id="edit-field-region" class="w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600">
+                    ${lokasiData.map(l =>
+                        `<option value="${l.code}" ${val3 === l.code ? 'selected' : ''}>${l.name} (${l.code})</option>`
+                    ).join('')}
+                </select>
+            </div>
+        `;
+    } else if (type === 'alat') {
         title.textContent = `Edit Alat: ${id}`;
         fields.innerHTML = `
             <div>
@@ -1283,6 +1422,11 @@ window.openMasterEdit = (type, id, val1, val2) => {
             <div>
                 <label class="block text-xs font-semibold mb-1">Deskripsi (opsional)</label>
                 <input id="edit-field-deskripsi" value="${val2}"
+                    class="w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600">
+            </div>
+            <div>
+                <label class="block text-xs font-semibold mb-1">Tanggal Pembelian (opsional)</label>
+                <input id="edit-field-tanggal" type="date" value="${val3 || ''}"
                     class="w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600">
             </div>
         `;
@@ -1336,10 +1480,15 @@ document.getElementById('btn-master-edit-save')?.addEventListener('click', async
 
     try {
         let res;
-        if (type === 'alat') {
-            const nama      = document.getElementById('edit-field-nama').value.trim();
-            const deskripsi = document.getElementById('edit-field-deskripsi').value.trim();
-            res = await apiFetch(`/master/alat/${id}`, { method: 'PUT', body: JSON.stringify({ kode: id, nama, deskripsi: deskripsi || null }) });
+        if (type === 'users') {
+            const role        = document.getElementById('edit-field-role').value;
+            const region      = document.getElementById('edit-field-region').value;
+            res = await apiFetch(`/users/${id}`, { method: 'PUT', body: JSON.stringify({ username: _masterEditCtx.val1, role, assigned_region: region }) });
+        } else if (type === 'alat') {
+            const nama        = document.getElementById('edit-field-nama').value.trim();
+            const deskripsi   = document.getElementById('edit-field-deskripsi').value.trim();
+            const tanggal     = document.getElementById('edit-field-tanggal')?.value || null;
+            res = await apiFetch(`/master/alat/${id}`, { method: 'PUT', body: JSON.stringify({ kode: id, nama, deskripsi: deskripsi || null, tanggal_pembelian: tanggal }) });
         } else if (type === 'lokasi') {
             const nama_lokasi = document.getElementById('edit-field-nama').value.trim();
             const tipe_lokasi = document.getElementById('edit-field-tipe').value;
@@ -1355,6 +1504,7 @@ document.getElementById('btn-master-edit-save')?.addEventListener('click', async
         document.getElementById('master-edit-modal').classList.add('hidden');
         _masterEditCtx = null;
 
+        if (type === 'users')  { await loadMasterUsers();                           }
         if (type === 'alat')   { await loadMasterAlat();   await fetchMasterData(); }
         if (type === 'lokasi') { await loadMasterLokasi(); await fetchMasterData(); }
         if (type === 'upt')    { await loadMasterUpt();    await fetchMasterData(); }
@@ -1369,13 +1519,16 @@ document.getElementById('btn-master-edit-deactivate')?.addEventListener('click',
     const { type, id, val1 } = _masterEditCtx;
 
     const confirmed = await customConfirm(
-        `Nonaktifkan "${val1}"?\n\nData yang sudah menggunakan referensi ini tidak akan terpengaruh, tapi tidak bisa dipilih untuk entri baru.`
+        type === 'users'
+            ? `Hapus akun "${val1}" secara permanen? Tindakan ini tidak dapat dibatalkan.`
+            : `Nonaktifkan "${val1}"?\n\nData yang sudah menggunakan referensi ini tidak akan terpengaruh, tapi tidak bisa dipilih untuk entri baru.`
     );
     if (!confirmed) return;
 
     try {
         let res;
-        if (type === 'alat')   res = await apiFetch(`/master/alat/${id}`,   { method: 'DELETE' });
+        if (type === 'users')  res = await apiFetch(`/users/${id}`,          { method: 'DELETE' });
+        if (type === 'alat')   res = await apiFetch(`/master/alat/${id}`,    { method: 'DELETE' });
         if (type === 'lokasi') res = await apiFetch(`/master/lokasi/${id}`,  { method: 'DELETE' });
         if (type === 'upt')    res = await apiFetch(`/master/upt/${id}`,     { method: 'DELETE' });
 
@@ -1384,6 +1537,7 @@ document.getElementById('btn-master-edit-deactivate')?.addEventListener('click',
         document.getElementById('master-edit-modal').classList.add('hidden');
         _masterEditCtx = null;
 
+        if (type === 'users')  { await loadMasterUsers();                           }
         if (type === 'alat')   { await loadMasterAlat();   await fetchMasterData(); }
         if (type === 'lokasi') { await loadMasterLokasi(); await fetchMasterData(); }
         if (type === 'upt')    { await loadMasterUpt();    await fetchMasterData(); }

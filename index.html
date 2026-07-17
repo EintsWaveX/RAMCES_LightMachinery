@@ -18,6 +18,8 @@
     </script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
+        html.is-authed #auth-view { display: none !important; }
+        
         ::-webkit-scrollbar { width: 8px; }
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
@@ -26,6 +28,11 @@
         .status-btn.active.so  { background-color: #22c55e !important; color: white !important; opacity: 1 !important; }
         .status-btn.active.tso { background-color: #ef4444 !important; color: white !important; opacity: 1 !important; }
         .status-btn.inactive   { background-color: #9ca3af !important; color: #f3f4f6 !important; opacity: 0.5 !important; }
+
+        @media (min-width: 480px) {
+            .xs\:inline { display: inline !important; }
+            .xs\:hidden { display: none !important;   }
+        }
 
         /* Toast: bottom-center on mobile, top-right on desktop */
         #toast-container {
@@ -208,13 +215,13 @@
                 </button>
             </div>
             <nav class="flex-1 p-4 space-y-2 overflow-y-auto">
-                <button data-target="dashboard" id="nav-dashboard" class="nav-btn w-full flex items-center p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
+                <button data-target="dashboard" id="nav-dashboard" class="nav-btn w-full flex items-center p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-amber-600 dark:text-amber-400 font-bold border border-amber-200 dark:border-amber-900 mt-4">
                     <i class="fas fa-chart-pie w-6"></i> <span>Dashboard</span>
                 </button>
                 <button data-target="masterdata" id="nav-masterdata" class="nav-btn w-full flex items-center p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 hidden text-emerald-600 dark:text-emerald-400 font-bold border border-emerald-200 dark:border-emerald-900 mt-4">
                     <i class="fas fa-table w-6"></i> <span>Kelola Pusat Data</span>
                 </button>
-                <button data-target="input" id="nav-input" class="nav-btn w-full flex items-center p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
+                <button data-target="input" id="nav-input" class="nav-btn w-full flex items-center p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-sky-600 dark:text-sky-400 font-bold border border-sky-200 dark:border-sky-900 mt-4">
                     <i class="fas fa-plus-square w-6"></i> <span>Tambah Alat Kerja</span>
                 </button>
                 <button data-target="database" class="nav-btn w-full flex items-center p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
@@ -226,9 +233,6 @@
                 <button data-target="laporan" class="nav-btn w-full flex items-center p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
                     <i class="fas fa-file-export w-6"></i> <span>Laporan dan Ekspor</span>
                 </button>
-                <!-- <button data-target="usermanagement" id="nav-user-management" class="nav-btn w-full flex items-center p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 hidden text-purple-600 dark:text-purple-400 font-bold border border-purple-200 dark:border-purple-900 mt-4">
-                    <i class="fas fa-users-cog w-6"></i> <span>Manajemen User</span>
-                </button> -->
             </nav>
             <div class="p-4 border-t border-gray-200 dark:border-gray-700 space-y-2">
                 <button id="theme-toggle-btn" class="w-full flex items-center justify-center p-2 bg-gray-200 dark:bg-gray-700 rounded-lg">
@@ -309,7 +313,7 @@
                             <label class="block text-sm font-semibold mb-2">2. Pengadaan</label>
                             <div class="flex space-x-6 consolas-input">
                                 <label class="flex items-center space-x-2"><input type="radio" name="in-pengadaan" value="1" required class="w-4 h-4 text-blue-600"> <span>PUSAT (1)</span></label>
-                                <label class="flex items-center space-x-2"><input type="radio" name="in-pengadaan" value="2" class="w-4 h-4 text-blue-600"> <span>DAOP/DIVRE (2)</span></label>
+                                <label class="flex items-center space-x-2"><input type="radio" name="in-pengadaan" value="2" class="w-4 h-4 text-blue-600"> <span>DAOP/DIVRE/BALAIYASA (2)</span></label>
                             </div>
                         </div>
                         <div>
@@ -338,11 +342,18 @@
                 <!-- VIEW: DATABASE SEARCH -->
                 <section id="view-database" class="view-section hidden h-full flex flex-col">
                     <div class="flex flex-col sm:flex-row gap-4 mb-4">
-                        <input type="text" id="search-db" placeholder="Cari ID, Alat, atau Lokasi..." class="w-full p-3 border rounded-lg shadow-sm dark:bg-gray-800 dark:border-gray-700 consolas-input">
-                        <select id="filter-mode" class="p-3 border rounded-lg shadow-sm dark:bg-gray-800 dark:border-gray-700 font-semibold">
-                            <option value="public">🌍 Publik (Semua Aset)</option>
-                            <option value="local">👤 Lokal (Aset Saya)</option>
-                        </select>
+                        <input type="text" id="search-db" placeholder="Cari ID, Alat, atau Lokasi..." class="flex-1 p-3 border rounded-lg shadow-sm dark:bg-gray-800 dark:border-gray-700 consolas-input">
+                        <div class="flex gap-2 shrink-0">
+                            <select id="filter-mode"
+                                class="p-3 border rounded-lg shadow-sm dark:bg-gray-800 dark:border-gray-700 font-semibold flex-1 min-w-[120px]">
+                                <option value="public">🌍 Publik (Semua Aset)</option>
+                                <option value="local">👤 Lokal (Aset Saya)</option>
+                            </select>
+                            <button id="btn-sort-db" title="Urutkan"
+                                class="p-3 border rounded-lg shadow-sm dark:bg-gray-800 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700 transition w-12 h-12 flex items-center justify-center flex-shrink-0">
+                                <i class="fas fa-sort-amount-down text-gray-500 dark:text-gray-400"></i>
+                            </button>
+                        </div>
                     </div>
                     <div id="db-cards-container" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 overflow-y-auto pb-20"></div>
                 </section>
@@ -445,12 +456,12 @@
                             <table class="w-full text-left border-collapse">
                                 <thead>
                                     <tr class="bg-gray-100 dark:bg-gray-700">
-                                        <th class="p-3 border dark:border-gray-600">NO.</th>
-                                        <th class="p-3 border dark:border-gray-600">TANGGAL</th>
-                                        <th class="p-3 border dark:border-gray-600">UPT PENGIRIM</th>
-                                        <th class="p-3 border dark:border-gray-600">PETUGAS</th>
-                                        <th class="p-3 border dark:border-gray-600">STATUS</th>
-                                        <th class="p-3 border dark:border-gray-600">KETERANGAN</th>
+                                        <th class="p-3 border dark:border-gray-600 text-center">NO.</th>
+                                        <th class="p-3 border dark:border-gray-600 text-center">TANGGAL</th>
+                                        <th class="p-3 border dark:border-gray-600 text-center">UPT PENGIRIM</th>
+                                        <th class="p-3 border dark:border-gray-600 text-center">PETUGAS</th>
+                                        <th class="p-3 border dark:border-gray-600 text-center">STATUS</th>
+                                        <th class="p-3 border dark:border-gray-600 text-center">KETERANGAN</th>
                                     </tr>
                                 </thead>
                                 <tbody id="hist-table-body" class="font-mono text-sm"></tbody>
@@ -470,7 +481,7 @@
                 <section id="view-laporan" class="view-section max-w-3xl mx-auto hidden space-y-6">
                     <div class="flex items-center justify-between border-b pb-3 dark:border-gray-700">
                         <h2 class="text-2xl font-bold text-gray-800 dark:text-gray-100">
-                            <i class="fas fa-file-export mr-2 text-blue-500"></i>Laporan & Export
+                            <i class="fas fa-file-export mr-2 text-blue-500"></i>Laporan dan Ekspor
                         </h2>
                     </div>
 
@@ -562,14 +573,14 @@
                             <table class="w-full text-xs text-left">
                                 <thead class="bg-gray-50 dark:bg-gray-700 text-gray-500 dark:text-gray-400 uppercase">
                                     <tr>
-                                        <th class="px-3 py-2">No</th>
-                                        <th class="px-3 py-2">Tanggal</th>
-                                        <th class="px-3 py-2">Kode ID</th>
-                                        <th class="px-3 py-2">Alat</th>
-                                        <th class="px-3 py-2">Lokasi Aset</th>
-                                        <th class="px-3 py-2">UPT</th>
-                                        <th class="px-3 py-2">Teknisi</th>
-                                        <th class="px-3 py-2">Kondisi</th>
+                                        <th class="px-3 py-2 text-center">No</th>
+                                        <th class="px-3 py-2 text-center">Tanggal</th>
+                                        <th class="px-3 py-2 text-center">Kode ID</th>
+                                        <th class="px-3 py-2 text-center">Alat</th>
+                                        <th class="px-3 py-2 text-center">Lokasi Aset</th>
+                                        <th class="px-3 py-2 text-center">UPT</th>
+                                        <th class="px-3 py-2 text-center">Teknisi</th>
+                                        <th class="px-3 py-2 text-center">Kondisi</th>
                                     </tr>
                                 </thead>
                                 <tbody id="exp-preview-body" class="divide-y dark:divide-gray-700 font-mono"></tbody>
@@ -579,161 +590,234 @@
                 </section>
 
                 <!-- VIEW: MASTER DATA (SUPER_ADMIN only) -->
-                <section id="view-masterdata" class="view-section max-w-5xl mx-auto hidden space-y-6">
-                    <div class="flex items-center justify-between border-b pb-3 dark:border-gray-700">
-                        <h2 class="text-2xl font-bold text-emerald-600 dark:text-emerald-400">
-                            <i class="fas fa-table mr-2"></i>Master Data
-                        </h2>
-                        <span class="text-xs bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 px-3 py-1 rounded-full font-bold">SUPER ADMIN</span>
-                    </div>
+            <section id="view-masterdata" class="view-section max-w-5xl mx-auto hidden space-y-6">
+                <div class="flex items-center justify-between border-b pb-3 dark:border-gray-700 flex-wrap gap-2">
+                    <h2 class="text-2xl font-bold text-emerald-600 dark:text-emerald-400">
+                        <i class="fas fa-table mr-2"></i>Kelola Pusat Data
+                    </h2>
+                    <span class="text-xs bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 px-3 py-1 rounded-full font-bold text-center">SUPER ADMIN</span>
+                </div>
 
-                    <!-- Tabs -->
-                    <div class="flex border-b dark:border-gray-700 gap-1">
-                        <button data-tab="alat"   class="master-tab px-5 py-2 text-sm font-bold rounded-t-lg border-b-2 border-transparent hover:bg-gray-100 dark:hover:bg-gray-700 transition">
-                            <i class="fas fa-tools mr-1"></i> Alat Kerja
-                        </button>
-                        <button data-tab="lokasi" class="master-tab px-5 py-2 text-sm font-bold rounded-t-lg border-b-2 border-transparent hover:bg-gray-100 dark:hover:bg-gray-700 transition">
-                            <i class="fas fa-map-marker-alt mr-1"></i> Lokasi
-                        </button>
-                        <button data-tab="upt"    class="master-tab px-5 py-2 text-sm font-bold rounded-t-lg border-b-2 border-transparent hover:bg-gray-100 dark:hover:bg-gray-700 transition">
-                            <i class="fas fa-sitemap mr-1"></i> UPT
-                        </button>
-                    </div>
+                <!-- Tabs - Mobile friendly equal width -->
+                <div class="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+                    <button data-tab="users" class="master-tab px-3 py-2.5 text-xs sm:text-sm font-bold rounded-lg border-2 border-transparent hover:bg-gray-100 dark:hover:bg-gray-700 transition text-center">
+                        <i class="fas fa-users mr-1"></i> <span class="hidden xs:inline">Pengguna</span><span class="xs:hidden">Pengguna</span>
+                    </button>
+                    <button data-tab="alat" class="master-tab px-3 py-2.5 text-xs sm:text-sm font-bold rounded-lg border-2 border-transparent hover:bg-gray-100 dark:hover:bg-gray-700 transition text-center">
+                        <i class="fas fa-tools mr-1"></i> <span class="hidden xs:inline">Alat Kerja</span><span class="xs:hidden">Alat Kerja</span>
+                    </button>
+                    <button data-tab="lokasi" class="master-tab px-3 py-2.5 text-xs sm:text-sm font-bold rounded-lg border-2 border-transparent hover:bg-gray-100 dark:hover:bg-gray-700 transition text-center">
+                        <i class="fas fa-map-marker-alt mr-1"></i> <span class="hidden xs:inline">Lokasi</span><span class="xs:hidden">Lokasi</span>
+                    </button>
+                    <button data-tab="upt" class="master-tab px-3 py-2.5 text-xs sm:text-sm font-bold rounded-lg border-2 border-transparent hover:bg-gray-100 dark:hover:bg-gray-700 transition text-center">
+                        <i class="fas fa-sitemap mr-1"></i> <span class="hidden xs:inline">UPT</span><span class="xs:hidden">UPT</span>
+                    </button>
+                </div>
 
-                    <!-- TAB: ALAT -->
-                    <div id="master-tab-alat" class="master-tab-panel hidden space-y-4">
-                        <form id="form-add-alat" class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 flex flex-wrap gap-3 items-end">
+                <!-- TAB: USERS -->
+                <div id="master-tab-users" class="master-tab-panel hidden space-y-4">
+                    <div id="add-user-form-wrap" class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
+                        <h4 class="text-sm font-bold mb-3 text-gray-700 dark:text-gray-300">
+                            <i class="fas fa-user-plus mr-1 text-sky-500"></i> Tambah Pengguna Baru
+                        </h4>
+                        <div class="flex flex-wrap gap-3 items-end">
                             <div class="flex-1 min-w-36">
-                                <label class="block text-xs font-semibold mb-1">Kode</label>
-                                <input type="text" id="new-alat-kode" placeholder="cth: GEN" maxlength="10"
-                                    class="consolas-input w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600 uppercase">
-                            </div>
-                            <div class="flex-[3] min-w-48">
-                                <label class="block text-xs font-semibold mb-1">Nama Alat</label>
-                                <input type="text" id="new-alat-nama" placeholder="cth: GENSET"
+                                <label class="block text-xs font-semibold mb-1">Nama Pengguna</label>
+                                <input type="text" id="new-user-username" placeholder="Masukkan nama pengguna yang ingin ditambahkan..."
                                     class="consolas-input w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600">
                             </div>
-                            <div class="flex-[3] min-w-48">
-                                <label class="block text-xs font-semibold mb-1">Deskripsi (opsional)</label>
-                                <input type="text" id="new-alat-deskripsi" placeholder="Keterangan singkat"
-                                    class="w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600">
+                            <div class="flex-1 min-w-36">
+                                <label class="block text-xs font-semibold mb-1">Peran</label>
+                                <select id="new-user-role" class="w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600">
+                                    <option value="TEKNISI">TEKNISI/WORKSHOP</option>
+                                    <option value="ADMIN_DAOP">ADMIN DAOP</option>
+                                    <option value="SUPER_ADMIN">SUPER ADMIN</option>
+                                </select>
                             </div>
-                            <button type="submit" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-4 py-2 rounded-lg transition text-sm whitespace-nowrap">
-                                <i class="fas fa-plus mr-1"></i> Tambah
-                            </button>
-                        </form>
-                        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
-                            <div class="overflow-x-auto">
-                                <table class="w-full text-sm text-left">
-                                    <thead class="bg-gray-50 dark:bg-gray-700 text-xs uppercase text-gray-500 dark:text-gray-400">
-                                        <tr>
-                                            <th class="px-4 py-3">Kode</th>
-                                            <th class="px-4 py-3">Nama Alat</th>
-                                            <th class="px-4 py-3">Deskripsi</th>
-                                            <th class="px-4 py-3 text-right">Aksi</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="table-alat" class="divide-y dark:divide-gray-700"></tbody>
-                                </table>
+                            <div class="flex-1 min-w-36">
+                                <label class="block text-xs font-semibold mb-1">Daerah Penugasan</label>
+                                <select id="new-user-region" class="w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600">
+                                    <option value="">Memuat...</option>
+                                </select>
                             </div>
                         </div>
+                        <button type="submit" class="w-full sm:w-auto bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-6 py-2.5 rounded-lg transition text-sm mt-4">
+                            <i class="fas fa-plus mr-1"></i> Tambah Pengguna
+                        </button>
                     </div>
 
-                    <!-- TAB: LOKASI -->
-                    <div id="master-tab-lokasi" class="master-tab-panel hidden space-y-4">
-                        <form id="form-add-lokasi" class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 flex flex-wrap gap-3 items-end">
-                            <div class="flex-1 min-w-28">
+                    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-sm text-left">
+                                <thead class="bg-gray-50 dark:bg-gray-700 text-xs uppercase text-gray-500 dark:text-gray-400">
+                                    <tr>
+                                        <th class="px-3 py-2.5 text-center">Nama Pengguna</th>
+                                        <th class="px-3 py-2.5 text-center">Peran</th>
+                                        <th class="px-3 py-2.5 text-center">Daerah Penugasan</th>
+                                        <th class="px-3 py-2.5 text-center">Aksi</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="table-users" class="divide-y dark:divide-gray-700"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- TAB: ALAT -->
+                <div id="master-tab-alat" class="master-tab-panel hidden space-y-4">
+                    <form id="form-add-alat" class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 space-y-3">
+                        <h4 class="text-sm font-bold mb-3 text-gray-700 dark:text-gray-300">
+                            <i class="fas fa-tools mr-1 text-sky-500"></i> Tambah Alat Kerja Baru
+                        </h4>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                            <div>
+                                <label class="block text-xs font-semibold mb-1">Kode</label>
+                                <input type="text" id="new-alat-kode" placeholder="cth: GEN" maxlength="10"
+                                    class="consolas-input w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600 uppercase text-sm">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-semibold mb-1">Nama Alat</label>
+                                <input type="text" id="new-alat-nama" placeholder="cth: GENSET"
+                                    class="consolas-input w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600 text-sm">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-semibold mb-1">Tanggal Pembelian</label>
+                                <input type="date" id="new-alat-tanggal"
+                                    class="w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600 text-sm">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-semibold mb-1">Deskripsi</label>
+                                <input type="text" id="new-alat-deskripsi" placeholder="Keterangan"
+                                    class="w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600 text-sm">
+                            </div>
+                        </div>
+                        <button type="submit" class="w-full sm:w-auto bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-6 py-2.5 rounded-lg transition text-sm">
+                            <i class="fas fa-plus mr-1"></i> Tambah Alat
+                        </button>
+                    </form>
+                    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-sm text-left">
+                                <thead class="bg-gray-50 dark:bg-gray-700 text-xs uppercase text-gray-500 dark:text-gray-400">
+                                    <tr>
+                                        <th class="px-3 py-2.5 text-center">Kode</th>
+                                        <th class="px-3 py-2.5 text-center">Nama Alat</th>
+                                        <th class="px-3 py-2.5 text-center">Tanggal Pembelian</th>
+                                        <th class="px-3 py-2.5 text-center">Deskripsi</th>
+                                        <th class="px-3 py-2.5 text-center">Aksi</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="table-alat" class="divide-y dark:divide-gray-700"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- TAB: LOKASI -->
+                <div id="master-tab-lokasi" class="master-tab-panel hidden space-y-4">
+                    <form id="form-add-lokasi" class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 space-y-3">
+                        <h4 class="text-sm font-bold mb-3 text-gray-700 dark:text-gray-300">
+                            <i class="fas fa-map-marker mr-1 text-sky-500"></i> Tambah Lokasi Baru
+                        </h4>
+                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                            <div>
                                 <label class="block text-xs font-semibold mb-1">Kode</label>
                                 <input type="text" id="new-lokasi-kode" placeholder="cth: D1" maxlength="10"
-                                    class="consolas-input w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600 uppercase">
+                                    class="consolas-input w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600 uppercase text-sm">
                             </div>
-                            <div class="flex-[3] min-w-48">
+                            <div>
                                 <label class="block text-xs font-semibold mb-1">Nama Lokasi</label>
                                 <input type="text" id="new-lokasi-nama" placeholder="cth: DAOP 1 JAKARTA"
-                                    class="consolas-input w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600">
+                                    class="consolas-input w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600 text-sm">
                             </div>
-                            <div class="flex-1 min-w-36">
+                            <div>
                                 <label class="block text-xs font-semibold mb-1">Tipe</label>
-                                <select id="new-lokasi-tipe" class="w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600">
+                                <select id="new-lokasi-tipe" class="w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600 text-sm">
+                                    <option value="PUSAT">PUSAT</option>
                                     <option value="DAOP">DAOP</option>
                                     <option value="DIVRE">DIVRE</option>
                                     <option value="BALAIYASA">BALAIYASA</option>
-                                    <option value="PUSAT">PUSAT</option>
                                 </select>
                             </div>
-                            <button type="submit" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-4 py-2 rounded-lg transition text-sm whitespace-nowrap">
-                                <i class="fas fa-plus mr-1"></i> Tambah
-                            </button>
-                        </form>
-                        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
-                            <div class="overflow-x-auto">
-                                <table class="w-full text-sm text-left">
-                                    <thead class="bg-gray-50 dark:bg-gray-700 text-xs uppercase text-gray-500 dark:text-gray-400">
-                                        <tr>
-                                            <th class="px-4 py-3">Kode</th>
-                                            <th class="px-4 py-3">Nama Lokasi</th>
-                                            <th class="px-4 py-3">Tipe</th>
-                                            <th class="px-4 py-3 text-right">Aksi</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="table-lokasi" class="divide-y dark:divide-gray-700"></tbody>
-                                </table>
-                            </div>
+                        </div>
+                        <button type="submit" class="w-full sm:w-auto bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-6 py-2.5 rounded-lg transition text-sm">
+                            <i class="fas fa-plus mr-1"></i> Tambah Lokasi
+                        </button>
+                    </form>
+                    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-sm text-left">
+                                <thead class="bg-gray-50 dark:bg-gray-700 text-xs uppercase text-gray-500 dark:text-gray-400">
+                                    <tr>
+                                        <th class="px-3 py-2.5 text-center">Kode</th>
+                                        <th class="px-3 py-2.5 text-center">Nama Lokasi</th>
+                                        <th class="px-3 py-2.5 text-center">Tipe</th>
+                                        <th class="px-3 py-2.5 text-center">Aksi</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="table-lokasi" class="divide-y dark:divide-gray-700"></tbody>
+                            </table>
                         </div>
                     </div>
+                </div>
 
-                    <!-- TAB: UPT -->
-                    <div id="master-tab-upt" class="master-tab-panel hidden space-y-4">
-                        <form id="form-add-upt" class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 flex flex-wrap gap-3 items-end">
-                            <div class="flex-[3] min-w-48">
+                <!-- TAB: UPT -->
+                <div id="master-tab-upt" class="master-tab-panel hidden space-y-4">
+                    <form id="form-add-upt" class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 space-y-3">
+                        <h4 class="text-sm font-bold mb-3 text-gray-700 dark:text-gray-300">
+                            <i class="fas fa-sitemap mr-1 text-sky-500"></i> Tambah UPT Baru
+                        </h4>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div>
                                 <label class="block text-xs font-semibold mb-1">Nama UPT</label>
                                 <input type="text" id="new-upt-nama" placeholder="cth: JR 1.1 Jakartakota"
-                                    class="consolas-input w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600">
+                                    class="consolas-input w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600 text-sm">
                             </div>
-                            <div class="flex-[2] min-w-40">
-                                <label class="block text-xs font-semibold mb-1">Lokasi (DAOP/DIVRE)</label>
-                                <select id="new-upt-lokasi" class="w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600"></select>
-                            </div>
-                            <button type="submit" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-4 py-2 rounded-lg transition text-sm whitespace-nowrap">
-                                <i class="fas fa-plus mr-1"></i> Tambah
-                            </button>
-                        </form>
-                        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
-                            <div class="overflow-x-auto">
-                                <table class="w-full text-sm text-left">
-                                    <thead class="bg-gray-50 dark:bg-gray-700 text-xs uppercase text-gray-500 dark:text-gray-400">
-                                        <tr>
-                                            <th class="px-4 py-3">ID</th>
-                                            <th class="px-4 py-3">Nama UPT</th>
-                                            <th class="px-4 py-3">Lokasi</th>
-                                            <th class="px-4 py-3 text-right">Aksi</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="table-upt" class="divide-y dark:divide-gray-700"></tbody>
-                                </table>
+                            <div>
+                                <label class="block text-xs font-semibold mb-1">Lokasi</label>
+                                <select id="new-upt-lokasi" class="w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600 text-sm"></select>
                             </div>
                         </div>
+                        <button type="submit" class="w-full sm:w-auto bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-6 py-2.5 rounded-lg transition text-sm">
+                            <i class="fas fa-plus mr-1"></i> Tambah UPT
+                        </button>
+                    </form>
+                    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-sm text-left">
+                                <thead class="bg-gray-50 dark:bg-gray-700 text-xs uppercase text-gray-500 dark:text-gray-400">
+                                    <tr>
+                                        <th class="px-3 py-2.5 text-center">ID</th>
+                                        <th class="px-3 py-2.5 text-center">Nama UPT</th>
+                                        <th class="px-3 py-2.5 text-center">Lokasi</th>
+                                        <th class="px-3 py-2.5 text-center">Aksi</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="table-upt" class="divide-y dark:divide-gray-700"></tbody>
+                            </table>
+                        </div>
                     </div>
+                </div>
 
-                    <!-- Inline edit modal (shared across all three tabs) -->
-                    <div id="master-edit-modal" class="hidden fixed inset-0 z-[90] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
-                        <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-md border border-gray-200 dark:border-gray-700 p-6 space-y-4">
-                            <div class="flex justify-between items-center">
-                                <h3 class="font-bold text-gray-800 dark:text-gray-100" id="master-edit-title">Edit</h3>
-                                <button id="close-master-edit" class="text-gray-400 hover:text-red-500"><i class="fas fa-times"></i></button>
-                            </div>
-                            <div id="master-edit-fields" class="space-y-3"></div>
-                            <div class="flex gap-3 pt-2">
-                                <button id="btn-master-edit-save" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 rounded-lg transition text-sm">
-                                    <i class="fas fa-save mr-1"></i> Simpan
-                                </button>
-                                <button id="btn-master-edit-deactivate" class="flex-1 bg-red-100 hover:bg-red-200 dark:bg-red-900/30 dark:hover:bg-red-800/50 text-red-600 dark:text-red-400 font-bold py-2 rounded-lg transition text-sm">
-                                    <i class="fas fa-ban mr-1"></i> Nonaktifkan
-                                </button>
-                            </div>
+                <!-- Inline edit modal (shared across all three tabs) -->
+                <div id="master-edit-modal" class="hidden fixed inset-0 z-[90] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+                    <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-md border border-gray-200 dark:border-gray-700 p-6 space-y-4">
+                        <div class="flex justify-between items-center">
+                            <h3 class="font-bold text-gray-800 dark:text-gray-100" id="master-edit-title">Edit</h3>
+                            <button id="close-master-edit" class="text-gray-400 hover:text-red-500"><i class="fas fa-times"></i></button>
+                        </div>
+                        <div id="master-edit-fields" class="space-y-3"></div>
+                        <div class="flex flex-col sm:flex-row gap-3 pt-2">
+                            <button id="btn-master-edit-save" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 rounded-lg transition text-sm">
+                                <i class="fas fa-save mr-1"></i> Simpan
+                            </button>
+                            <button id="btn-master-edit-deactivate" class="flex-1 bg-red-100 hover:bg-red-200 dark:bg-red-900/30 dark:hover:bg-red-800/50 text-red-600 dark:text-red-400 font-bold py-2.5 rounded-lg transition text-sm">
+                                <i class="fas fa-ban mr-1"></i> Nonaktifkan
+                            </button>
                         </div>
                     </div>
-                </section>
+                </div>
+            </section>
             </div><!-- end #view-container -->
         </main>
     </div><!-- end #main-app -->
@@ -861,6 +945,43 @@
                 <button id="confirm-cancel" class="px-4 py-2 bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-200 rounded-lg font-bold transition">Batal</button>
                 <button id="confirm-ok"     class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold transition">Yakin</button>
             </div>
+        </div>
+    </div>
+
+    <!-- SORT MODAL -->
+    <div id="sort-modal" class="hidden fixed inset-0 z-[100] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-sm border border-gray-200 dark:border-gray-700 p-6 space-y-4">
+            <div class="flex justify-between items-center">
+                <h3 class="font-bold text-gray-800 dark:text-gray-100">
+                    <i class="fas fa-sort-amount-down mr-2 text-blue-500"></i>Urutkan Aset
+                </h3>
+                <button id="close-sort-modal" class="text-gray-400 hover:text-red-500"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="space-y-3">
+                <div>
+                    <label class="block text-xs font-semibold mb-1 text-gray-500">Urutkan Berdasarkan</label>
+                    <select id="sort-field" class="w-full p-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600">
+                        <option value="kode_id">Kode ID</option>
+                        <option value="alat">Nama Alat</option>
+                        <option value="lokasi">Lokasi</option>
+                        <option value="status">Status (SO/TSO)</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold mb-1 text-gray-500">Arah</label>
+                    <div class="flex gap-2">
+                        <button data-dir="asc" class="sort-dir-btn flex-1 py-2 rounded-lg border-2 border-blue-500 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 font-bold text-sm transition">
+                            <i class="fas fa-sort-alpha-down mr-1"></i> A → Z
+                        </button>
+                        <button data-dir="desc" class="sort-dir-btn flex-1 py-2 rounded-lg border-2 border-transparent text-gray-500 hover:border-gray-300 font-bold text-sm transition">
+                            <i class="fas fa-sort-alpha-up mr-1"></i> Z → A
+                        </button>
+                    </div>
+                </div>
+            </div>
+            <button id="btn-apply-sort" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 rounded-xl transition text-sm">
+                <i class="fas fa-check mr-1"></i> Terapkan
+            </button>
         </div>
     </div>
 

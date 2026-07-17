@@ -29,10 +29,11 @@ class Lokasi(Base):
 class MasterAlat(Base):
     __tablename__ = "master_alat"
 
-    kode      = Column(String(10),  primary_key=True, index=True)
-    nama      = Column(String(100), nullable=False)
-    deskripsi = Column(Text, nullable=True)
-    aktif     = Column(Boolean, default=True)
+    kode                = Column(String(10),  primary_key=True, index=True)
+    nama                = Column(String(100), nullable=False)
+    tanggal_pembelian   = Column(Date, nullable=True)
+    deskripsi           = Column(Text, nullable=True)
+    aktif               = Column(Boolean, default=True)
 
     asets = relationship("Aset", back_populates="alat_ref")
 
