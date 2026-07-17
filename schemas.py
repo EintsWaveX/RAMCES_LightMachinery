@@ -50,15 +50,17 @@ class MasterAlatResponse(BaseModel):
 
 
 class LokasiCreate(BaseModel):
-    kode_lokasi: str
-    nama_lokasi: str
-    tipe_lokasi: str  # 'PUSAT', 'DAOP', 'DIVRE', 'BALAIYASA'
+    kode_lokasi:  str
+    nama_lokasi:  str
+    tipe_lokasi:  str         # 'PUSAT', 'DAOP', 'DIVRE', 'BALAIYASA', 'UPT'
+    parent_kode:  Optional[str] = None  # required when tipe_lokasi == 'UPT'
 
 class LokasiResponse(BaseModel):
-    kode_lokasi: str
-    nama_lokasi: str
-    tipe_lokasi: str
-    aktif:       bool
+    kode_lokasi:  str
+    nama_lokasi:  str
+    tipe_lokasi:  str
+    parent_kode:  Optional[str] = None
+    aktif:        bool
     class Config:
         from_attributes = True
 
@@ -95,8 +97,7 @@ class AsetResponse(BaseModel):
     pengadaan:       str
     tahun_pembelian: int
     unit_peruntukan: str
-    status_kondisi:  str
-    status:          Optional[str] = None   # alias of status_kondisi → item.status
+    status:          str
     is_afkir:        bool
     creator:         Optional[str] = None
     created_at:      datetime
@@ -111,22 +112,18 @@ class AsetResponse(BaseModel):
 class PerbaikanCreate(BaseModel):
     aset_uid:          str
     tanggal_perbaikan: date
-    lokasi_perbaikan:  Optional[str] = None
-    upt_perbaikan:     Optional[str] = None
+    kode_upt:          Optional[str] = None
     teknisi:           str
     status_baru:       str
     keterangan:        Optional[str] = "-"
 
 class RiwayatPerbaikanResponse(BaseModel):
-    no:         int
-    date:       str
-    lokasi:     Optional[str] = None
-    upt:        Optional[str] = None
-    teknisi:    str
-    kondisi:    str
-    keterangan: Optional[str] = "-"
-    class Config:
-        from_attributes = True
+    no:           int
+    tanggal:      str
+    upt:          Optional[str] = None
+    teknisi:      str
+    kondisi:      str
+    keterangan:   Optional[str] = "-"
 
 
 # ── RIWAYAT MUTASI ────────────────────────────────────────────────

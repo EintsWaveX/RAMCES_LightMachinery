@@ -83,7 +83,7 @@ async function fetchMasterData() {
 
         if (alatRes.ok)   alatKerjaData = (await alatRes.json()).map(a => ({ name: a.nama,       code: a.kode }));
         if (lokasiRes.ok) lokasiData    = (await lokasiRes.json()).map(l => ({ name: l.nama_lokasi, code: l.kode_lokasi }));
-        if (uptRes.ok)    uptDatabase   = (await uptRes.json()).map(u => ({ upt: u.nama_upt,     lokasi: u.kode_lokasi }));
+        if (uptRes.ok)    uptDatabase   = (await uptRes.json()).map(u => ({ upt: u.nama_lokasi, lokasi: u.parent_kode }));
 
         // Re-populate all selects now that data is loaded
         populateSelects();
@@ -865,19 +865,19 @@ async function loadDetailMutasi(uid) {
     }
 }
 
-function renderDbCards() {
+function renderDbCards() {   
     const container   = document.getElementById('db-cards-container');
     const searchInput = document.getElementById('search-db');
     const modeSelect  = document.getElementById('filter-mode');
     if (!container) return;
     
     const isTeknisi = _currentRole === 'TEKNISI';
-    if (modeSelect) modeSelect.style.display = isTeknisi ? 'none' : ''
-
-    const searchQ = searchInput ? searchInput.value.toLowerCase() : '';
+    if (modeSelect) modeSelect.style.display = isTeknisi ? 'none' : '';
+    
+    const searchQ = (searchInput?.value || '').toLowerCase();
     const mode    = isTeknisi ? 'public' : (modeSelect ? modeSelect.value : 'public');
     const isAdmin = _currentRole === 'SUPER_ADMIN' || _currentRole === 'ADMIN_DAOP';
-
+    
     container.innerHTML = '';
 
     const filtered = _historySummary.filter(item =>

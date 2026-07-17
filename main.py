@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from datetime import datetime, timedelta
 from typing import List
 import bcrypt
@@ -421,42 +421,14 @@ def delete_master_lokasi(kode: str, db: Session = Depends(get_db)):
 @app.get("/api/master/upt")
 def get_master_upt(db: Session = Depends(get_db)):
     """Return all active UPTs across all regions."""
-    return db.query(models.MasterUPT).filter_by(aktif=True).all()
+    return db.query(models.Lokasi).filter_by(tipe_lokasi="UPT", aktif=True).all()
 
 @app.get("/api/master/upt/{kode_lokasi}")
 def get_upt_by_lokasi(kode_lokasi: str, db: Session = Depends(get_db)):
     """Return active UPTs filtered by a specific lokasi code."""
-    return db.query(models.MasterUPT).filter(
-        models.MasterUPT.kode_lokasi == kode_lokasi,
-        models.MasterUPT.aktif == True
+    return db.query(models.Lokasi).filter_by(
+        tipe_lokasi="UPT", parent_kode=kode_lokasi, aktif=True
     ).all()
-
-@app.post("/api/master/upt", dependencies=[Depends(require_role(["SUPER_ADMIN"]))])
-def create_master_upt(data: schemas.MasterUPTCreate, db: Session = Depends(get_db)):
-    if db.query(models.MasterUPT).filter_by(nama_upt=data.nama_upt, kode_lokasi=data.kode_lokasi).first():
-        raise HTTPException(status_code=400, detail="UPT sudah ada untuk lokasi ini.")
-    db.add(models.MasterUPT(nama_upt=data.nama_upt, kode_lokasi=data.kode_lokasi))
-    db.commit()
-    return {"message": f"UPT {data.nama_upt} berhasil ditambahkan."}
-
-@app.put("/api/master/upt/{upt_id}", dependencies=[Depends(require_role(["SUPER_ADMIN"]))])
-def update_master_upt(upt_id: int, data: schemas.MasterUPTCreate, db: Session = Depends(get_db)):
-    item = db.query(models.MasterUPT).filter_by(id=upt_id).first()
-    if not item:
-        raise HTTPException(status_code=404, detail="UPT tidak ditemukan.")
-    item.nama_upt    = data.nama_upt
-    item.kode_lokasi = data.kode_lokasi
-    db.commit()
-    return {"message": "UPT berhasil diperbarui."}
-
-@app.delete("/api/master/upt/{upt_id}", dependencies=[Depends(require_role(["SUPER_ADMIN"]))])
-def delete_master_upt(upt_id: int, db: Session = Depends(get_db)):
-    item = db.query(models.MasterUPT).filter_by(id=upt_id).first()
-    if not item:
-        raise HTTPException(status_code=404, detail="UPT tidak ditemukan.")
-    item.aktif = False
-    db.commit()
-    return {"message": "UPT berhasil dinonaktifkan."}
 
 # ==================================================================
 # ASET ENDPOINTS
@@ -502,7 +474,6 @@ async def create_aset(
         "pengadaan":       db_aset.pengadaan,
         "tahun_pembelian": db_aset.tahun_pembelian,
         "unit_peruntukan": db_aset.unit_peruntukan,
-        "status_kondisi":  db_aset.status_kondisi,
         "status":          db_aset.status_kondisi,
         "is_afkir":        db_aset.is_afkir,
         "creator":         db_aset.creator,
@@ -523,7 +494,10 @@ def get_all_aset(
     present location, which may differ from its original kode_lokasi
     after a mutation.
     """
-    asets = db.query(models.Aset).filter_by(is_afkir=False).all()
+    asets = db.query(models.Aset)\
+        .options(joinedload(models.Aset.alat_ref), joinedload(models.Aset.lokasi_ref))\
+        .filter_by(is_afkir=False).all()
+    
     return [
         {
             "uid":     a.uid,
@@ -616,8 +590,7 @@ async def catat_perbaikan(
     db.add(models.RiwayatPerbaikan(
         aset_uid=laporan.aset_uid,
         tanggal_perbaikan=laporan.tanggal_perbaikan,
-        lokasi_perbaikan=laporan.lokasi_perbaikan,
-        upt_perbaikan=laporan.upt_perbaikan,
+        kode_upt_perbaikan=laporan.upt_perbaikan,
         teknisi=laporan.teknisi,
         status_baru=laporan.status_baru,
         keterangan=laporan.keterangan
@@ -648,12 +621,13 @@ def get_riwayat_aset(
 
     return [
         {
-            "no":         i,
-            "date":       r.created_at.strftime('%Y-%m-%d %H:%M:%S'),
-            "upt":        f"{r.upt_perbaikan} ({r.lokasi_perbaikan})" if r.upt_perbaikan and r.lokasi_perbaikan else r.upt_perbaikan or "—",
-            "teknisi":    r.teknisi,
-            "kondisi":    r.status_baru,
-            "keterangan": r.keterangan or "—",
+            "no":           i,
+            "date":         r.tanggal_perbaikan.strftime('%Y-%m-%d'),
+            "dicatat_pada": r.dicatat_pada.strftime('%Y-%m-%d %H:%M:%S'),
+            "upt":          r.upt_ref.nama_lokasi if r.upt_ref else "—",
+            "teknisi":      r.teknisi,
+            "kondisi":      r.status_baru,
+            "keterangan":   r.keterangan or "—",
         }
         for i, r in enumerate(riwayat, start=1)
     ]
@@ -669,7 +643,9 @@ def get_history_summary(
     Each asset includes latest repair info and latest mutation info.
     Used to populate both the Perbaikan and Mutasi history card grids.
     """
-    asets = db.query(models.Aset).filter_by(is_afkir=False).all()
+    asets = db.query(models.Aset)\
+        .options(joinedload(models.Aset.alat_ref), joinedload(models.Aset.lokasi_ref))\
+        .filter_by(is_afkir=False).all()
     results = []
 
     for a in asets:
@@ -958,7 +934,9 @@ def export_riwayat(
                     })
         return rows
 
-    active_asets = db.query(models.Aset).filter_by(is_afkir=False).all()
+    active_asets = db.query(models.Aset)\
+        .options(joinedload(models.Aset.alat_ref), joinedload(models.Aset.lokasi_ref))\
+        .filter_by(is_afkir=False).all()
     afkir_asets  = db.query(models.Aset).filter_by(is_afkir=True).all()
 
     return {
@@ -1033,14 +1011,14 @@ def get_public_riwayat(uid: str, db: Session = Depends(get_db)):
 
     return [
         {
-            "no":         i + 1,
+            "no":         i,
             "date":       r.created_at.strftime("%Y-%m-%d %H:%M:%S"),
             "upt":        r.upt_perbaikan or "—",
             "teknisi":    r.teknisi,
             "kondisi":    r.status_baru,
             "keterangan": r.keterangan or "—",
         }
-        for i, r in enumerate(riwayat)
+        for i, r in enumerate(riwayat, start=1)
     ]
 
 # ==================================================================
