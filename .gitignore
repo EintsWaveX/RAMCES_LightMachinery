@@ -3,6 +3,7 @@
 *.bak
 __pycache__
 .vscode
+.env
 _test.py
 main_.py
 seed_master_new.py
