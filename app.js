@@ -38,21 +38,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     setupEventListeners();
     fetchLoginRegions();
 
-    document.getElementById('login-username')?.addEventListener('blur', async () => {
-        const username = document.getElementById('login-username').value.trim();
-        if (!username) return;
-
-        try {
-            const res = await fetch('/api/master/lokasi');
-            // If fetch ok, check if user exists by attempting a peek
-            // We show extra fields preemptively — server decides on submit
-            document.getElementById('login-extra-fields').classList.remove('hidden');
-        } catch(e) {
-            // silently ignore
-        }
-    });
-
     if (currentUser && authToken) {
+        document.getElementById('auth-view').style.display = 'none';
         checkAuth();
     } else {
         forceLogout(false);
@@ -117,8 +104,17 @@ async function checkAuth() {
         if (filterModeEl) filterModeEl.style.display = role === 'TEKNISI' ? 'none' : '';
 
         document.getElementById('auth-view').classList.add('hidden');
-        document.getElementById('main-app').classList.remove('hidden');
-        document.getElementById('current-username').innerText = currentUser;
+        const mainApp = document.getElementById('main-app');
+        if (mainApp) {
+            mainApp.style.display = 'flex';
+            mainApp.classList.remove('hidden');
+        }
+
+        // Update topbar user info
+        const topbarUsername = document.getElementById('topbar-username');
+        const topbarRole     = document.getElementById('topbar-role');
+        if (topbarUsername) topbarUsername.innerText = currentUser;
+        if (topbarRole)     topbarRole.innerText     = role.replace('_', ' ');
 
         if (role === 'SUPER_ADMIN') {
             const navMaster = document.getElementById('nav-masterdata');
@@ -129,16 +125,24 @@ async function checkAuth() {
             if (navInput) navInput.classList.add('hidden');
         }
 
-        const welcomeMsg = document.getElementById('welcome-message');
+        const welcomeMsg = document.getElementById('dashboard-welcome');
         if (welcomeMsg) welcomeMsg.innerText = `Selamat Datang, ${currentUser}`;
 
         switchView('dashboard');
+        
+        toggleSidebar();
+        setupProfileModal();
+        startTopbarClock();
 
         await fetchMasterData(); // fetch before setupWebSocket so selects are ready
         setupWebSocket();
         await fetchAsetFromServer();
     } else {
-        document.getElementById('main-app').classList.add('hidden');
+        const mainAppEl = document.getElementById('main-app');
+        if (mainAppEl) {
+            mainAppEl.style.display = 'none';
+            mainAppEl.classList.add('hidden');
+        }
     }
 }
 
@@ -147,7 +151,7 @@ async function handleLogin() {
     const role   = document.getElementById('login-role')?.value   || 'TEKNISI';
     const region = document.getElementById('login-region')?.value || '';
     const regionText = document.getElementById('login-region')?.selectedOptions[0]?.text || region;
-    const roleText   = document.getElementById('login-role')?.selectedOptions[0]?.text   || role;
+    const roleText   = document.getElementById('auth-display-role')?.textContent || role;
 
     if (!user) {
         showToast("Username tidak boleh kosong!", "warning");
@@ -192,7 +196,11 @@ async function handleLogin() {
             'success'
         );
         document.getElementById('login-username').value = '';
-        document.getElementById('login-extra-fields').classList.add('hidden');
+        document.getElementById('auth-step-1')?.classList.remove('hidden');
+        document.getElementById('auth-step-2')?.classList.add('hidden');
+        document.getElementById('auth-step-3')?.classList.add('hidden');
+        if (document.getElementById('login-role')) 
+            document.getElementById('login-role').value = '';
 
         await checkAuth();
         fetchAsetFromServer();
@@ -213,7 +221,11 @@ function forceLogout(reloadPage = false) {
         return;
     }
 
-    document.getElementById('main-app').classList.add('hidden');
+    const mainApp2 = document.getElementById('main-app');
+    if (mainApp2) {
+        mainApp2.style.display = 'none';
+        mainApp2.classList.add('hidden');
+    }
 
     const authView = document.getElementById('auth-view');
     authView.classList.remove('hidden');
@@ -222,6 +234,10 @@ function forceLogout(reloadPage = false) {
     // const p = document.getElementById('login-password');
     if (u) u.value = '';
     // if (p) p.value = '';
+    document.getElementById('auth-step-1')?.classList.remove('hidden');
+    document.getElementById('auth-step-2')?.classList.add('hidden');
+    document.getElementById('auth-step-3')?.classList.add('hidden');
+    document.getElementById('login-role') && (document.getElementById('login-role').value = '');
 
     activeHistoryUid = null;
 
@@ -233,6 +249,77 @@ function forceLogout(reloadPage = false) {
         window._ws.close();
     }
     window._ws = null;
+}
+
+// ── PROFILE MODAL ─────────────────────────────────────────────────────────
+
+function getInitials(name) {
+    if (!name) return '?';
+    const parts = name.trim().split(/\s+/);
+    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
+function updateWsDot(connected) {
+    const color = connected ? 'bg-green-500' : 'bg-red-400';
+    const off   = connected ? 'bg-red-400'   : 'bg-green-500';
+    const label = connected ? 'Server terhubung' : 'Server terputus';
+    ['ws-status-dot', 'avatar-ws-dot', 'profile-modal-ws-dot'].forEach(id => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.classList.remove('bg-green-500', 'bg-red-400', 'bg-gray-300');
+        el.classList.add(color);
+    });
+    const lbl = document.getElementById('ws-status-label');
+    if (lbl) lbl.textContent = label;
+}
+
+function setupProfileModal() {
+    const initials = getInitials(currentUser);
+    const roleLabel = (_currentRole || '').replace('_', ' ');
+
+    ['topbar-avatar', 'profile-modal-avatar'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = initials;
+    });
+    const pmUser = document.getElementById('profile-modal-username');
+    const pmRole = document.getElementById('profile-modal-role');
+    if (pmUser) pmUser.textContent = currentUser || '—';
+    if (pmRole) pmRole.textContent = roleLabel;
+
+    // Show/hide delete button based on role
+    const delBtn = document.getElementById('profile-delete-btn');
+    if (delBtn) {
+        if (_currentRole === 'SUPER_ADMIN') delBtn.classList.add('hidden');
+        else delBtn.classList.remove('hidden');
+    }
+}
+
+function openProfileModal() {
+    setupProfileModal();
+    document.getElementById('profile-modal')?.classList.remove('hidden');
+}
+
+function closeProfileModal() {
+    document.getElementById('profile-modal')?.classList.add('hidden');
+}
+
+function startTopbarClock() {
+    const bulan = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
+    const hari  = ['Minggu','Senin','Selasa','Rabu','Kamis','Jumat','Sabtu'];
+    function tick() {
+        const now = new Date();
+        const clockEl = document.getElementById('topbar-clock');
+        const dateEl  = document.getElementById('topbar-date');
+        if (clockEl) clockEl.textContent =
+            String(now.getHours()).padStart(2,'0') + ':' +
+            String(now.getMinutes()).padStart(2,'0') + ':' +
+            String(now.getSeconds()).padStart(2,'0');
+        if (dateEl) dateEl.textContent =
+            `${hari[now.getDay()]}, ${now.getDate()} ${bulan[now.getMonth()]} ${now.getFullYear()}`;
+    }
+    tick();
+    setInterval(tick, 1000);
 }
 
 function getJwtPayload(token) {
@@ -280,15 +367,15 @@ async function fetchAsetFromServer() {
         db = await response.json();
 
         updateDashboardStats();
-        if (!document.getElementById('view-database').classList.contains('hidden')) renderDbCards();
-        if (!document.getElementById('view-history').classList.contains('hidden')) renderHistoryCards();
-        if (!document.getElementById('view-history').classList.contains('hidden')) {
+        if (document.getElementById('view-database').classList.contains('is-visible')) renderDbCards();
+        if (document.getElementById('view-history').classList.contains('is-visible')) renderHistoryCards();
+        if (document.getElementById('view-history').classList.contains('is-visible')) {
             loadHistorySummary().then(() => {
                 if (_historyMode === 'mutasi') renderMutasiCards();
             });
         }
 
-        if (activeHistoryUid && !document.getElementById('view-history-detail').classList.contains('hidden')) {
+        if (activeHistoryUid && document.getElementById('view-history-detail').classList.contains('is-visible')) {
             window.openHistoryDetail(activeHistoryUid);
         }
     } catch (error) {
@@ -340,18 +427,45 @@ function populateSelects() {
 }
 
 function switchView(viewId) {
-    document.querySelectorAll('.view-section').forEach(el => el.classList.add('hidden'));
-
-    const targetView = document.getElementById(`view-${viewId}`);
-    if (targetView) targetView.classList.remove('hidden');
-
-    document.querySelectorAll('.nav-btn').forEach(btn => {
-        if (btn.dataset.target === viewId) btn.classList.add('bg-gray-200', 'dark:bg-gray-700');
-        else btn.classList.remove('bg-gray-200', 'dark:bg-gray-700');
+    document.querySelectorAll('.view-section').forEach(el => {
+        el.classList.remove('is-visible', 'is-flex');
     });
 
+    const targetView = document.getElementById(`view-${viewId}`);
+    if (targetView) {
+        targetView.classList.add('is-visible');
+    }
+
+    document.querySelectorAll('.nav-btn').forEach(btn => {
+        if (btn.dataset.view === viewId) btn.classList.add('is-active');
+        else btn.classList.remove('is-active');
+    });
+
+    const pageMeta = {
+        dashboard:        { title: 'Dashboard',            subtitle: 'Pantau kesiapan dan kondisi aset alat kerja' },
+        input:            { title: 'Tambah Alat Kerja',    subtitle: 'Registrasi aset alat kerja baru ke dalam sistem' },
+        database:         { title: 'Data Aset',            subtitle: 'Daftar seluruh aset alat kerja yang terdaftar' },
+        history:          { title: 'Riwayat Aset',         subtitle: 'Riwayat perbaikan dan mutasi aset' },
+        'history-detail': { title: 'Detail Riwayat',       subtitle: 'Rincian riwayat perbaikan dan mutasi aset' },
+        edit:             { title: 'Pembaruan Kondisi',    subtitle: 'Perbarui status kondisi aset alat kerja' },
+        laporan:          { title: 'Laporan & Ekspor',     subtitle: 'Filter dan ekspor data aset ke Excel atau PDF' },
+        masterdata:       { title: 'Pusat Data',           subtitle: 'Kelola data master sistem (Super Admin)' },
+    };
+    const meta = pageMeta[viewId];
+    if (meta) {
+        const t = document.getElementById('topbar-page-title');
+        const s = document.getElementById('topbar-page-subtitle');
+        if (t) t.textContent = meta.title;
+        if (s) s.textContent = meta.subtitle;
+    }
+
+    const breadcrumb = document.getElementById('breadcrumb-label');
+    if (breadcrumb && meta) breadcrumb.textContent = meta.title;
+
     if (viewId === 'masterdata') {
-        // Populate master data tables.
+        setTimeout(() => {
+            document.querySelector('.master-tab[data-tab="users"]')?.click();
+        }, 50);
     }
     if (viewId === 'database' || viewId === 'history') {
         fetchAsetFromServer();
@@ -370,30 +484,61 @@ function switchView(viewId) {
 function setupEventListeners() {
     // Navigasi Sidebar
     document.querySelectorAll('.nav-btn').forEach(btn => {
-        btn.addEventListener('click', () => switchView(btn.dataset.target));
+        btn.addEventListener('click', () => switchView(btn.dataset.view));
     });
 
-    // Auth
-    // Disable region selector for SUPER_ADMIN role
+    // Auth — multi-step login
+    document.getElementById('btn-next-step')?.addEventListener('click', () => {
+        const username = document.getElementById('login-username').value.trim();
+        if (!username) { showToast('Username tidak boleh kosong!', 'warning'); return; }
+        document.getElementById('auth-display-username').innerText = username;
+        document.getElementById('auth-step-1').classList.add('hidden');
+        document.getElementById('auth-step-2').classList.remove('hidden');
+    });
+
+    document.getElementById('login-username')?.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') document.getElementById('btn-next-step')?.click();
+    });
+
+    document.getElementById('btn-back-step1')?.addEventListener('click', () => {
+        document.getElementById('auth-step-2').classList.add('hidden');
+        document.getElementById('auth-step-1').classList.remove('hidden');
+    });
+
+    document.getElementById('btn-back-step2')?.addEventListener('click', () => {
+        document.getElementById('auth-step-3').classList.add('hidden');
+        document.getElementById('auth-step-2').classList.remove('hidden');
+    });
+
+    document.querySelectorAll('.division-card').forEach(card => {
+        card.addEventListener('click', () => {
+            const division = card.dataset.division;
+            const labels = { TEKNISI: 'Teknisi (TraKSI)', ADMIN_DAOP: 'Admin DAOP', SUPER_ADMIN: 'Super Admin (RAMCES)' };
+            document.getElementById('login-role').value = division;
+            document.getElementById('auth-display-role').innerText = labels[division] || division;
+
+            const regionSel = document.getElementById('login-region');
+            if (division === 'SUPER_ADMIN') {
+                regionSel.disabled = true;
+                regionSel.innerHTML = '<option value="">Semua Region (tidak diperlukan)</option>';
+            } else {
+                regionSel.disabled = false;
+                fetchLoginRegions();
+            }
+
+            document.getElementById('auth-step-2').classList.add('hidden');
+            document.getElementById('auth-step-3').classList.remove('hidden');
+        });
+    });
+
     document.getElementById('btn-login')?.addEventListener('click', handleLogin);
-    const triggerEnter = (e) => { if (e.key === 'Enter') handleLogin(); };
-    document.getElementById('login-username')?.addEventListener('keypress', triggerEnter);
-    // document.getElementById('login-password')?.addEventListener('keypress', triggerEnter);
-    document.getElementById('login-role')?.addEventListener('change', (e) => {
-        const regionSel = document.getElementById('login-region');
-        if (!regionSel) return;
-        if (e.target.value === 'SUPER_ADMIN') {
-            regionSel.disabled = true;
-            regionSel.innerHTML = '<option value="">Semua Region (tidak diperlukan)</option>';
-        } else {
-            regionSel.disabled = false;
-            fetchLoginRegions(); // re-fetch from API to guarantee correct shape
-        }
+    document.getElementById('login-region')?.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') handleLogin();
     });
 
     // Sidebar & Theme
-    document.getElementById('open-sidebar-btn')?.addEventListener('click', toggleSidebar);
-    document.getElementById('close-sidebar-btn')?.addEventListener('click', toggleSidebar);
+    document.getElementById('mobile-menu-btn')?.addEventListener('click', toggleSidebar);
+    document.getElementById('sidebar-toggle-btn')?.addEventListener('click', toggleSidebar);
     document.getElementById('sidebar-overlay')?.addEventListener('click', toggleSidebar);
     document.getElementById('theme-toggle-btn')?.addEventListener('click', () => {
         const html = document.documentElement;
@@ -401,22 +546,32 @@ function setupEventListeners() {
         localStorage.setItem('theme', html.classList.contains('dark') ? 'dark' : 'light');
     });
     document.getElementById('logout-btn')?.addEventListener('click', () => forceLogout(true));
-    document.getElementById('delete-account-btn')?.addEventListener('click', async () => {
+    
+    // Profile modal
+    // (delete-account-btn re-added in redesign)
+    document.getElementById('profile-btn')?.addEventListener('click', openProfileModal);
+    document.getElementById('close-profile-modal')?.addEventListener('click', closeProfileModal);
+    document.getElementById('profile-modal')?.addEventListener('click', (e) => {
+        if (e.target === document.getElementById('profile-modal')) closeProfileModal();
+    });
+    document.getElementById('profile-logout-btn')?.addEventListener('click', () => {
+        closeProfileModal();
+        forceLogout(true);
+    });
+    document.getElementById('profile-delete-btn')?.addEventListener('click', async () => {
+        closeProfileModal();
         const confirmed = await customConfirm(
-            `Apakah Anda yakin ingin menghapus akun "${currentUser}"? Tindakan ini tidak dapat dibatalkan.`
+            `Apakah Anda yakin ingin menghapus akun "${currentUser}"?\nTindakan ini tidak dapat dibatalkan.`
         );
         if (!confirmed) return;
-
-        // Second confirmation
         const reconfirmed = await customConfirm(
             `Konfirmasi terakhir: akun "${currentUser}" akan dihapus permanen dari sistem.`
         );
         if (!reconfirmed) return;
-
         try {
             const response = await apiFetch('/users/me', { method: 'DELETE' });
-            if (!response.ok) throw new Error("Gagal menghapus akun.");
-            showToast("Akun berhasil dihapus.", 'success');
+            if (!response.ok) throw new Error('Gagal menghapus akun.');
+            showToast('Akun berhasil dihapus.', 'success');
             setTimeout(() => forceLogout(true), 1500);
         } catch (error) {
             showToast(error.message, 'error');
@@ -425,8 +580,133 @@ function setupEventListeners() {
 
     // Search & Filter
     document.getElementById('search-db')?.addEventListener('input', renderDbCards);
-    document.getElementById('search-history')?.addEventListener('input', renderHistoryCards);
+    document.getElementById('search-history')?.addEventListener('input', () => {
+        _historyMode === 'repair' ? renderHistoryCards() : renderMutasiCards();
+    });
     document.getElementById('filter-mode')?.addEventListener('change', renderDbCards);
+
+    // Data Aset quick-download buttons
+    document.getElementById('btn-db-download-xlsx')?.addEventListener('click', () => {
+        if (!db.length) { showToast('Belum ada aset yang terdaftar.', 'warning'); return; }
+        const rows = db.map(item => ({
+            'UID':      item.uid,
+            'Kode ID':  item.kode_id,
+            'Alat':     item.alat,
+            'Lokasi':   item.lokasi,
+            'Status':   item.status,
+        }));
+        const ws  = XLSX.utils.json_to_sheet(rows);
+        const wb  = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, 'Data Aset');
+        XLSX.writeFile(wb, `DataAset_${new Date().toISOString().slice(0,10)}.xlsx`);
+        showToast('File Excel berhasil diunduh.', 'success');
+    });
+
+    document.getElementById('btn-db-download-pdf')?.addEventListener('click', () => {
+        if (!db.length) { showToast('Belum ada aset yang terdaftar.', 'warning'); return; }
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF({ orientation: 'landscape' });
+        doc.setFontSize(13);
+        doc.setFont('helvetica', 'bold');
+        doc.text('SIMA-KAI — Data Aset', 14, 14);
+        doc.setFontSize(8);
+        doc.setFont('helvetica', 'normal');
+        doc.text(`Dicetak: ${new Date().toLocaleString('id-ID')}  |  Total: ${db.length} aset`, 14, 20);
+        doc.autoTable({
+            head: [['UID', 'Kode ID', 'Alat', 'Lokasi', 'Status']],
+            body: db.map(item => [item.uid, item.kode_id, item.alat, item.lokasi, item.status]),
+            startY: 25,
+            styles: { fontSize: 7, cellPadding: 2 },
+            headStyles: { fillColor: [22, 76, 129], textColor: 255, fontStyle: 'bold' },
+            alternateRowStyles: { fillColor: [249, 250, 251] },
+            didParseCell(data) {
+                if (data.section === 'body' && data.column.index === 4) {
+                    const v = data.cell.raw;
+                    data.cell.styles.textColor = v === 'SO' ? [21, 128, 61] : [185, 28, 28];
+                    data.cell.styles.fontStyle = 'bold';
+                }
+            }
+        });
+        doc.save(`DataAset_${new Date().toISOString().slice(0,10)}.pdf`);
+        showToast('File PDF berhasil diunduh.', 'success');
+    });
+
+    // Import Alat Excel
+    document.getElementById('btn-import-alat')?.addEventListener('click', () => {
+        document.getElementById('import-alat-file').value = '';
+        document.getElementById('import-alat-filename').textContent = 'Belum ada file dipilih';
+        document.getElementById('import-alat-modal').classList.remove('hidden');
+    });
+    document.getElementById('close-import-alat-modal')?.addEventListener('click', () => {
+        document.getElementById('import-alat-modal').classList.add('hidden');
+    });
+    document.getElementById('import-alat-file')?.addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        document.getElementById('import-alat-filename').textContent = file ? file.name : 'Belum ada file dipilih';
+    });
+    document.getElementById('btn-import-alat-submit')?.addEventListener('click', async () => {
+        const fileInput = document.getElementById('import-alat-file');
+        const file = fileInput.files[0];
+        if (!file) { showToast('Pilih file Excel terlebih dahulu.', 'warning'); return; }
+
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+            try {
+                const wb   = XLSX.read(e.target.result, { type: 'array' });
+                const ws   = wb.Sheets[wb.SheetNames[0]];
+                const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+
+                // Find header row — look for a row containing 'kode' or 'nama'
+                let dataRows = rows.filter(r => r.some(c => String(c).trim() !== ''));
+                if (!dataRows.length) { showToast('File kosong atau tidak terbaca.', 'error'); return; }
+
+                // Skip header row if first row looks like headers
+                const firstRow = dataRows[0].map(c => String(c).toLowerCase().trim());
+                if (firstRow.some(c => c.includes('kode') || c.includes('nama'))) {
+                    dataRows = dataRows.slice(1);
+                }
+
+                // Detect column positions: skip leading numeric/index columns
+                // Expected: [...optional numbering], kode, nama
+                const parsed = [];
+                for (const row of dataRows) {
+                    const cells = row.map(c => String(c).trim()).filter((_, i) => row[i] !== '');
+                    if (cells.length < 2) continue;
+
+                    // If first cell is purely numeric, treat as index and skip it
+                    let startIdx = 0;
+                    if (/^\d+$/.test(cells[0])) startIdx = 1;
+
+                    const kode = cells[startIdx];
+                    const nama = cells[startIdx + 1];
+
+                    if (!kode || !nama) { showToast(`Baris tidak valid ditemukan: "${row.join(', ')}". Format harus: Kode, Nama Alat.`, 'error'); return; }
+                    if (/[^A-Za-z0-9_\-]/.test(kode)) { showToast(`Kode tidak valid: "${kode}". Hanya huruf, angka, - dan _ yang diperbolehkan.`, 'error'); return; }
+
+                    parsed.push({ kode: kode.toUpperCase(), nama });
+                }
+
+                if (!parsed.length) { showToast('Tidak ada data valid yang ditemukan dalam file.', 'warning'); return; }
+
+                // Send to backend
+                let success = 0, failed = 0;
+                for (const item of parsed) {
+                    try {
+                        const res = await apiFetch('/master/alat', { method: 'POST', body: JSON.stringify({ kode: item.kode, nama: item.nama }) });
+                        if (res.ok) success++; else failed++;
+                    } catch { failed++; }
+                }
+
+                document.getElementById('import-alat-modal').classList.add('hidden');
+                showToast(`Import selesai: ${success} berhasil${failed ? `, ${failed} gagal` : ''}.`, success ? 'success' : 'error');
+                await loadMasterAlat();
+                await fetchMasterData();
+            } catch (err) {
+                showToast('Gagal membaca file. Pastikan format file adalah .xlsx yang valid.', 'error');
+            }
+        };
+        reader.readAsArrayBuffer(file);
+    });
 
     // Close buttons
     document.getElementById('close-edit-btn')?.addEventListener('click', () => switchView('database'));
@@ -570,25 +850,43 @@ function setupEventListeners() {
     // History mode toggle
     document.getElementById('hist-tab-repair')?.addEventListener('click', () => {
         _historyMode = 'repair';
-        document.getElementById('hist-tab-repair').className =
-            'hist-tab-btn flex-1 px-5 py-2.5 text-sm font-bold bg-purple-600 text-white transition flex items-center gap-2 justify-center';
-        document.getElementById('hist-tab-mutasi').className =
-        'hist-tab-btn flex-1 px-5 py-2.5 text-sm font-bold bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition flex items-center gap-2 justify-center';
-        document.getElementById('history-cards-container').classList.remove('hidden');
-        document.getElementById('history-mutasi-container').classList.add('hidden');
+        _setHistoryTab('repair');
         renderHistoryCards();
     });
 
     document.getElementById('hist-tab-mutasi')?.addEventListener('click', () => {
         _historyMode = 'mutasi';
-        document.getElementById('hist-tab-mutasi').className =
-        'hist-tab-btn flex-1 px-5 py-2.5 text-sm font-bold bg-orange-500 text-white transition flex items-center gap-2 justify-center';
-        document.getElementById('hist-tab-repair').className =
-            'hist-tab-btn flex-1 px-5 py-2.5 text-sm font-bold bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition flex items-center gap-2 justify-center';
-            document.getElementById('history-cards-container').classList.add('hidden');
-        document.getElementById('history-mutasi-container').classList.remove('hidden');
+        _setHistoryTab('mutasi');
         renderMutasiCards();
     });
+
+    // History tab pill switcher — shared helper
+    function _setHistoryTab(active) {
+        const repairBtn = document.getElementById('hist-tab-repair');
+        const mutasiBtn = document.getElementById('hist-tab-mutasi');
+        const repairCon = document.getElementById('history-repair-container');
+        const mutasiCon = document.getElementById('history-mutasi-container');
+
+        const ACTIVE_CLS   = ['bg-white', 'dark:bg-gray-600', 'shadow-sm', 'text-gray-800', 'dark:text-white', 'font-semibold'];
+        const INACTIVE_CLS = ['text-gray-500', 'dark:text-gray-400', 'font-medium', 'hover:text-gray-700', 'dark:hover:text-gray-200'];
+
+        // Reset both
+        [repairBtn, mutasiBtn].forEach(b => {
+            if (!b) return;
+            ACTIVE_CLS.forEach(c => b.classList.remove(c));
+            INACTIVE_CLS.forEach(c => b.classList.remove(c));
+        });
+
+        // Apply active/inactive
+        const activeBtn   = active === 'repair' ? repairBtn : mutasiBtn;
+        const inactiveBtn = active === 'repair' ? mutasiBtn : repairBtn;
+        ACTIVE_CLS.forEach(c => activeBtn?.classList.add(c));
+        INACTIVE_CLS.forEach(c => inactiveBtn?.classList.add(c));
+
+        // Show/hide containers
+        repairCon?.classList.toggle('hidden', active !== 'repair');
+        mutasiCon?.classList.toggle('hidden', active !== 'mutasi');
+    }
 
     // Detail sub-tab listeners
     document.getElementById('detail-tab-repair')?.addEventListener('click', () => {
@@ -652,10 +950,11 @@ function setupWebSocket() {
 
     ws.onopen = () => {
         console.log("WebSocket connected.");
-        _wsRetryCount = 0; // ← ADD THIS LINE
+        _wsRetryCount = 0;
+        updateWsDot(true);
         window._wsHeartbeat = setInterval(() => {
             if (ws.readyState === WebSocket.OPEN) ws.send("ping");
-        }, 25000);
+        }, 30000);
     };
 
     ws.onmessage = (event) => {
@@ -665,6 +964,7 @@ function setupWebSocket() {
     ws.onclose = () => {
         console.log("WebSocket closed.");
         clearInterval(window._wsHeartbeat);
+        updateWsDot(false);
         if (authToken && (!NGROK_BASE_URL || !_wsNgrokFailed)) {
             console.log("Retrying in 3s...");
             setTimeout(setupWebSocket, 3000);
@@ -717,19 +1017,28 @@ function toggleSidebar() {
     const mainContent = document.getElementById('main-content-area');
     const isOpen      = sidebar.classList.contains('open');
     const isDesktop   = window.innerWidth >= 1024;
+    const shouldOpen  = !isOpen;
+
+    const chevron = document.getElementById('sidebar-chevron-icon');
+    const toggleBtn = document.getElementById('sidebar-toggle-btn');
+
+    if (toggleBtn) {
+        toggleBtn.classList.toggle('is-open', shouldOpen);
+    }
 
     if (isOpen) {
         sidebar.classList.remove('open');
         overlay.classList.remove('active');
         if (isDesktop) mainContent.classList.remove('sidebar-open');
+        if (chevron) { chevron.classList.remove('fa-chevron-right'); chevron.classList.add('fa-chevron-left'); }
     } else {
         sidebar.classList.add('open');
         if (isDesktop) {
             mainContent.classList.add('sidebar-open');
-            // No overlay on desktop
         } else {
             overlay.classList.add('active');
         }
+        if (chevron) { chevron.classList.remove('fa-chevron-left'); chevron.classList.add('fa-chevron-right'); }
     }
 }
 
@@ -783,7 +1092,7 @@ function switchDetailTab(tab, uid) {
 }
 
 async function loadDetailRepair(uid) {
-    const tbody = document.getElementById('hist-table-body');
+    const tbody = document.getElementById('hist-repair-tbody');
     tbody.innerHTML = `<tr><td colspan="6" class="p-4 text-center text-gray-500"><i class="fas fa-spinner fa-spin mr-2"></i>Mengambil data...</td></tr>`;
     try {
         const res = await apiFetch(`/riwayat/${uid}`);
@@ -880,23 +1189,21 @@ function renderDbCards() {
     
     container.innerHTML = '';
 
-    const filtered = _historySummary.filter(item =>
-        item.kode_id.toLowerCase().includes(searchQ) ||
-        item.uid.toLowerCase().includes(searchQ)
-    );
-    if (!filtered.length) {
-        container.innerHTML = `<div class="col-span-3 text-center text-gray-400 py-12"><i class="fas fa-inbox text-3xl mb-2 block"></i>Belum ada data penambahan aset alat kerja.</div>`;
-        return;
-    }
-
-    db.filter(item => {
+    const filteredItems = db.filter(item => {
         const matchSearch = item.kode_id.toLowerCase().includes(searchQ) ||
                             item.uid.toLowerCase().includes(searchQ)     ||
                             item.alat.toLowerCase().includes(searchQ);
         const matchMode = mode === 'public' ? true :
             (item.creator || '').toLowerCase() === (currentUser || '').toLowerCase();
         return matchSearch && matchMode;
-    }).sort((a, b) => {
+    });
+
+    if (!filteredItems.length) {
+        container.innerHTML = `<div class="col-span-3 text-center text-gray-400 py-12"><i class="fas fa-inbox text-3xl mb-2 block"></i>Belum ada data penambahan aset alat kerja.</div>`;
+        return;
+    }
+
+    filteredItems.sort((a, b) => {
         const av = (a[_sortField] || '').toString().toLowerCase();
         const bv = (b[_sortField] || '').toString().toLowerCase();
         return _sortDir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av);
@@ -957,7 +1264,7 @@ async function loadHistorySummary() {
 }
 
 function renderHistoryCards() {
-    const container   = document.getElementById('history-cards-container');
+    const container   = document.getElementById('history-repair-container');
     const searchInput = document.getElementById('search-history');
     if (!container) return;
 
@@ -1064,17 +1371,20 @@ document.querySelectorAll('.master-tab').forEach(tab => {
     tab.addEventListener('click', () => {
         const target = tab.dataset.tab;
 
-        // Update tab styles
+        const ACTIVE_CLS   = ['bg-gray-200', 'dark:bg-gray-600', 'text-gray-900', 'dark:text-white', 'font-semibold'];
+        const INACTIVE_CLS = ['text-gray-500', 'dark:text-gray-400', 'font-medium', 'hover:bg-gray-100', 'dark:hover:bg-gray-700/60'];
+
         document.querySelectorAll('.master-tab').forEach(t => {
-            t.classList.toggle('border-emerald-500', t.dataset.tab === target);
-            t.classList.toggle('text-emerald-600',   t.dataset.tab === target);
-            t.classList.toggle('dark:text-emerald-400', t.dataset.tab === target);
-            t.classList.toggle('border-transparent',  t.dataset.tab !== target);
+            const isActive = t.dataset.tab === target;
+            // Clear both sets first
+            [...ACTIVE_CLS, ...INACTIVE_CLS].forEach(c => t.classList.remove(c));
+            // Apply correct set
+            (isActive ? ACTIVE_CLS : INACTIVE_CLS).forEach(c => t.classList.add(c));
         });
 
         // Show correct panel
         document.querySelectorAll('.master-tab-panel').forEach(p => p.classList.add('hidden'));
-        document.getElementById(`master-tab-${target}`)?.classList.remove('hidden');
+        document.getElementById(`master-panel-${target}`)?.classList.remove('hidden');
 
         // Load data for the active tab
         if (target === 'users')  loadMasterUsers();
@@ -1082,24 +1392,6 @@ document.querySelectorAll('.master-tab').forEach(tab => {
         if (target === 'lokasi') loadMasterLokasi();
         if (target === 'upt')    loadMasterUpt();
     });
-});
-
-// Auto-open first tab when navigating to masterdata view
-const origSwitchView = switchView;
-// Monkey-patch switchView to trigger first tab on masterdata
-const _switchViewOrig = switchView;
-window._masterDataLoaded = false;
-
-// Override: when switching to masterdata, activate first tab
-document.querySelectorAll('.nav-btn').forEach(btn => {
-    if (btn.dataset.target === 'masterdata') {
-        btn.addEventListener('click', () => {
-            // Activate Alat tab by default
-            setTimeout(() => {
-                document.querySelector('.master-tab[data-tab="users"]')?.click();
-            }, 50);
-        }, { once: false });
-    }
 });
 
 // ── LOAD FUNCTIONS ────────────────────────────────────────────────
@@ -1313,12 +1605,11 @@ document.getElementById('form-add-alat')?.addEventListener('submit', async (e) =
     e.preventDefault();
     const kode      = document.getElementById('new-alat-kode').value.trim().toUpperCase();
     const nama      = document.getElementById('new-alat-nama').value.trim();
-    document.getElementById('new-alat-tanggal').value = '';
+    const tanggal   = document.getElementById('new-alat-tanggal').value || null;
     const deskripsi = document.getElementById('new-alat-deskripsi').value.trim();
     if (!kode || !nama) return showToast('Kode dan Nama wajib diisi.', 'warning');
 
     try {
-        const tanggal = document.getElementById('new-alat-tanggal').value || null;
         const res = await apiFetch('/master/alat', { method: 'POST', body: JSON.stringify({ kode, nama, deskripsi: deskripsi || null, tanggal_pembelian: tanggal }) });
         if (!res.ok) { const err = await res.json(); throw new Error(err.detail); }
         showToast('Alat berhasil ditambahkan.', 'success');
@@ -1375,7 +1666,8 @@ window.openMasterEdit = (type, id, val1, val2, val3) => {
     _masterEditCtx = { type, id, val1, val2, val3 };
     const title  = document.getElementById('master-edit-title');
     const fields = document.getElementById('master-edit-fields');
-    const deactivateBtn = document.getElementById('btn-master-edit-deactivate');
+    const deactivateBtn = document.getElementById('btn-master-edit-delete');
+    if (!deactivateBtn) return;
 
     // Reset deactivate button label
     deactivateBtn.innerHTML = '<i class="fas fa-ban mr-1"></i> Nonaktifkan';
@@ -1514,7 +1806,7 @@ document.getElementById('btn-master-edit-save')?.addEventListener('click', async
     }
 });
 
-document.getElementById('btn-master-edit-deactivate')?.addEventListener('click', async () => {
+document.getElementById('btn-master-edit-delete')?.addEventListener('click', async () => {
     if (!_masterEditCtx) return;
     const { type, id, val1 } = _masterEditCtx;
 
@@ -1634,7 +1926,6 @@ function applyExportFilters() {
     const previewCount = document.getElementById('exp-preview-count');
     if (previewCount) {
         previewCount.innerHTML =
-            `<i class="fas fa-info-circle mr-1"></i> ` +
             `<strong>${filteredActive.length}</strong> baris aset aktif + ` +
             `<strong>${filteredAfkir.length}</strong> baris aset afkir ` +
             `(<strong>${total}</strong> total) akan diekspor.`;
