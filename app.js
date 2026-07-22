@@ -5,16 +5,16 @@ const API_BASE_URL = '/api';
 let NGROK_BASE_URL  = '';
 let BACKEND_WS_HOST = '';
 
-// These are now fetched from the DB on login — see fetchMasterData()
-let alatKerjaData = [];
-let lokasiData    = [];
-let uptDatabase   = [];
+// Data master disesuaikan dengan skema PostgreSQL
+let alatKerjaData = []; 
+let lokasiData    = []; 
+let uptDatabase   = []; // Dipertahankan jika backend API masih membutuhkannya
 
-let _currentRole = '';  // set in checkAuth, used by renderDbCards for mutasi button visibility
+let _currentRole = '';  // SUPER_ADMIN, ADMIN_WILAYAH, TEKNISI
 let _wsNgrokFailed = false;
 let _wsRetryCount = 0;
 
-let db = [];
+let db = []; // Menampung data tabel aset
 
 let activeHistoryUid = null;
 let currentUser = sessionStorage.getItem('activeUser');
@@ -56,23 +56,23 @@ async function fetchConfig() {
             : window.location.host;
     } catch (e) {
         NGROK_BASE_URL  = '';
-        BACKEND_WS_HOST = window.location.host; // always set a valid fallback
+        BACKEND_WS_HOST = window.location.host; 
     }
 }
 
 async function fetchMasterData() {
     try {
-        const [alatRes, lokasiRes, uptRes] = await Promise.all([
+        const [alatRes, lokasiRes] = await Promise.all([
             fetch(`${API_BASE_URL}/master/alat`),
             fetch(`${API_BASE_URL}/master/lokasi`),
-            fetch(`${API_BASE_URL}/master/upt`),
         ]);
 
-        if (alatRes.ok)   alatKerjaData = (await alatRes.json()).map(a => ({ name: a.nama,       code: a.kode }));
-        if (lokasiRes.ok) lokasiData    = (await lokasiRes.json()).map(l => ({ name: l.nama_lokasi, code: l.kode_lokasi }));
-        if (uptRes.ok)    uptDatabase   = (await uptRes.json()).map(u => ({ upt: u.nama_lokasi, lokasi: u.parent_kode }));
+        if (alatRes.ok)   alatKerjaData = (await alatRes.json()).map(a => ({ name: a.nama_alat, code: a.kode_alat }));
+        if (lokasiRes.ok) {
+            lokasiData = (await lokasiRes.json()).map(l => ({ name: l.nama_lokasi, code: l.id_lokasi }));
+            uptDatabase = lokasiData.map(l => ({ upt: l.name, lokasi: l.code }));
+        }
 
-        // Re-populate all selects now that data is loaded
         populateSelects();
     } catch (e) {
         showToast("Gagal memuat data master. Beberapa dropdown mungkin kosong.", "warning");
@@ -86,9 +86,9 @@ async function fetchLoginRegions() {
         const data = await res.json();
         const sel  = document.getElementById('login-region');
         if (!sel) return;
-        sel.innerHTML = data.map(l => `<option value="${l.kode_lokasi}">${l.nama_lokasi}</option>`).join('');
+        sel.innerHTML = data.map(l => `<option value="${l.id_lokasi}">${l.nama_lokasi}</option>`).join('');
     } catch (e) {
-        // master data not seeded yet — leave as "Memuat..."
+        // master data not seeded yet
     }
 }
 
@@ -110,15 +110,18 @@ async function checkAuth() {
             mainApp.classList.remove('hidden');
         }
 
-        // Update topbar user info
         const topbarUsername = document.getElementById('topbar-username');
         const topbarRole     = document.getElementById('topbar-role');
         if (topbarUsername) topbarUsername.innerText = currentUser;
         if (topbarRole)     topbarRole.innerText     = role.replace('_', ' ');
 
         if (role === 'SUPER_ADMIN') {
-            const navMaster = document.getElementById('nav-masterdata');
-            if (navMaster) navMaster.classList.remove('hidden');
+            const navMaster   = document.getElementById('nav-masterdata');
+            const navAfkir    = document.getElementById('nav-afkir');
+            const adminHelper = document.getElementById('admin-helper');
+            if (navMaster)      navMaster.classList.remove('hidden');
+            if (navAfkir)       navAfkir.classList.remove('hidden');
+            if (adminHelper)    adminHelper.classList.remove('hidden');
         }
         if (role === 'TEKNISI') {
             const navInput = document.getElementById('nav-input');
@@ -134,7 +137,7 @@ async function checkAuth() {
         setupProfileModal();
         startTopbarClock();
 
-        await fetchMasterData(); // fetch before setupWebSocket so selects are ready
+        await fetchMasterData(); 
         setupWebSocket();
         await fetchAsetFromServer();
     } else {
@@ -158,7 +161,6 @@ async function handleLogin() {
         return;
     }
 
-    // Single confirmation before proceeding
     const confirmed = await customConfirm(
         `Masuk sebagai "${user}"?\nRole: ${roleText}\nRegion: ${regionText}`
     );
@@ -172,9 +174,9 @@ async function handleLogin() {
                 'ngrok-skip-browser-warning': 'true',
             },
             body: JSON.stringify({
-                username:        user,
-                role:            role,
-                assigned_region: region || null
+                username:  user,
+                role:      role,
+                id_lokasi: region || null
             })
         });
 
@@ -231,18 +233,14 @@ function forceLogout(reloadPage = false) {
     authView.classList.remove('hidden');
 
     const u = document.getElementById('login-username');
-    // const p = document.getElementById('login-password');
     if (u) u.value = '';
-    // if (p) p.value = '';
+
     document.getElementById('auth-step-1')?.classList.remove('hidden');
     document.getElementById('auth-step-2')?.classList.add('hidden');
     document.getElementById('auth-step-3')?.classList.add('hidden');
     document.getElementById('login-role') && (document.getElementById('login-role').value = '');
 
     activeHistoryUid = null;
-
-    // const navAdmin = document.getElementById('nav-user-management');
-    // if (navAdmin) navAdmin.classList.add('hidden');
 
     if (window._wsHeartbeat) clearInterval(window._wsHeartbeat);
     if (window._ws && window._ws.readyState === WebSocket.OPEN) {
@@ -262,7 +260,6 @@ function getInitials(name) {
 
 function updateWsDot(connected) {
     const color = connected ? 'bg-green-500' : 'bg-red-400';
-    const off   = connected ? 'bg-red-400'   : 'bg-green-500';
     const label = connected ? 'Server terhubung' : 'Server terputus';
     ['ws-status-dot', 'avatar-ws-dot', 'profile-modal-ws-dot'].forEach(id => {
         const el = document.getElementById(id);
@@ -287,7 +284,6 @@ function setupProfileModal() {
     if (pmUser) pmUser.textContent = currentUser || '—';
     if (pmRole) pmRole.textContent = roleLabel;
 
-    // Show/hide delete button based on role
     const delBtn = document.getElementById('profile-delete-btn');
     if (delBtn) {
         if (_currentRole === 'SUPER_ADMIN') delBtn.classList.add('hidden');
@@ -390,8 +386,8 @@ function updateDashboardStats() {
 
     if (statTotal && statSo && statTso) {
         statTotal.innerText = db.length;
-        statSo.innerText    = db.filter(item => item.status === 'SO').length;
-        statTso.innerText   = db.filter(item => item.status === 'TSO').length;
+        statSo.innerText    = db.filter(item => item.status_terakhir === 'SO').length;
+        statTso.innerText   = db.filter(item => item.status_terakhir === 'TSO').length;
     }
 }
 
@@ -412,18 +408,16 @@ async function afkirAset(uid) {
 
 // --- UI UTILITIES & EVENT LISTENERS ---
 function populateSelects() {
-    const alatHTML  = alatKerjaData.map(d => `<option value="${d.code}">${d.name} (${d.code})</option>`).join('');
-    const lokasiHTML = lokasiData.map(d => `<option value="${d.code}">${d.name} (${d.code})</option>`).join('');
+    const alatHTML  = alatKerjaData.map(d => `<option value="${d.code}">${d.name}</option>`).join('');
+    const lokasiHTML = lokasiData.map(d => `<option value="${d.code}">${d.name}</option>`).join('');
 
     const inAlat   = document.getElementById('in-alat');
     const inLokasi = document.getElementById('in-lokasi');
     const editLokasi = document.getElementById('edit-lokasi');
-    const regRegion  = document.getElementById('reg-region');
 
     if (inAlat)    inAlat.innerHTML    = alatHTML;
     if (inLokasi)  inLokasi.innerHTML  = lokasiHTML;
     if (editLokasi) editLokasi.innerHTML = `<option value="" disabled selected>Pilih Lokasi</option>` + lokasiHTML;
-    if (regRegion)  regRegion.innerHTML = lokasiHTML;
 }
 
 function switchView(viewId) {
@@ -450,6 +444,7 @@ function switchView(viewId) {
         edit:             { title: 'Pembaruan Kondisi',    subtitle: 'Perbarui status kondisi aset alat kerja' },
         laporan:          { title: 'Laporan & Ekspor',     subtitle: 'Filter dan ekspor data aset ke Excel atau PDF' },
         masterdata:       { title: 'Pusat Data',           subtitle: 'Kelola data master sistem (Super Admin)' },
+        afkir:            { title: 'Pulihkan Aset Afkir',  subtitle: 'Lihat dan pulihkan aset yang telah di-afkir' },
     };
     const meta = pageMeta[viewId];
     if (meta) {
@@ -462,10 +457,9 @@ function switchView(viewId) {
     const breadcrumb = document.getElementById('breadcrumb-label');
     if (breadcrumb && meta) breadcrumb.textContent = meta.title;
 
-    if (viewId === 'masterdata') {
-        setTimeout(() => {
-            document.querySelector('.master-tab[data-tab="users"]')?.click();
-        }, 50);
+    if (viewId === 'database' || viewId === 'history' || viewId === 'afkir') {
+        const tv = document.getElementById(`view-${viewId}`);
+        if (tv) tv.classList.add('is-flex');
     }
     if (viewId === 'database' || viewId === 'history') {
         fetchAsetFromServer();
@@ -478,6 +472,14 @@ function switchView(viewId) {
     }
     if (viewId === 'laporan') {
         initLaporanView();
+    }
+    if (viewId === 'masterdata') {
+        setTimeout(() => {
+            document.querySelector('.master-tab[data-tab="users"]')?.click();
+        }, 50);
+    }
+    if (viewId === 'afkir') {
+        loadAfkirCards();
     }
 }
 
@@ -513,12 +515,16 @@ function setupEventListeners() {
     document.querySelectorAll('.division-card').forEach(card => {
         card.addEventListener('click', () => {
             const division = card.dataset.division;
-            const labels = { TEKNISI: 'Teknisi (TraKSI)', ADMIN_DAOP: 'Admin DAOP', SUPER_ADMIN: 'Super Admin (RAMCES)' };
-            document.getElementById('login-role').value = division;
-            document.getElementById('auth-display-role').innerText = labels[division] || division;
+            const labels = { TEKNISI: 'Teknisi (TraKSI)', ADMIN_WILAYAH: 'Admin Wilayah', SUPER_ADMIN: 'Super Admin (RAMCES)' };
+            
+            // Normalize legacy values to the backend role contract.
+            const roleVal = division === 'ADMIN_DAOP' ? 'ADMIN_WILAYAH' : division;
+            
+            document.getElementById('login-role').value = roleVal;
+            document.getElementById('auth-display-role').innerText = labels[roleVal] || labels[division] || division;
 
             const regionSel = document.getElementById('login-region');
-            if (division === 'SUPER_ADMIN') {
+            if (roleVal === 'SUPER_ADMIN') {
                 regionSel.disabled = true;
                 regionSel.innerHTML = '<option value="">Semua Region (tidak diperlukan)</option>';
             } else {
@@ -545,10 +551,8 @@ function setupEventListeners() {
         html.classList.toggle('dark');
         localStorage.setItem('theme', html.classList.contains('dark') ? 'dark' : 'light');
     });
-    document.getElementById('logout-btn')?.addEventListener('click', () => forceLogout(true));
     
     // Profile modal
-    // (delete-account-btn re-added in redesign)
     document.getElementById('profile-btn')?.addEventListener('click', openProfileModal);
     document.getElementById('close-profile-modal')?.addEventListener('click', closeProfileModal);
     document.getElementById('profile-modal')?.addEventListener('click', (e) => {
@@ -589,11 +593,11 @@ function setupEventListeners() {
     document.getElementById('btn-db-download-xlsx')?.addEventListener('click', () => {
         if (!db.length) { showToast('Belum ada aset yang terdaftar.', 'warning'); return; }
         const rows = db.map(item => ({
-            'UID':      item.uid,
-            'Kode ID':  item.kode_id,
-            'Alat':     item.alat,
-            'Lokasi':   item.lokasi,
-            'Status':   item.status,
+            'ID Aset':   item.id_aset,
+            'Kode Alat': item.kode_alat,
+            'Lokasi':    item.id_lokasi,
+            'Status':    item.status_terakhir,
+            'Pengadaan': item.sumber_pengadaan
         }));
         const ws  = XLSX.utils.json_to_sheet(rows);
         const wb  = XLSX.utils.book_new();
@@ -613,14 +617,14 @@ function setupEventListeners() {
         doc.setFont('helvetica', 'normal');
         doc.text(`Dicetak: ${new Date().toLocaleString('id-ID')}  |  Total: ${db.length} aset`, 14, 20);
         doc.autoTable({
-            head: [['UID', 'Kode ID', 'Alat', 'Lokasi', 'Status']],
-            body: db.map(item => [item.uid, item.kode_id, item.alat, item.lokasi, item.status]),
+            head: [['ID Aset', 'Kode Alat', 'Lokasi', 'Status']],
+            body: db.map(item => [item.id_aset, item.kode_alat, item.id_lokasi, item.status_terakhir]),
             startY: 25,
             styles: { fontSize: 7, cellPadding: 2 },
             headStyles: { fillColor: [22, 76, 129], textColor: 255, fontStyle: 'bold' },
             alternateRowStyles: { fillColor: [249, 250, 251] },
             didParseCell(data) {
-                if (data.section === 'body' && data.column.index === 4) {
+                if (data.section === 'body' && data.column.index === 3) {
                     const v = data.cell.raw;
                     data.cell.styles.textColor = v === 'SO' ? [21, 128, 61] : [185, 28, 28];
                     data.cell.styles.fontStyle = 'bold';
@@ -656,24 +660,19 @@ function setupEventListeners() {
                 const ws   = wb.Sheets[wb.SheetNames[0]];
                 const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
 
-                // Find header row — look for a row containing 'kode' or 'nama'
                 let dataRows = rows.filter(r => r.some(c => String(c).trim() !== ''));
                 if (!dataRows.length) { showToast('File kosong atau tidak terbaca.', 'error'); return; }
 
-                // Skip header row if first row looks like headers
                 const firstRow = dataRows[0].map(c => String(c).toLowerCase().trim());
                 if (firstRow.some(c => c.includes('kode') || c.includes('nama'))) {
                     dataRows = dataRows.slice(1);
                 }
 
-                // Detect column positions: skip leading numeric/index columns
-                // Expected: [...optional numbering], kode, nama
                 const parsed = [];
                 for (const row of dataRows) {
                     const cells = row.map(c => String(c).trim()).filter((_, i) => row[i] !== '');
                     if (cells.length < 2) continue;
 
-                    // If first cell is purely numeric, treat as index and skip it
                     let startIdx = 0;
                     if (/^\d+$/.test(cells[0])) startIdx = 1;
 
@@ -683,16 +682,15 @@ function setupEventListeners() {
                     if (!kode || !nama) { showToast(`Baris tidak valid ditemukan: "${row.join(', ')}". Format harus: Kode, Nama Alat.`, 'error'); return; }
                     if (/[^A-Za-z0-9_\-]/.test(kode)) { showToast(`Kode tidak valid: "${kode}". Hanya huruf, angka, - dan _ yang diperbolehkan.`, 'error'); return; }
 
-                    parsed.push({ kode: kode.toUpperCase(), nama });
+                    parsed.push({ kode_alat: kode.toUpperCase(), nama_alat: nama });
                 }
 
                 if (!parsed.length) { showToast('Tidak ada data valid yang ditemukan dalam file.', 'warning'); return; }
 
-                // Send to backend
                 let success = 0, failed = 0;
                 for (const item of parsed) {
                     try {
-                        const res = await apiFetch('/master/alat', { method: 'POST', body: JSON.stringify({ kode: item.kode, nama: item.nama }) });
+                        const res = await apiFetch('/master/alat', { method: 'POST', body: JSON.stringify({ kode_alat: item.kode_alat, nama_alat: item.nama_alat }) });
                         if (res.ok) success++; else failed++;
                     } catch { failed++; }
                 }
@@ -715,20 +713,33 @@ function setupEventListeners() {
         switchView('history');
     });
 
-    // Dynamic UPT select
-    document.getElementById('edit-lokasi')?.addEventListener('change', (e) => {
-        const locCode   = e.target.value;
-        const uptSelect = document.getElementById('edit-upt');
-        const matches   = uptDatabase.filter(u => u.lokasi === locCode);
+    // Apply UPT Select function helper
+    function applyUptSelect(locCode, uptSelectEl) {
+        if (!uptSelectEl) return;
+        const loc = lokasiData.find(l => l.code === locCode);
+        const isBalaiyasa = loc?.name?.toUpperCase().includes('BALAIYASA') || loc?.tipe?.toUpperCase() === 'BALAIYASA';
 
-        uptSelect.innerHTML = '<option value="">Pilih UPT...</option>';
-        uptSelect.value = '';
-
-        if (matches.length > 0) {
-            uptSelect.innerHTML = '<option value="">Pilih UPT...</option>' + matches.map(m => `<option value="${m.upt}">${m.upt}</option>`).join('');
-        } else {
-            uptSelect.innerHTML = `<option value="Lainnya">Lainnya / Tidak ada data UPT</option>`;
+        if (isBalaiyasa) {
+            uptSelectEl.innerHTML = `<option value="">Belum ada UPT untuk lokasi Balaiyasa</option>`;
+            uptSelectEl.disabled = true;
+            return;
         }
+
+        uptSelectEl.disabled = false;
+        const matches = uptDatabase.filter(u => u.lokasi === locCode);
+        if (matches.length > 0) {
+            uptSelectEl.innerHTML = '<option value="">Pilih UPT...</option>' +
+                matches.map(m => `<option value="${m.upt}">${m.upt}</option>`).join('');
+        } else {
+            uptSelectEl.innerHTML = `<option value="">Tidak ada UPT untuk lokasi ini</option>`;
+            uptSelectEl.disabled = true;
+        }
+        uptSelectEl.value = '';
+    }
+
+    // Dynamic UPT Select
+    document.getElementById('edit-lokasi')?.addEventListener('change', (e) => {
+        applyUptSelect(e.target.value, document.getElementById('edit-upt'));
     });
 
     // SO / TSO buttons
@@ -738,10 +749,12 @@ function setupEventListeners() {
             document.getElementById('edit-kondisi').value = status;
 
             document.querySelectorAll('.status-btn').forEach(b => {
-                b.className = "status-btn flex-1 py-3 rounded-lg font-bold transition-all " +
-                    (b.dataset.status === status
-                        ? `active ${status.toLowerCase()}`
-                        : "inactive");
+                b.classList.remove('is-so', 'is-tso', 'is-idle');
+                if (b.dataset.status === status) {
+                    b.classList.add(status === 'SO' ? 'is-so' : 'is-tso');
+                } else {
+                    b.classList.add('is-idle');
+                }
             });
         });
     });
@@ -761,12 +774,11 @@ function setupEventListeners() {
         const codeID  = `${alat}-${pengadaan}-${yearStr}-${unit}-${lokasi}`;
 
         const payload = {
-            kode_id:        codeID,
-            kode_alat:      alat,
-            kode_lokasi:    lokasi,
-            pengadaan:      pengadaan,
-            tahun_pembelian: parseInt(yearStr),
-            unit_peruntukan: unit
+            id_aset: codeID,
+            kode_alat: alat,
+            id_lokasi: lokasi,
+            tanggal_pembelian: tanggal,
+            sumber_pengadaan: pengadaan
         };
 
         try {
@@ -776,7 +788,7 @@ function setupEventListeners() {
                 throw new Error(err.detail || "Gagal menyimpan data ke database.");
             }
             const result = await response.json();
-            showToast(`Berhasil disimpan! UID: ${result.uid}`, "success");
+            showToast(`Berhasil disimpan! ID Aset: ${payload.id_aset}`, "success");
             this.reset();
             fetchAsetFromServer();
         } catch (error) {
@@ -788,22 +800,18 @@ function setupEventListeners() {
         e.preventDefault();
 
         const payload = {
-            aset_uid:         document.getElementById('edit-uid').value,
-            tanggal_perbaikan: document.getElementById('edit-tanggal').value,
-            lokasi_perbaikan: document.getElementById('edit-lokasi').value || null,
-            upt_perbaikan:    document.getElementById('edit-upt').value    || null,
-            teknisi:          document.getElementById('edit-teknisi').value,
-            status_baru:      document.getElementById('edit-kondisi').value,
-            keterangan:       document.getElementById('edit-keterangan').value || '-'
+            id_aset:    document.getElementById('edit-uid').value,
+            kondisi:    document.getElementById('edit-kondisi').value,
+            keterangan: document.getElementById('edit-keterangan').value || '-'
         };
 
-        if (!payload.status_baru) return showToast("Pilih Kondisi Alat Kerja (SO/TSO)!", "warning");
+        if (!payload.kondisi) return showToast("Pilih Kondisi Alat Kerja (SO/TSO)!", "warning");
 
         try {
-            const response = await apiFetch('/perbaikan', { method: 'POST', body: JSON.stringify(payload) });
+            const response = await apiFetch('/riwayat-kondisi', { method: 'POST', body: JSON.stringify(payload) });
             if (!response.ok) throw new Error("Gagal menyimpan riwayat perbaikan.");
-            const result = await response.json();
-            showToast(result.message, "success");
+            
+            showToast("Berhasil memperbarui kondisi", "success");
             switchView('database');
             fetchAsetFromServer();
         } catch (error) {
@@ -813,7 +821,6 @@ function setupEventListeners() {
 
     // ── QR MODAL LISTENERS ───────────────────────────────────────────────────
     
-    // Copy landing link to clipboard
     document.getElementById('btn-copy-link')?.addEventListener('click', async () => {
         const linkText = document.getElementById('qr-landing-link-text')?.textContent;
         if (!linkText) return;
@@ -828,26 +835,20 @@ function setupEventListeners() {
                 btn.title     = 'Salin link';
             }, 2000);
         } catch {
-            // Fallback for browsers that block clipboard API without HTTPS
             showToast('Salin manual: ' + linkText, 'info');
         }
     });
 
-    // Close modal on backdrop click or × button
     document.getElementById('close-qr-modal')?.addEventListener('click', closeQrModal);
     document.getElementById('qr-modal')?.addEventListener('click', (e) => {
         if (e.target === document.getElementById('qr-modal')) closeQrModal();
     });
     
-    // Download PNG
     document.getElementById('btn-qr-download-png')?.addEventListener('click', downloadQrPng);
-    
-    // Download PDF (print-based)
     document.getElementById('btn-qr-download-pdf')?.addEventListener('click', downloadQrPdf);
     
     // ── HISTORY UI CONTROLS LISTENERS ────────────────────────────────────────
     
-    // History mode toggle
     document.getElementById('hist-tab-repair')?.addEventListener('click', () => {
         _historyMode = 'repair';
         _setHistoryTab('repair');
@@ -860,35 +861,30 @@ function setupEventListeners() {
         renderMutasiCards();
     });
 
-    // History tab pill switcher — shared helper
     function _setHistoryTab(active) {
         const repairBtn = document.getElementById('hist-tab-repair');
         const mutasiBtn = document.getElementById('hist-tab-mutasi');
         const repairCon = document.getElementById('history-repair-container');
         const mutasiCon = document.getElementById('history-mutasi-container');
 
-        const ACTIVE_CLS   = ['bg-white', 'dark:bg-gray-600', 'shadow-sm', 'text-gray-800', 'dark:text-white', 'font-semibold'];
-        const INACTIVE_CLS = ['text-gray-500', 'dark:text-gray-400', 'font-medium', 'hover:text-gray-700', 'dark:hover:text-gray-200'];
+        const ACTIVE_CLS   = ['bg-kai-orange', 'text-white', 'font-semibold', 'shadow-sm'];
+        const INACTIVE_CLS = ['text-gray-500', 'dark:text-gray-400', 'font-medium', 'hover:bg-kai-orange/20', 'hover:text-kai-orange'];
 
-        // Reset both
         [repairBtn, mutasiBtn].forEach(b => {
             if (!b) return;
             ACTIVE_CLS.forEach(c => b.classList.remove(c));
             INACTIVE_CLS.forEach(c => b.classList.remove(c));
         });
 
-        // Apply active/inactive
         const activeBtn   = active === 'repair' ? repairBtn : mutasiBtn;
         const inactiveBtn = active === 'repair' ? mutasiBtn : repairBtn;
         ACTIVE_CLS.forEach(c => activeBtn?.classList.add(c));
         INACTIVE_CLS.forEach(c => inactiveBtn?.classList.add(c));
 
-        // Show/hide containers
         repairCon?.classList.toggle('hidden', active !== 'repair');
         mutasiCon?.classList.toggle('hidden', active !== 'mutasi');
     }
 
-    // Detail sub-tab listeners
     document.getElementById('detail-tab-repair')?.addEventListener('click', () => {
         switchDetailTab('repair', activeHistoryUid);
     });
@@ -920,14 +916,13 @@ function setupEventListeners() {
         try {
             const res = await apiFetch('/mutasi', {
                 method: 'POST',
-                body: JSON.stringify({ aset_uid: uid, kode_lokasi_tuju: lokasiTuju, alasan: alasan || null })
+                body: JSON.stringify({ id_aset: uid, id_lokasi_tujuan: lokasiTuju, alasan_mutasi: alasan || null })
             });
             const data = await res.json();
             if (!res.ok) throw new Error(data.detail || 'Gagal memproses mutasi.');
 
-            showToast(data.message, 'success');
+            showToast(data.message || 'Mutasi berhasil', 'success');
             document.getElementById('mutasi-modal').classList.add('hidden');
-            // Refresh both the db list and history summary
             await fetchAsetFromServer();
             await loadHistorySummary();
         } catch (e) {
@@ -949,7 +944,6 @@ function setupWebSocket() {
     const ws = new WebSocket(NGROK_BASE_URL ? `${wsUrl}?ngrok-skip-browser-warning=true` : wsUrl);
 
     ws.onopen = () => {
-        console.log("WebSocket connected.");
         _wsRetryCount = 0;
         updateWsDot(true);
         window._wsHeartbeat = setInterval(() => {
@@ -962,17 +956,14 @@ function setupWebSocket() {
     };
 
     ws.onclose = () => {
-        console.log("WebSocket closed.");
         clearInterval(window._wsHeartbeat);
         updateWsDot(false);
         if (authToken && (!NGROK_BASE_URL || !_wsNgrokFailed)) {
-            console.log("Retrying in 3s...");
             setTimeout(setupWebSocket, 3000);
         }
     };
 
     ws.onerror = (event) => {
-        console.warn("WebSocket error:", event);
         if (NGROK_BASE_URL && !_wsNgrokFailed) {
             _wsNgrokFailed = true;
             showToast("Ngrok tunnel tidak aktif. Pastikan ngrok berjalan sebelum menggunakan fitur live-sync.", "warning");
@@ -997,13 +988,11 @@ window.addEventListener('resize', () => {
     if (!sidebar) return;
 
     if (window.innerWidth >= 1024) {
-        // Desktop: remove mobile overlay, keep sidebar open state as margin
         overlay.classList.remove('active');
         if (sidebar.classList.contains('open')) {
             mainContent.classList.add('sidebar-open');
         }
     } else {
-        // Mobile: remove desktop margin shift, revert to overlay behavior
         mainContent.classList.remove('sidebar-open');
         if (sidebar.classList.contains('open')) {
             overlay.classList.add('active');
@@ -1045,44 +1034,96 @@ function toggleSidebar() {
 // ── RENDER & DISPLAY ───────────────────────────────────────────────────────
 
 window.openEdit = (uid) => {
-    const item = db.find(x => x.uid === uid);
+    const item = db.find(x => x.id_aset === uid);
     if (!item) return;
-    document.getElementById('edit-uid').value      = item.uid;
-    document.getElementById('edit-subtitle').innerText = `${item.uid} | ${item.kode_id}`;
+    document.getElementById('edit-uid').value      = item.id_aset;
+    document.getElementById('edit-subtitle').innerText = `${item.id_aset} | ${item.kode_alat}`;
     document.getElementById('edit-teknisi').value  = currentUser;
 
     document.getElementById('form-edit').reset();
     document.getElementById('edit-kondisi').value  = '';
     document.querySelectorAll('.status-btn').forEach(btn => {
-        btn.className = `status-btn flex-1 py-3 rounded-lg font-bold border-2 transition-all ${btn.dataset.status === 'SO' ? 'border-green-500 text-green-600' : 'border-red-500 text-red-600'}`;
+        btn.classList.remove('is-so', 'is-tso', 'is-idle');
+        btn.classList.add('is-idle');
     });
     switchView('edit');
 };
 
 window.openHistoryDetail = async (uid, tab = 'repair') => {
     activeHistoryUid = uid;
-    const item = _historySummary.find(x => x.uid === uid) || db.find(x => x.uid === uid);
+    const item = _historySummary.find(x => x.id_aset === uid) || db.find(x => x.id_aset === uid);
     if (!item) return;
 
-    document.getElementById('hist-detail-subtitle').innerText = `${item.uid} | ${item.kode_id}`;
+    document.getElementById('hist-detail-subtitle').innerText = `${item.id_aset}`;
     switchView('history-detail');
     switchDetailTab(tab, uid);
 };
 
+window.openQrModal = (uid) => {
+    const item = db.find(x => x.id_aset === uid);
+    if (!item) return;
+    _qrActiveItem = item;
+
+    document.getElementById('qr-modal-subtitle').textContent = item.id_aset;
+    document.getElementById('qr-label-kodeid').textContent   = item.id_aset;
+    document.getElementById('qr-label-alat').textContent     = item.kode_alat;
+    document.getElementById('qr-label-lokasi').textContent   = item.id_lokasi;
+
+    const canvas = document.getElementById('qr-canvas');
+    canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
+    new QRCode(canvas, {
+        text: `${window.location.origin}/public/${item.id_aset}`,
+        width: 160, height: 160,
+        colorDark: '#000000', colorLight: '#ffffff',
+        correctLevel: QRCode.CorrectLevel.M
+    });
+
+    const landingUrl = `${NGROK_BASE_URL || window.location.origin}/public/${item.id_aset}`;
+    const linkEl = document.getElementById('qr-landing-link');
+    if (linkEl) { linkEl.href = landingUrl; }
+    const textEl = document.getElementById('qr-landing-link-text');
+    if (textEl) textEl.textContent = landingUrl;
+
+    document.getElementById('qr-modal').classList.remove('hidden');
+};
+
+window.deleteAset = async (uid) => {
+    const item = db.find(x => x.id_aset === uid);
+    if (!item) return;
+
+    const confirmed = await customConfirm(
+        `Hapus aset "${uid}"?\n\nAset akan di-afkir dan tidak muncul di dashboard.\nRiwayat perbaikan dan mutasi tetap tersimpan.`
+    );
+    if (!confirmed) return;
+
+    const reconfirmed = await customConfirm(
+        `Konfirmasi terakhir: aset "${uid}" akan dihapus permanen dari tampilan aktif.\n\nUntuk memulihkan kembali aset ini (ataupun menghapus secara permanen), silakan merujuk pada menu Pulihkan Aset Afkir dan pulihkan dari menu tersebut.`
+    );
+    if (!reconfirmed) return;
+
+    try {
+        const res = await apiFetch(`/aset/afkir/${uid}`, { method: 'POST' });
+        if (!res.ok) {
+            const err = await res.json();
+            throw new Error(err.detail || 'Gagal menghapus aset.');
+        }
+        showToast(`Aset ${uid} berhasil dihapus.`, 'success');
+        await fetchAsetFromServer();
+    } catch (e) {
+        showToast(e.message, 'error');
+    }
+};
+
 function switchDetailTab(tab, uid) {
-    // Update tab button styles
-    document.getElementById('detail-tab-repair').className =
-        `detail-tab-btn px-5 py-2 text-sm font-bold border-b-2 transition ${
-            tab === 'repair'
-                ? 'border-purple-500 text-purple-600 dark:text-purple-400'
-                : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
-        }`;
-    document.getElementById('detail-tab-mutasi').className =
-        `detail-tab-btn px-5 py-2 text-sm font-bold border-b-2 transition ${
-            tab === 'mutasi'
-                ? 'border-orange-500 text-orange-600 dark:text-orange-400'
-                : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
-        }`;
+    const ACTIVE   = ['bg-kai-orange', 'text-white', 'font-semibold', 'shadow-sm'];
+    const INACTIVE = ['text-gray-500', 'dark:text-gray-400', 'font-medium', 'hover:bg-kai-orange/20', 'hover:text-kai-orange'];
+
+    ['repair', 'mutasi'].forEach(t => {
+        const btn = document.getElementById(`detail-tab-${t}`);
+        if (!btn) return;
+        [...ACTIVE, ...INACTIVE].forEach(c => btn.classList.remove(c));
+        (t === tab ? ACTIVE : INACTIVE).forEach(c => btn.classList.add(c));
+    });
 
     document.getElementById('detail-panel-repair').classList.toggle('hidden', tab !== 'repair');
     document.getElementById('detail-panel-mutasi').classList.toggle('hidden', tab !== 'mutasi');
@@ -1095,19 +1136,19 @@ async function loadDetailRepair(uid) {
     const tbody = document.getElementById('hist-repair-tbody');
     tbody.innerHTML = `<tr><td colspan="6" class="p-4 text-center text-gray-500"><i class="fas fa-spinner fa-spin mr-2"></i>Mengambil data...</td></tr>`;
     try {
-        const res = await apiFetch(`/riwayat/${uid}`);
+        const res = await apiFetch(`/riwayat-kondisi/${uid}`);
         if (!res.ok) throw new Error("Gagal mengambil riwayat.");
         const history = await res.json();
         if (!history.length) {
             tbody.innerHTML = `<tr><td colspan="6" class="p-4 text-center text-gray-500">Belum ada riwayat perbaikan.</td></tr>`;
             return;
         }
-        tbody.innerHTML = history.map(h => `
+        tbody.innerHTML = history.map((h, i) => `
             <tr class="border-b dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50">
-                <td class="p-3">${h.no}</td>
-                <td class="p-3 font-mono text-xs">${formatUtcToLocal(h.date)}</td>
-                <td class="p-3">${h.upt}</td>
-                <td class="p-3">${h.teknisi}</td>
+                <td class="p-3">${i+1}</td>
+                <td class="p-3 font-mono text-xs">${formatUtcToLocal(h.waktu_lapor)}</td>
+                <td class="p-3">${h.id_pengguna}</td>
+                <td class="p-3">${h.id_pengguna}</td>
                 <td class="p-3 font-bold ${h.kondisi === 'SO' ? 'text-green-500' : 'text-red-500'}">${h.kondisi}</td>
                 <td class="p-3 whitespace-pre-wrap">${h.keterangan}</td>
             </tr>
@@ -1129,9 +1170,8 @@ async function loadDetailMutasi(uid) {
         if (!res.ok) throw new Error("Gagal mengambil riwayat mutasi.");
         const data = await res.json();
 
-        // Origin + status bar
         const returnedBadge = data.sudah_kembali
-            ? `<span class="bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 px-3 py-1 rounded-full text-xs font-bold">✓ Sudah Kembali ke Asal</span>`
+            ? `<span class="bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 px-3 py-1 rounded-full text-xs font-bold">✓ Sudah Kembali ke Lokasi Awal</span>`
             : `<span class="bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 px-3 py-1 rounded-full text-xs font-bold">⟳ Belum Kembali ke Asal</span>`;
         originBar.innerHTML = `
             <div class="flex-1 min-w-0">
@@ -1145,12 +1185,11 @@ async function loadDetailMutasi(uid) {
             ${returnedBadge}
         `;
 
-        if (!data.mutasi.length) {
+        if (!data.mutasi || !data.mutasi.length) {
             timeline.innerHTML = `<div class="text-center text-gray-400 py-6">Belum ada riwayat mutasi.</div>`;
             return;
         }
 
-        // Timeline entries
         timeline.innerHTML = data.mutasi.map((m, i) => `
             <div class="flex gap-4 items-start">
                 <div class="flex flex-col items-center">
@@ -1159,12 +1198,11 @@ async function loadDetailMutasi(uid) {
                 </div>
                 <div class="bg-gray-50 dark:bg-gray-700/50 rounded-xl p-4 flex-1 mb-2 space-y-1 text-sm">
                     <div class="flex justify-between items-start gap-2">
-                        <span class="font-bold text-orange-600 dark:text-orange-400">${m.lokasi_asal} → ${m.lokasi_tuju}</span>
-                        ${m.delta ? `<span class="text-xs text-blue-500 font-mono shrink-0">+${m.delta}</span>` : ''}
+                        <span class="font-bold text-orange-600 dark:text-orange-400">${m.id_lokasi_asal} → ${m.id_lokasi_tujuan}</span>
                     </div>
-                    <p class="text-xs text-gray-500 font-mono">${formatUtcToLocal(m.created_at)}</p>
-                    <p class="text-xs text-gray-600 dark:text-gray-400"><span class="font-semibold">Oleh:</span> ${m.dilakukan_oleh}</p>
-                    <p class="text-xs text-gray-600 dark:text-gray-400 italic">${m.alasan}</p>
+                    <p class="text-xs text-gray-500 font-mono">${formatUtcToLocal(m.waktu_mutasi)}</p>
+                    <p class="text-xs text-gray-600 dark:text-gray-400"><span class="font-semibold">Oleh ID:</span> ${m.id_pengguna}</p>
+                    <p class="text-xs text-gray-600 dark:text-gray-400 italic">${m.alasan_mutasi}</p>
                 </div>
             </div>
         `).join('');
@@ -1185,16 +1223,15 @@ function renderDbCards() {
     
     const searchQ = (searchInput?.value || '').toLowerCase();
     const mode    = isTeknisi ? 'public' : (modeSelect ? modeSelect.value : 'public');
-    const isAdmin = _currentRole === 'SUPER_ADMIN' || _currentRole === 'ADMIN_DAOP';
+    const isAdmin = _currentRole === 'SUPER_ADMIN' || _currentRole === 'ADMIN_WILAYAH';
     
     container.innerHTML = '';
 
     const filteredItems = db.filter(item => {
-        const matchSearch = item.kode_id.toLowerCase().includes(searchQ) ||
-                            item.uid.toLowerCase().includes(searchQ)     ||
-                            item.alat.toLowerCase().includes(searchQ);
-        const matchMode = mode === 'public' ? true :
-            (item.creator || '').toLowerCase() === (currentUser || '').toLowerCase();
+        const matchSearch = (item.id_aset || '').toLowerCase().includes(searchQ) ||
+                            (item.kode_alat || '').toLowerCase().includes(searchQ) ||
+                            (item.id_lokasi || '').toLowerCase().includes(searchQ);
+        const matchMode = true; 
         return matchSearch && matchMode;
     });
 
@@ -1208,44 +1245,60 @@ function renderDbCards() {
         const bv = (b[_sortField] || '').toString().toLowerCase();
         return _sortDir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av);
     }).forEach(item => {
-        const statusColor = item.status === 'SO'  ? 'text-green-500' :
-                            item.status === 'TSO' ? 'text-red-500'   : 'text-blue-500';
+        const statusColor = item.status_terakhir === 'SO'  ? 'text-green-500' :
+                            item.status_terakhir === 'TSO' ? 'text-red-500'   : 'text-blue-500';
 
         const mutasiBtn = isAdmin ? `
-            <button onclick="window.openMutasiModal('${item.uid}')"
+            <button onclick="window.openMutasiModal('${item.id_aset}')"
                 class="flex-1 bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 py-2 rounded font-bold hover:bg-orange-200 dark:hover:bg-orange-800 transition text-sm">
                 <i class="fas fa-exchange-alt"></i> MUTASI
             </button>` : '';
 
+        const isSuperAdmin = _currentRole === 'SUPER_ADMIN';
+        const isAdminWilayah = _currentRole === 'ADMIN_WILAYAH';
+        const canDelete = isSuperAdmin || isAdminWilayah;
+
         container.innerHTML += `
-            <div class="bg-white dark:bg-gray-800 p-5 rounded-xl shadow border border-gray-200 dark:border-gray-700 flex flex-col justify-between">
+            <div class="bg-white dark:bg-gray-800 p-5 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 flex flex-col justify-between hover:border-kai-blue dark:hover:border-kai-orange transition-colors">
                 <div>
                     <div class="flex justify-between items-start mb-2">
-                        <span class="text-xs font-bold bg-gray-200 dark:bg-gray-700 px-2 py-1 rounded">${item.uid}</span>
-                        <span class="text-sm font-bold ${statusColor}"><i class="fas fa-circle text-xs mr-1"></i>${item.status}</span>
+                        <span class="text-lg font-bold font-mono text-kai-blue dark:text-blue-400">${item.id_aset}</span>
+                        <span class="text-xs font-bold px-2 py-0.5 rounded-full ${item.status_terakhir === 'SO' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : item.status_terakhir === 'TSO' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' : 'bg-blue-100 text-blue-700'}">
+                            <i class="fas fa-circle text-[8px] mr-1"></i>${item.status_terakhir}
+                        </span>
                     </div>
-                    <h3 class="text-lg font-bold font-mono text-blue-600 dark:text-blue-400 break-words">${item.kode_id}</h3>
-                    <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">${item.alat} — ${item.lokasi}</p>
-                    ${item.original_kode_lokasi && item.kode_lokasi !== item.original_kode_lokasi ? `
-                    <p class="text-xs mt-1 flex items-center gap-1">
-                        <i class="fas fa-exchange-alt text-orange-400"></i>
-                        <span class="text-orange-500 dark:text-orange-400 font-semibold">Status Mutasi: Sedang di luar lokasi asal</span>
-                    </p>` : item.original_kode_lokasi ? `
-                    <p class="text-xs mt-1 flex items-center gap-1">
-                        <i class="fas fa-check-circle text-green-400"></i>
-                        <span class="text-green-600 dark:text-green-400 font-semibold">Status Mutasi: Di lokasi asal</span>
-                    </p>` : ''}
+                    <p class="text-sm text-gray-700 dark:text-gray-300 font-semibold mt-1">${item.kode_alat}</p>
+                    <p class="text-xs text-gray-400 mt-0.5">${item.id_lokasi}</p>
                 </div>
-                <div class="mt-4 flex gap-2">
-                    <button onclick="window.openEdit('${item.uid}')"
-                        class="flex-1 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 py-2 rounded font-bold hover:bg-blue-200 dark:hover:bg-blue-800 transition text-sm">
-                        <i class="fas fa-edit"></i> UPDATE
+                <div class="mt-4 space-y-2">
+                    <!-- Row 1 desktop: Perbarui + Mutasi + QR | mobile: Perbarui + Mutasi -->
+                    <div class="grid grid-cols-2 md:grid-cols-3 gap-2">
+                        <button onclick="window.openEdit('${item.id_aset}')"
+                            class="flex items-center justify-center gap-1.5 px-3 py-2.5 bg-kai-blue hover:bg-blue-800 active:bg-blue-900 text-white font-semibold rounded-lg transition text-sm shadow-sm">
+                            <i class="fas fa-edit text-sm"></i> Perbarui
+                        </button>
+                        ${isAdmin ? `
+                        <button onclick="window.openMutasiModal('${item.id_aset}')"
+                            class="flex items-center justify-center gap-1.5 px-3 py-2.5 bg-kai-orange hover:bg-orange-600 active:bg-orange-700 text-white font-semibold rounded-lg transition text-sm shadow-sm">
+                            <i class="fas fa-exchange-alt text-sm"></i> Mutasi
+                        </button>` : `<div></div>`}
+                        <!-- QR: hidden on mobile (shown in row 2 below) -->
+                        <button onclick="window.openQrModal('${item.id_aset}')"
+                            class="hidden md:flex items-center justify-center gap-1.5 px-3 py-2.5 bg-violet-600 dark:bg-violet-700 hover:bg-violet-400 dark:hover:bg-violet-600 text-white font-semibold rounded-lg transition text-sm">
+                            <i class="fas fa-qrcode text-sm"></i> QR
+                        </button>
+                    </div>
+                    <!-- Row 2 mobile: QR only -->
+                    <button onclick="window.openQrModal('${item.id_aset}')"
+                        class="md:hidden w-full flex items-center justify-center gap-1.5 px-3 py-2 bg-violet-600 dark:bg-violet-700 hover:bg-violet-200 dark:hover:bg-violet-600 text-white font-semibold rounded-lg transition text-sm">
+                        <i class="fas fa-qrcode text-sm"></i> Pindai / Cetak QR
                     </button>
-                    ${mutasiBtn}
-                    <button onclick="window.openQrModal('${item.uid}')"
-                        class="flex-1 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 py-2 rounded font-bold hover:bg-gray-200 dark:hover:bg-gray-600 transition text-sm">
-                        <i class="fas fa-qrcode"></i> QR
-                    </button>
+                    <!-- Row 3: Delete (admin only) -->
+                    ${canDelete ? `
+                    <button onclick="window.deleteAset('${item.id_aset}')"
+                        class="w-full flex items-center justify-center gap-1.5 px-3 py-2 bg-red-50 dark:bg-red-900/20 hover:bg-red-100 dark:hover:bg-red-900/40 text-red-600 dark:text-red-400 font-semibold rounded-lg transition text-sm border border-red-200 dark:border-red-800">
+                        <i class="fas fa-trash-alt text-sm"></i> Hapus Aset
+                    </button>` : ''}
                 </div>
             </div>
         `;
@@ -1271,8 +1324,7 @@ function renderHistoryCards() {
     const searchQ = (searchInput?.value || '').toLowerCase();
 
     const filtered = _historySummary.filter(item =>
-        item.kode_id.toLowerCase().includes(searchQ) ||
-        item.uid.toLowerCase().includes(searchQ)
+        (item.id_aset || '').toLowerCase().includes(searchQ)
     );
 
     if (!filtered.length) {
@@ -1281,9 +1333,9 @@ function renderHistoryCards() {
     }
 
     container.innerHTML = filtered.map(item => {
-        const r = item.repair;
-        const statusColor = item.status === 'SO'  ? 'text-green-500' :
-                            item.status === 'TSO' ? 'text-red-500'   : 'text-blue-500';
+        const r = item.repair || {};
+        const statusColor = item.status_terakhir === 'SO'  ? 'text-green-500' :
+                            item.status_terakhir === 'TSO' ? 'text-red-500'   : 'text-blue-500';
         const kondisiColor = r.latest_kondisi === 'SO'  ? 'text-green-500' :
                              r.latest_kondisi === 'TSO' ? 'text-red-500'   : 'text-blue-400';
 
@@ -1291,22 +1343,21 @@ function renderHistoryCards() {
         <div class="bg-white dark:bg-gray-800 p-5 rounded-xl shadow border border-gray-200 dark:border-gray-700 flex flex-col gap-3">
             <div class="flex justify-between items-start border-b dark:border-gray-700 pb-3">
                 <div>
-                    <p class="text-xs text-gray-400 font-mono">${item.uid}</p>
-                    <h3 class="text-base font-bold font-mono text-purple-600 dark:text-purple-400">${item.kode_id}</h3>
-                    <p class="text-xs text-gray-500 mt-0.5">${item.alat} — ${item.lokasi}</p>
+                    <h3 class="text-base font-bold font-mono text-kai-blue dark:text-blue-400">${item.id_aset}</h3>
+                    <p class="text-xs text-gray-500 dark:text-gray-200 mt-0.5">${item.kode_alat} — ${item.id_lokasi}</p>
                 </div>
-                <span class="text-sm font-bold ${statusColor} shrink-0"><i class="fas fa-circle text-xs mr-1"></i>${item.status}</span>
+                <span class="text-sm font-bold ${statusColor} shrink-0"><i class="fas fa-circle text-xs mr-1"></i>${item.status_terakhir}</span>
             </div>
             ${r.latest_date ? `
             <div class="space-y-1 text-xs text-gray-600 dark:text-gray-400">
-                <div class="flex gap-2"><span class="text-gray-400 w-20 shrink-0">Tgl Terakhir</span><span class="font-mono">${formatUtcToLocal(r.latest_date)}</span></div>
-                <div class="flex gap-2"><span class="text-gray-400 w-20 shrink-0">Teknisi</span><span class="font-semibold text-gray-700 dark:text-gray-200">${r.latest_teknisi || '—'}</span></div>
-                <div class="flex gap-2"><span class="text-gray-400 w-20 shrink-0">Kondisi</span><span class="font-bold ${kondisiColor}">${r.latest_kondisi}</span></div>
-                <div class="flex gap-2"><span class="text-gray-400 w-20 shrink-0">Keterangan</span><span class="italic">${r.latest_keterangan || '—'}</span></div>
+                <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">Perbaruan Terakhir</span><span class="font-mono">${formatUtcToLocal(r.latest_date)}</span></div>
+                <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">UPT Pengirim</span><span>${r.latest_upt || '—'}</span></div>
+                <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">Petugas</span><span>${r.latest_teknisi || '—'}</span></div>
+                <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">Keterangan</span><span class="italic">${r.latest_keterangan || '—'}</span></div>
             </div>` : `<p class="text-xs text-gray-400 italic">Belum ada riwayat perbaikan.</p>`}
-            <button onclick="window.openHistoryDetail('${item.uid}', 'repair')"
-                class="w-full bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 py-2 rounded-lg font-bold hover:bg-purple-200 dark:hover:bg-purple-800 transition text-sm">
-                <i class="fas fa-list mr-1"></i> Lihat Riwayat Lengkap
+            <button onclick="window.openHistoryDetail('${item.id_aset}', 'repair')"
+                class="w-full flex items-center justify-center gap-2 px-3 py-2.5 bg-kai-blue hover:bg-blue-800 active:bg-blue-900 text-white font-semibold rounded-lg transition text-sm shadow-sm">
+                <i class="fas fa-list text-sm"></i> Lihat Riwayat Lengkap
             </button>
         </div>`;
     }).join('');
@@ -1321,8 +1372,7 @@ function renderMutasiCards() {
 
     // Only show assets that have at least one mutation
     const filtered = _historySummary.filter(item =>
-        item.mutasi &&
-        (item.kode_id.toLowerCase().includes(searchQ) || item.uid.toLowerCase().includes(searchQ))
+        item.mutasi && (item.id_aset || '').toLowerCase().includes(searchQ)
     );
 
     if (!filtered.length) {
@@ -1333,32 +1383,29 @@ function renderMutasiCards() {
     container.innerHTML = filtered.map(item => {
         const m = item.mutasi;
         const returnedBadge = m.sudah_kembali
-            ? `<span class="bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 text-xs px-2 py-0.5 rounded-full font-bold">✓ Sudah Kembali</span>`
+            ? `<span class="bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 text-xs px-2 py-0.5 rounded-full font-bold">✓ Sudah Kembali ke Lokasi Asal</span>`
             : `<span class="bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 text-xs px-2 py-0.5 rounded-full font-bold">⟳ Belum Kembali</span>`;
 
         return `
         <div class="bg-white dark:bg-gray-800 p-5 rounded-xl shadow border border-gray-200 dark:border-gray-700 flex flex-col gap-3">
             <div class="flex justify-between items-start border-b dark:border-gray-700 pb-3">
                 <div>
-                    <p class="text-xs text-gray-400 font-mono">${item.uid}</p>
-                    <h3 class="text-base font-bold font-mono text-orange-600 dark:text-orange-400">${item.kode_id}</h3>
-                    <p class="text-xs text-gray-500 mt-0.5">${item.alat}</p>
+                    <h3 class="text-base font-bold font-mono text-kai-orange dark:text-orange-400">${item.id_aset}</h3>
+                    <p class="text-xs text-gray-500 dark:text-gray-200 mt-0.5">${item.kode_alat} — ${item.id_lokasi}</p>
                 </div>
                 ${returnedBadge}
             </div>
             <div class="space-y-1 text-xs text-gray-600 dark:text-gray-400">
-                <div class="flex gap-2"><span class="text-gray-400 w-24 shrink-0">Lokasi Asal</span><span class="font-semibold text-gray-700 dark:text-gray-200">${m.original_lokasi}</span></div>
-                <div class="flex gap-2"><span class="text-gray-400 w-24 shrink-0">Lokasi Kini</span><span class="font-semibold">${item.lokasi}</span></div>
-                <div class="flex gap-2"><span class="text-gray-400 w-24 shrink-0">Tgl Mutasi</span><span class="font-mono">${formatUtcToLocal(m.latest_date)}</span></div>
-                <div class="flex gap-2"><span class="text-gray-400 w-24 shrink-0">Tujuan</span><span>${m.latest_lokasi_tuju || '—'}</span></div>
-                <div class="flex gap-2"><span class="text-gray-400 w-24 shrink-0">Oleh</span><span class="font-semibold text-gray-700 dark:text-gray-200">${m.latest_oleh || '—'}</span></div>
-                <div class="flex gap-2"><span class="text-gray-400 w-24 shrink-0">Alasan</span><span class="italic">${m.latest_alasan || '—'}</span></div>
-                ${m.delta ? `<div class="flex gap-2"><span class="text-gray-400 w-24 shrink-0">Jeda Mutasi</span><span class="font-mono text-blue-500">${m.delta}</span></div>` : ''}
-                <div class="flex gap-2"><span class="text-gray-400 w-24 shrink-0">Total Mutasi</span><span class="font-bold">${m.count}×</span></div>
+                <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">Lokasi Asal</span><span class="font-semibold text-gray-700 dark:text-gray-200">${m.original_lokasi}</span></div>
+                <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">Lokasi Kini</span><span class="font-semibold">${item.id_lokasi}</span></div>
+                <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">Tanggal Mutasi</span><span class="font-mono">${formatUtcToLocal(m.latest_date)}</span></div>
+                <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">Tujuan</span><span>${m.latest_lokasi_tuju || '—'}</span></div>
+                <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">Alasan</span><span class="italic">${m.latest_alasan || '—'}</span></div>
+                <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">Total Mutasi</span><span class="font-bold">${m.count}×</span></div>
             </div>
-            <button onclick="window.openHistoryDetail('${item.uid}', 'mutasi')"
-                class="w-full bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 py-2 rounded-lg font-bold hover:bg-orange-200 dark:hover:bg-orange-800 transition text-sm">
-                <i class="fas fa-route mr-1"></i> Lihat Timeline Mutasi
+            <button onclick="window.openHistoryDetail('${item.id_aset}', 'mutasi')"
+                class="w-full flex items-center justify-center gap-2 px-3 py-2.5 bg-kai-orange hover:bg-orange-600 active:bg-orange-700 text-white font-semibold rounded-lg transition text-sm shadow-sm">
+                <i class="fas fa-route text-sm"></i> Lihat Timeline Mutasi
             </button>
         </div>`;
     }).join('');
@@ -1371,22 +1418,18 @@ document.querySelectorAll('.master-tab').forEach(tab => {
     tab.addEventListener('click', () => {
         const target = tab.dataset.tab;
 
-        const ACTIVE_CLS   = ['bg-gray-200', 'dark:bg-gray-600', 'text-gray-900', 'dark:text-white', 'font-semibold'];
-        const INACTIVE_CLS = ['text-gray-500', 'dark:text-gray-400', 'font-medium', 'hover:bg-gray-100', 'dark:hover:bg-gray-700/60'];
+        const ACTIVE_CLS   = ['bg-kai-orange', 'text-white', 'font-semibold', 'shadow-sm'];
+        const INACTIVE_CLS = ['text-gray-500', 'dark:text-gray-400', 'font-medium', 'hover:bg-kai-orange/20', 'hover:text-kai-orange'];
 
         document.querySelectorAll('.master-tab').forEach(t => {
             const isActive = t.dataset.tab === target;
-            // Clear both sets first
             [...ACTIVE_CLS, ...INACTIVE_CLS].forEach(c => t.classList.remove(c));
-            // Apply correct set
             (isActive ? ACTIVE_CLS : INACTIVE_CLS).forEach(c => t.classList.add(c));
         });
 
-        // Show correct panel
         document.querySelectorAll('.master-tab-panel').forEach(p => p.classList.add('hidden'));
         document.getElementById(`master-panel-${target}`)?.classList.remove('hidden');
 
-        // Load data for the active tab
         if (target === 'users')  loadMasterUsers();
         if (target === 'alat')   loadMasterAlat();
         if (target === 'lokasi') loadMasterLokasi();
@@ -1395,6 +1438,75 @@ document.querySelectorAll('.master-tab').forEach(tab => {
 });
 
 // ── LOAD FUNCTIONS ────────────────────────────────────────────────
+
+function syncNewUserRegion() {
+    const roleEl   = document.getElementById('new-user-role');
+    const regionEl = document.getElementById('new-user-region');
+    if (!roleEl || !regionEl) return;
+
+    const isSA = roleEl.value === 'SUPER_ADMIN';
+    if (isSA) {
+        regionEl.disabled = true;
+        regionEl.innerHTML = '<option value="">Semua Region (tidak diperlukan)</option>';
+    } else {
+        regionEl.disabled = false;
+        regionEl.innerHTML = lokasiData.map(l =>
+            `<option value="${l.code}">${l.name} (${l.code})</option>`
+        ).join('');
+        if (!regionEl.value && lokasiData.length) regionEl.value = lokasiData[0].code;
+    }
+}
+
+async function loadMasterUsers() {
+    const tbody = document.getElementById('table-users');
+    if (!tbody) return;
+
+    syncNewUserRegion();
+    
+    const addFormWrap = document.getElementById('form-add-user');
+    if (addFormWrap) {
+        addFormWrap.classList.toggle('hidden', _currentRole !== 'SUPER_ADMIN');
+    }
+    
+    tbody.innerHTML = `<tr><td colspan="4" class="px-4 py-6 text-center text-gray-400 text-sm"><i class="fas fa-spinner fa-spin mr-2"></i>Memuat...</td></tr>`;
+
+    try {
+        const res  = await apiFetch('/users');
+        if (!res.ok) throw new Error();
+        const data = await res.json();
+
+        if (!data.length) {
+            tbody.innerHTML = `<tr><td colspan="4" class="px-4 py-6 text-center text-gray-400 text-sm">Belum ada data pengguna.</td></tr>`;
+            return;
+        }
+
+        const roleColors = {
+            SUPER_ADMIN: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300',
+            ADMIN_WILAYAH:  'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300',
+            TEKNISI:     'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300',
+        };
+
+        tbody.innerHTML = data.map(u => `
+            <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                <td class="px-4 py-3 font-semibold font-mono">${u.username}</td>
+                <td class="px-4 py-3">
+                    <span class="text-xs px-2 py-0.5 rounded-full font-bold ${roleColors[u.role] || 'bg-gray-100 text-gray-700'}">
+                        ${u.role}
+                    </span>
+                </td>
+                <td class="px-4 py-3 text-sm text-gray-500 font-mono">${u.id_lokasi || '—'}</td>
+                <td class="px-4 py-3 text-right">
+                    <button onclick="window.openMasterEdit('users',${u.id_pengguna},'${u.username}','${u.role}','${u.id_lokasi || ''}')"
+                        class="text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 px-3 py-1 rounded-lg font-bold hover:bg-blue-200 transition">
+                        <i class="fas fa-edit mr-1"></i>Edit
+                    </button>
+                </td>
+            </tr>
+        `).join('');
+    } catch (e) {
+        tbody.innerHTML = `<tr><td colspan="4" class="px-4 py-6 text-center text-red-400 text-sm">Gagal memuat data pengguna.</td></tr>`;
+    }
+}
 
 async function loadMasterAlat() {
     const tbody = document.getElementById('table-alat');
@@ -1412,12 +1524,12 @@ async function loadMasterAlat() {
 
         tbody.innerHTML = data.map(a => `
             <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50">
-                <td class="px-4 py-3 font-mono font-bold text-blue-600 dark:text-blue-400">${a.kode}</td>
-                <td class="px-4 py-3 font-semibold">${a.nama}</td>
-                <td class="px-4 py-3 text-gray-500 text-xs">${a.deskripsi || '—'}</td>
-                <td class="px-4 py-3 text-gray-500 text-xs font-mono">${a.tanggal_pembelian || '—'}</td>
+                <td class="px-4 py-3 font-mono font-bold text-blue-600 dark:text-blue-400">${a.kode_alat}</td>
+                <td class="px-4 py-3 font-semibold">${a.nama_alat}</td>
+                <td class="px-4 py-3 text-gray-500 text-xs"></td>
+                <td class="px-4 py-3 text-gray-500 text-xs font-mono"></td>
                 <td class="px-4 py-3 text-right">
-                    <button onclick="window.openMasterEdit('alat','${a.kode}','${a.nama}','${a.deskripsi || ''}','${a.tanggal_pembelian || ''}')"
+                    <button onclick="window.openMasterEdit('alat','${a.kode_alat}','${a.nama_alat}','','')"
                         class="text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 px-3 py-1 rounded-lg font-bold hover:bg-blue-200 transition">
                         <i class="fas fa-edit mr-1"></i>Edit
                     </button>
@@ -1445,19 +1557,19 @@ async function loadMasterLokasi() {
 
         tbody.innerHTML = data.map(l => `
             <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50">
-                <td class="px-4 py-3 font-mono font-bold text-blue-600 dark:text-blue-400">${l.kode_lokasi}</td>
+                <td class="px-4 py-3 font-mono font-bold text-blue-600 dark:text-blue-400">${l.id_lokasi}</td>
                 <td class="px-4 py-3 font-semibold">${l.nama_lokasi}</td>
                 <td class="px-4 py-3">
                     <span class="text-xs px-2 py-0.5 rounded-full font-bold
-                        ${l.tipe_lokasi === 'DAOP'      ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300' :
-                          l.tipe_lokasi === 'DIVRE'     ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300' :
-                          l.tipe_lokasi === 'BALAIYASA' ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300' :
+                        ${l.tipe === 'DAOP'      ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300' :
+                          l.tipe === 'DIVRE'     ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300' :
+                          l.tipe === 'PUSAT'     ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300' :
                                                           'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300'}">
-                        ${l.tipe_lokasi}
+                        ${l.tipe}
                     </span>
                 </td>
                 <td class="px-4 py-3 text-right">
-                    <button onclick="window.openMasterEdit('lokasi','${l.kode_lokasi}','${l.nama_lokasi}','${l.tipe_lokasi}')"
+                    <button onclick="window.openMasterEdit('lokasi','${l.id_lokasi}','${l.nama_lokasi}','${l.tipe}')"
                         class="text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 px-3 py-1 rounded-lg font-bold hover:bg-blue-200 transition">
                         <i class="fas fa-edit mr-1"></i>Edit
                     </button>
@@ -1474,7 +1586,6 @@ async function loadMasterUpt() {
     if (!tbody) return;
     tbody.innerHTML = `<tr><td colspan="4" class="px-4 py-6 text-center text-gray-400 text-sm"><i class="fas fa-spinner fa-spin mr-2"></i>Memuat...</td></tr>`;
 
-    // Also populate the lokasi select in the add form
     const lokasiSel = document.getElementById('new-upt-lokasi');
     if (lokasiSel && lokasiData.length) {
         lokasiSel.innerHTML = lokasiData.map(l =>
@@ -1483,7 +1594,7 @@ async function loadMasterUpt() {
     }
 
     try {
-        const res  = await apiFetch('/master/upt');
+        const res  = await apiFetch('/master/lokasi');
         const data = await res.json();
 
         if (!data.length) {
@@ -1493,14 +1604,11 @@ async function loadMasterUpt() {
 
         tbody.innerHTML = data.map(u => `
             <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50">
-                <td class="px-4 py-3 text-gray-400 text-xs font-mono">${u.id}</td>
-                <td class="px-4 py-3 font-semibold">${u.nama_upt}</td>
-                <td class="px-4 py-3 text-sm text-gray-500 font-mono">${u.kode_lokasi}</td>
+                <td class="px-4 py-3 text-gray-400 text-xs font-mono">${u.id_lokasi}</td>
+                <td class="px-4 py-3 font-semibold">${u.nama_lokasi}</td>
+                <td class="px-4 py-3 text-sm text-gray-500 font-mono">${u.tipe}</td>
                 <td class="px-4 py-3 text-right">
-                    <button onclick="window.openMasterEdit('upt',${u.id},'${u.nama_upt}','${u.kode_lokasi}')"
-                        class="text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 px-3 py-1 rounded-lg font-bold hover:bg-blue-200 transition">
-                        <i class="fas fa-edit mr-1"></i>Edit
-                    </button>
+                    <span class="text-xs text-gray-500">Data lokasi</span>
                 </td>
             </tr>
         `).join('');
@@ -1509,64 +1617,9 @@ async function loadMasterUpt() {
     }
 }
 
-async function loadMasterUsers() {
-    const tbody = document.getElementById('table-users');
-    if (!tbody) return;
-
-    const regionSel = document.getElementById('new-user-region');
-    if (regionSel && lokasiData.length) {
-        regionSel.innerHTML = lokasiData.map(l =>
-            `<option value="${l.code}">${l.name} (${l.code})</option>`
-        ).join('');
-    }
-    const addFormWrap = document.getElementById('add-user-form-wrap');
-    if (addFormWrap) {
-        addFormWrap.classList.toggle('hidden', _currentRole !== 'SUPER_ADMIN');
-    }
-    
-    tbody.innerHTML = `<tr><td colspan="4" class="px-4 py-6 text-center text-gray-400 text-sm"><i class="fas fa-spinner fa-spin mr-2"></i>Memuat...</td></tr>`;
-
-    try {
-        const res  = await apiFetch('/users');
-        if (!res.ok) throw new Error();
-        const data = await res.json();
-
-        if (!data.length) {
-            tbody.innerHTML = `<tr><td colspan="4" class="px-4 py-6 text-center text-gray-400 text-sm">Belum ada data pengguna.</td></tr>`;
-            return;
-        }
-
-        const roleColors = {
-            SUPER_ADMIN: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300',
-            ADMIN_DAOP:  'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300',
-            TEKNISI:     'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300',
-        };
-
-        tbody.innerHTML = data.map(u => `
-            <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50">
-                <td class="px-4 py-3 font-semibold font-mono">${u.username}</td>
-                <td class="px-4 py-3">
-                    <span class="text-xs px-2 py-0.5 rounded-full font-bold ${roleColors[u.role] || 'bg-gray-100 text-gray-700'}">
-                        ${u.role}
-                    </span>
-                </td>
-                <td class="px-4 py-3 text-sm text-gray-500 font-mono">${u.assigned_region || '—'}</td>
-                <td class="px-4 py-3 text-right">
-                    <button onclick="window.openMasterEdit('users',${u.id},'${u.username}','${u.role}','${u.assigned_region || ''}')"
-                        class="text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 px-3 py-1 rounded-lg font-bold hover:bg-blue-200 transition">
-                        <i class="fas fa-edit mr-1"></i>Edit
-                    </button>
-                </td>
-            </tr>
-        `).join('');
-    } catch (e) {
-        tbody.innerHTML = `<tr><td colspan="4" class="px-4 py-6 text-center text-red-400 text-sm">Gagal memuat data pengguna.</td></tr>`;
-    }
-}
-
 // ── SORT MODAL ────────────────────────────────────────────────────
 
-let _sortField = 'kode_id';
+let _sortField = 'id_aset';
 let _sortDir   = 'asc';
 
 document.getElementById('btn-sort-db')?.addEventListener('click', () => {
@@ -1601,16 +1654,40 @@ document.getElementById('btn-apply-sort')?.addEventListener('click', () => {
 
 // ── ADD FORMS ─────────────────────────────────────────────────────
 
+document.getElementById('form-add-user')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+
+    const username  = document.getElementById('new-user-username').value.trim();
+    const role      = document.getElementById('new-user-role').value;
+    const region    = document.getElementById('new-user-region').value;
+
+    if (!username) return showToast('Nama pengguna tidak boleh kosong.', 'warning');
+
+    try {
+        const res = await apiFetch('/users/create', {
+            method: 'POST',
+            body: JSON.stringify({ username, role, id_lokasi: region || null })
+        });
+        if (!res.ok) {
+            const err = await res.json();
+            throw new Error(err.detail || 'Gagal menambahkan pengguna.');
+        }
+        showToast(`Pengguna "${username}" berhasil ditambahkan.`, 'success');
+        document.getElementById('form-add-user').reset();
+        await loadMasterUsers();
+    } catch (err) {
+        if (err.message !== 'Unauthorized') showToast(err.message, 'error');
+    }
+});
+
 document.getElementById('form-add-alat')?.addEventListener('submit', async (e) => {
     e.preventDefault();
     const kode      = document.getElementById('new-alat-kode').value.trim().toUpperCase();
     const nama      = document.getElementById('new-alat-nama').value.trim();
-    const tanggal   = document.getElementById('new-alat-tanggal').value || null;
-    const deskripsi = document.getElementById('new-alat-deskripsi').value.trim();
     if (!kode || !nama) return showToast('Kode dan Nama wajib diisi.', 'warning');
 
     try {
-        const res = await apiFetch('/master/alat', { method: 'POST', body: JSON.stringify({ kode, nama, deskripsi: deskripsi || null, tanggal_pembelian: tanggal }) });
+        const res = await apiFetch('/master/alat', { method: 'POST', body: JSON.stringify({ kode_alat: kode, nama_alat: nama }) });
         if (!res.ok) { const err = await res.json(); throw new Error(err.detail); }
         showToast('Alat berhasil ditambahkan.', 'success');
         e.target.reset();
@@ -1629,7 +1706,7 @@ document.getElementById('form-add-lokasi')?.addEventListener('submit', async (e)
     if (!kode_lokasi || !nama_lokasi) return showToast('Kode dan Nama wajib diisi.', 'warning');
 
     try {
-        const res = await apiFetch('/master/lokasi', { method: 'POST', body: JSON.stringify({ kode_lokasi, nama_lokasi, tipe_lokasi }) });
+        const res = await apiFetch('/master/lokasi', { method: 'POST', body: JSON.stringify({ id_lokasi: kode_lokasi, nama_lokasi, tipe: tipe_lokasi }) });
         if (!res.ok) { const err = await res.json(); throw new Error(err.detail); }
         showToast('Lokasi berhasil ditambahkan.', 'success');
         e.target.reset();
@@ -1646,15 +1723,23 @@ document.getElementById('form-add-upt')?.addEventListener('submit', async (e) =>
     const kode_lokasi = document.getElementById('new-upt-lokasi').value;
     if (!nama_upt || !kode_lokasi) return showToast('Nama UPT dan Lokasi wajib diisi.', 'warning');
 
-    try {
-        const res = await apiFetch('/master/upt', { method: 'POST', body: JSON.stringify({ nama_upt, kode_lokasi }) });
-        if (!res.ok) { const err = await res.json(); throw new Error(err.detail); }
-        showToast('UPT berhasil ditambahkan.', 'success');
-        e.target.reset();
-        await loadMasterUpt();
-        await fetchMasterData();
-    } catch (err) {
-        showToast(err.message, 'error');
+    showToast('Fitur UPT belum tersedia pada backend saat ini. Lokasi yang ada dapat dikelola melalui tab Lokasi.', 'warning');
+    e.target.reset();
+});
+
+document.getElementById('new-upt-lokasi')?.addEventListener('change', (e) => {
+    // Warn admin if they're trying to add UPT under Balaiyasa
+    const loc = lokasiData.find(l => l.code === e.target.value);
+    const isBalaiyasa = loc?.name?.toUpperCase().includes('BALAIYASA') || loc?.tipe?.toUpperCase() === 'BALAIYASA';
+    const namaInput = document.getElementById('new-upt-nama');
+    const submitBtn = document.querySelector('#form-add-upt button[type="submit"]');
+    if (isBalaiyasa) {
+        if (namaInput) { namaInput.disabled = true; namaInput.placeholder = 'Tidak berlaku untuk Balaiyasa'; }
+        if (submitBtn) submitBtn.disabled = true;
+        showToast('Lokasi Balaiyasa tidak memiliki UPT terkait.', 'warning');
+    } else {
+        if (namaInput) { namaInput.disabled = false; namaInput.placeholder = 'Nama UPT'; }
+        if (submitBtn) submitBtn.disabled = false;
     }
 });
 
@@ -1682,14 +1767,9 @@ window.openMasterEdit = (type, id, val1, val2, val3) => {
                     class="w-full p-2 border rounded-md bg-gray-100 dark:bg-gray-600 dark:border-gray-500 text-gray-500 cursor-not-allowed">
             </div>
             <div>
-                <label class="block text-xs font-semibold mb-1">Password</label>
-                <input disabled placeholder="(belum digunakan)"
-                    class="w-full p-2 border rounded-md bg-gray-100 dark:bg-gray-600 dark:border-gray-500 text-gray-400 cursor-not-allowed italic">
-            </div>
-            <div>
                 <label class="block text-xs font-semibold mb-1">Role</label>
                 <select id="edit-field-role" class="w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600">
-                    ${['TEKNISI','ADMIN_DAOP','SUPER_ADMIN'].map(r =>
+                    ${['TEKNISI','ADMIN_WILAYAH','SUPER_ADMIN'].map(r =>
                         `<option value="${r}" ${val2 === r ? 'selected' : ''}>${r}</option>`
                     ).join('')}
                 </select>
@@ -1703,6 +1783,38 @@ window.openMasterEdit = (type, id, val1, val2, val3) => {
                 </select>
             </div>
         `;
+        
+        // Wire role change to disable region — mirrors login page behaviour
+        const roleEl = document.getElementById('edit-field-role');
+        const regionEl = document.getElementById('edit-field-region');
+        function syncRegionState() {
+            const isSA = roleEl?.value === 'SUPER_ADMIN';
+            if (regionEl) {
+                if (isSA) {
+                    regionEl.disabled = true;
+                    regionEl.innerHTML = '<option value="">Semua Region (tidak diperlukan)</option>';
+                } else {
+                    regionEl.disabled = false;
+                    // Repopulate with lokasi options, keeping current selection or defaulting to first
+                    const currentVal = regionEl.dataset.currentVal || lokasiData[0]?.code || '';
+                    regionEl.innerHTML = lokasiData.map(l =>
+                        `<option value="${l.code}" ${l.code === currentVal ? 'selected' : ''}>${l.name} (${l.code})</option>`
+                    ).join('');
+                    if (!regionEl.value && lokasiData.length) regionEl.value = lokasiData[0].code;
+                }
+            }
+        }
+        // Store the original region value so repopulate can restore it
+        if (regionEl) regionEl.dataset.currentVal = val3 || '';
+        roleEl?.addEventListener('change', syncRegionState);
+        syncRegionState(); // run on open
+
+        // Hide delete button for SUPER_ADMIN users
+        if (val2 === 'SUPER_ADMIN') {
+            deactivateBtn.classList.add('hidden');
+        } else {
+            deactivateBtn.classList.remove('hidden');
+        }
     } else if (type === 'alat') {
         title.textContent = `Edit Alat: ${id}`;
         fields.innerHTML = `
@@ -1710,16 +1822,6 @@ window.openMasterEdit = (type, id, val1, val2, val3) => {
                 <label class="block text-xs font-semibold mb-1">Nama Alat</label>
                 <input id="edit-field-nama" value="${val1}"
                     class="consolas-input w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600">
-            </div>
-            <div>
-                <label class="block text-xs font-semibold mb-1">Deskripsi (opsional)</label>
-                <input id="edit-field-deskripsi" value="${val2}"
-                    class="w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600">
-            </div>
-            <div>
-                <label class="block text-xs font-semibold mb-1">Tanggal Pembelian (opsional)</label>
-                <input id="edit-field-tanggal" type="date" value="${val3 || ''}"
-                    class="w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600">
             </div>
         `;
     } else if (type === 'lokasi') {
@@ -1733,7 +1835,7 @@ window.openMasterEdit = (type, id, val1, val2, val3) => {
             <div>
                 <label class="block text-xs font-semibold mb-1">Tipe</label>
                 <select id="edit-field-tipe" class="w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600">
-                    ${['DAOP','DIVRE','BALAIYASA','PUSAT'].map(t =>
+                    ${['DAOP','DIVRE','PUSAT'].map(t =>
                         `<option value="${t}" ${val2 === t ? 'selected' : ''}>${t}</option>`
                     ).join('')}
                 </select>
@@ -1775,20 +1877,16 @@ document.getElementById('btn-master-edit-save')?.addEventListener('click', async
         if (type === 'users') {
             const role        = document.getElementById('edit-field-role').value;
             const region      = document.getElementById('edit-field-region').value;
-            res = await apiFetch(`/users/${id}`, { method: 'PUT', body: JSON.stringify({ username: _masterEditCtx.val1, role, assigned_region: region }) });
+            res = await apiFetch(`/users/${id}`, { method: 'PUT', body: JSON.stringify({ username: _masterEditCtx.val1, role, id_lokasi: region }) });
         } else if (type === 'alat') {
             const nama        = document.getElementById('edit-field-nama').value.trim();
-            const deskripsi   = document.getElementById('edit-field-deskripsi').value.trim();
-            const tanggal     = document.getElementById('edit-field-tanggal')?.value || null;
-            res = await apiFetch(`/master/alat/${id}`, { method: 'PUT', body: JSON.stringify({ kode: id, nama, deskripsi: deskripsi || null, tanggal_pembelian: tanggal }) });
+            res = await apiFetch(`/master/alat/${id}`, { method: 'PUT', body: JSON.stringify({ kode_alat: id, nama_alat: nama }) });
         } else if (type === 'lokasi') {
             const nama_lokasi = document.getElementById('edit-field-nama').value.trim();
             const tipe_lokasi = document.getElementById('edit-field-tipe').value;
-            res = await apiFetch(`/master/lokasi/${id}`, { method: 'PUT', body: JSON.stringify({ kode_lokasi: id, nama_lokasi, tipe_lokasi }) });
+            res = await apiFetch(`/master/lokasi/${id}`, { method: 'PUT', body: JSON.stringify({ id_lokasi: id, nama_lokasi, tipe: tipe_lokasi }) });
         } else if (type === 'upt') {
-            const nama_upt    = document.getElementById('edit-field-nama').value.trim();
-            const kode_lokasi = document.getElementById('edit-field-lokasi').value;
-            res = await apiFetch(`/master/upt/${id}`, { method: 'PUT', body: JSON.stringify({ nama_upt, kode_lokasi }) });
+            res = await apiFetch(`/master/lokasi/${id}`, { method: 'PUT', body: JSON.stringify({ id_lokasi: id, nama_lokasi: _masterEditCtx.val1, tipe: 'DAOP' }) });
         }
 
         if (!res.ok) { const err = await res.json(); throw new Error(err.detail); }
@@ -1822,7 +1920,7 @@ document.getElementById('btn-master-edit-delete')?.addEventListener('click', asy
         if (type === 'users')  res = await apiFetch(`/users/${id}`,          { method: 'DELETE' });
         if (type === 'alat')   res = await apiFetch(`/master/alat/${id}`,    { method: 'DELETE' });
         if (type === 'lokasi') res = await apiFetch(`/master/lokasi/${id}`,  { method: 'DELETE' });
-        if (type === 'upt')    res = await apiFetch(`/master/upt/${id}`,     { method: 'DELETE' });
+        if (type === 'upt')    res = await apiFetch(`/master/lokasi/${id}`,  { method: 'DELETE' });
 
         if (!res.ok) { const err = await res.json(); throw new Error(err.detail); }
         showToast('Data berhasil dinonaktifkan.', 'success');
@@ -1880,7 +1978,7 @@ async function fetchExportData() {
         const afkirStat = document.getElementById('exp-stat-afkir');
         if (afkirStat) {
             // Count unique afkir asset UIDs
-            const afkirUids = new Set(_exportData.afkir.map(r => r.uid));
+            const afkirUids = new Set(_exportData.afkir.map(r => r.id_aset));
             afkirStat.textContent = afkirUids.size;
         }
 
@@ -1898,12 +1996,9 @@ function applyExportFilters() {
 
     function filterRows(rows) {
         return rows.filter(r => {
-            // Date filter — compare against tanggal string (YYYY-MM-DD prefix)
             if (dateFrom && r.tanggal !== '—' && r.tanggal.slice(0, 10) < dateFrom) return false;
             if (dateTo   && r.tanggal !== '—' && r.tanggal.slice(0, 10) > dateTo)   return false;
-            // Lokasi filter matches lokasi_aset
-            if (lokasi   && r.lokasi_aset !== lokasiData.find(l => l.code === lokasi)?.name) return false;
-            // Kondisi filter matches last kondisi on the row
+            if (lokasi   && r.id_lokasi_asal !== lokasi) return false;
             if (kondisi  && r.kondisi !== kondisi) return false;
             return true;
         });
@@ -1913,15 +2008,13 @@ function applyExportFilters() {
     const filteredAfkir  = filterRows(_exportData.afkir);
     _exportFiltered = { active: filteredActive, afkir: filteredAfkir };
 
-    // Update summary stats from the in-memory db (already loaded)
     const statTotal = document.getElementById('exp-stat-total');
     const statSo    = document.getElementById('exp-stat-so');
     const statTso   = document.getElementById('exp-stat-tso');
     if (statTotal) statTotal.textContent = db.length;
-    if (statSo)    statSo.textContent    = db.filter(x => x.status === 'SO').length;
-    if (statTso)   statTso.textContent   = db.filter(x => x.status === 'TSO').length;
+    if (statSo)    statSo.textContent    = db.filter(x => x.status_terakhir === 'SO').length;
+    if (statTso)   statTso.textContent   = db.filter(x => x.status_terakhir === 'TSO').length;
 
-    // Update preview count
     const total = filteredActive.length + filteredAfkir.length;
     const previewCount = document.getElementById('exp-preview-count');
     if (previewCount) {
@@ -1936,9 +2029,7 @@ function applyExportFilters() {
 
 function renderExportPreview(rows) {
     const tbody = document.getElementById('exp-preview-body');
-    const label = document.getElementById('exp-preview-label');
     if (!tbody) return;
-    if (label) label.textContent = 'Aset Aktif — 10 baris pertama';
 
     const preview = rows.slice(0, 10);
     if (!preview.length) {
@@ -1948,14 +2039,15 @@ function renderExportPreview(rows) {
 
     tbody.innerHTML = preview.map(r => `
         <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50">
-            <td class="px-3 py-2">${r.no ?? '—'}</td>
-            <td class="px-3 py-2">${r.tanggal}</td>
-            <td class="px-3 py-2 font-bold text-blue-600 dark:text-blue-400">${r.kode_id}</td>
-            <td class="px-3 py-2">${r.alat}</td>
-            <td class="px-3 py-2">${r.lokasi_aset}</td>
-            <td class="px-3 py-2">${r.upt}</td>
-            <td class="px-3 py-2">${r.teknisi}</td>
-            <td class="px-3 py-2 font-bold ${r.kondisi === 'SO' ? 'text-green-500' : r.kondisi === 'TSO' ? 'text-red-500' : 'text-blue-500'}">${r.kondisi}</td>
+            <td class="px-3 py-2 text-center text-gray-400">${r.no ?? '—'}</td>
+            <td class="px-3 py-2 font-mono text-xs">${r.tanggal || '—'}</td>
+            <td class="px-3 py-2 font-bold text-kai-blue dark:text-blue-400 font-mono">${r.id_aset}</td>
+            <td class="px-3 py-2">${r.kode_alat || '—'}</td>
+            <td class="px-3 py-2">${r.id_lokasi_asal || r.id_lokasi || '—'}</td>
+            <td class="px-3 py-2">${r.upt || r.id_pengguna || '—'}</td>
+            <td class="px-3 py-2">${r.id_pengguna || '—'}</td>
+            <td class="px-3 py-2 font-bold ${r.kondisi === 'SO' ? 'text-green-500' : r.kondisi === 'TSO' ? 'text-red-500' : 'text-blue-400'}">${r.kondisi || '—'}</td>
+            <td class="px-3 py-2 text-gray-500 italic text-xs">${r.keterangan || '—'}</td>
         </tr>
     `).join('');
 }
@@ -1968,10 +2060,7 @@ function renderExportPreview(rows) {
 // ── EXCEL EXPORT ──────────────────────────────────────────────────
 
 document.getElementById('btn-export-excel')?.addEventListener('click', async () => {
-    if (!window.XLSX) {
-        showToast('Library Excel belum siap, tunggu sebentar.', 'warning');
-        return;
-    }
+    if (!window.XLSX) { showToast('Library Excel belum siap, tunggu sebentar.', 'warning'); return; }
 
     const btn = document.getElementById('btn-export-excel');
     const orig = btn.innerHTML;
@@ -1979,23 +2068,13 @@ document.getElementById('btn-export-excel')?.addEventListener('click', async () 
     btn.disabled  = true;
 
     try {
-        const headers = ['No','Tanggal','UID Aset','Kode ID','Alat','Lokasi Aset','Lokasi Perbaikan','UPT','Teknisi','Kondisi','Keterangan'];
+        const repairHeaders = ['No','Tanggal & Waktu','ID Aset','Kode Alat','Lokasi Asal','UPT','Petugas','Kondisi','Keterangan'];
+        const mutasiHeaders = ['No','Tanggal & Waktu','ID Aset','Kode Alat','Lokasi Asal','Lokasi Tujuan','Dilakukan Oleh','Alasan'];
 
-        function rowsToSheet(rows) {
-            const data = [headers, ...rows.map(r => [
-                r.no ?? '', r.tanggal, r.uid, r.kode_id, r.alat,
-                r.lokasi_aset, r.lokasi_perbaikan, r.upt,
-                r.teknisi, r.kondisi, r.keterangan
-            ])];
+        function makeSheet(headers, rows, mapFn) {
+            const data = [headers, ...rows.map(mapFn)];
             const ws = XLSX.utils.aoa_to_sheet(data);
-
-            // Column widths
-            ws['!cols'] = [
-                {wch:5},{wch:20},{wch:16},{wch:22},{wch:24},
-                {wch:22},{wch:18},{wch:24},{wch:20},{wch:8},{wch:32}
-            ];
-
-            // Bold header row
+            ws['!cols'] = headers.map(() => ({ wch: 22 }));
             const range = XLSX.utils.decode_range(ws['!ref']);
             for (let C = range.s.c; C <= range.e.c; C++) {
                 const cell = ws[XLSX.utils.encode_cell({ r: 0, c: C })];
@@ -2005,10 +2084,29 @@ document.getElementById('btn-export-excel')?.addEventListener('click', async () 
         }
 
         const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, rowsToSheet(_exportFiltered.active), 'Riwayat Perbaikan');
-        XLSX.utils.book_append_sheet(wb, rowsToSheet(_exportFiltered.afkir),  'Aset Afkir');
 
-        const dateStr = new Date().toISOString().slice(0,10);
+        // Tab 1: Riwayat Perbaikan
+        XLSX.utils.book_append_sheet(wb,
+            makeSheet(repairHeaders, [..._exportFiltered.active, ..._exportFiltered.afkir], r => [
+                r.no ?? '', r.tanggal, r.id_aset, r.kode_alat,
+                r.id_lokasi_asal || r.id_lokasi, r.upt || '—', r.id_pengguna,
+                r.kondisi, r.keterangan
+            ]),
+            'Riwayat Perbaikan'
+        );
+
+        // Tab 2: Riwayat Mutasi
+        const mutasiRes = await apiFetch('/export/mutasi');
+        const mutasiData = mutasiRes.ok ? await mutasiRes.json() : [];
+        XLSX.utils.book_append_sheet(wb,
+            makeSheet(mutasiHeaders, mutasiData, (r, i) => [
+                i + 1, r.tanggal, r.id_aset, r.kode_alat,
+                r.lokasi_asal, r.lokasi_tuju, r.dilakukan_oleh, r.alasan || '—'
+            ]),
+            'Riwayat Mutasi'
+        );
+
+        const dateStr = new Date().toISOString().slice(0, 10);
         XLSX.writeFile(wb, `SIMAKAI_Laporan_${dateStr}.xlsx`);
         showToast('File Excel berhasil diunduh.', 'success');
     } catch (e) {
@@ -2023,10 +2121,7 @@ document.getElementById('btn-export-excel')?.addEventListener('click', async () 
 // ── PDF EXPORT ────────────────────────────────────────────────────
 
 document.getElementById('btn-export-pdf')?.addEventListener('click', async () => {
-    if (!window.jspdf) {
-        showToast('Library PDF belum siap, tunggu sebentar.', 'warning');
-        return;
-    }
+    if (!window.jspdf) { showToast('Library PDF belum siap, tunggu sebentar.', 'warning'); return; }
 
     const btn = document.getElementById('btn-export-pdf');
     const orig = btn.innerHTML;
@@ -2036,91 +2131,66 @@ document.getElementById('btn-export-pdf')?.addEventListener('click', async () =>
     try {
         const { jsPDF } = window.jspdf;
         const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+        const dateStr = new Date().toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' });
 
-        const dateStr  = new Date().toLocaleDateString('id-ID', { day:'2-digit', month:'long', year:'numeric' });
-        const columns  = ['No','Tanggal','Kode ID','Alat','Lokasi Aset','Lok. Perbaikan','UPT','Teknisi','Kondisi','Keterangan'];
+        const repairCols = ['No','Tanggal & Waktu','ID Aset','Kode Alat','Lokasi Asal','UPT','Petugas','Kondisi','Keterangan'];
+        const mutasiCols = ['No','Tanggal & Waktu','ID Aset','Kode Alat','Lokasi Asal','Lokasi Tujuan','Dilakukan Oleh','Alasan'];
 
-        function buildBody(rows) {
-            return rows.map(r => [
-                r.no ?? '—', r.tanggal, r.kode_id, r.alat,
-                r.lokasi_aset, r.lokasi_perbaikan, r.upt,
-                r.teknisi, r.kondisi, r.keterangan
-            ]);
-        }
+        const allRepair = [..._exportFiltered.active, ..._exportFiltered.afkir];
 
-        // ── Page 1+: Active assets ──
-        doc.setFontSize(14);
-        doc.setFont('helvetica', 'bold');
+        // Page 1+: Perbaikan
+        doc.setFontSize(13); doc.setFont('helvetica', 'bold');
         doc.text('SIMA-KAI — Laporan Riwayat Perbaikan Alat Kerja', 14, 14);
-        doc.setFontSize(9);
-        doc.setFont('helvetica', 'normal');
-        doc.text(`Dicetak: ${dateStr}  |  Total baris: ${_exportFiltered.active.length}`, 14, 20);
+        doc.setFontSize(9); doc.setFont('helvetica', 'normal');
+        doc.text(`Dicetak: ${dateStr}  |  Total: ${allRepair.length} baris`, 14, 20);
 
         doc.autoTable({
-            head: [columns],
-            body: buildBody(_exportFiltered.active),
+            head: [repairCols],
+            body: allRepair.map(r => [
+                r.no ?? '—', r.tanggal, r.id_aset, r.kode_alat,
+                r.id_lokasi_asal || r.id_lokasi, r.upt || '—', r.id_pengguna,
+                r.kondisi, r.keterangan
+            ]),
             startY: 25,
-            styles:       { fontSize: 7, cellPadding: 2, overflow: 'linebreak' },
-            headStyles:   { fillColor: [37, 99, 235], textColor: 255, fontStyle: 'bold' },
+            styles: { fontSize: 7, cellPadding: 2, overflow: 'linebreak' },
+            headStyles: { fillColor: [22, 76, 129], textColor: 255, fontStyle: 'bold' },
             alternateRowStyles: { fillColor: [241, 245, 249] },
-            columnStyles: {
-                0: { cellWidth: 8 },   // No
-                1: { cellWidth: 28 },  // Tanggal
-                2: { cellWidth: 28 },  // Kode ID
-                3: { cellWidth: 24 },  // Alat
-                4: { cellWidth: 28 },  // Lokasi Aset
-                5: { cellWidth: 20 },  // Lok. Perbaikan
-                6: { cellWidth: 30 },  // UPT
-                7: { cellWidth: 22 },  // Teknisi
-                8: { cellWidth: 12 },  // Kondisi
-                9: { cellWidth: 'auto' } // Keterangan
-            },
             didDrawCell: (data) => {
-                // Colour the Kondisi column
-                if (data.section === 'body' && data.column.index === 8) {
+                if (data.section === 'body' && data.column.index === 7) {
                     const val = data.cell.raw;
-                    if (val === 'SO')  { doc.setTextColor(22, 163, 74);  }
-                    if (val === 'TSO') { doc.setTextColor(220, 38,  38);  }
+                    doc.setTextColor(val === 'SO' ? 22 : val === 'TSO' ? 220 : 0,
+                                     val === 'SO' ? 163 : val === 'TSO' ? 38  : 0,
+                                     val === 'SO' ? 74  : val === 'TSO' ? 38  : 0);
                     doc.setFontSize(7);
-                    doc.text(val, data.cell.x + 2, data.cell.y + 4);
-                    doc.setTextColor(0, 0, 0); // reset
+                    doc.text(String(val), data.cell.x + 2, data.cell.y + 4);
+                    doc.setTextColor(0, 0, 0);
                 }
             }
         });
 
-        // ── Afkir section on new page ──
-        if (_exportFiltered.afkir.length > 0) {
-            doc.addPage();
-            doc.setFontSize(14);
-            doc.setFont('helvetica', 'bold');
-            doc.text('SIMA-KAI — Riwayat Perbaikan Aset Afkir (Tidak Aktif)', 14, 14);
-            doc.setFontSize(9);
-            doc.setFont('helvetica', 'normal');
-            doc.text(`Dicetak: ${dateStr}  |  Total baris: ${_exportFiltered.afkir.length}`, 14, 20);
+        // Next page: Mutasi
+        const mutasiRes = await apiFetch('/export/mutasi');
+        const mutasiData = mutasiRes.ok ? await mutasiRes.json() : [];
 
-            doc.autoTable({
-                head: [columns],
-                body: buildBody(_exportFiltered.afkir),
-                startY: 25,
-                styles:       { fontSize: 7, cellPadding: 2, overflow: 'linebreak' },
-                headStyles:   { fillColor: [107, 114, 128], textColor: 255, fontStyle: 'bold' },
-                alternateRowStyles: { fillColor: [249, 250, 251] },
-                columnStyles: {
-                    0: { cellWidth: 8 },
-                    1: { cellWidth: 28 },
-                    2: { cellWidth: 28 },
-                    3: { cellWidth: 24 },
-                    4: { cellWidth: 28 },
-                    5: { cellWidth: 20 },
-                    6: { cellWidth: 30 },
-                    7: { cellWidth: 22 },
-                    8: { cellWidth: 12 },
-                    9: { cellWidth: 'auto' }
-                },
-            });
-        }
+        doc.addPage();
+        doc.setFontSize(13); doc.setFont('helvetica', 'bold');
+        doc.text('SIMA-KAI — Laporan Riwayat Mutasi Aset', 14, 14);
+        doc.setFontSize(9); doc.setFont('helvetica', 'normal');
+        doc.text(`Dicetak: ${dateStr}  |  Total: ${mutasiData.length} baris`, 14, 20);
 
-        const fileDate = new Date().toISOString().slice(0,10);
+        doc.autoTable({
+            head: [mutasiCols],
+            body: mutasiData.map((r, i) => [
+                i + 1, r.tanggal, r.id_aset, r.kode_alat,
+                r.lokasi_asal, r.lokasi_tuju, r.dilakukan_oleh, r.alasan || '—'
+            ]),
+            startY: 25,
+            styles: { fontSize: 7, cellPadding: 2, overflow: 'linebreak' },
+            headStyles: { fillColor: [243, 134, 27], textColor: 255, fontStyle: 'bold' },
+            alternateRowStyles: { fillColor: [255, 247, 237] },
+        });
+
+        const fileDate = new Date().toISOString().slice(0, 10);
         doc.save(`SIMAKAI_Laporan_${fileDate}.pdf`);
         showToast('File PDF berhasil diunduh.', 'success');
     } catch (e) {
@@ -2133,25 +2203,21 @@ document.getElementById('btn-export-pdf')?.addEventListener('click', async () =>
 });
 
 window.openMutasiModal = (uid) => {
-    const item = db.find(x => x.uid === uid);
+    const item = db.find(x => x.id_aset === uid);
     if (!item) return;
 
     document.getElementById('mutasi-uid').value = uid;
-    document.getElementById('mutasi-modal-subtitle').innerText = `${item.uid} | ${item.kode_id}`;
-    document.getElementById('mutasi-lokasi-asal').textContent = item.lokasi;
+    document.getElementById('mutasi-modal-subtitle').innerText = item.id_aset;
+    document.getElementById('mutasi-lokasi-asal').textContent = item.id_lokasi;
 
     // Populate destination dropdown
-    // ADMIN_DAOP: only their own region. SUPER_ADMIN: all.
     const tujuSel = document.getElementById('mutasi-lokasi-tuju');
-    const options = _currentRole === 'ADMIN_DAOP'
-        ? lokasiData.filter(l => l.code === (getJwtPayload(authToken)?.assigned_region || ''))
-        : lokasiData.filter(l => l.code !== item.kode_lokasi); // exclude current
+    const options = _currentRole === 'ADMIN_WILAYAH'
+        ? lokasiData.filter(l => l.code === (getJwtPayload(authToken)?.id_lokasi || ''))
+        : lokasiData.filter(l => l.code !== item.id_lokasi);
 
     tujuSel.innerHTML = '<option value="">Pilih Lokasi Tujuan...</option>' +
-        lokasiData
-            .filter(l => l.code !== item.kode_lokasi) // never show current lokasi as option
-            .map(l => `<option value="${l.code}">${l.name}</option>`)
-            .join('');
+        options.map(l => `<option value="${l.code}">${l.name}</option>`).join('');
 
     document.getElementById('mutasi-alasan').value = '';
     document.getElementById('mutasi-modal').classList.remove('hidden');
@@ -2159,31 +2225,15 @@ window.openMutasiModal = (uid) => {
 
 // ── QR MODAL ───────────────────────────────────────────────────────────────
 
-/**
- * Build the QR landing URL for a given UID.
- * The landing page lives at landing.html (same origin as index.html).
- */
 function buildLandingUrl(uid) {
-    // Use ngrok URL if configured, otherwise fall back to browser origin
     const base = NGROK_BASE_URL
-        ? NGROK_BASE_URL.replace(/\/$/, '')           // strip trailing slash
+        ? NGROK_BASE_URL.replace(/\/$/, '')
         : window.location.origin;
     return `${base}/landing.html?uid=${encodeURIComponent(uid)}`;
 }
 
-/**
- * Draw a QR code onto the shared #qr-canvas using the tiny qrcodejs library.
- *
- * Mobile-safe strategy: render into an invisible <div> that is IN the normal
- * document flow (visibility:hidden, zero size) rather than off-screen at
- * -9999px. Off-screen elements get zero layout width on mobile browsers, which
- * causes qrcodejs to produce a blank canvas. We then wait for the <img> src
- * to finish loading (or use the child canvas directly) before copying pixels.
- */
 function drawQrOnCanvas(text, targetCanvas) {
     return new Promise((resolve) => {
-        // Container must be in-flow so the browser gives it real dimensions,
-        // but invisible so it doesn't flash on screen.
         const tmp = document.createElement('div');
         tmp.style.cssText = 'visibility:hidden;width:180px;height:180px;overflow:hidden;';
         document.body.appendChild(tmp);
@@ -2205,12 +2255,9 @@ function drawQrOnCanvas(text, targetCanvas) {
             resolve();
         }
 
-        // qrcodejs renders either an <img> (desktop Chrome/FF) or a <canvas>
-        // (Safari, some mobile browsers). Handle both.
         const child = tmp.querySelector('canvas') || tmp.querySelector('img');
 
         if (!child) {
-            // Fallback: wait one frame and try again
             requestAnimationFrame(() => {
                 const retry = tmp.querySelector('canvas') || tmp.querySelector('img');
                 if (!retry) { document.body.removeChild(tmp); resolve(); return; }
@@ -2225,10 +2272,8 @@ function drawQrOnCanvas(text, targetCanvas) {
         }
 
         if (child.tagName === 'CANVAS') {
-            // Already a canvas — copy immediately (no async needed)
             copyAndClean(child);
         } else {
-            // It's an <img>: wait for the data-URI to load before drawing
             if (child.complete && child.naturalWidth > 0) {
                 copyAndClean(child);
             } else {
@@ -2239,22 +2284,17 @@ function drawQrOnCanvas(text, targetCanvas) {
     });
 }
 
-/**
- * Open the QR modal for a given asset UID.
- * Populates label text, then draws the QR.
- */
 window.openQrModal = async (uid) => {
-    const item = db.find(x => x.uid === uid);
+    const item = db.find(x => x.id_aset === uid);
     if (!item) return;
 
     _qrActiveItem = item;
 
-    document.getElementById('qr-modal-subtitle').innerText = `${item.uid} | ${item.kode_id}`;
-    document.getElementById('qr-label-kodeid').innerText   = item.kode_id;
-    document.getElementById('qr-label-alat').innerText     = item.alat;
-    document.getElementById('qr-label-lokasi').innerText   = item.lokasi;
+    document.getElementById('qr-modal-subtitle').innerText = item.id_aset;
+    document.getElementById('qr-label-kodeid').innerText   = item.id_aset;
+    document.getElementById('qr-label-alat').innerText     = item.kode_alat;
+    document.getElementById('qr-label-lokasi').innerText   = item.id_lokasi;
 
-    // Build and display the landing URL
     const landingUrl = buildLandingUrl(uid);
     const linkEl     = document.getElementById('qr-landing-link');
     const linkText   = document.getElementById('qr-landing-link-text');
@@ -2263,7 +2303,6 @@ window.openQrModal = async (uid) => {
         linkEl.href          = landingUrl;
     }
 
-    // Reset copy button state
     const copyBtn = document.getElementById('btn-copy-link');
     if (copyBtn) {
         copyBtn.innerHTML = '<i class="fas fa-copy"></i>';
@@ -2281,13 +2320,6 @@ function closeQrModal() {
     _qrActiveItem = null;
 }
 
-/**
- * Export the label preview as a PNG.
- * Uses html2canvas to capture #qr-label-preview (which already has the canvas
- * embedded), then triggers a browser download.
- *
- * html2canvas is loaded from CDN lazily only when needed.
- */
 async function downloadQrPng() {
     if (!_qrActiveItem) return;
 
@@ -2297,7 +2329,6 @@ async function downloadQrPng() {
     btn.disabled  = true;
 
     try {
-        // Lazy-load html2canvas if not already present
         if (!window.html2canvas) {
             await loadScript('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js');
         }
@@ -2305,17 +2336,17 @@ async function downloadQrPng() {
         const labelEl = document.getElementById('qr-label-preview');
         const canvas  = await html2canvas(labelEl, {
             backgroundColor: '#ffffff',
-            scale: 3, // 3× for crisp print quality
+            scale: 3, 
             useCORS: true,
             logging: false
         });
 
         const link = document.createElement('a');
-        link.download = `QR_${_qrActiveItem.kode_id}.png`;
+        link.download = `QR_${_qrActiveItem.id_aset}.png`;
         link.href     = canvas.toDataURL('image/png');
         link.click();
 
-        showToast(`PNG berhasil diunduh: QR_${_qrActiveItem.kode_id}.png`, 'success');
+        showToast(`PNG berhasil diunduh: QR_${_qrActiveItem.id_aset}.png`, 'success');
     } catch (err) {
         console.error(err);
         showToast("Gagal membuat PNG. Coba lagi.", 'error');
@@ -2325,14 +2356,6 @@ async function downloadQrPng() {
     }
 }
 
-/**
- * Export the label as a PDF using the browser's print dialog.
- *
- * Strategy: clone the label into the #qr-print-area div (which is revealed
- * only during @media print via CSS), trigger window.print(), then restore.
- * The QR canvas must be converted to a static <img> first so it survives
- * the print pipeline across all browsers.
- */
 async function downloadQrPdf() {
     if (!_qrActiveItem) return;
 
@@ -2342,15 +2365,12 @@ async function downloadQrPdf() {
     btn.disabled  = true;
 
     try {
-        // Convert the live QR canvas to a static data-URL image
         const qrCanvas   = document.getElementById('qr-canvas');
         const qrDataUrl  = qrCanvas.toDataURL('image/png');
 
-        // Clone the label element
         const labelEl    = document.getElementById('qr-label-preview');
         const clone      = labelEl.cloneNode(true);
 
-        // Replace <canvas> inside the clone with a plain <img>
         const cloneCanvas = clone.querySelector('canvas');
         if (cloneCanvas) {
             const img    = document.createElement('img');
@@ -2360,16 +2380,13 @@ async function downloadQrPdf() {
             cloneCanvas.parentNode.replaceChild(img, cloneCanvas);
         }
 
-        // Put clone into the print area
         const printArea  = document.getElementById('qr-print-area');
         printArea.innerHTML = '';
         printArea.appendChild(clone);
 
-        // Small delay so the browser renders the clone, then print
         await new Promise(r => setTimeout(r, 150));
         window.print();
 
-        // Cleanup after the print dialog closes
         printArea.innerHTML = '';
         showToast("Dialog cetak/simpan PDF telah dibuka.", 'info');
     } catch (err) {
@@ -2381,7 +2398,6 @@ async function downloadQrPdf() {
     }
 }
 
-/** Dynamically load an external script (returns a Promise). */
 function loadScript(src) {
     return new Promise((resolve, reject) => {
         if (document.querySelector(`script[src="${src}"]`)) { resolve(); return; }
@@ -2409,48 +2425,154 @@ function showToast(message, type = 'info') {
     else if (type === 'warning') { colorClass = 'bg-yellow-500'; iconClass = 'fa-exclamation-triangle'; }
 
     toast.className = `${colorClass} text-white px-5 py-3 rounded-xl shadow-lg transform transition-all duration-300 opacity-0 translate-y-4 sm:translate-y-0 sm:translate-x-full flex items-center gap-3 font-semibold`;
-    toast.innerHTML = `<i class="fas ${iconClass} text-xl"></i> <span>${message}</span>`;
+    toast.innerHTML = `
+        <i class="fas ${iconClass} text-xl shrink-0"></i>
+        <span class="flex-1 text-sm">${message}</span>
+        <button class="toast-dismiss shrink-0 ml-1 w-5 h-5 flex items-center justify-center rounded-full hover:bg-white/20 transition text-white/80 hover:text-white">
+            <i class="fas fa-times text-base"></i>
+        </button>`;
+
+    const dismiss = () => {
+        toast.classList.add('opacity-0', 'translate-y-4', 'sm:translate-x-full');
+        setTimeout(() => toast.remove(), 300);
+    };
+
+    toast.querySelector('.toast-dismiss').addEventListener('click', dismiss);
 
     container.appendChild(toast);
 
     requestAnimationFrame(() => {
         setTimeout(() => toast.classList.remove('opacity-0', 'translate-y-4', 'sm:translate-x-full'), 10);
     });
-    setTimeout(() => {
-        toast.classList.add('opacity-0', 'translate-y-4', 'sm:translate-x-full');
-        setTimeout(() => toast.remove(), 300);
-    }, 4000);
+
+    const autoHide = setTimeout(dismiss, 4000);
+    toast.querySelector('.toast-dismiss').addEventListener('click', () => clearTimeout(autoHide));
 }
 
 function customConfirm(message) {
     return new Promise((resolve) => {
-        const modal = document.getElementById('confirm-modal');
+        const modal     = document.getElementById('confirm-modal');
         if (!modal) return resolve(window.confirm(message));
+
+        const cancelBtn = document.getElementById('confirm-cancel');
+        const okBtn     = document.getElementById('confirm-ok');
 
         document.getElementById('confirm-message').innerText = message;
         modal.classList.remove('hidden');
 
-        document.getElementById('confirm-cancel').onclick = () => {
+        function finish(result) {
             modal.classList.add('hidden');
-            resolve(false);
-        };
-        document.getElementById('confirm-ok').onclick = () => {
-            modal.classList.add('hidden');
-            resolve(true);
-        };
+            cancelBtn.onclick = null;
+            okBtn.onclick     = null;
+            resolve(result);
+        }
+
+        cancelBtn.onclick = () => finish(false);
+        okBtn.onclick     = () => finish(true);
     });
 }
 
-/**
- * Convert a UTC datetime string from the server to the user's local time.
- * Input:  "2025-07-16 08:30:00"  (UTC, as returned by strftime in main.py)
- * Output: "16 Juli 2025 15:30:00" (local, formatted in Indonesian)
- */
+// ── AFKIR / PULIHKAN ──────────────────────────────────────────────────────
+
+let _afkirDb = [];
+
+async function loadAfkirCards() {
+    const container = document.getElementById('afkir-cards-container');
+    if (!container) return;
+    container.innerHTML = `<div class="col-span-3 text-center text-gray-400 py-14"><i class="fas fa-spinner fa-spin text-2xl"></i></div>`;
+    try {
+        const res = await apiFetch('/aset/afkir');
+        if (!res.ok) throw new Error();
+        _afkirDb = await res.json();
+        renderAfkirCards();
+    } catch {
+        container.innerHTML = `<div class="col-span-3 text-center text-red-400 py-14 text-sm">Gagal memuat data aset afkir.</div>`;
+    }
+}
+
+function renderAfkirCards() {
+    const container = document.getElementById('afkir-cards-container');
+    if (!container) return;
+    const q = (document.getElementById('search-afkir')?.value || '').toLowerCase();
+    const filtered = _afkirDb.filter(item =>
+        (item.id_aset || '').toLowerCase().includes(q) ||
+        (item.kode_alat || '').toLowerCase().includes(q)
+    );
+    if (!filtered.length) {
+        container.innerHTML = `<div class="col-span-3 text-center text-gray-400 py-14">
+            <i class="fas fa-recycle text-4xl mb-3 block"></i>
+            <p class="text-sm">Tidak ada aset afkir${q ? ' yang cocok dengan pencarian' : ''}.</p></div>`;
+        return;
+    }
+    container.innerHTML = filtered.map(item => `
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm p-5 flex flex-col hover:shadow-md transition-shadow">
+            <div class="flex justify-between items-start mb-3 pb-3 border-b border-gray-50 dark:border-gray-700/60">
+                <span class="text-[10px] font-mono text-gray-400">${item.id_aset}</span>
+                <span class="text-[10px] font-bold px-2 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400">AFKIR</span>
+            </div>
+            <h3 class="text-sm font-bold font-mono text-gray-600 dark:text-gray-300 break-words">${item.id_aset}</h3>
+            <p class="text-xs text-gray-500 mt-1">${item.kode_alat || '—'} — ${item.id_lokasi || '—'}</p>
+            <p class="text-xs text-gray-400 mt-1"><i class="fas fa-clock mr-1"></i>${item.waktu_update ? formatUtcToLocal(item.waktu_update) : 'Tanggal tidak tersedia'}</p>
+            <div class="mt-4">
+                <button onclick="window.openPulihkanModal('${item.id_aset}')"
+                    class="w-full bg-orange-600 hover:bg-orange-700 active:bg-orange-800 text-white py-2.5 rounded-lg text-sm font-semibold transition flex items-center justify-center gap-2">
+                    <i class="fas fa-wrench"></i> Proses Lebih Lanjut
+                </button>
+            </div>
+        </div>`).join('');
+}
+
+document.getElementById('search-afkir')?.addEventListener('input', renderAfkirCards);
+
+window.openPulihkanModal = (uid) => {
+    document.getElementById('pulihkan-uid').value = uid;
+    document.getElementById('pulihkan-modal-subtitle').innerText = uid;
+    document.getElementById('pulihkan-modal').classList.remove('hidden');
+};
+
+document.getElementById('close-pulihkan-modal')?.addEventListener('click', () => {
+    document.getElementById('pulihkan-modal').classList.add('hidden');
+});
+document.getElementById('pulihkan-modal')?.addEventListener('click', (e) => {
+    if (e.target === document.getElementById('pulihkan-modal'))
+        document.getElementById('pulihkan-modal').classList.add('hidden');
+});
+document.getElementById('pulihkan-cancel-btn')?.addEventListener('click', () => {
+    document.getElementById('pulihkan-modal').classList.add('hidden');
+});
+
+document.getElementById('pulihkan-confirm-btn')?.addEventListener('click', async () => {
+    const uid = document.getElementById('pulihkan-uid').value;
+    document.getElementById('pulihkan-modal').classList.add('hidden');
+    try {
+        const res = await apiFetch(`/aset/pulihkan/${uid}`, { method: 'POST' });
+        if (!res.ok) throw new Error((await res.json()).detail || 'Gagal memulihkan aset.');
+        showToast(`Aset ${uid} berhasil dipulihkan.`, 'success');
+        await loadAfkirCards();
+        await fetchAsetFromServer();
+    } catch (err) { showToast(err.message, 'error'); }
+});
+
+document.getElementById('pulihkan-delete-btn')?.addEventListener('click', async () => {
+    const uid = document.getElementById('pulihkan-uid').value;
+    document.getElementById('pulihkan-modal').classList.add('hidden');
+    const confirmed = await customConfirm(
+        `Hapus permanen aset "${uid}"?\n\nTindakan ini TIDAK DAPAT DIBATALKAN. Seluruh riwayat aset ini akan hilang dari sistem.`
+    );
+    if (!confirmed) return;
+    try {
+        const res = await apiFetch(`/aset/${uid}`, { method: 'DELETE' });
+        if (!res.ok) throw new Error((await res.json()).detail || 'Gagal menghapus aset.');
+        showToast(`Aset ${uid} telah dihapus permanen.`, 'success');
+        await loadAfkirCards();
+        await fetchAsetFromServer();
+    } catch (err) { showToast(err.message, 'error'); }
+});
+
 function formatUtcToLocal(utcStr) {
     if (!utcStr) return '—';
-    // Replace space with 'T' and append 'Z' so the browser parses it as UTC
-    const date = new Date(utcStr.replace(' ', 'T') + 'Z');
-    if (isNaN(date)) return utcStr; // fallback if unparseable
+    const date = new Date(utcStr.replace(' ', 'T'));
+    if (isNaN(date)) return utcStr; 
 
     const bulan = [
         'Januari','Februari','Maret','April','Mei','Juni',

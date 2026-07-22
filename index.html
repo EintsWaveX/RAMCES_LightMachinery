@@ -172,11 +172,20 @@
         }
 
         .nav-btn:hover,
-        .nav-btn:focus-visible,
-        .nav-btn.is-active {
-            background-color: rgba(10, 31, 68, 0.38) !important;
+        .nav-btn:focus-visible {
+            background-color: rgba(243, 134, 27, 0.25) !important;
             color: #ffffff !important;
-            box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08) !important;
+        }
+
+        .nav-btn.is-active {
+            background-color: #F3861B !important;
+            color: #ffffff !important;
+            font-weight: 700 !important;
+            box-shadow: 0 2px 8px rgba(243, 134, 27, 0.35) !important;
+        }
+
+        .nav-btn.is-active::before {
+            display: none; /* orange fill replaces the left bar */
         }
 
         .nav-btn .fas,
@@ -486,7 +495,7 @@
                     </div>
                     <button id="btn-next-step"
                         class="w-full bg-kai-blue hover:bg-blue-800 active:bg-blue-900 text-white font-semibold py-3 rounded-lg transition-colors shadow-md text-sm">
-                        Lanjutkan <i class="fas fa-arrow-right ml-2 text-xs opacity-70"></i>
+                        Lanjutkan <i class="fas fa-arrow-right ml-2 text-sm opacity-70"></i>
                     </button>
                 </div>
     
@@ -494,8 +503,8 @@
                 <div id="auth-step-2" class="hidden space-y-4">
                     <div class="flex items-center gap-3 mb-2">
                         <button id="btn-back-step1"
-                            class="w-8 h-8 rounded-full bg-gray-100 dark:bg-gray-700 flex items-center justify-center text-gray-400 hover:text-kai-blue transition">
-                            <i class="fas fa-arrow-left text-xs"></i>
+                            class="flex items-center gap-2 px-4 py-2 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 font-semibold text-sm transition">
+                            <i class="fas fa-arrow-left text-sm"></i> Kembali
                         </button>
                         <div>
                             <p class="text-xs text-gray-400">Masuk sebagai</p>
@@ -516,8 +525,8 @@
                             <span
                                 class="text-[10px] font-bold text-gray-500 dark:text-gray-400 group-hover:text-kai-blue dark:group-hover:text-blue-400 transition text-center leading-tight">TEKNISI</span>
                         </button>
-                        <!-- Admin DAOP -->
-                        <button data-division="ADMIN_DAOP"
+                        <!-- Admin Wilayah -->
+                        <button data-division="ADMIN_WILAYAH"
                             class="division-card flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-gray-200 dark:border-gray-600 hover:border-kai-orange hover:bg-orange-50 dark:hover:bg-orange-900/20 transition group">
                             <div
                                 class="w-10 h-10 rounded-lg bg-gray-100 dark:bg-gray-700 flex items-center justify-center group-hover:bg-kai-orange transition">
@@ -526,7 +535,7 @@
                                     class="text-[10px] font-black text-kai-orange group-hover:text-white transition leading-none text-center">ADM<br>DAOP</span>
                             </div>
                             <span
-                                class="text-[10px] font-bold text-gray-500 dark:text-gray-400 group-hover:text-kai-orange dark:group-hover:text-orange-400 transition text-center leading-tight">ADMIN DAOP</span>
+                                class="text-[10px] font-bold text-gray-500 dark:text-gray-400 group-hover:text-kai-orange dark:group-hover:text-orange-400 transition text-center leading-tight">ADMIN WILAYAH</span>
                         </button>
                         <!-- RAMCES -->
                         <button data-division="SUPER_ADMIN"
@@ -547,8 +556,8 @@
                 <div id="auth-step-3" class="hidden space-y-4">
                     <div class="flex items-center gap-3 mb-2">
                         <button id="btn-back-step2"
-                            class="w-8 h-8 rounded-full bg-gray-100 dark:bg-gray-700 flex items-center justify-center text-gray-400 hover:text-kai-blue transition">
-                            <i class="fas fa-arrow-left text-xs"></i>
+                            class="flex items-center gap-2 px-4 py-2 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 font-semibold text-sm transition">
+                            <i class="fas fa-arrow-left text-sm"></i> Kembali
                         </button>
                         <div>
                             <p class="text-xs text-gray-400">Masuk sebagai</p>
@@ -559,13 +568,14 @@
                         <label class="block text-xs font-semibold mb-1.5 text-gray-600 dark:text-gray-300">Wilayah / Region</label>
                         <select id="login-region"
                             class="w-full p-3 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg outline-none focus:ring-2 focus:ring-kai-blue text-sm transition">
-                            <option value="">Memuat…</option>
+                            <option value="">Memuat...</option>
                         </select>
                     </div>
                     <!-- Hidden role field carried from step 2 -->
                     <input type="hidden" id="login-role" value="">
                     <button id="btn-login"
-                        class="w-full bg-kai-blue hover:bg-blue-800 active:bg-blue-900 text-white font-semibold py-3 rounded-lg transition-colors shadow-md text-sm">Masuk <i class="fas fa-arrow-right ml-2 text-xs opacity-70"></i>
+                        class="w-full bg-kai-blue hover:bg-blue-800 active:bg-blue-900 text-white font-semibold py-3 rounded-lg transition-colors shadow-md text-sm">
+                        Masuk <i class="fas fa-arrow-right ml-2 text-sm opacity-70"></i>
                     </button>
                 </div>
     
@@ -602,7 +612,7 @@
 
             <!-- Nav -->
             <nav class="flex-1 px-3 pb-4 overflow-y-auto space-y-0.5">
-                <p class="text-[9px] text-white/40 tracking-[.18em] font-bold px-3 mt-4">DASHBOARD</p>
+                <p class="text-[9px] text-white/40 tracking-[.18em] font-bold px-3 mt-4">MENU UTAMA</p>
                 <button data-view="dashboard"
                     class="nav-btn w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors text-sm">
                     <i class="fas fa-th-large w-4 text-center text-xs"></i>
@@ -628,14 +638,19 @@
                 <button data-view="laporan"
                     class="nav-btn w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors text-sm">
                     <i class="fas fa-file-export w-4 text-center text-xs"></i>
-                    <span>Lihat dan Ekspor Laporan</span>
+                    <span>Proses Laporan</span>
                 </button>
 
-                <p class="text-[9px] text-white/40 tracking-[.18em] font-bold px-3 mt-4">ADMINISTRASI</p>
+                <p id="admin-helper" class="hidden text-[9px] text-white/40 tracking-[.18em] font-bold px-3 mt-4">ADMINISTRASI</p>
                 <button data-view="masterdata" id="nav-masterdata"
                     class="nav-btn hidden w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors text-sm">
                     <i class="fas fa-server w-4 text-center text-xs"></i>
                     <span>Pusat Data</span>
+                </button>
+                <button data-view="afkir" id="nav-afkir"
+                    class="nav-btn hidden w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors text-sm">
+                    <i class="fas fa-recycle w-4 text-center text-xs"></i>
+                    <span>Pulihkan Aset Afkir</span>
                 </button>
             </nav>
 
@@ -646,11 +661,6 @@
                     <i class="fas fa-moon w-4 text-center text-xs dark:hidden"></i>
                     <i class="fas fa-sun w-4 text-center text-xs hidden dark:block text-yellow-300"></i>
                     <span>Ganti Tema</span>
-                </button>
-                <button id="logout-btn"
-                    class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-red-300/80 hover:text-red-200 hover:bg-red-500/15 transition-colors text-sm">
-                    <i class="fas fa-sign-out-alt w-4 text-center text-xs"></i>
-                    <span>Keluar</span>
                 </button>
             </div>
         </aside>
@@ -672,7 +682,7 @@
                 <!-- Center: page title -->
                 <div class="flex-1 text-center min-w-0">
                     <h1 class="text-base font-bold text-gray-800 dark:text-white truncate" id="topbar-page-title">Dashboard</h1>
-                    <p class="text-xs text-gray-400 dark:text-gray-500 truncate" id="topbar-page-subtitle">Pantau kesiapan dan kondisi aset alat kerja</p>
+                    <p class="text-xs text-gray-400 dark:text-gray-500 truncate" id="topbar-page-subtitle">Pantau Kesiapan dan Kondisi Aset Alat Kerja</p>
                 </div>
             
                 <!-- Right: clock + WS status + bell + user -->
@@ -705,8 +715,8 @@
                     <button id="profile-btn"
                         class="flex items-center gap-2 pl-3 border-l border-gray-200 dark:border-gray-700 hover:opacity-80 transition-opacity">
                         <div class="hidden sm:block text-right leading-none">
-                            <p class="text-sm font-semibold text-gray-800 dark:text-gray-100" id="topbar-username">…</p>
-                            <p class="text-[10px] text-gray-400 mt-0.5" id="topbar-role">…</p>
+                            <p class="text-sm font-semibold text-gray-800 dark:text-gray-100" id="topbar-username">...</p>
+                            <p class="text-[10px] text-gray-400 mt-0.5" id="topbar-role">...</p>
                         </div>
                         <div class="relative">
                             <div id="topbar-avatar"
@@ -742,10 +752,8 @@
                     <div
                         class="bg-white dark:bg-gray-800 rounded-xl p-6 md:p-8 border border-gray-100 dark:border-gray-700 shadow-sm flex items-center justify-between">
                         <div>
-                            <h2 class="text-xl font-bold text-gray-800 dark:text-white" id="dashboard-welcome">Selamat
-                                Datang</h2>
-                            <p class="text-sm text-gray-400 mt-1">Pantau kesiapan dan kondisi aset alat kerja secara
-                                langsung.</p>
+                            <h2 class="text-xl font-bold text-gray-800 dark:text-white" id="dashboard-welcome">Selamat Datang</h2>
+                            <p class="text-sm text-gray-400 mt-1">Pantau kesiapan dan kondisi aset alat kerja secara langsung.</p>
                         </div>
                         <div
                             class="hidden md:flex w-14 h-14 rounded-full bg-blue-50 dark:bg-gray-700 items-center justify-center">
@@ -757,24 +765,21 @@
                     <div class="grid grid-cols-1 sm:grid-cols-3 gap-5">
                         <div
                             class="bg-white dark:bg-gray-800 p-6 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm relative overflow-hidden group hover:border-kai-blue transition-colors">
-                            <p class="text-[10px] font-bold tracking-widest text-gray-400 uppercase mb-1">Total Aset
-                                Aktif</p>
+                            <p class="text-[10px] font-bold tracking-widest text-gray-400 uppercase mb-1">Total Aset Aktif</p>
                             <h3 class="text-4xl font-bold text-gray-800 dark:text-white" id="stat-total">—</h3>
                             <i
                                 class="fas fa-boxes absolute -bottom-4 -right-2 text-7xl text-gray-50 dark:text-gray-700/40 group-hover:scale-110 transition-transform"></i>
                         </div>
                         <div
                             class="bg-white dark:bg-gray-800 p-6 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm relative overflow-hidden group hover:border-green-400 transition-colors">
-                            <p class="text-[10px] font-bold tracking-widest text-gray-400 uppercase mb-1">Siap Operasi
-                                (SO)</p>
+                            <p class="text-[10px] font-bold tracking-widest text-gray-400 uppercase mb-1">Siap Operasi (SO)</p>
                             <h3 class="text-4xl font-bold text-green-500" id="stat-so">—</h3>
                             <i
                                 class="fas fa-check-circle absolute -bottom-4 -right-2 text-7xl text-green-50 dark:text-green-900/20 group-hover:scale-110 transition-transform"></i>
                         </div>
                         <div
                             class="bg-white dark:bg-gray-800 p-6 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm relative overflow-hidden group hover:border-red-400 transition-colors">
-                            <p class="text-[10px] font-bold tracking-widest text-gray-400 uppercase mb-1">Tidak Siap
-                                (TSO)</p>
+                            <p class="text-[10px] font-bold tracking-widest text-gray-400 uppercase mb-1">Tidak Siap (TSO)</p>
                             <h3 class="text-4xl font-bold text-red-500" id="stat-tso">—</h3>
                             <i
                                 class="fas fa-times-circle absolute -bottom-4 -right-2 text-7xl text-red-50 dark:text-red-900/20 group-hover:scale-110 transition-transform"></i>
@@ -790,21 +795,19 @@
                         class="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm p-6 md:p-8 space-y-6">
                         <div class="border-b border-gray-100 dark:border-gray-700 pb-4">
                             <h2 class="text-base font-bold text-gray-800 dark:text-white">Formulir Alat Kerja Baru</h2>
-                            <p class="text-xs text-gray-400 mt-0.5">Lengkapi seluruh field untuk meregistrasi aset baru.
+                            <p class="text-xs text-gray-400 mt-0.5">Mohon untuk melengkapi seluruh teks masukan untuk meregistrasi aset baru.
                             </p>
                         </div>
 
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
                             <div class="md:col-span-2">
-                                <label class="block text-xs font-semibold mb-2 text-gray-600 dark:text-gray-400">1. Alat
-                                    Kerja</label>
+                                <label class="block text-xs font-semibold mb-2 text-gray-600 dark:text-gray-400">1. Alat Kerja</label>
                                 <select id="in-alat" required
                                     class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition"></select>
                             </div>
 
                             <div>
-                                <label class="block text-xs font-semibold mb-2 text-gray-600 dark:text-gray-400">2.
-                                    Sumber Pengadaan</label>
+                                <label class="block text-xs font-semibold mb-2 text-gray-600 dark:text-gray-400">2. Sumber Pengadaan</label>
                                 <div class="space-y-2 text-sm">
                                     <label class="flex items-center gap-2 cursor-pointer">
                                         <input type="radio" name="in-pengadaan" value="1" required
@@ -820,35 +823,32 @@
                             </div>
 
                             <div>
-                                <label class="block text-xs font-semibold mb-2 text-gray-600 dark:text-gray-400">3.
-                                    Tanggal Pembelian</label>
+                                <label class="block text-xs font-semibold mb-2 text-gray-600 dark:text-gray-400">3. Tanggal Pembelian</label>
                                 <input type="date" id="in-tanggal" required
                                     class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition">
                             </div>
 
                             <div class="md:col-span-2">
-                                <label class="block text-xs font-semibold mb-2 text-gray-600 dark:text-gray-400">4. Unit
-                                    Peruntukan</label>
+                                <label class="block text-xs font-semibold mb-2 text-gray-600 dark:text-gray-400">4. Unit Peruntukan</label>
                                 <div
                                     class="flex flex-wrap gap-4 bg-gray-50 dark:bg-gray-700/50 p-4 rounded-lg border border-gray-100 dark:border-gray-600 text-sm">
                                     <label class="flex items-center gap-2 cursor-pointer"><input type="radio"
                                             name="in-unit" value="A" required class="accent-kai-orange w-4 h-4">
                                         <span>JALAN REL (A)</span></label>
                                     <label class="flex items-center gap-2 cursor-pointer"><input type="radio"
-                                            name="in-unit" value="B" class="accent-kai-orange w-4 h-4"> <span>JEMBATAN
-                                            (B)</span></label>
+                                            name="in-unit" value="B" class="accent-kai-orange w-4 h-4">
+                                        <span>JEMBATAN (B)</span></label>
                                     <label class="flex items-center gap-2 cursor-pointer"><input type="radio"
-                                            name="in-unit" value="C" class="accent-kai-orange w-4 h-4"> <span>MEKANIK
-                                            (C)</span></label>
+                                            name="in-unit" value="C" class="accent-kai-orange w-4 h-4">
+                                        <span>MEKANIK (C)</span></label>
                                     <label class="flex items-center gap-2 cursor-pointer"><input type="radio"
-                                            name="in-unit" value="D" class="accent-kai-orange w-4 h-4"> <span>BALAIYASA
-                                            (D)</span></label>
+                                            name="in-unit" value="D" class="accent-kai-orange w-4 h-4">
+                                        <span>BALAIYASA (D)</span></label>
                                 </div>
                             </div>
 
                             <div class="md:col-span-2">
-                                <label class="block text-xs font-semibold mb-2 text-gray-600 dark:text-gray-400">5.
-                                    Lokasi Penempatan</label>
+                                <label class="block text-xs font-semibold mb-2 text-gray-600 dark:text-gray-400">5. Lokasi Penempatan</label>
                                 <select id="in-lokasi" required
                                     class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition"></select>
                             </div>
@@ -857,7 +857,7 @@
                         <div class="pt-2">
                             <button type="submit"
                                 class="px-8 py-2.5 bg-kai-orange hover:bg-orange-600 active:bg-orange-700 text-white font-semibold rounded-lg transition-colors text-sm shadow-sm flex items-center gap-2">
-                                <i class="fas fa-user-plus"></i> Simpan Data Aset
+                                <i class="fas fa-pencil"></i> Simpan Data Aset
                             </button>
                         </div>
                     </form>
@@ -894,7 +894,7 @@
                             <button id="btn-db-download-xlsx"
                                 class="flex items-center gap-2 px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-semibold rounded-lg transition text-sm shadow-sm">
                                 <i class="fas fa-file-excel"></i>
-                                <span>Unduh Excel</span>
+                                <span>Unduh Excel (.xlsx)</span>
                             </button>
                             <button id="btn-db-download-pdf"
                                 class="flex items-center gap-2 px-6 py-2.5 bg-red-600 hover:bg-red-700 active:bg-red-800 text-white font-semibold rounded-lg transition text-sm shadow-sm">
@@ -913,49 +913,36 @@
                 <section id="view-edit" class="view-section max-w-3xl mx-auto w-full">
                     <form id="form-edit"
                         class="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm p-6 md:p-8 space-y-6">
-                        <div
-                            class="flex justify-between items-start border-b border-gray-100 dark:border-gray-700 pb-4">
-                            <div>
-                                <h2 class="text-base font-bold text-gray-800 dark:text-white">Pembaruan Kondisi Aset
-                                </h2>
-                                <p class="text-xs font-mono text-kai-blue dark:text-blue-400 mt-1" id="edit-subtitle">
-                                    ID: —</p>
-                            </div>
-                            <button type="button" id="close-edit-btn"
-                                class="w-8 h-8 rounded-full bg-gray-100 dark:bg-gray-700 flex items-center justify-center text-gray-400 hover:text-red-500 transition">
-                                <i class="fas fa-times text-sm"></i>
-                            </button>
+                        <div class="border-b border-gray-100 dark:border-gray-700 pb-4">
+                            <h2 class="text-base font-bold text-gray-800 dark:text-white">Pembaruan Kondisi Aset</h2>
+                            <p class="text-xs font-mono text-kai-blue dark:text-blue-400 mt-1" id="edit-subtitle">ID: —</p>
                         </div>
 
                         <input type="hidden" id="edit-uid">
 
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
                             <div>
-                                <label class="block text-xs font-semibold mb-2 text-gray-600 dark:text-gray-400">Tanggal
-                                    Perbaikan</label>
+                                <label class="block text-xs font-semibold mb-2 text-gray-600 dark:text-gray-400">Tanggal Perbaikan</label>
                                 <input type="date" id="edit-tanggal" required
                                     class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition">
                             </div>
                             <div>
-                                <label class="block text-xs font-semibold mb-2 text-gray-600 dark:text-gray-400">Teknisi
-                                    Bertugas</label>
+                                <label class="block text-xs font-semibold mb-2 text-gray-600 dark:text-gray-400">Teknisi Bertugas</label>
                                 <input type="text" id="edit-teknisi" required placeholder="Nama Lengkap"
                                     class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition">
                             </div>
                             <div>
-                                <label class="block text-xs font-semibold mb-2 text-gray-600 dark:text-gray-400">Lokasi
-                                    Perbaikan</label>
+                                <label class="block text-xs font-semibold mb-2 text-gray-600 dark:text-gray-400">Lokasi Perbaikan</label>
                                 <select id="edit-lokasi" required
                                     class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition">
-                                    <option value="" disabled selected>Pilih lokasi…</option>
+                                    <option value="" disabled selected>Pilih lokasi...</option>
                                 </select>
                             </div>
                             <div>
-                                <label class="block text-xs font-semibold mb-2 text-gray-600 dark:text-gray-400">UPT
-                                    Pengirim</label>
+                                <label class="block text-xs font-semibold mb-2 text-gray-600 dark:text-gray-400">UPT Pengirim</label>
                                 <select id="edit-upt" required
                                     class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition">
-                                    <option value="">Pilih lokasi dahulu…</option>
+                                    <option value="">Pilih lokasi dahulu...</option>
                                 </select>
                             </div>
                         </div>
@@ -964,12 +951,12 @@
                             <label class="block text-xs font-semibold mb-2 text-gray-600 dark:text-gray-400">Status Kondisi Terkini</label>
                             <div class="flex gap-3">
                                 <button type="button" id="btn-so" data-status="SO"
-                                    class="status-btn is-idle flex-1 py-3 rounded-lg font-bold text-sm border-2 transition flex items-center gap-2">
-                                    <i class="fas fa-check-circle"> SO — Siap Operasi</i>
+                                    class="status-btn is-idle flex-1 py-3 rounded-lg font-bold text-sm border-2 transition flex items-center justify-center gap-2">
+                                    <i class="fas fa-check-circle text-base"></i> SO — Siap Operasi
                                 </button>
                                 <button type="button" id="btn-tso" data-status="TSO"
-                                    class="status-btn is-idle flex-1 py-3 rounded-lg font-bold text-sm border-2 transition flex items-center gap-2">
-                                    <i class="fas fa-times-circle"> TSO — Tidak Siap</i>
+                                    class="status-btn is-idle flex-1 py-3 rounded-lg font-bold text-sm border-2 transition flex items-center justify-center gap-2">
+                                    <i class="fas fa-times-circle text-base"></i> TSO — Tidak Siap
                                 </button>
                             </div>
                             <input type="hidden" id="edit-kondisi">
@@ -978,14 +965,18 @@
                         <div>
                             <label class="block text-xs font-semibold mb-2 text-gray-600 dark:text-gray-400">Catatan
                                 Teknisi</label>
-                            <textarea id="edit-keterangan" rows="3" placeholder="Tindakan yang dilakukan…"
+                            <textarea id="edit-keterangan" rows="3" placeholder="Tindakan yang dilakukan..."
                                 class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition resize-none"></textarea>
                         </div>
 
-                        <div class="pt-2">
+                        <div class="pt-2 flex gap-3">
+                            <button type="button" id="close-edit-btn"
+                                class="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 font-semibold text-sm transition">
+                                <i class="fas fa-arrow-left text-xs"></i> Kembali
+                            </button>
                             <button type="submit"
-                                class="w-full bg-kai-blue hover:bg-blue-800 active:bg-blue-900 text-white font-semibold py-3 rounded-lg transition-colors text-sm flex items-center gap-2">
-                                <i class="fas fa-file"> Simpan Pembaruan</i>
+                                class="flex-1 flex items-center justify-center gap-2 px-5 py-2.5 bg-kai-blue hover:bg-blue-800 active:bg-blue-900 text-white font-semibold rounded-lg transition text-sm shadow-sm">
+                                <i class="fas fa-save text-xs"></i> Simpan Pembaruan
                             </button>
                         </div>
                     </form>
@@ -1005,14 +996,12 @@
                         </div>
                         <div class="flex bg-gray-100 dark:bg-gray-700 rounded-lg p-1 shrink-0">
                             <button id="hist-tab-repair"
-                                class="hist-tab px-5 py-2 text-sm font-semibold rounded-md bg-white dark:bg-gray-600 text-gray-800 dark:text-white shadow-sm transition flex items-center gap-2">
-                                <i class="fas fa-inbox"></i> 
-                                Perbaikan
+                                class="hist-tab px-5 py-2 text-sm font-semibold rounded-md bg-kai-orange text-white shadow-sm transition flex items-center gap-2">
+                                <i class="fas fa-inbox"></i> Perbaikan
                             </button>
                             <button id="hist-tab-mutasi"
-                                class="hist-tab px-5 py-2 text-sm font-medium rounded-md text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition flex items-center gap-2">
-                                <i class="fas fa-exchange-alt"></i> 
-                                Mutasi
+                                class="hist-tab px-5 py-2 text-sm font-medium rounded-md text-gray-500 dark:text-gray-400 hover:bg-kai-orange/20 hover:text-kai-orange transition flex items-center gap-2">
+                                <i class="fas fa-exchange-alt"></i> Mutasi
                             </button>
                         </div>
                     </div>
@@ -1036,20 +1025,20 @@
                                     id="hist-detail-subtitle">—</p>
                             </div>
                             <button id="close-hist-btn"
-                                class="w-8 h-8 rounded-full bg-gray-100 dark:bg-gray-700 flex items-center justify-center text-gray-400 hover:text-kai-blue transition">
-                                <i class="fas fa-arrow-left text-xs"></i>
+                                class="flex items-center gap-2 px-4 py-2 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 font-semibold text-sm transition">
+                                <i class="fas fa-arrow-left text-sm"></i> Kembali
                             </button>
                         </div>
 
                         <!-- Sub-tabs -->
-                        <div class="flex gap-5 border-b border-gray-200 dark:border-gray-700 mb-6">
+                        <div class="flex bg-gray-100 dark:bg-gray-700 rounded-lg p-1 mb-6 w-fit">
                             <button id="detail-tab-repair"
-                                class="detail-tab pb-3 text-sm font-semibold border-b-2 border-kai-blue text-kai-blue dark:text-blue-400 transition">
-                                Riwayat Perbaikan
+                                class="detail-tab-btn px-5 py-2 text-sm font-semibold rounded-md bg-kai-orange text-white shadow-sm transition flex items-center gap-2">
+                                <i class="fas fa-wrench text-sm"></i> Riwayat Perbaikan
                             </button>
                             <button id="detail-tab-mutasi"
-                                class="detail-tab pb-3 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-800 dark:hover:text-gray-300 transition">
-                                Jalur Mutasi
+                                class="detail-tab-btn px-5 py-2 text-sm font-medium rounded-md text-gray-500 dark:text-gray-400 hover:bg-kai-orange/20 hover:text-kai-orange transition flex items-center gap-2">
+                                <i class="fas fa-exchange-alt text-sm"></i> Jalur Mutasi
                             </button>
                         </div>
 
@@ -1059,11 +1048,11 @@
                                 <table class="w-full text-left text-sm whitespace-nowrap">
                                     <thead class="bg-gray-50 dark:bg-gray-700/50 text-gray-500 text-xs">
                                         <tr>
-                                            <th class="p-4 font-semibold w-10 text-center">#</th>
+                                            <th class="p-4 font-semibold w-10">No.</th>
                                             <th class="p-4 font-semibold">Tanggal</th>
                                             <th class="p-4 font-semibold">UPT Pengirim</th>
                                             <th class="p-4 font-semibold">Petugas</th>
-                                            <th class="p-4 font-semibold text-center">Kondisi</th>
+                                            <th class="p-4 font-semibold">Kondisi</th>
                                             <th class="p-4 font-semibold">Keterangan</th>
                                         </tr>
                                     </thead>
@@ -1151,7 +1140,7 @@
                             class="flex items-center gap-2 bg-blue-50 dark:bg-gray-700/50 border border-blue-100 dark:border-gray-600 rounded-lg px-4 py-2.5 mb-5">
                             <i class="fas fa-info-circle text-kai-blue text-xs shrink-0"></i>
                             <p class="text-xs text-kai-blue dark:text-blue-300 font-medium" id="exp-preview-count">
-                                Memuat data…</p>
+                                Memuat data...</p>
                         </div>
 
                         <div class="flex flex-col sm:flex-row gap-3">
@@ -1179,11 +1168,15 @@
                             <table class="w-full text-left text-xs whitespace-nowrap">
                                 <thead class="bg-gray-50 dark:bg-gray-700/50 text-gray-400">
                                     <tr>
-                                        <th class="px-4 py-3 font-semibold">Tanggal</th>
-                                        <th class="px-4 py-3 font-semibold">Kode ID</th>
-                                        <th class="px-4 py-3 font-semibold">Alat</th>
-                                        <th class="px-4 py-3 font-semibold">Lokasi</th>
-                                        <th class="px-4 py-3 font-semibold text-center">Kondisi</th>
+                                        <th class="px-3 py-3 font-semibold w-8">#</th>
+                                        <th class="px-3 py-3 font-semibold">Tanggal & Waktu</th>
+                                        <th class="px-3 py-3 font-semibold">ID Aset</th>
+                                        <th class="px-3 py-3 font-semibold">Kode Alat</th>
+                                        <th class="px-3 py-3 font-semibold">Lokasi Asal</th>
+                                        <th class="px-3 py-3 font-semibold">UPT</th>
+                                        <th class="px-3 py-3 font-semibold">Petugas</th>
+                                        <th class="px-3 py-3 font-semibold">Kondisi</th>
+                                        <th class="px-3 py-3 font-semibold">Keterangan</th>
                                     </tr>
                                 </thead>
                                 <tbody id="exp-preview-body"
@@ -1202,7 +1195,7 @@
                     <div
                         class="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm p-2 grid grid-cols-2 lg:grid-cols-4 gap-1">
                         <button data-tab="users"
-                            class="master-tab py-2 text-sm rounded-lg text-gray-500 transition text-center">
+                            class="master-tab py-2 text-sm rounded-lg transition text-center bg-kai-orange text-white font-semibold shadow-sm">
                             <i class="fas fa-user-plus"></i> 
                             Pengguna
                         </button>
@@ -1225,36 +1218,35 @@
 
                     <!-- Panel: Users -->
                     <div id="master-panel-users" class="master-tab-panel space-y-5">
-                        <div id="add-user-form-wrap"
-                            class="hidden bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm p-5">
-                            <h4 class="text-sm font-bold mb-4 text-gray-800 dark:text-white">Registrasi Pengguna Baru pada Sistem
-                            </h4>
-                            <div class="flex flex-col md:flex-row gap-4 items-end">
-                                <div class="flex-1 w-full">
+                        <form id="form-add-user"
+                            class="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm p-5">
+                            <h4 class="text-sm font-bold mb-4 text-gray-800 dark:text-white">Registrasi Pengguna Baru</h4>
+                            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+                                <div>
                                     <label class="block text-xs text-gray-500 mb-1">Nama Pengguna</label>
                                     <input type="text" id="new-user-username"
                                         class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition">
                                 </div>
-                                <div class="flex-1 w-full">
+                                <div>
                                     <label class="block text-xs text-gray-500 mb-1">Peran</label>
-                                    <select id="new-user-role"
+                                    <select id="new-user-role" onchange="syncNewUserRegion()"
                                         class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition">
                                         <option value="TEKNISI">TEKNISI</option>
-                                        <option value="ADMIN_DAOP">ADMIN DAOP</option>
+                                        <option value="ADMIN_WILAYAH">ADMIN WILAYAH</option>
                                         <option value="SUPER_ADMIN">SUPER ADMIN</option>
                                     </select>
                                 </div>
-                                <div class="flex-1 w-full">
+                                <div>
                                     <label class="block text-xs text-gray-500 mb-1">Wilayah</label>
                                     <select id="new-user-region"
                                         class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition"></select>
                                 </div>
                             </div>
-                            <button id="btn-add-user"
-                                class="shrink-0 bg-kai-blue hover:bg-blue-800 text-white font-semibold px-6 py-2.5 rounded-lg text-sm transition flex items-center gap-2 mt-4">
-                                <i class="fas fa-user-plus"></i> Tambah
+                            <button type="submit" id="btn-add-user"
+                                class="shrink-0 bg-kai-blue hover:bg-blue-800 text-white font-semibold px-6 py-2.5 rounded-lg text-sm transition flex items-center gap-2">
+                                <i class="fas fa-user-plus"></i> Tambah Pengguna
                             </button>
-                        </div>
+                        </form>
                         <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm">
                             <div class="overflow-x-auto">
                                 <table class="w-full text-left text-sm whitespace-nowrap">
@@ -1402,6 +1394,21 @@
                     </div>
                 </section>
 
+                <!-- ─────────────────────────────────────────────
+                 VIEW: AFKIR (Pulihkan Aset Afkir)
+                ───────────────────────────────────────────── -->
+                <section id="view-afkir" class="view-section">
+                    <div class="flex flex-col gap-3 mb-5 shrink-0">
+                        <div class="bg-white dark:bg-gray-800 p-3 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm flex items-center gap-3">
+                            <div class="relative flex-1">
+                                <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs"></i>
+                                <input type="text" id="search-afkir" placeholder="Cari UID atau Kode Aset..."
+                                    class="w-full pl-8 pr-3 py-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue font-mono transition">
+                            </div>
+                        </div>
+                    </div>
+                    <div id="afkir-cards-container" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 flex-1"></div>
+                </section>
             </div><!-- end #view-container -->
 
             <!-- Footer watermark -->
@@ -1426,7 +1433,7 @@
                 class="flex justify-between items-center px-5 py-4 border-b border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800">
                 <div>
                     <h3 class="text-sm font-bold text-gray-800 dark:text-white">Proses Mutasi Aset</h3>
-                    <p class="text-xs font-mono text-kai-blue dark:text-blue-400 mt-0.5" id="mutasi-modal-subtitle">—
+                    <p class="text-sm font-mono text-kai-blue dark:text-blue-400 mt-0.5" id="mutasi-modal-subtitle">—
                     </p>
                 </div>
                 <button id="close-mutasi-modal"
@@ -1440,6 +1447,9 @@
                     class="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-3.5 border border-gray-100 dark:border-gray-600">
                     <p class="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">Lokasi Asal</p>
                     <p class="font-semibold text-gray-800 dark:text-gray-200 text-sm" id="mutasi-lokasi-asal">—</p>
+                    <br>
+                    <p class="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">Lokasi Kini</p>
+                    <p class="font-semibold text-gray-800 dark:text-gray-200 text-sm" id="mutasi-lokasi-kini">—</p>
                 </div>
                 <div>
                     <label class="block text-xs font-semibold mb-1.5 text-gray-500">Tujuan Mutasi</label>
@@ -1448,7 +1458,7 @@
                 </div>
                 <div>
                     <label class="block text-xs font-semibold mb-1.5 text-gray-500">Keterangan / BKO</label>
-                    <textarea id="mutasi-alasan" rows="2" placeholder="Alasan mutasi atau nomor BKO…"
+                    <textarea id="mutasi-alasan" rows="2" placeholder="Alasan mutasi atau nomor BKO..."
                         class="w-full p-2.5 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-orange resize-none transition"></textarea>
                 </div>
                 <button id="btn-submit-mutasi"
@@ -1498,7 +1508,7 @@
                     class="flex items-center gap-2 bg-gray-50 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2">
                     <a id="qr-landing-link" href="#" target="_blank" rel="noopener"
                         class="text-[10px] text-kai-blue dark:text-blue-400 truncate flex-1 hover:underline font-mono">
-                        <span id="qr-landing-link-text">…</span>
+                        <span id="qr-landing-link-text">...</span>
                     </a>
                     <button id="btn-copy-link" title="Salin link"
                         class="shrink-0 text-gray-400 hover:text-kai-blue transition text-xs px-1">
@@ -1510,12 +1520,12 @@
             <!-- Actions -->
             <div class="px-5 pb-5 flex gap-2">
                 <button id="btn-qr-download-png"
-                    class="flex-1 bg-kai-blue hover:bg-blue-800 text-white font-semibold py-2 rounded-lg transition text-xs">
-                    Unduh PNG
+                    class="flex-1 bg-kai-blue hover:bg-blue-800 text-white font-semibold py-2.5 rounded-lg transition text-sm">
+                    <i class="fas fa-download"></i> Unduh PNG
                 </button>
                 <button id="btn-qr-download-pdf"
-                    class="flex-1 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 font-semibold py-2 rounded-lg transition text-xs">
-                    Cetak PDF
+                    class="flex-1 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 font-semibold py-2.5 rounded-lg transition text-sm">
+                    <i class="fas fa-file-pdf"></i> Cetak PDF
                 </button>
             </div>
         </div>
@@ -1564,8 +1574,8 @@
                 Anda yakin?</p>
             <div class="flex gap-3">
                 <button id="confirm-cancel"
-                    class="flex-1 py-2.5 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 rounded-lg text-sm font-semibold transition">
-                    Batal
+                    class="flex-1 py-2.5 flex items-center justify-center gap-2 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-600 dark:text-gray-200 rounded-lg text-sm font-semibold transition">
+                    <i class="fas fa-arrow-left text-sm"></i> Batal
                 </button>
                 <button id="confirm-ok"
                     class="flex-1 py-2.5 bg-kai-blue hover:bg-blue-800 text-white rounded-lg text-sm font-semibold transition">
@@ -1618,7 +1628,12 @@
     <div id="profile-modal"
         class="hidden fixed inset-0 z-[110] bg-gray-900/40 backdrop-blur-sm flex items-center justify-center p-4">
         <div
-            class="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-xs border border-gray-100 dark:border-gray-700 overflow-hidden">
+            class="relative bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-xs border border-gray-100 dark:border-gray-700 overflow-hidden">
+            <!-- Close — inside card -->
+            <button id="close-profile-modal"
+                class="absolute top-3 right-3 w-7 h-7 flex items-center justify-center rounded-full text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition z-10">
+                <i class="fas fa-times text-sm"></i>
+            </button>
             <!-- Avatar + info -->
             <div class="px-6 pt-6 pb-5 flex flex-col items-center gap-3 text-center">
                 <div class="relative">
@@ -1641,8 +1656,8 @@
             <!-- Actions -->
             <div class="p-3 space-y-1">
                 <button id="profile-logout-btn"
-                    class="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition text-sm font-medium">
-                    <i class="fas fa-sign-out-alt w-4 text-center text-gray-400"></i>
+                    class="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition text-sm font-semibold border border-transparent hover:border-red-200 dark:hover:border-red-800">
+                    <i class="fas fa-sign-out-alt w-4 text-center"></i>
                     <span>Keluar</span>
                 </button>
                 <!-- Delete account — hidden for SUPER_ADMIN -->
@@ -1652,12 +1667,6 @@
                     <span>Hapus Akun Saya</span>
                 </button>
             </div>
-    
-            <!-- Close -->
-            <button id="close-profile-modal"
-                class="absolute top-4 right-4 w-7 h-7 flex items-center justify-center rounded-full text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition">
-                <i class="fas fa-times text-sm"></i>
-            </button>
         </div>
     </div>
 
@@ -1675,7 +1684,7 @@
                 </div>
                 <button id="close-import-alat-modal"
                     class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition w-7 h-7 flex items-center justify-center rounded-full hover:bg-gray-100 dark:hover:bg-gray-700">
-                    <i class="fas fa-times text-xs"></i>
+                    <i class="fas fa-times text-sm"></i>
                 </button>
             </div>
             <div class="p-5 space-y-4">
@@ -1692,6 +1701,45 @@
                 <button id="btn-import-alat-submit"
                     class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-2.5 rounded-lg transition text-sm">
                     Proses Data Impor...
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Pulihkan Aset Modal ── -->
+    <div id="pulihkan-modal"
+        class="hidden fixed inset-0 z-[110] bg-gray-900/40 backdrop-blur-sm flex items-center justify-center p-4">
+        <div
+            class="relative bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
+            <div
+                class="flex justify-between items-center px-5 py-4 border-b border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800">
+                <div>
+                    <h3 class="text-sm font-bold text-gray-800 dark:text-white">Pulihkan Aset</h3>
+                    <p class="text-xs font-mono text-kai-blue dark:text-blue-400 mt-0.5" id="pulihkan-modal-subtitle">—</p>
+                </div>
+                <button id="close-pulihkan-modal"
+                    class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition w-7 h-7 flex items-center justify-center rounded-full hover:bg-gray-100 dark:hover:bg-gray-700">
+                    <i class="fas fa-times text-sm"></i>
+                </button>
+            </div>
+            <div class="p-5 space-y-3">
+                <input type="hidden" id="pulihkan-uid">
+                <p class="text-sm text-gray-500 dark:text-gray-400">Pilih tindakan untuk aset ini:</p>
+                <!-- Row 1: Cancel + Confirm -->
+                <div class="flex gap-3">
+                    <button id="pulihkan-cancel-btn"
+                        class="flex-1 py-2.5 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 rounded-lg text-sm font-semibold transition">
+                        Batal
+                    </button>
+                    <button id="pulihkan-confirm-btn"
+                        class="flex-1 py-2.5 bg-green-600 hover:bg-green-700 active:bg-green-800 text-white rounded-lg text-sm font-semibold transition">
+                        <i class="fas fa-undo mr-1"></i> Pulihkan
+                    </button>
+                </div>
+                <!-- Row 2: Delete permanently -->
+                <button id="pulihkan-delete-btn"
+                    class="w-full py-2.5 bg-red-600 hover:bg-red-700 active:bg-red-800 text-white rounded-lg text-sm font-semibold transition border-2 border-red-700 hover:border-red-800">
+                    <i class="fas fa-trash-alt mr-1"></i> Hapus Permanen dari Sistem
                 </button>
             </div>
         </div>
