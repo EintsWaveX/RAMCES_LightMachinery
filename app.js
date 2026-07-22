@@ -1425,6 +1425,25 @@ async function loadMasterLokasi() {
     }
 }
 
+function getParentLokasiName(idLokasi) {
+    if (!idLokasi) return '-';
+
+    // Ekstrak bagian kode di antara 'JR' dan titik '.'
+    // Misal: "JR1.5" -> "1", "JRIII.2" -> "III"
+    const match = idLokasi.match(/^JR([A-Z0-9]+)\./i);
+    if (!match) return '-';
+
+    const code = match[1].toUpperCase();
+
+    // Jika berupa angka Arab (1, 2, 3...) -> DAOP
+    if (/^\d+$/.test(code)) {
+        return `DAOP ${code}`;
+    }
+
+    // Jika berupa angka Romawi (I, II, III, IV...) -> DIVRE
+    return `DIVRE ${code}`;
+}
+
 async function loadMasterUpt() {
     const tbody = document.getElementById('table-upt');
     if (!tbody) return;
@@ -1438,7 +1457,7 @@ async function loadMasterUpt() {
     }
 
     try {
-        const res  = await apiFetch('/master/upt');
+        const res  = await apiFetch('/master/lokasi?tipe=upt');
         const data = await res.json();
 
         if (!data.length) {
@@ -1446,22 +1465,27 @@ async function loadMasterUpt() {
             return;
         }
 
-        tbody.innerHTML = data.map(u => `
-            <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50">
-                <td class="px-4 py-3 text-gray-400 text-xs font-mono">${u.id}</td>
-                <td class="px-4 py-3 font-semibold">${u.nama_upt}</td>
-                <td class="px-4 py-3 text-sm text-gray-500 font-mono">${u.kode_lokasi}</td>
-                <td class="px-4 py-3 text-right">
-                    <button onclick="window.openMasterEdit('upt',${u.id},'${u.nama_upt}','${u.kode_lokasi}')"
-                        class="text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 px-3 py-1 rounded-lg font-bold hover:bg-blue-200 transition">
-                        <i class="fas fa-edit mr-1"></i>Edit
-                    </button>
-                </td>
-            </tr>
-        `).join('');
-    } catch (e) {
-        tbody.innerHTML = `<tr><td colspan="4" class="px-4 py-6 text-center text-red-400 text-sm">Gagal memuat data.</td></tr>`;
-    }
+        tbody.innerHTML = data.map(u => {
+            // Panggil helper untuk mendapatkan nama Daop/Divre
+            const parentName = getParentLokasiName(u.id_lokasi);
+
+            return `
+                <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                    <td class="px-4 py-3 text-gray-400 text-xs font-mono">${u.id_lokasi}</td>
+                  <td class="px-4 py-3 font-semibold">${u.nama_lokasi}</td>
+                  <td class="px-4 py-3 text-sm text-gray-600 dark:text-gray-300 font-mono font-medium">${parentName}</td>
+                  <td class="px-4 py-3 text-right">
+                      <button onclick="window.openMasterEdit('upt', '${u.nama_lokasi}', '${u.nama_lokasi}', '${parentName}')"
+                          class="text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 px-3 py-1 rounded-lg font-bold hover:bg-blue-200 transition">
+                          <i class="fas fa-edit mr-1"></i>Edit
+                      </button>
+                  </td>
+              </tr>
+          `;
+      }).join('');
+  } catch (e) {
+      tbody.innerHTML = `<tr><td colspan="4" class="px-4 py-6 text-center text-red-400 text-sm">Gagal memuat data.</td></tr>`;
+  }
 }
 
 async function loadMasterUsers() {
@@ -1677,26 +1701,44 @@ window.openMasterEdit = (type, id, val1, val2, val3) => {
                 </select>
             </div>
         `;
-    } else if (type === 'upt') {
-        title.textContent = `Edit UPT #${id}`;
-        fields.innerHTML = `
-            <div>
-                <label class="block text-xs font-semibold mb-1">Nama UPT</label>
-                <input id="edit-field-nama" value="${val1}"
-                    class="consolas-input w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600">
-            </div>
-            <div>
-                <label class="block text-xs font-semibold mb-1">Lokasi</label>
-                <select id="edit-field-lokasi" class="w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600">
-                    ${lokasiData.map(l =>
-                        `<option value="${l.code}" ${val2 === l.code ? 'selected' : ''}>${l.name} (${l.code})</option>`
-                    ).join('')}
-                </select>
-            </div>
-        `;
-    }
+} else if (type === 'upt') {
+    title.textContent = `Edit UPT #${id}`;
 
-    document.getElementById('master-edit-modal').classList.remove('hidden');
+    // Helper untuk mencocokkan apakah lokasi ini adalah pilihan yang aktif
+    const isSelected = (l) => {
+        if (!val2) return false;
+        
+        const valUpper = String(val2).trim().toUpperCase();
+        const codeUpper = String(l.code || '').trim().toUpperCase();
+        const nameUpper = String(l.name || '').trim().toUpperCase();
+
+        // 1. Cocokkan persis kode atau nama
+        if (valUpper === codeUpper || valUpper === nameUpper) return true;
+
+        // 2. Ekstrak angka/romawi (Misal: "DAOP 1" -> "1", "D1" -> "1", "DIVRE I" -> "I")
+        const valClean = valUpper.replace(/^(DAOP|DIVRE|D)\s*/i, '');
+        const codeClean = codeUpper.replace(/^(DAOP|DIVRE|D)\s*/i, '');
+
+        return valClean !== '' && valClean === codeClean;
+    };
+
+    fields.innerHTML = `
+        <div>
+            <label class="block text-xs font-semibold mb-1">Nama UPT</label>
+            <input id="edit-field-nama" value="${val1}"
+                class="consolas-input w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600">
+        </div>
+        <div>
+            <label class="block text-xs font-semibold mb-1">Lokasi</label>
+            <select id="edit-field-lokasi" class="w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600">
+                ${lokasiData.map(l =>
+                    `<option value="${l.code}" ${isSelected(l) ? 'selected' : ''}>${l.name} (${l.code})</option>`
+                ).join('')}
+            </select>
+        </div>
+    `;
+  }    
+  document.getElementById('master-edit-modal').classList.remove('hidden');
 };
 
 document.getElementById('close-master-edit')?.addEventListener('click', () => {
