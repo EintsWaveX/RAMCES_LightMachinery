@@ -60,18 +60,28 @@ async function fetchConfig() {
     }
 }
 
+function getParentLokasiCode(idLokasi) {
+    if (!idLokasi) return null;
+    // "JR1.3" → "JR1", "JRIII.2" → "JRIII"
+    const match = idLokasi.match(/^(JR[A-Z0-9]+)\./i);
+    return match ? match[1].toUpperCase() : null;
+}
+
 async function fetchMasterData() {
     try {
-        const [alatRes, lokasiRes] = await Promise.all([
+        const [alatRes, lokasiRes, uptRes] = await Promise.all([
             fetch(`${API_BASE_URL}/master/alat`),
             fetch(`${API_BASE_URL}/master/lokasi`),
+            fetch(`${API_BASE_URL}/master/lokasi?tipe=upt`),
         ]);
 
         if (alatRes.ok)   alatKerjaData = (await alatRes.json()).map(a => ({ name: a.nama_alat, code: a.kode_alat }));
-        if (lokasiRes.ok) {
-            lokasiData = (await lokasiRes.json()).map(l => ({ name: l.nama_lokasi, code: l.id_lokasi }));
-            uptDatabase = lokasiData.map(l => ({ upt: l.name, lokasi: l.code }));
-        }
+        if (lokasiRes.ok) lokasiData    = (await lokasiRes.json()).map(l => ({ name: l.nama_lokasi, code: l.id_lokasi, tipe: l.tipe }));
+        if (uptRes.ok)    uptDatabase   = (await uptRes.json()).map(u => ({
+            upt:    u.id_lokasi,    // e.g. "JR1.1"
+            nama:   u.nama_lokasi,  // display name
+            lokasi: getParentLokasiCode(u.id_lokasi) // derive parent DAOP/DIVRE code
+        }));
 
         populateSelects();
     } catch (e) {
@@ -729,7 +739,7 @@ function setupEventListeners() {
         const matches = uptDatabase.filter(u => u.lokasi === locCode);
         if (matches.length > 0) {
             uptSelectEl.innerHTML = '<option value="">Pilih UPT...</option>' +
-                matches.map(m => `<option value="${m.upt}">${m.upt}</option>`).join('');
+                matches.map(m => `<option value="${m.upt}">${m.nama} (${m.upt})</option>`).join('');
         } else {
             uptSelectEl.innerHTML = `<option value="">Tidak ada UPT untuk lokasi ini</option>`;
             uptSelectEl.disabled = true;
@@ -1629,7 +1639,7 @@ async function loadMasterUpt() {
                     <td class="px-4 py-3 font-semibold">${u.nama_lokasi}</td>
                     <td class="px-4 py-3 text-sm text-gray-600 dark:text-gray-300 font-mono font-medium">${parentName}</td>
                     <td class="px-4 py-3 text-right">
-                        <button onclick="window.openMasterEdit('upt', '${u.nama_lokasi}', '${u.nama_lokasi}', '${parentName}')"
+                        <button onclick="window.openMasterEdit('upt', '${u.id_lokasi}', '${u.nama_lokasi}', '${getParentLokasiCode(u.id_lokasi)}')"
                             class="text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 px-3 py-1 rounded-lg font-bold hover:bg-blue-200 transition">
                             <i class="fas fa-edit mr-1"></i> Edit
                         </button>
@@ -1866,7 +1876,8 @@ window.openMasterEdit = (type, id, val1, val2, val3) => {
             </div>
         `;
     } else if (type === 'upt') {
-        title.textContent = `Edit UPT #${id}`;
+        // id=id_lokasi (e.g. "JR6.3"), val1=nama_lokasi, val2=parent code (e.g. "JR6"), val3=unused
+        title.textContent = `Edit UPT: ${val1}`;
         fields.innerHTML = `
             <div>
                 <label class="block text-xs font-semibold mb-1">Nama UPT</label>
@@ -1874,7 +1885,7 @@ window.openMasterEdit = (type, id, val1, val2, val3) => {
                     class="consolas-input w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600">
             </div>
             <div>
-                <label class="block text-xs font-semibold mb-1">Lokasi</label>
+                <label class="block text-xs font-semibold mb-1">Induk Lokasi (DAOP/DIVRE/BALAIYASA)</label>
                 <select id="edit-field-lokasi" class="w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600">
                     ${lokasiData.map(l =>
                         `<option value="${l.code}" ${val2 === l.code ? 'selected' : ''}>${l.name} (${l.code})</option>`
