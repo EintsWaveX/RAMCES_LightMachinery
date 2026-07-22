@@ -1,6 +1,13 @@
 import os
 from dotenv import load_dotenv
-from fastapi import FastAPI, Depends, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import (
+    FastAPI,
+    Depends,
+    HTTPException,
+    WebSocket,
+    WebSocketDisconnect,
+    Query,
+)
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.security import OAuth2PasswordBearer
@@ -8,6 +15,8 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session, joinedload
 from datetime import datetime, timedelta, date
 from typing import List, Optional
+from sqlalchemy import or_
+from sqlalchemy.orm import Session
 import bcrypt
 import jwt
 
@@ -15,6 +24,7 @@ import jwt
 import models
 from database import engine, SessionLocal
 from pydantic import BaseModel
+
 
 # Inisialisasi Database
 models.Base.metadata.create_all(bind=engine)
@@ -401,8 +411,25 @@ def delete_master_alat(kode: str, db: Session = Depends(get_db)):
 
 
 @app.get("/api/master/lokasi")
-def get_master_lokasi(db: Session = Depends(get_db)):
-    return db.query(models.Lokasi).all()
+def get_master_lokasi(tipe: List[str] = Query(None), db: Session = Depends(get_db)):
+    query = db.query(models.Lokasi)
+
+    if tipe:
+        # Menangani case-insensitive jika nilai tipe di DB bervariasi
+        conditions = [models.Lokasi.tipe.ilike(f"%{t}%") for t in tipe]
+        query = query.filter(or_(*conditions))
+    else:
+        # Default: Jika client tidak mengirimkan parameter tipe,
+        # langsung filter hanya DAOP, DIVRE, dan BALAI YASA
+        query = query.filter(
+            or_(
+                models.Lokasi.tipe.ilike("%DAOP%"),
+                models.Lokasi.tipe.ilike("%DIVRE%"),
+                models.Lokasi.tipe.ilike("%BALAIYASA%"),
+            )
+        )
+
+    return query.all()
 
 
 @app.post("/api/master/lokasi", dependencies=[Depends(require_role(["SUPER_ADMIN"]))])
@@ -472,7 +499,6 @@ async def create_aset(
         tanggal_pembelian=aset_in.tanggal_pembelian,
         sumber_pengadaan=aset_in.sumber_pengadaan,
         status_terakhir="SO",
-        is_afkir=False,
     )
     db.add(db_aset)
     db.commit()

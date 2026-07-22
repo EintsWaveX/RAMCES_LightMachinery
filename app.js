@@ -705,16 +705,30 @@ function setupEventListeners() {
 
     // Dynamic UPT select
     document.getElementById('edit-lokasi')?.addEventListener('change', (e) => {
-        const locCode   = e.target.value;
+        const locCode = e.target.value?.trim(); // Contoh: "D1" atau "DI", "DII", "DIII", "DIV"
         const uptSelect = document.getElementById('edit-upt');
-        if(!uptSelect) return;
-        const matches   = uptDatabase.filter(u => u.lokasi === locCode);
+        if (!uptSelect) return;
 
         uptSelect.innerHTML = '<option value="">Pilih UPT...</option>';
-        uptSelect.value = '';
 
+        if (!locCode) return;
+
+        // Ekstrak bagian kode setelah huruf "D" (misal: "D1" -> "1", "DIII" -> "III")
+        const codeSuffix = locCode.toUpperCase().startsWith('D') ? locCode.substring(1) : locCode;
+
+        // Buat prefix pencarian: "JR" + suffix + "." (misal: "JR1." atau "JRIII.")
+        const searchPrefix = `JR${codeSuffix}.`.toUpperCase();
+
+        // Filter UPT
+        const matches = uptDatabase.filter(u => {
+            if (!u.lokasi) return false;
+            return u.lokasi.toUpperCase().startsWith(searchPrefix);
+        });
+
+        // Render ke dropdown UPT
         if (matches.length > 0) {
-            uptSelect.innerHTML = '<option value="">Pilih UPT...</option>' + matches.map(m => `<option value="${m.upt}">${m.upt}</option>`).join('');
+            uptSelect.innerHTML = '<option value="">Pilih UPT...</option>' + 
+                matches.map(m => `<option value="${m.upt || m.lokasi}">${m.upt || m.lokasi}</option>`).join('');
         } else {
             uptSelect.innerHTML = `<option value="Lainnya">Lainnya / Tidak ada data UPT</option>`;
         }
@@ -747,7 +761,7 @@ function setupEventListeners() {
         const lokasi    = document.getElementById('in-lokasi').value;
 
         const yearStr = tanggal.split('-')[0].slice(-2);
-        const codeID  = `${alat}-${pengadaan}-${yearStr}-${unit}-${lokasi}`;
+        const codeID  = `89213`;
 
         const payload = {
             id_aset: codeID,
