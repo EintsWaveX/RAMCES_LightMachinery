@@ -1462,7 +1462,7 @@ async function loadMasterUsers() {
     if (!tbody) return;
 
     syncNewUserRegion();
-    
+
     const addFormWrap = document.getElementById('form-add-user');
     if (addFormWrap) {
         addFormWrap.classList.toggle('hidden', _currentRole !== 'SUPER_ADMIN');
@@ -1498,7 +1498,7 @@ async function loadMasterUsers() {
                 <td class="px-4 py-3 text-right">
                     <button onclick="window.openMasterEdit('users',${u.id_pengguna},'${u.username}','${u.role}','${u.id_lokasi || ''}')"
                         class="text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 px-3 py-1 rounded-lg font-bold hover:bg-blue-200 transition">
-                        <i class="fas fa-edit mr-1"></i>Edit
+                        <i class="fas fa-edit mr-1"></i> Edit
                     </button>
                 </td>
             </tr>
@@ -1531,7 +1531,7 @@ async function loadMasterAlat() {
                 <td class="px-4 py-3 text-right">
                     <button onclick="window.openMasterEdit('alat','${a.kode_alat}','${a.nama_alat}','','')"
                         class="text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 px-3 py-1 rounded-lg font-bold hover:bg-blue-200 transition">
-                        <i class="fas fa-edit mr-1"></i>Edit
+                        <i class="fas fa-edit mr-1"></i> Edit
                     </button>
                 </td>
             </tr>
@@ -1571,7 +1571,7 @@ async function loadMasterLokasi() {
                 <td class="px-4 py-3 text-right">
                     <button onclick="window.openMasterEdit('lokasi','${l.id_lokasi}','${l.nama_lokasi}','${l.tipe}')"
                         class="text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 px-3 py-1 rounded-lg font-bold hover:bg-blue-200 transition">
-                        <i class="fas fa-edit mr-1"></i>Edit
+                        <i class="fas fa-edit mr-1"></i> Edit
                     </button>
                 </td>
             </tr>
@@ -1579,6 +1579,25 @@ async function loadMasterLokasi() {
     } catch (e) {
         tbody.innerHTML = `<tr><td colspan="4" class="px-4 py-6 text-center text-red-400 text-sm">Gagal memuat data.</td></tr>`;
     }
+}
+
+function getParentLokasiName(idLokasi) {
+    if (!idLokasi) return '-';
+
+    // Ekstrak bagian kode di antara 'JR' dan titik '.'
+    // Misal: "JR1.5" -> "1", "JRIII.2" -> "III"
+    const match = idLokasi.match(/^JR([A-Z0-9]+)\./i);
+    if (!match) return '-';
+
+    const code = match[1].toUpperCase();
+
+    // Jika berupa angka Arab (1, 2, 3...) -> DAOP
+    if (/^\d+$/.test(code)) {
+        return `DAOP ${code}`;
+    }
+
+    // Jika berupa angka Romawi (I, II, III, IV...) -> DIVRE
+    return `DIVRE ${code}`;
 }
 
 async function loadMasterUpt() {
@@ -1594,7 +1613,7 @@ async function loadMasterUpt() {
     }
 
     try {
-        const res  = await apiFetch('/master/lokasi');
+        const res  = await apiFetch('/master/lokasi?tipe=upt');
         const data = await res.json();
 
         if (!data.length) {
@@ -1602,16 +1621,21 @@ async function loadMasterUpt() {
             return;
         }
 
-        tbody.innerHTML = data.map(u => `
-            <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50">
-                <td class="px-4 py-3 text-gray-400 text-xs font-mono">${u.id_lokasi}</td>
-                <td class="px-4 py-3 font-semibold">${u.nama_lokasi}</td>
-                <td class="px-4 py-3 text-sm text-gray-500 font-mono">${u.tipe}</td>
-                <td class="px-4 py-3 text-right">
-                    <span class="text-xs text-gray-500">Data lokasi</span>
-                </td>
-            </tr>
-        `).join('');
+        tbody.innerHTML = data.map(u => {
+            const parentName = getParentLokasiName(u.id_lokasi);
+            return `
+                <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                    <td class="px-4 py-3 text-gray-400 text-xs font-mono">${u.id_lokasi}</td>
+                    <td class="px-4 py-3 font-semibold">${u.nama_lokasi}</td>
+                    <td class="px-4 py-3 text-sm text-gray-600 dark:text-gray-300 font-mono font-medium">${parentName}</td>
+                    <td class="px-4 py-3 text-right">
+                        <button onclick="window.openMasterEdit('upt', '${u.nama_lokasi}', '${u.nama_lokasi}', '${parentName}')"
+                            class="text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 px-3 py-1 rounded-lg font-bold hover:bg-blue-200 transition">
+                            <i class="fas fa-edit mr-1"></i> Edit
+                        </button>
+                    </td>
+                </tr>`;
+        }).join('');
     } catch (e) {
         tbody.innerHTML = `<tr><td colspan="4" class="px-4 py-6 text-center text-red-400 text-sm">Gagal memuat data.</td></tr>`;
     }
