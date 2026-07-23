@@ -633,7 +633,7 @@
                 <button data-view="history"
                     class="nav-btn w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors text-sm">
                     <i class="fas fa-history w-4 text-center text-xs"></i>
-                    <span>Lihat Riwayat Aset</span>
+                    <span>Pantau Riwayat Aset</span>
                 </button>
                 <button data-view="laporan"
                     class="nav-btn w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors text-sm">
@@ -682,7 +682,7 @@
                 <!-- Center: page title -->
                 <div class="flex-1 text-center min-w-0">
                     <h1 class="text-base font-bold text-gray-800 dark:text-white truncate" id="topbar-page-title">Dashboard</h1>
-                    <p class="text-xs text-gray-400 dark:text-gray-500 truncate" id="topbar-page-subtitle">Pantau Kesiapan dan Kondisi Aset Alat Kerja</p>
+                    <p class="text-xs text-gray-500 dark:text-gray-300 truncate" id="topbar-page-subtitle">Pantau Kesiapan dan Kondisi Aset Alat Kerja</p>
                 </div>
             
                 <!-- Right: clock + WS status + bell + user -->
@@ -690,8 +690,8 @@
             
                     <!-- Live clock -->
                     <div class="hidden sm:block text-right">
-                        <p class="text-[14px] font-mono font-semibold text-gray-600 dark:text-gray-300" id="topbar-clock">--:--:--</p>
-                        <p class="text-[12px] text-gray-400 font-mono" id="topbar-date">---</p>
+                        <p class="text-[16px] font-mono font-semibold text-slate-700 dark:text-slate-300" id="topbar-clock">--:--:--</p>
+                        <p class="text-[12px] text-slate-600 dark:text-slate-200 font-mono" id="topbar-date">---</p>
                     </div>
             
                     <!-- WS status dot -->
@@ -706,9 +706,9 @@
                     <!-- Bell -->
                     <button
                         class="relative w-8 h-8 flex items-center justify-center rounded-lg text-gray-400 hover:text-kai-blue hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
-                        <i class="far fa-bell text-lg"></i>
+                        <i class="far fa-bell text-xl"></i>
                         <span
-                            class="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full border-2 border-white dark:border-gray-800"></span>
+                            class="absolute top-1 right-1 w-2 h-2 bg-red-600 rounded-full border-2 border-white dark:border-gray-800"></span>
                     </button>
             
                     <!-- User profile button -->
@@ -768,21 +768,21 @@
                             <p class="text-[10px] font-bold tracking-widest text-gray-400 uppercase mb-1">Total Aset Aktif</p>
                             <h3 class="text-4xl font-bold text-gray-800 dark:text-white" id="stat-total">—</h3>
                             <i
-                                class="fas fa-boxes absolute -bottom-4 -right-2 text-7xl text-gray-50 dark:text-gray-700/40 group-hover:scale-110 transition-transform"></i>
+                                class="fas fa-boxes absolute -bottom-4 -right-2 text-7xl text-slate-200 dark:text-slate-700/60 group-hover:scale-150 transition-transform"></i>
                         </div>
                         <div
                             class="bg-white dark:bg-gray-800 p-6 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm relative overflow-hidden group hover:border-green-400 transition-colors">
                             <p class="text-[10px] font-bold tracking-widest text-gray-400 uppercase mb-1">Siap Operasi (SO)</p>
                             <h3 class="text-4xl font-bold text-green-500" id="stat-so">—</h3>
                             <i
-                                class="fas fa-check-circle absolute -bottom-4 -right-2 text-7xl text-green-50 dark:text-green-900/20 group-hover:scale-110 transition-transform"></i>
+                                class="fas fa-check-circle absolute -bottom-4 -right-2 text-7xl text-green-100 dark:text-green-900/40 group-hover:scale-150 transition-transform"></i>
                         </div>
                         <div
                             class="bg-white dark:bg-gray-800 p-6 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm relative overflow-hidden group hover:border-red-400 transition-colors">
                             <p class="text-[10px] font-bold tracking-widest text-gray-400 uppercase mb-1">Tidak Siap (TSO)</p>
                             <h3 class="text-4xl font-bold text-red-500" id="stat-tso">—</h3>
                             <i
-                                class="fas fa-times-circle absolute -bottom-4 -right-2 text-7xl text-red-50 dark:text-red-900/20 group-hover:scale-110 transition-transform"></i>
+                                class="fas fa-times-circle absolute -bottom-4 -right-2 text-7xl text-red-100 dark:text-red-900/40 group-hover:scale-150 transition-transform"></i>
                         </div>
                     </div>
                 </section>
@@ -952,11 +952,11 @@
                             <div class="flex gap-3">
                                 <button type="button" id="btn-so" data-status="SO"
                                     class="status-btn is-idle flex-1 py-3 rounded-lg font-bold text-sm border-2 transition flex items-center justify-center gap-2">
-                                    <i class="fas fa-check-circle text-base"></i> SO — Siap Operasi
+                                    <i class="fas fa-check-circle text-xl"></i> SO — Siap Operasi
                                 </button>
                                 <button type="button" id="btn-tso" data-status="TSO"
                                     class="status-btn is-idle flex-1 py-3 rounded-lg font-bold text-sm border-2 transition flex items-center justify-center gap-2">
-                                    <i class="fas fa-times-circle text-base"></i> TSO — Tidak Siap
+                                    <i class="fas fa-times-circle text-xl"></i> TSO — Tidak Siap
                                 </button>
                             </div>
                             <input type="hidden" id="edit-kondisi">
@@ -1168,7 +1168,7 @@
                             <table class="w-full text-left text-xs whitespace-nowrap">
                                 <thead class="bg-gray-50 dark:bg-gray-700/50 text-gray-400">
                                     <tr>
-                                        <th class="px-3 py-3 font-semibold w-8">#</th>
+                                        <th class="px-3 py-3 font-semibold w-8">No.</th>
                                         <th class="px-3 py-3 font-semibold">Tanggal & Waktu</th>
                                         <th class="px-3 py-3 font-semibold">ID Aset</th>
                                         <th class="px-3 py-3 font-semibold">Kode Alat</th>
@@ -1438,7 +1438,7 @@
                 </div>
                 <button id="close-mutasi-modal"
                     class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition w-7 h-7 flex items-center justify-center rounded-full hover:bg-gray-100 dark:hover:bg-gray-700">
-                    <i class="fas fa-times text-sm"></i>
+                    <i class="fas fa-times text-xl"></i>
                 </button>
             </div>
             <div class="p-5 space-y-4">
@@ -1482,7 +1482,7 @@
                 </div>
                 <button id="close-qr-modal"
                     class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition w-7 h-7 flex items-center justify-center rounded-full hover:bg-gray-100 dark:hover:bg-gray-700">
-                    <i class="fas fa-times text-sm"></i>
+                    <i class="fas fa-times text-xl"></i>
                 </button>
             </div>
 
@@ -1541,7 +1541,7 @@
                 <h3 class="text-sm font-bold text-gray-800 dark:text-white" id="master-edit-title">Ubah Data</h3>
                 <button id="close-master-edit"
                     class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition w-7 h-7 flex items-center justify-center rounded-full hover:bg-gray-100 dark:hover:bg-gray-700">
-                    <i class="fas fa-times text-sm"></i>
+                    <i class="fas fa-times text-xl"></i>
                 </button>
             </div>
             <div class="p-5">
@@ -1552,7 +1552,7 @@
                         Simpan
                     </button>
                     <button id="btn-master-edit-delete"
-                        class="flex-1 bg-red-50 hover:bg-red-100 dark:bg-red-900/20 dark:hover:bg-red-900/40 text-red-600 dark:text-red-400 font-semibold py-2.5 rounded-lg transition text-sm">
+                        class="flex-1 bg-red-600 hover:bg-red-700 active:bg-red-800 text-white font-semibold py-2.5 rounded-lg transition text-sm">
                         Hapus
                     </button>
                 </div>
@@ -1595,7 +1595,7 @@
                 <h3 class="text-sm font-bold text-gray-800 dark:text-white">Pengurutan Data</h3>
                 <button id="close-sort-modal"
                     class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition w-7 h-7 flex items-center justify-center rounded-full hover:bg-gray-100 dark:hover:bg-gray-700">
-                    <i class="fas fa-times text-sm"></i>
+                    <i class="fas fa-times text-xl"></i>
                 </button>
             </div>
             <div class="p-5 space-y-4">
@@ -1632,7 +1632,7 @@
             <!-- Close — inside card -->
             <button id="close-profile-modal"
                 class="absolute top-3 right-3 w-7 h-7 flex items-center justify-center rounded-full text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition z-10">
-                <i class="fas fa-times text-sm"></i>
+                <i class="fas fa-times text-xl"></i>
             </button>
             <!-- Avatar + info -->
             <div class="px-6 pt-6 pb-5 flex flex-col items-center gap-3 text-center">
@@ -1646,8 +1646,8 @@
                         title="Status koneksi"></span>
                 </div>
                 <div>
-                    <p class="text-base font-bold text-gray-800 dark:text-white" id="profile-modal-username">—</p>
-                    <p class="text-xs text-gray-400 mt-0.5 tracking-widest uppercase" id="profile-modal-role">—</p>
+                    <p class="text-lg font-bold text-slate-800 dark:text-white" id="profile-modal-username">—</p>
+                    <p class="text-sm text-slate-600 dark:text-slate-200 mt-0.5 tracking-widest uppercase" id="profile-modal-role">—</p>
                 </div>
             </div>
     
@@ -1656,13 +1656,13 @@
             <!-- Actions -->
             <div class="p-3 space-y-1">
                 <button id="profile-logout-btn"
-                    class="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition text-sm font-semibold border border-transparent hover:border-red-200 dark:hover:border-red-800">
+                    class="w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-red-600 hover:bg-red-700 active:bg-red-800 text-white transition text-sm font-semibold border border-transparent hover:border-red-200 dark:hover:border-red-800">
                     <i class="fas fa-sign-out-alt w-4 text-center"></i>
                     <span>Keluar</span>
                 </button>
                 <!-- Delete account — hidden for SUPER_ADMIN -->
                 <button id="profile-delete-btn"
-                    class="hidden w-full flex items-center gap-3 px-4 py-3 rounded-xl text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition text-sm font-medium border border-transparent hover:border-red-200 dark:hover:border-red-800">
+                    class="hidden w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-red-600 hover:bg-red-700 active:bg-red-800 text-white transition text-sm font-medium border border-transparent hover:border-red-200 dark:hover:border-red-800">
                     <i class="fas fa-user-slash w-4 text-center"></i>
                     <span>Hapus Akun Saya</span>
                 </button>
@@ -1684,7 +1684,7 @@
                 </div>
                 <button id="close-import-alat-modal"
                     class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition w-7 h-7 flex items-center justify-center rounded-full hover:bg-gray-100 dark:hover:bg-gray-700">
-                    <i class="fas fa-times text-sm"></i>
+                    <i class="fas fa-times text-xl"></i>
                 </button>
             </div>
             <div class="p-5 space-y-4">
@@ -1719,7 +1719,7 @@
                 </div>
                 <button id="close-pulihkan-modal"
                     class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition w-7 h-7 flex items-center justify-center rounded-full hover:bg-gray-100 dark:hover:bg-gray-700">
-                    <i class="fas fa-times text-sm"></i>
+                    <i class="fas fa-times text-xl"></i>
                 </button>
             </div>
             <div class="p-5 space-y-3">

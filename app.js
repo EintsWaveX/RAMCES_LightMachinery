@@ -62,9 +62,16 @@ async function fetchConfig() {
 
 function getParentLokasiCode(idLokasi) {
     if (!idLokasi) return null;
-    // "JR1.3" → "JR1", "JRIII.2" → "JRIII"
-    const match = idLokasi.match(/^(JR[A-Z0-9]+)\./i);
-    return match ? match[1].toUpperCase() : null;
+    // "JR1.3" → "D1", "JR9.2" → "D9"
+    const arabMatch = idLokasi.match(/^JR(\d+)\./i);
+    if (arabMatch) return `D${arabMatch[1]}`;
+
+    // "JRI.2" → "VI", "JRIII.1" → "VIII", etc.
+    const romanMap = { 'I': 'VI', 'II': 'VII', 'III': 'VIII', 'IV': 'VIV' };
+    const romanMatch = idLokasi.match(/^JR(I{1,3}V?|VI{0,3}|IV)\./i);
+    if (romanMatch) return romanMap[romanMatch[1].toUpperCase()] ?? null;
+
+    return null;
 }
 
 async function fetchMasterData() {
@@ -78,9 +85,9 @@ async function fetchMasterData() {
         if (alatRes.ok)   alatKerjaData = (await alatRes.json()).map(a => ({ name: a.nama_alat, code: a.kode_alat }));
         if (lokasiRes.ok) lokasiData    = (await lokasiRes.json()).map(l => ({ name: l.nama_lokasi, code: l.id_lokasi, tipe: l.tipe }));
         if (uptRes.ok)    uptDatabase   = (await uptRes.json()).map(u => ({
-            upt:    u.id_lokasi,    // e.g. "JR1.1"
-            nama:   u.nama_lokasi,  // display name
-            lokasi: getParentLokasiCode(u.id_lokasi) // derive parent DAOP/DIVRE code
+            upt:    u.id_lokasi,       // e.g. "JR1.3"
+            nama:   u.nama_lokasi,     // e.g. "JR 1.3 Pasarsenen"
+            lokasi: getParentLokasiCode(u.id_lokasi)  // e.g. "D1"
         }));
 
         populateSelects();
@@ -446,15 +453,15 @@ function switchView(viewId) {
     });
 
     const pageMeta = {
-        dashboard:        { title: 'Dashboard',            subtitle: 'Pantau kesiapan dan kondisi aset alat kerja' },
-        input:            { title: 'Tambah Alat Kerja',    subtitle: 'Registrasi aset alat kerja baru ke dalam sistem' },
-        database:         { title: 'Data Aset',            subtitle: 'Daftar seluruh aset alat kerja yang terdaftar' },
-        history:          { title: 'Riwayat Aset',         subtitle: 'Riwayat perbaikan dan mutasi aset' },
-        'history-detail': { title: 'Detail Riwayat',       subtitle: 'Rincian riwayat perbaikan dan mutasi aset' },
-        edit:             { title: 'Pembaruan Kondisi',    subtitle: 'Perbarui status kondisi aset alat kerja' },
-        laporan:          { title: 'Laporan & Ekspor',     subtitle: 'Filter dan ekspor data aset ke Excel atau PDF' },
-        masterdata:       { title: 'Pusat Data',           subtitle: 'Kelola data master sistem (Super Admin)' },
-        afkir:            { title: 'Pulihkan Aset Afkir',  subtitle: 'Lihat dan pulihkan aset yang telah di-afkir' },
+        dashboard:        { title: 'Dashboard',             subtitle: 'Pantau Kesiapan dan Kondisi Aset Alat Kerja' },
+        input:            { title: 'Tambah Alat Kerja',     subtitle: 'Registrasi Aset Alat Kerja Baru ke Dalam Sistem' },
+        database:         { title: 'Kelola Data Aset',      subtitle: 'Daftar Seluruh Aset Alat Kerja yang Terdaftar' },
+        history:          { title: 'Pantau Riwayat Aset',   subtitle: 'Riwayat Perbaikan dan Mutasi Aset' },
+        'history-detail': { title: 'Detail Riwayat Aset',   subtitle: 'Rincian Riwayat Perbaikan dan Mutasi Aset' },
+        edit:             { title: 'Pembaruan Kondisi',     subtitle: 'Perbarui Status Kondisi Aset Alat Kerja' },
+        laporan:          { title: 'Proses Laporan',        subtitle: 'Filter dan Ekspor Data Aset ke Excel atau PDF' },
+        masterdata:       { title: 'Pusat Data',            subtitle: 'Kelola Data Master Sistem (SUPER ADMIN)' },
+        afkir:            { title: 'Pulihkan Aset Afkir',   subtitle: 'Lihat dan Pulihkan Aset yang Telah di-Afkir' },
     };
     const meta = pageMeta[viewId];
     if (meta) {
@@ -727,7 +734,7 @@ function setupEventListeners() {
     function applyUptSelect(locCode, uptSelectEl) {
         if (!uptSelectEl) return;
         const loc = lokasiData.find(l => l.code === locCode);
-        const isBalaiyasa = loc?.name?.toUpperCase().includes('BALAIYASA') || loc?.tipe?.toUpperCase() === 'BALAIYASA';
+        const isBalaiyasa = loc?.tipe?.toUpperCase() === 'BALAIYASA';
 
         if (isBalaiyasa) {
             uptSelectEl.innerHTML = `<option value="">Belum ada UPT untuk lokasi Balaiyasa</option>`;
@@ -739,7 +746,7 @@ function setupEventListeners() {
         const matches = uptDatabase.filter(u => u.lokasi === locCode);
         if (matches.length > 0) {
             uptSelectEl.innerHTML = '<option value="">Pilih UPT...</option>' +
-                matches.map(m => `<option value="${m.upt}">${m.nama} (${m.upt})</option>`).join('');
+                matches.map(m => `<option value="${m.upt}">${m.nama}</option>`).join('');
         } else {
             uptSelectEl.innerHTML = `<option value="">Tidak ada UPT untuk lokasi ini</option>`;
             uptSelectEl.disabled = true;
@@ -1281,8 +1288,10 @@ function renderDbCards() {
                     <p class="text-xs text-gray-400 mt-0.5">${item.id_lokasi}</p>
                 </div>
                 <div class="mt-4 space-y-2">
-                    <!-- Row 1 desktop: Perbarui + Mutasi + QR | mobile: Perbarui + Mutasi -->
-                    <div class="grid grid-cols-2 md:grid-cols-3 gap-2">
+                    <!-- Desktop (md+): 3 cols — Perbarui | Mutasi | QR -->
+                    <!-- Tablet (sm): 2 cols row1 + 1 col row2 -->
+                    <!-- Mobile: 1 col each -->
+                    <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
                         <button onclick="window.openEdit('${item.id_aset}')"
                             class="flex items-center justify-center gap-1.5 px-3 py-2.5 bg-kai-blue hover:bg-blue-800 active:bg-blue-900 text-white font-semibold rounded-lg transition text-sm shadow-sm">
                             <i class="fas fa-edit text-sm"></i> Perbarui
@@ -1291,22 +1300,15 @@ function renderDbCards() {
                         <button onclick="window.openMutasiModal('${item.id_aset}')"
                             class="flex items-center justify-center gap-1.5 px-3 py-2.5 bg-kai-orange hover:bg-orange-600 active:bg-orange-700 text-white font-semibold rounded-lg transition text-sm shadow-sm">
                             <i class="fas fa-exchange-alt text-sm"></i> Mutasi
-                        </button>` : `<div></div>`}
-                        <!-- QR: hidden on mobile (shown in row 2 below) -->
+                        </button>` : `<div class="hidden md:block"></div>`}
                         <button onclick="window.openQrModal('${item.id_aset}')"
-                            class="hidden md:flex items-center justify-center gap-1.5 px-3 py-2.5 bg-violet-600 dark:bg-violet-700 hover:bg-violet-400 dark:hover:bg-violet-600 text-white font-semibold rounded-lg transition text-sm">
-                            <i class="fas fa-qrcode text-sm"></i> QR
+                            class="flex items-center justify-center gap-1.5 px-3 py-2.5 bg-violet-600 dark:bg-violet-700 hover:bg-violet-500 dark:hover:bg-violet-600 text-white font-semibold rounded-lg transition text-sm shadow-sm sm:col-span-2 md:col-span-1">
+                            <i class="fas fa-qrcode text-sm"></i> <span class="sm:inline md:hidden">Pindai / Cetak </span>QR
                         </button>
                     </div>
-                    <!-- Row 2 mobile: QR only -->
-                    <button onclick="window.openQrModal('${item.id_aset}')"
-                        class="md:hidden w-full flex items-center justify-center gap-1.5 px-3 py-2 bg-violet-600 dark:bg-violet-700 hover:bg-violet-200 dark:hover:bg-violet-600 text-white font-semibold rounded-lg transition text-sm">
-                        <i class="fas fa-qrcode text-sm"></i> Pindai / Cetak QR
-                    </button>
-                    <!-- Row 3: Delete (admin only) -->
                     ${canDelete ? `
                     <button onclick="window.deleteAset('${item.id_aset}')"
-                        class="w-full flex items-center justify-center gap-1.5 px-3 py-2 bg-red-50 dark:bg-red-900/20 hover:bg-red-100 dark:hover:bg-red-900/40 text-red-600 dark:text-red-400 font-semibold rounded-lg transition text-sm border border-red-200 dark:border-red-800">
+                        class="w-full flex items-center justify-center gap-1.5 px-3 py-2 bg-red-600 hover:bg-red-700 active:bg-red-800 text-white font-semibold rounded-lg transition text-sm">
                         <i class="fas fa-trash-alt text-sm"></i> Hapus Aset
                     </button>` : ''}
                 </div>
@@ -1350,26 +1352,35 @@ function renderHistoryCards() {
                              r.latest_kondisi === 'TSO' ? 'text-red-500'   : 'text-blue-400';
 
         return `
-        <div class="bg-white dark:bg-gray-800 p-5 rounded-xl shadow border border-gray-200 dark:border-gray-700 flex flex-col gap-3">
-            <div class="flex justify-between items-start border-b dark:border-gray-700 pb-3">
-                <div>
-                    <h3 class="text-base font-bold font-mono text-kai-blue dark:text-blue-400">${item.id_aset}</h3>
-                    <p class="text-xs text-gray-500 dark:text-gray-200 mt-0.5">${item.kode_alat} — ${item.id_lokasi}</p>
+            <div class="bg-white dark:bg-gray-800 p-5 rounded-xl shadow border border-gray-200 dark:border-gray-700 flex flex-col justify-between">
+                <div class="flex flex-col gap-3">
+                    <div class="flex justify-between items-start border-b dark:border-gray-700 pb-3">
+                        <div>
+                            <h3 class="text-base font-bold font-mono text-kai-blue dark:text-blue-400">${item.id_aset}</h3>
+                            <p class="text-xs text-gray-500 dark:text-gray-200 mt-0.5">${item.kode_alat} — ${item.id_lokasi}</p>
+                        </div>
+                        <span class="text-sm font-bold ${statusColor} shrink-0"><i class="fas fa-circle text-xs mr-1"></i>${item.status_terakhir}</span>
+                    </div>
+                    ${r.latest_date ? `
+                    <div class="space-y-1 text-xs text-gray-600 dark:text-gray-400">
+                        <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">Perbaruan Terakhir</span><span class="font-mono">${formatUtcToLocal(r.latest_date)}</span></div>
+                        <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">UPT Pengirim</span><span>${r.latest_upt || '—'}</span></div>
+                        <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">Petugas</span><span>${r.latest_teknisi || '—'}</span></div>
+                        <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">Keterangan</span><span class="italic">${r.latest_keterangan || '—'}</span></div>
+                    </div>` : `
+                    <div class="space-y-1 text-xs text-gray-600 dark:text-gray-400">
+                        <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">Perbaruan Terakhir</span><span>—</span></div>
+                        <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">UPT Pengirim</span><span>—</span></div>
+                        <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">Petugas</span><span>—</span></div>
+                        <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">Keterangan</span><span>—</span></div>
+                    </div>`}
                 </div>
-                <span class="text-sm font-bold ${statusColor} shrink-0"><i class="fas fa-circle text-xs mr-1"></i>${item.status_terakhir}</span>
+                <button onclick="window.openHistoryDetail('${item.id_aset}', 'repair')"
+                    class="mt-4 w-full flex items-center justify-center gap-2 px-3 py-2.5 bg-kai-blue hover:bg-blue-800 active:bg-blue-900 text-white font-semibold rounded-lg transition text-sm shadow-sm">
+                    <i class="fas fa-list text-sm"></i> Lihat Riwayat Lengkap
+                </button>
             </div>
-            ${r.latest_date ? `
-            <div class="space-y-1 text-xs text-gray-600 dark:text-gray-400">
-                <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">Perbaruan Terakhir</span><span class="font-mono">${formatUtcToLocal(r.latest_date)}</span></div>
-                <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">UPT Pengirim</span><span>${r.latest_upt || '—'}</span></div>
-                <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">Petugas</span><span>${r.latest_teknisi || '—'}</span></div>
-                <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">Keterangan</span><span class="italic">${r.latest_keterangan || '—'}</span></div>
-            </div>` : `<p class="text-xs text-gray-400 italic">Belum ada riwayat perbaikan.</p>`}
-            <button onclick="window.openHistoryDetail('${item.id_aset}', 'repair')"
-                class="w-full flex items-center justify-center gap-2 px-3 py-2.5 bg-kai-blue hover:bg-blue-800 active:bg-blue-900 text-white font-semibold rounded-lg transition text-sm shadow-sm">
-                <i class="fas fa-list text-sm"></i> Lihat Riwayat Lengkap
-            </button>
-        </div>`;
+        `;
     }).join('');
 }
 
@@ -1397,27 +1408,30 @@ function renderMutasiCards() {
             : `<span class="bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 text-xs px-2 py-0.5 rounded-full font-bold">⟳ Belum Kembali</span>`;
 
         return `
-        <div class="bg-white dark:bg-gray-800 p-5 rounded-xl shadow border border-gray-200 dark:border-gray-700 flex flex-col gap-3">
-            <div class="flex justify-between items-start border-b dark:border-gray-700 pb-3">
-                <div>
-                    <h3 class="text-base font-bold font-mono text-kai-orange dark:text-orange-400">${item.id_aset}</h3>
-                    <p class="text-xs text-gray-500 dark:text-gray-200 mt-0.5">${item.kode_alat} — ${item.id_lokasi}</p>
+            <div class="bg-white dark:bg-gray-800 p-5 rounded-xl shadow border border-gray-200 dark:border-gray-700 flex flex-col justify-between">
+                <div class="flex flex-col gap-3">
+                    <div class="flex justify-between items-start border-b dark:border-gray-700 pb-3">
+                        <div>
+                            <h3 class="text-base font-bold font-mono text-kai-orange dark:text-orange-400">${item.id_aset}</h3>
+                            <p class="text-xs text-gray-500 dark:text-gray-200 mt-0.5">${item.kode_alat} — ${item.id_lokasi}</p>
+                        </div>
+                        ${returnedBadge}
+                    </div>
+                    <div class="space-y-1 text-xs text-gray-600 dark:text-gray-400">
+                        <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">Lokasi Asal</span><span class="font-semibold text-gray-700 dark:text-gray-200">${m.original_lokasi || '—'}</span></div>
+                        <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">Lokasi Kini</span><span class="font-semibold">${item.id_lokasi || '—'}</span></div>
+                        <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">Tanggal Mutasi</span><span class="font-mono">${m.latest_date ? formatUtcToLocal(m.latest_date) : '—'}</span></div>
+                        <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">Tujuan</span><span>${m.latest_lokasi_tuju || '—'}</span></div>
+                        <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">Alasan</span><span class="italic">${m.latest_alasan || '—'}</span></div>
+                        <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">Total Mutasi</span><span class="font-bold">${m.count}×</span></div>
+                    </div>
                 </div>
-                ${returnedBadge}
+                <button onclick="window.openHistoryDetail('${item.id_aset}', 'mutasi')"
+                    class="mt-4 w-full flex items-center justify-center gap-2 px-3 py-2.5 bg-kai-orange hover:bg-orange-600 active:bg-orange-700 text-white font-semibold rounded-lg transition text-sm shadow-sm">
+                    <i class="fas fa-route text-sm"></i> Lihat Timeline Mutasi
+                </button>
             </div>
-            <div class="space-y-1 text-xs text-gray-600 dark:text-gray-400">
-                <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">Lokasi Asal</span><span class="font-semibold text-gray-700 dark:text-gray-200">${m.original_lokasi}</span></div>
-                <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">Lokasi Kini</span><span class="font-semibold">${item.id_lokasi}</span></div>
-                <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">Tanggal Mutasi</span><span class="font-mono">${formatUtcToLocal(m.latest_date)}</span></div>
-                <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">Tujuan</span><span>${m.latest_lokasi_tuju || '—'}</span></div>
-                <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">Alasan</span><span class="italic">${m.latest_alasan || '—'}</span></div>
-                <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">Total Mutasi</span><span class="font-bold">${m.count}×</span></div>
-            </div>
-            <button onclick="window.openHistoryDetail('${item.id_aset}', 'mutasi')"
-                class="w-full flex items-center justify-center gap-2 px-3 py-2.5 bg-kai-orange hover:bg-orange-600 active:bg-orange-700 text-white font-semibold rounded-lg transition text-sm shadow-sm">
-                <i class="fas fa-route text-sm"></i> Lihat Timeline Mutasi
-            </button>
-        </div>`;
+        `;
     }).join('');
 }
 
@@ -1639,7 +1653,7 @@ async function loadMasterUpt() {
                     <td class="px-4 py-3 font-semibold">${u.nama_lokasi}</td>
                     <td class="px-4 py-3 text-sm text-gray-600 dark:text-gray-300 font-mono font-medium">${parentName}</td>
                     <td class="px-4 py-3 text-right">
-                        <button onclick="window.openMasterEdit('upt', '${u.id_lokasi}', '${u.nama_lokasi}', '${getParentLokasiCode(u.id_lokasi)}')"
+                        <button onclick="window.openMasterEdit('upt', '${u.id_lokasi}', '${u.nama_lokasi}', '${getParentLokasiCode(u.id_lokasi) ?? ''}')"
                             class="text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 px-3 py-1 rounded-lg font-bold hover:bg-blue-200 transition">
                             <i class="fas fa-edit mr-1"></i> Edit
                         </button>
@@ -1888,7 +1902,7 @@ window.openMasterEdit = (type, id, val1, val2, val3) => {
                 <label class="block text-xs font-semibold mb-1">Induk Lokasi (DAOP/DIVRE/BALAIYASA)</label>
                 <select id="edit-field-lokasi" class="w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600">
                     ${lokasiData.map(l =>
-                        `<option value="${l.code}" ${val2 === l.code ? 'selected' : ''}>${l.name} (${l.code})</option>`
+                        `<option value="${l.code}" ${val2 === l.code ? 'selected' : ''}>${l.name}</option>`
                     ).join('')}
                 </select>
             </div>
