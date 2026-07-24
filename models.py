@@ -45,16 +45,16 @@ class Pengguna(Base):
 class Aset(Base):
     __tablename__ = "aset"
     id_aset = Column(String(50), primary_key=True, index=True)
-    kode_alat = Column(String(10), ForeignKey("kategori_alat.kode_alat"))
+    kode_alat = Column(String(10), ForeignKey("kategori_alat.kode_alat"), nullable=False)
     id_lokasi = Column(String(10), ForeignKey("lokasi.id_lokasi"))
     tanggal_pembelian = Column(Date, nullable=False)
     sumber_pengadaan = Column(String(50), nullable=False)
-    status_terakhir = Column(String(20), server_default="SO")
+    status_terakhir = Column(String(20), server_default="SO", index=True)
     # HAPUS BARIS is_afkir DISINI
     waktu_update = Column(
         DateTime,
         server_default=text("CURRENT_TIMESTAMP"),
-        onupdate=datetime.now(timezone.utc),
+        onupdate=text("CURRENT_TIMESTAMP"),
     )
 
     kategori = relationship("KategoriAlat", back_populates="asets")

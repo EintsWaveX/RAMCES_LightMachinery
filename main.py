@@ -1,4 +1,6 @@
+import asyncio
 import os
+import re
 from dotenv import load_dotenv
 from fastapi import (
     FastAPI,
@@ -24,6 +26,14 @@ import jwt
 import models
 from database import engine, SessionLocal
 from pydantic import BaseModel
+
+
+def parse_ctx_upt_from_keterangan(keterangan: Optional[str]) -> str:
+    """Extract [UPT: value] from keterangan context tags."""
+    if not keterangan:
+        return "—"
+    match = re.search(r'\[UPT:\s*([^\]]+)\]', keterangan)
+    return match.group(1).strip() if match else "—"
 
 
 # Inisialisasi Database
@@ -62,6 +72,11 @@ class UserCreate(BaseModel):
     role: str
     id_lokasi: Optional[str] = None
 
+
+class UserUpdate(BaseModel):
+    role: str
+    id_lokasi: Optional[str] = None
+    
 
 class MasterAlatCreate(BaseModel):
     kode_alat: str
@@ -110,17 +125,27 @@ def get_db():
 class ConnectionManager:
     def __init__(self):
         self.active_connections: List[WebSocket] = []
+        self._lock = asyncio.Lock()
 
     async def connect(self, websocket: WebSocket):
         await websocket.accept()
-        self.active_connections.append(websocket)
+        async with self._lock:
+            self.active_connections.append(websocket)
 
-    def disconnect(self, websocket: WebSocket):
-        self.active_connections.remove(websocket)
+    async def disconnect(self, websocket: WebSocket):
+        async with self._lock:
+            if websocket in self.active_connections:
+                self.active_connections.remove(websocket)
 
     async def broadcast(self, message: str):
-        for connection in self.active_connections:
-            await connection.send_text(message)
+        async with self._lock:
+            connections = list(self.active_connections)
+        for connection in connections:
+            try:
+                await connection.send_text(message)
+            except Exception:
+                # Client disconnected between copy and send
+                pass
 
 
 manager = ConnectionManager()
@@ -288,7 +313,7 @@ def get_all_users(
 @app.put("/api/users/{user_id}")
 def update_user(
     user_id: int,
-    data: UserCreate,
+    data: UserUpdate,
     db: Session = Depends(get_db),
     current_user: models.Pengguna = Depends(get_current_user),
 ):
@@ -362,7 +387,7 @@ async def websocket_endpoint(websocket: WebSocket):
             if data == "ping":
                 await websocket.send_text("pong")
     except WebSocketDisconnect:
-        manager.disconnect(websocket)
+        await manager.disconnect(websocket)
 
 
 # ==================================================================
@@ -413,22 +438,13 @@ def delete_master_alat(kode: str, db: Session = Depends(get_db)):
 @app.get("/api/master/lokasi")
 def get_master_lokasi(tipe: List[str] = Query(None), db: Session = Depends(get_db)):
     query = db.query(models.Lokasi)
-
     if tipe:
-        # Menangani case-insensitive jika nilai tipe di DB bervariasi
-        conditions = [models.Lokasi.tipe.ilike(f"%{t}%") for t in tipe]
-        query = query.filter(or_(*conditions))
-    else:
-        # Default: Jika client tidak mengirimkan parameter tipe,
-        # langsung filter hanya DAOP, DIVRE, dan BALAI YASA
-        query = query.filter(
-            or_(
-                models.Lokasi.tipe.ilike("%DAOP%"),
-                models.Lokasi.tipe.ilike("%DIVRE%"),
-                models.Lokasi.tipe.ilike("%BALAIYASA%"),
-            )
-        )
-
+        # Exact match for known types, case-insensitive
+        valid_types = {"PUSAT", "DAOP", "DIVRE", "BALAIYASA", "UPT"}
+        filtered_types = [t.upper() for t in tipe if t.upper() in valid_types]
+        if filtered_types:
+            query = query.filter(models.Lokasi.tipe.in_(filtered_types))
+    # return query.order_by(models.Lokasi.tipe, models.Lokasi.nama_lokasi).all()
     return query.all()
 
 
@@ -436,6 +452,10 @@ def get_master_lokasi(tipe: List[str] = Query(None), db: Session = Depends(get_d
 def create_master_lokasi(data: LokasiCreate, db: Session = Depends(get_db)):
     if db.query(models.Lokasi).filter_by(id_lokasi=data.id_lokasi).first():
         raise HTTPException(status_code=400, detail="ID Lokasi sudah ada.")
+    if db.query(models.Lokasi).filter(
+        models.Lokasi.nama_lokasi.ilike(data.nama_lokasi)
+    ).first():
+        raise HTTPException(status_code=400, detail="Nama lokasi sudah digunakan.")
     db.add(
         models.Lokasi(
             id_lokasi=data.id_lokasi, nama_lokasi=data.nama_lokasi, tipe=data.tipe
@@ -491,6 +511,10 @@ async def create_aset(
 ):
     if db.query(models.Aset).filter_by(id_aset=aset_in.id_aset).first():
         raise HTTPException(status_code=400, detail="ID Aset sudah terdaftar.")
+    
+    # Validate kode_alat exists
+    if not db.query(models.KategoriAlat).filter_by(kode_alat=aset_in.kode_alat).first():
+        raise HTTPException(status_code=400, detail=f"Kode alat '{aset_in.kode_alat}' tidak ditemukan.")
 
     db_aset = models.Aset(
         id_aset=aset_in.id_aset,
@@ -520,12 +544,14 @@ def get_all_aset(
 
     return [
         {
-            "id_aset": a.id_aset,
-            "kode_alat": a.kategori.nama_alat if a.kategori else a.kode_alat,
-            "id_lokasi": a.lokasi_ref.nama_lokasi if a.lokasi_ref else a.id_lokasi,
-            "status_terakhir": a.status_terakhir,
-            "sumber_pengadaan": a.sumber_pengadaan,
-            "tanggal_pembelian": a.tanggal_pembelian,
+            "id_aset":           a.id_aset,
+            "kode_alat":         a.kode_alat,
+            "kode_alat_name":    a.kategori.nama_alat if a.kategori else a.kode_alat,
+            "id_lokasi":         a.id_lokasi,
+            "id_lokasi_name":    a.lokasi_ref.nama_lokasi if a.lokasi_ref else a.id_lokasi,
+            "status_terakhir":   a.status_terakhir,
+            "sumber_pengadaan":  a.sumber_pengadaan,
+            "tanggal_pembelian": str(a.tanggal_pembelian) if a.tanggal_pembelian else None,
         }
         for a in asets
     ]
@@ -627,8 +653,8 @@ async def submit_mutasi(
     if not aset:
         raise HTTPException(status_code=404, detail="Aset tidak ditemukan.")
 
-    if aset.id_lokasi == mutasi.id_lokasi_tujuan:
-        raise HTTPException(status_code=400, detail="Lokasi tujuan sama dengan asal.")
+    # if aset.id_lokasi == mutasi.id_lokasi_tujuan:
+    #     raise HTTPException(status_code=400, detail="Lokasi tujuan sama dengan asal.")
 
     if (
         current_user.role == "ADMIN_WILAYAH"
@@ -698,18 +724,27 @@ def get_mutasi_by_aset(
     )
 
     aset = db.query(models.Aset).filter_by(id_aset=id_aset).first()
-    original_lokasi = (
-        mutasi[0].id_lokasi_asal if mutasi else (aset.id_lokasi if aset else "—")
-    )
+    # original_lokasi should be the parent region code, not UPT code
+    # For mutations, use the asal lokasi; for no mutations, use asset's current parent
+    if mutasi:
+        original_lokasi = mutasi[0].id_lokasi_asal
+    elif aset:
+        # Try to get parent from UPT code, fallback to asset's lokasi
+        # This requires a helper or we just send the code and let frontend resolve
+        original_lokasi = aset.id_lokasi
+    else:
+        original_lokasi = "—"
 
     results = []
     for m in mutasi:
         results.append(
             {
-                "id_lokasi_asal": m.lokasi_asal.nama_lokasi
+                "id_lokasi_asal": m.id_lokasi_asal,
+                "id_lokasi_asal_name": m.lokasi_asal.nama_lokasi
                 if m.lokasi_asal
                 else m.id_lokasi_asal,
-                "id_lokasi_tujuan": m.lokasi_tujuan.nama_lokasi
+                "id_lokasi_tujuan": m.id_lokasi_tujuan,
+                "id_lokasi_tujuan_name": m.lokasi_tujuan.nama_lokasi
                 if m.lokasi_tujuan
                 else m.id_lokasi_tujuan,
                 "waktu_mutasi": m.waktu_mutasi.strftime("%Y-%m-%d %H:%M:%S")
@@ -725,8 +760,12 @@ def get_mutasi_by_aset(
     return {
         "mutasi": results,
         "original_lokasi": original_lokasi,
+        "original_lokasi_name": aset.lokasi_ref.nama_lokasi
+        if aset and aset.lokasi_ref
+        else original_lokasi,
         "sudah_kembali": aset.id_lokasi == original_lokasi if aset else False,
-        "lokasi_sekarang": aset.lokasi_ref.nama_lokasi
+        "lokasi_sekarang": aset.id_lokasi if aset else "—",
+        "lokasi_sekarang_name": aset.lokasi_ref.nama_lokasi
         if aset and aset.lokasi_ref
         else "—",
     }
@@ -737,42 +776,98 @@ def get_history_summary(
     db: Session = Depends(get_db),
     current_user: models.Pengguna = Depends(get_current_user),
 ):
-    asets = db.query(models.Aset).filter(models.Aset.status_terakhir != "AFKIR").all()
+    from sqlalchemy.orm import joinedload
+    from sqlalchemy import func
+    
+    # Batch load all assets with their relationships
+    asets = (
+        db.query(models.Aset)
+        .options(
+            joinedload(models.Aset.kategori),
+            joinedload(models.Aset.lokasi_ref)
+        )
+        .filter(models.Aset.status_terakhir != "AFKIR")
+        .all()
+    )
+    
+    if not asets:
+        return []
+    
+    aset_ids = [a.id_aset for a in asets]
+    
+    # Batch load latest repair per asset using window function approach
+    latest_repair_subq = (
+        db.query(
+            models.RiwayatKondisi.id_aset,
+            models.RiwayatKondisi.kondisi,
+            models.RiwayatKondisi.keterangan,
+            models.RiwayatKondisi.waktu_lapor,
+            models.RiwayatKondisi.id_pengguna,
+            func.row_number().over(
+                partition_by=models.RiwayatKondisi.id_aset,
+                order_by=models.RiwayatKondisi.waktu_lapor.desc()
+            ).label("rn")
+        )
+        .filter(models.RiwayatKondisi.id_aset.in_(aset_ids))
+        .subquery()
+    )
+    
+    latest_repairs = (
+        db.query(latest_repair_subq)
+        .filter(latest_repair_subq.c.rn == 1)
+        .all()
+    )
+    repair_map = {r.id_aset: r for r in latest_repairs}
+    
+    # Batch load all mutasi for these assets
+    all_mutasi = (
+        db.query(models.RiwayatMutasi)
+        .options(
+            joinedload(models.RiwayatMutasi.lokasi_asal),
+            joinedload(models.RiwayatMutasi.lokasi_tujuan),
+            joinedload(models.RiwayatMutasi.pengguna_ref)
+        )
+        .filter(models.RiwayatMutasi.id_aset.in_(aset_ids))
+        .order_by(models.RiwayatMutasi.waktu_mutasi.asc())
+        .all()
+    )
+    
+    # Group mutasi by asset
+    mutasi_map = {}
+    for m in all_mutasi:
+        if m.id_aset not in mutasi_map:
+            mutasi_map[m.id_aset] = []
+        mutasi_map[m.id_aset].append(m)
+    
+    # Batch load pengguna for repairs
+    pengguna_ids = list(set(r.id_pengguna for r in latest_repairs if r.id_pengguna))
+    pengguna_map = {}
+    if pengguna_ids:
+        penggunas = db.query(models.Pengguna).filter(models.Pengguna.id_pengguna.in_(pengguna_ids)).all()
+        pengguna_map = {p.id_pengguna: p for p in penggunas}
+    
     results = []
-
     for a in asets:
-        latest_repair = (
-            db.query(models.RiwayatKondisi)
-            .filter_by(id_aset=a.id_aset)
-            .order_by(models.RiwayatKondisi.waktu_lapor.desc())
-            .first()
-        )
-        all_mutasi = (
-            db.query(models.RiwayatMutasi)
-            .filter_by(id_aset=a.id_aset)
-            .order_by(models.RiwayatMutasi.waktu_mutasi.asc())
-            .all()
-        )
-        latest_mutasi = all_mutasi[-1] if all_mutasi else None
+        latest_repair = repair_map.get(a.id_aset)
+        all_mutasi_for_a = mutasi_map.get(a.id_aset, [])
+        latest_mutasi = all_mutasi_for_a[-1] if all_mutasi_for_a else None
 
         results.append(
             {
                 "id_aset": a.id_aset,
                 "kode_alat": a.kategori.nama_alat if a.kategori else a.kode_alat,
-                "id_lokasi": a.lokasi_ref.nama_lokasi if a.lokasi_ref else a.id_lokasi,
+                "id_lokasi": a.id_lokasi,
+                "id_lokasi_name": a.lokasi_ref.nama_lokasi if a.lokasi_ref else a.id_lokasi,
                 "status_terakhir": a.status_terakhir,
                 "repair": {
-                    "latest_date": latest_repair.waktu_lapor.strftime(
-                        "%Y-%m-%d %H:%M:%S"
-                    )
-                    if latest_repair and latest_repair.waktu_lapor
-                    else None,
-                    "latest_kondisi": latest_repair.kondisi
-                    if latest_repair
-                    else a.status_terakhir,
-                    "latest_keterangan": latest_repair.keterangan
-                    if latest_repair
-                    else None,
+                    "latest_date": latest_repair.waktu_lapor.strftime("%Y-%m-%d %H:%M:%S")
+                        if latest_repair and latest_repair.waktu_lapor else None,
+                    "latest_kondisi": latest_repair.kondisi if latest_repair else a.status_terakhir,
+                    "latest_keterangan": latest_repair.keterangan if latest_repair else None,
+                    "latest_teknisi": pengguna_map.get(latest_repair.id_pengguna).username
+                        if latest_repair and latest_repair.id_pengguna in pengguna_map else (
+                            str(latest_repair.id_pengguna) if latest_repair else None
+                        ),
                 },
                 "mutasi": {
                     "count": len(all_mutasi),
@@ -833,6 +928,7 @@ def export_riwayat(
                         "id_aset": a.id_aset,
                         "kode_alat": nama_alat,
                         "id_lokasi_asal": nama_lokasi,
+                        "upt": "—",
                         "id_pengguna": "—",
                         "kondisi": a.status_terakhir,
                         "keterangan": "Belum ada riwayat",
@@ -849,6 +945,7 @@ def export_riwayat(
                             "id_aset": a.id_aset,
                             "kode_alat": nama_alat,
                             "id_lokasi_asal": nama_lokasi,
+                            "upt": parse_ctx_upt_from_keterangan(r.keterangan),
                             "id_pengguna": r.pengguna_ref.username
                             if r.pengguna_ref
                             else str(r.id_pengguna),
@@ -964,23 +1061,54 @@ async def serve_index():
 
 @app.get("/{file_name}.html")
 async def serve_html(file_name: str):
+    # Sanitize: only allow alphanumeric, hyphen, underscore
+    if not re.match(r'^[a-zA-Z0-9_-]+$', file_name):
+        raise HTTPException(status_code=400, detail="Invalid filename.")
+    
     path = os.path.join(BASE_DIR, f"{file_name}.html")
-    if os.path.exists(path):
-        return FileResponse(path)
+    # Ensure path is within BASE_DIR (prevent traversal)
+    real_path = os.path.realpath(path)
+    real_base = os.path.realpath(BASE_DIR)
+    if not real_path.startswith(real_base):
+        raise HTTPException(status_code=403, detail="Access denied.")
+    
+    if os.path.exists(real_path) and os.path.isfile(real_path):
+        return FileResponse(real_path)
     raise HTTPException(status_code=404, detail="File not found.")
 
 
 @app.get("/{file_name}.js")
-async def serve_js(file_name: str):
+async def serve_html(file_name: str):
+    # Sanitize: only allow alphanumeric, hyphen, underscore
+    if not re.match(r'^[a-zA-Z0-9_-]+$', file_name):
+        raise HTTPException(status_code=400, detail="Invalid filename.")
+    
     path = os.path.join(BASE_DIR, f"{file_name}.js")
-    if os.path.exists(path):
-        return FileResponse(path, media_type="application/javascript")
+    # Ensure path is within BASE_DIR (prevent traversal)
+    real_path = os.path.realpath(path)
+    real_base = os.path.realpath(BASE_DIR)
+    if not real_path.startswith(real_base):
+        raise HTTPException(status_code=403, detail="Access denied.")
+    
+    if os.path.exists(real_path) and os.path.isfile(real_path):
+        return FileResponse(real_path, media_type="application/javascript")
     raise HTTPException(status_code=404, detail="File not found.")
 
 
 @app.get("/{file_name}.css")
-async def serve_css(file_name: str):
+async def serve_html(file_name: str):
+    # Sanitize: only allow alphanumeric, hyphen, underscore
+    if not re.match(r'^[a-zA-Z0-9_-]+$', file_name):
+        raise HTTPException(status_code=400, detail="Invalid filename.")
+    
     path = os.path.join(BASE_DIR, f"{file_name}.css")
-    if os.path.exists(path):
-        return FileResponse(path, media_type="text/css")
+    # Ensure path is within BASE_DIR (prevent traversal)
+    real_path = os.path.realpath(path)
+    real_base = os.path.realpath(BASE_DIR)
+    if not real_path.startswith(real_base):
+        raise HTTPException(status_code=403, detail="Access denied.")
+    
+    if os.path.exists(real_path) and os.path.isfile(real_path):
+        return FileResponse(real_path, media_type="text/css")
     raise HTTPException(status_code=404, detail="File not found.")
+

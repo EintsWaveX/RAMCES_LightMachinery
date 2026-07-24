@@ -66,9 +66,9 @@ function getParentLokasiCode(idLokasi) {
     const arabMatch = idLokasi.match(/^JR(\d+)\./i);
     if (arabMatch) return `D${arabMatch[1]}`;
 
-    // "JRI.2" → "VI", "JRIII.1" → "VIII", etc.
-    const romanMap = { 'I': 'VI', 'II': 'VII', 'III': 'VIII', 'IV': 'VIV' };
-    const romanMatch = idLokasi.match(/^JR(I{1,3}V?|VI{0,3}|IV)\./i);
+    // "JRI.2" → "VI", "JRIII.1" → "VIII", "JRIV.1" → "VIV" etc.
+    const romanMap = { 'I': 'VI', 'II': 'VII', 'III': 'VIII', 'IV': 'VIV', 'V': 'VV', 'VI': 'VVI', 'VII': 'VVII', 'VIII': 'VVIII', 'IX': 'VIX' };
+    const romanMatch = idLokasi.match(/^JR(IV|IX|VIII|VII|VI|V|I{1,3})\./i);
     if (romanMatch) return romanMap[romanMatch[1].toUpperCase()] ?? null;
 
     return null;
@@ -76,21 +76,51 @@ function getParentLokasiCode(idLokasi) {
 
 async function fetchMasterData() {
     try {
-        const [alatRes, lokasiRes, uptRes] = await Promise.all([
+        const [alatRes, lokasiRes] = await Promise.all([
             fetch(`${API_BASE_URL}/master/alat`),
             fetch(`${API_BASE_URL}/master/lokasi`),
-            fetch(`${API_BASE_URL}/master/lokasi?tipe=upt`),
         ]);
 
-        if (alatRes.ok)   alatKerjaData = (await alatRes.json()).map(a => ({ name: a.nama_alat, code: a.kode_alat }));
-        if (lokasiRes.ok) lokasiData    = (await lokasiRes.json()).map(l => ({ name: l.nama_lokasi, code: l.id_lokasi, tipe: l.tipe }));
-        if (uptRes.ok)    uptDatabase   = (await uptRes.json()).map(u => ({
-            upt:    u.id_lokasi,       // e.g. "JR1.3"
-            nama:   u.nama_lokasi,     // e.g. "JR 1.3 Pasarsenen"
-            lokasi: getParentLokasiCode(u.id_lokasi)  // e.g. "D1"
-        }));
+        if (alatRes.ok) {
+            alatKerjaData = (await alatRes.json()).map(a => ({
+                name: a.nama_alat, code: a.kode_alat
+            }));
+        }
 
-        populateSelects();
+        if (lokasiRes.ok) {
+            const allLokasi = await lokasiRes.json();
+
+            // Regions: DAOP, DIVRE, PUSAT, BALAIYASA — top-level parent locations
+            lokasiData = allLokasi
+                .filter(l => {
+                    const t = (l.tipe || '').toUpperCase();
+                    return t === 'DAOP' || t === 'DIVRE' || t === 'PUSAT' || t === 'BALAIYASA';
+                })
+                .map(l => ({ name: l.nama_lokasi, code: l.id_lokasi, tipe: l.tipe }));
+
+            // UPTs: everything else (JR*, or explicit tipe=UPT)
+            const uptRaw = allLokasi.filter(l => {
+                const t = (l.tipe || '').toUpperCase();
+                return t !== 'DAOP' && t !== 'DIVRE' && t !== 'PUSAT' && t !== 'BALAIYASA';
+            });
+
+            uptDatabase = uptRaw.map(u => ({
+                upt:   u.id_lokasi,
+                nama:  u.nama_lokasi,
+                lokasi: getParentLokasiCode(u.id_lokasi) || u.id_lokasi,
+            }));
+
+            // If no UPTs found, treat all regions as their own UPTs (flat fallback)
+            if (!uptDatabase.length) {
+                uptDatabase = lokasiData.map(l => ({
+                    upt:   l.code,
+                    nama:  l.name,
+                    lokasi: l.code,
+                }));
+            }
+        }
+
+        populateSelects(true);  // Preserve user selections after async load
     } catch (e) {
         showToast("Gagal memuat data master. Beberapa dropdown mungkin kosong.", "warning");
     }
@@ -103,7 +133,10 @@ async function fetchLoginRegions() {
         const data = await res.json();
         const sel  = document.getElementById('login-region');
         if (!sel) return;
-        sel.innerHTML = data.map(l => `<option value="${l.id_lokasi}">${l.nama_lokasi}</option>`).join('');
+        // Only show parent-level locations; exclude UPTs (JR* codes)
+        const parentTypes = ['DAOP', 'DIVRE', 'PUSAT', 'BALAIYASA'];
+        const parents = data.filter(l => parentTypes.includes((l.tipe || '').toUpperCase()));
+        sel.innerHTML = parents.map(l => `<option value="${l.id_lokasi}">${l.nama_lokasi}</option>`).join('');
     } catch (e) {
         // master data not seeded yet
     }
@@ -377,7 +410,25 @@ async function fetchAsetFromServer() {
     try {
         const response = await apiFetch('/aset');
         if (!response.ok) throw new Error("Gagal mengambil data aset");
-        db = await response.json();
+        
+        db = (await response.json()).map(a => {
+            // Defensive: ensure id_lokasi_raw is actually a code, not a name
+            // A code is typically short (like "D1", "JR1.1"), a name is longer ("DAOP 1 Jakarta")
+            const rawLokasi = a.id_lokasi || '';
+            const isProbablyCode = rawLokasi.length <= 10 && !rawLokasi.includes(' ');
+            
+            return {
+                ...a,
+                // If backend sends a name instead of code, try to find the code from lokasiData
+                id_lokasi_raw: isProbablyCode ? rawLokasi : (
+                    lokasiData.find(l => l.name === rawLokasi)?.code ||
+                    uptDatabase.find(u => u.nama === rawLokasi)?.upt ||
+                    rawLokasi
+                ),
+                id_lokasi_display: a.id_lokasi_name || rawLokasi, // resolved name for display
+                kode_alat_name: a.kode_alat_name || a.kode_alat, // human-readable name
+            };
+        });
 
         updateDashboardStats();
         if (document.getElementById('view-database').classList.contains('is-visible')) renderDbCards();
@@ -396,16 +447,389 @@ async function fetchAsetFromServer() {
     }
 }
 
-function updateDashboardStats() {
-    const statTotal = document.getElementById('stat-total');
-    const statSo    = document.getElementById('stat-so');
-    const statTso   = document.getElementById('stat-tso');
+// ── DASHBOARD STATE ────────────────────────────────────────────────────────
+let _benchmarkPct = (() => {
+    const raw = localStorage.getItem('dashBenchmark');
+    const parsed = parseInt(raw || '59', 10);
+    return isNaN(parsed) ? 59 : Math.max(0, Math.min(100, parsed));
+})();
+let _dashFilter   = { alat: '', pengadaan: '', tahun: '' };
+let _dashTabIndex = 0;
+let _dashChartBar   = null;
+let _dashChartTrend = null;
+const _DASH_TABS = ['matrix', 'bar', 'trend'];
 
-    if (statTotal && statSo && statTso) {
-        statTotal.innerText = db.length;
-        statSo.innerText    = db.filter(item => item.status_terakhir === 'SO').length;
-        statTso.innerText   = db.filter(item => item.status_terakhir === 'TSO').length;
+function _dashFilteredDb() {
+    return db.filter(item => {
+        if (_dashFilter.alat      && item.kode_alat_raw !== _dashFilter.alat)      return false;
+        if (_dashFilter.pengadaan && item.sumber_pengadaan !== _dashFilter.pengadaan) return false;
+        if (_dashFilter.tahun     && String(item.tanggal_pembelian ?? '').slice(0, 4) !== _dashFilter.tahun) return false;
+        return true;
+    });
+}
+
+function _buildDashFilterBar() {
+    // Alat dropdown
+    const alatSel = document.getElementById('dash-filter-alat');
+    if (alatSel && alatSel.options.length <= 1) {
+        alatKerjaData.forEach(a => {
+            const o = document.createElement('option');
+            o.value = a.code; o.textContent = a.name;
+            alatSel.appendChild(o);
+        });
     }
+
+    // Year dropdown — 1950 to current
+    const tahunSel = document.getElementById('dash-filter-tahun');
+    if (tahunSel && tahunSel.options.length <= 1) {
+        const curYear = new Date().getFullYear();
+        for (let y = curYear; y >= 1950; y--) {
+            const o = document.createElement('option');
+            o.value = String(y); o.textContent = String(y);
+            tahunSel.appendChild(o);
+        }
+    }
+
+    // Wire filter changes (only once)
+    if (!window._dashFiltersWired) {
+        window._dashFiltersWired = true;
+        ['dash-filter-alat', 'dash-filter-pengadaan', 'dash-filter-tahun'].forEach(id => {
+            document.getElementById(id)?.addEventListener('change', e => {
+                const key = { 'dash-filter-alat': 'alat', 'dash-filter-pengadaan': 'pengadaan', 'dash-filter-tahun': 'tahun' }[id];
+                _dashFilter[key] = e.target.value;
+                _renderDashActivePanel();
+            });
+        });
+
+        // Tab clicks
+        document.querySelectorAll('.dash-tab-btn').forEach((btn, i) => {
+            btn.addEventListener('click', () => _switchDashTab(i));
+        });
+
+        // Arrow buttons
+        document.getElementById('dash-tab-prev')?.addEventListener('click', () =>
+            _switchDashTab((_dashTabIndex - 1 + _DASH_TABS.length) % _DASH_TABS.length));
+        document.getElementById('dash-tab-next')?.addEventListener('click', () =>
+            _switchDashTab((_dashTabIndex + 1) % _DASH_TABS.length));
+
+        // Dot clicks
+        document.querySelectorAll('.dash-dot').forEach(dot => {
+            dot.addEventListener('click', () => _switchDashTab(parseInt(dot.dataset.dot)));
+        });
+    }
+}
+
+function _switchDashTab(idx) {
+    _dashTabIndex = idx;
+    const tabId = _DASH_TABS[idx];
+
+    document.querySelectorAll('.dash-tab-btn').forEach((btn, i) => {
+        btn.classList.toggle('is-active', i === idx);
+    });
+    document.querySelectorAll('.dash-panel').forEach(p => p.classList.add('hidden'));
+    document.getElementById(`dash-panel-${tabId}`)?.classList.remove('hidden');
+    document.querySelectorAll('.dash-dot').forEach((d, i) => {
+        d.classList.toggle('is-active', i === idx);
+    });
+
+    _renderDashActivePanel();
+}
+
+function _renderDashActivePanel() {
+    const tabId = _DASH_TABS[_dashTabIndex];
+    if (tabId === 'matrix') _renderMatrixPanel();
+    if (tabId === 'bar')    _renderBarPanel();
+    if (tabId === 'trend')  _renderTrendPanel();
+}
+
+// ── PANEL 1: Matrix ────────────────────────────────────────────────────────
+function _renderMatrixPanel() {
+    const thead = document.getElementById('dash-matrix-thead');
+    const tbody = document.getElementById('dash-matrix-tbody');
+    if (!thead || !tbody) return;
+
+    const filtered = _dashFilteredDb();
+
+    // DEBUG: Log if data exists but matrix might be empty
+    // if (!filtered.length) {
+    //     tbody.innerHTML = `<tr><td colspan="7" class="p-4 text-center text-gray-400">Tidak ada data aset yang cocok dengan filter.</td></tr>`;
+    //     thead.innerHTML = '';
+    //     return;
+    // }
+
+    // Determine if real UPT hierarchy exists:
+    // uptDatabase entries whose .lokasi points to a DIFFERENT code in lokasiData
+    const hasUptHierarchy = uptDatabase.length > 0 &&
+        uptDatabase.some(u => lokasiData.some(l => l.code === u.lokasi && l.code !== u.upt));
+
+    let regions, uptByParent;
+
+    if (hasUptHierarchy) {
+        regions = lokasiData.filter(l => l.tipe?.toUpperCase() !== 'BALAIYASA');
+        uptByParent = {};
+        uptDatabase.forEach(u => {
+            if (!u.lokasi) return;
+            if (!uptByParent[u.lokasi]) uptByParent[u.lokasi] = [];
+            uptByParent[u.lokasi].push(u);
+        });
+    } else {
+        // Flat mode — each lokasi is its own single UPT
+        regions = lokasiData;
+        uptByParent = {};
+        lokasiData.forEach(l => {
+            uptByParent[l.code] = [{ upt: l.code, nama: l.name, lokasi: l.code }];
+        });
+    }
+
+    const maxUpt = Math.max(1, ...regions.map(r => (uptByParent[r.code] || []).length));
+
+    // Build asset lookup indexed by UPT code (id_lokasi_raw)
+    // Assets are now stored with UPT code as id_lokasi, so no parent fallback needed
+    const assetsByLokasi = {};
+    filtered.forEach(a => {
+        const key = a.id_lokasi_raw || a.id_lokasi;
+        if (!key) return;
+        if (!assetsByLokasi[key]) assetsByLokasi[key] = [];
+        assetsByLokasi[key].push(a);
+    });
+
+    // DEBUG: Log what keys we have vs what regions expect
+    console.log('Matrix assets keys:', Object.keys(assetsByLokasi));
+    console.log('Regions:', regions.map(r => r.code));
+    console.log('UPT by parent:', uptByParent);
+
+    // Header
+    const thCols = Array.from({ length: maxUpt }, (_, i) =>
+        `<th class="text-center text-gray-400 dark:text-gray-500 px-2">${i + 1}</th>`).join('');
+    thead.innerHTML = `<tr>
+        <th class="text-center sticky left-0 bg-white dark:bg-gray-800 z-10 pr-3 min-w-[110px]">Wilayah</th>
+        ${thCols}
+        <th class="text-center text-gray-500 px-2 border-l border-gray-200 dark:border-gray-700">Total</th>
+        <th class="text-center text-green-600 px-2">SO</th>
+        <th class="text-center text-red-500 px-2">TSO</th>
+        <th class="text-center text-kai-blue px-2">Ada%</th>
+        <th class="text-center text-slate-400 px-2">Δ</th>
+    </tr>`;
+
+    const rowsHtml = regions.map(region => {
+        const upts = uptByParent[region.code] || [];
+        let regionSo = 0, regionTso = 0;
+
+        const cells = Array.from({ length: maxUpt }, (_, i) => {
+            const upt = upts[i];
+            if (!upt) return `<td class="text-center px-2 text-gray-300 dark:text-gray-700">—</td>`;
+
+            // Try multiple lookup keys for the UPT
+            // Look up assets by UPT code only
+            const assets = assetsByLokasi[upt.upt];
+            if (!assets || !assets.length) {
+                return `<td class="text-center px-2 text-gray-300 dark:text-gray-600" title="${upt.upt}">—</td>`;
+            }
+
+            const soCount  = assets.filter(a => a.status_terakhir === 'SO').length;
+            const tsoCount = assets.filter(a => a.status_terakhir === 'TSO').length;
+            regionSo  += soCount;
+            regionTso += tsoCount;
+
+            if (assets.length === 1) {
+                const isSo = soCount > 0;
+                return `<td class="text-center px-2 rounded ${isSo ? 'bg-green-100 dark:bg-green-900/40 text-green-700' : 'bg-red-100 dark:bg-red-900/40 text-red-700'}" title="${upt.upt}: ${isSo ? 'SO' : 'TSO'}">
+                    ${isSo ? '✅' : '❌'}
+                </td>`;
+            }
+
+            const allSo  = tsoCount === 0;
+            const allTso = soCount  === 0;
+            const cellClass = allSo ? 'bg-green-100 dark:bg-green-900/40 text-green-700' :
+                              allTso ? 'bg-red-100 dark:bg-red-900/40 text-red-700' : 'matrix-cell-mixed';
+            return `<td class="text-center px-2 rounded ${cellClass} font-bold" title="${upt.upt}: ${soCount} SO / ${tsoCount} TSO">
+                ${soCount}/${assets.length}
+            </td>`;
+        }).join('');
+
+        const total    = regionSo + regionTso;
+        const avail    = total > 0 ? Math.round(regionSo / total * 100) : null;
+        const delta    = avail !== null ? avail - _benchmarkPct : null;
+        const availStr = avail !== null ? `${avail}%` : '—';
+        const deltaStr = delta !== null
+            ? `<span class="${delta >= 0 ? 'text-green-500' : 'text-red-500'}">${delta >= 0 ? '+' : ''}${delta}%</span>`
+            : '—';
+
+        return `<tr class="border-t border-gray-100 dark:border-gray-700/50 hover:bg-gray-50 dark:hover:bg-gray-700/30">
+            <td class="text-left sticky left-0 bg-white dark:bg-gray-800 z-10 font-bold text-gray-700 dark:text-gray-300 pr-3 py-1.5 text-xs">
+                ${region.name}
+            </td>
+            ${cells}
+            <td class="text-center px-2 font-bold text-gray-700 dark:text-gray-300 border-l border-gray-200 dark:border-gray-700">${total || '—'}</td>
+            <td class="text-center px-2 font-bold text-green-600">${regionSo || '—'}</td>
+            <td class="text-center px-2 font-bold text-red-500">${regionTso || '—'}</td>
+            <td class="text-center px-2 font-bold text-kai-blue dark:text-blue-400">${availStr}</td>
+            <td class="text-center px-2">${deltaStr}</td>
+        </tr>`;
+    }).join('');
+    
+    tbody.innerHTML = rowsHtml;
+    
+    // If still empty after rendering, show a message
+    if (!rowsHtml.trim()) {
+        tbody.innerHTML = `<tr><td colspan="7" class="p-4 text-center text-gray-400">Tidak ada wilayah yang terdaftar.</td></tr>`;
+    }
+}
+
+// ── PANEL 2: Bar chart ─────────────────────────────────────────────────────
+function _renderBarPanel() {
+    const canvas = document.getElementById('dash-chart-bar');
+    if (!canvas) return;
+
+    const filtered  = _dashFilteredDb();
+    const regions   = lokasiData;
+
+    const assetsByLokasi = {};
+    filtered.forEach(a => {
+        const key = a.id_lokasi_raw || a.id_lokasi;
+        if (!key) return;
+        
+        // Index by the raw key (UPT code)
+        if (!assetsByLokasi[key]) assetsByLokasi[key] = [];
+        assetsByLokasi[key].push(a);
+        
+        // Roll up to parent region for bar chart aggregation
+        const parentKey = getParentLokasiCode(key);
+        if (parentKey && parentKey !== key) {
+            if (!assetsByLokasi[parentKey]) assetsByLokasi[parentKey] = [];
+            assetsByLokasi[parentKey].push(a);
+        }
+    });
+
+    const labels = [], soData = [], tsoData = [];
+    regions.forEach(r => {
+        const assets = assetsByLokasi[r.code] || [];
+        const so  = assets.filter(a => a.status_terakhir === 'SO').length;
+        const tso = assets.filter(a => a.status_terakhir === 'TSO').length;
+        labels.push(r.name.replace('DAOP ', 'D').replace('DIVRE ', 'DR'));
+        soData.push(so);
+        tsoData.push(tso);
+    });
+
+    const isDark    = document.documentElement.classList.contains('dark');
+    const gridColor = isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.06)';
+    const textColor = isDark ? '#9ca3af' : '#6b7280';
+
+    if (_dashChartBar) _dashChartBar.destroy();
+    _dashChartBar = new Chart(canvas, {
+        type: 'bar',
+        data: {
+            labels,
+            datasets: [
+                { label: 'SO',  data: soData,  backgroundColor: 'rgba(34,197,94,0.75)',  borderRadius: 4 },
+                { label: 'TSO', data: tsoData, backgroundColor: 'rgba(239,68,68,0.75)', borderRadius: 4 },
+            ]
+        },
+        options: {
+            responsive: true,
+            plugins: { legend: { labels: { color: textColor, font: { size: 11 } } } },
+            scales: {
+                x: { stacked: false, ticks: { color: textColor, font: { size: 10 } }, grid: { color: gridColor } },
+                y: { beginAtZero: true, ticks: { color: textColor, stepSize: 1, font: { size: 10 } }, grid: { color: gridColor } }
+            }
+        }
+    });
+}
+
+// ── PANEL 3: Trend line chart ──────────────────────────────────────────────
+function _renderTrendPanel() {
+    const canvas = document.getElementById('dash-chart-trend');
+    if (!canvas) return;
+
+    const selectedYear = _dashFilter.tahun || String(new Date().getFullYear());
+    const months = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'];
+
+    // Count perbaikan per month from db riwayat — we derive from latest_date in history summary
+    // Use db directly: each item has repair.latest_date — for full tren we need per-month count
+    // Since frontend db doesn't carry full riwayat, we approximate from `db` entries that were
+    // updated in each month. For a full chart, wire to /api/export/riwayat — lazy-fetch here.
+    const monthSo  = new Array(12).fill(0);
+    const monthTso = new Array(12).fill(0);
+
+    db.forEach(item => {
+        const d = item.waktu_update || item.tanggal_pembelian;
+        if (!d) return;
+        // Normalize: handle "YYYY-MM-DD", "YYYY-MM-DD HH:MM:SS", ISO strings
+        const dateObj = new Date(String(d).replace(' ', 'T'));
+        if (isNaN(dateObj.getTime())) return;
+        const yr = String(dateObj.getFullYear());
+        const mo = dateObj.getMonth(); // 0-indexed
+        if (yr !== selectedYear || mo < 0 || mo > 11) return;
+        if (item.status_terakhir === 'SO')  monthSo[mo]++;
+        if (item.status_terakhir === 'TSO') monthTso[mo]++;
+    });
+
+    const isDark = document.documentElement.classList.contains('dark');
+    const textColor = isDark ? '#9ca3af' : '#6b7280';
+    const gridColor = isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.06)';
+
+    if (_dashChartTrend) _dashChartTrend.destroy();
+    _dashChartTrend = new Chart(canvas, {
+        type: 'line',
+        data: {
+            labels: months,
+            datasets: [
+                {
+                    label: 'Laporan SO',
+                    data: monthSo,
+                    borderColor: 'rgba(34,197,94,0.9)',
+                    backgroundColor: 'rgba(34,197,94,0.1)',
+                    fill: true,
+                    tension: 0.4,
+                    pointRadius: 4,
+                    pointHoverRadius: 6,
+                },
+                {
+                    label: 'Laporan TSO',
+                    data: monthTso,
+                    borderColor: 'rgba(239,68,68,0.9)',
+                    backgroundColor: 'rgba(239,68,68,0.1)',
+                    fill: true,
+                    tension: 0.4,
+                    pointRadius: 4,
+                    pointHoverRadius: 6,
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            plugins: { legend: { labels: { color: textColor, font: { size: 11 } } } },
+            scales: {
+                x: { ticks: { color: textColor, font: { size: 10 } }, grid: { color: gridColor } },
+                y: { beginAtZero: true, ticks: { color: textColor, font: { size: 10 } }, grid: { color: gridColor } }
+            }
+        }
+    });
+}
+
+function updateDashboardStats() {
+    const filtered = _dashFilteredDb();
+    const total    = filtered.length;
+    const so       = filtered.filter(i => i.status_terakhir === 'SO').length;
+    const tso      = filtered.filter(i => i.status_terakhir === 'TSO').length;
+    const avail    = total > 0 ? Math.round(so / total * 100) : null;
+    const delta    = avail !== null ? avail - _benchmarkPct : null;
+
+    const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+    set('stat-total', total || '—');
+    set('stat-so',    so    || '—');
+    set('stat-tso',   tso   || '—');
+    set('stat-avail', avail !== null ? `${avail}%` : '—');
+    set('stat-benchmark', `${_benchmarkPct}%`);
+
+    const deltaEl = document.getElementById('stat-benchmark-delta');
+    if (deltaEl && delta !== null) {
+        deltaEl.textContent = `${delta >= 0 ? '+' : ''}${delta}%`;
+        deltaEl.className   = `text-xs font-bold mb-0.5 ${delta >= 0 ? 'text-green-500' : 'text-red-500'}`;
+    }
+
+    _buildDashFilterBar();
+    _renderDashActivePanel();
 }
 
 async function afkirAset(uid) {
@@ -424,17 +848,70 @@ async function afkirAset(uid) {
 }
 
 // --- UI UTILITIES & EVENT LISTENERS ---
-function populateSelects() {
-    const alatHTML  = alatKerjaData.map(d => `<option value="${d.code}">${d.name}</option>`).join('');
-    const lokasiHTML = lokasiData.map(d => `<option value="${d.code}">${d.name}</option>`).join('');
+function populateSelects(preserveValues = false) {
+    const alatHTML = alatKerjaData.map(d =>
+        `<option value="${d.code}">${d.name}</option>`).join('');
+    const lokasiHTML = lokasiData.map(d =>
+        `<option value="${d.code}">${d.name}</option>`).join('');
 
-    const inAlat   = document.getElementById('in-alat');
+    const inAlat  = document.getElementById('in-alat');
     const inLokasi = document.getElementById('in-lokasi');
+    const inUpt    = document.getElementById('in-upt');
     const editLokasi = document.getElementById('edit-lokasi');
+    const editUpt    = document.getElementById('edit-upt');
 
-    if (inAlat)    inAlat.innerHTML    = alatHTML;
-    if (inLokasi)  inLokasi.innerHTML  = lokasiHTML;
-    if (editLokasi) editLokasi.innerHTML = `<option value="" disabled selected>Pilih Lokasi</option>` + lokasiHTML;
+    // Helper to repopulate while preserving selected value if valid
+    function repopulateSelect(selectEl, newHTML, defaultOptionHTML, preserve) {
+        if (!selectEl) return;
+        const oldValue = selectEl.value;
+        selectEl.innerHTML = defaultOptionHTML + newHTML;
+        if (preserve && oldValue && selectEl.querySelector(`option[value="${oldValue}"]`)) {
+            selectEl.value = oldValue;
+        }
+    }
+
+    if (inAlat) repopulateSelect(inAlat, alatHTML, '', preserveValues);
+
+    // Lokasi: regions only, blank default
+    if (inLokasi) repopulateSelect(inLokasi, lokasiHTML, 
+        `<option value="">— Pilih Lokasi/Wilayah —</option>`, preserveValues);
+
+    // UPT: locked until lokasi chosen — only reset if not preserving or no valid value
+    if (inUpt) {
+        const currentUpt = inUpt.value;
+        const currentLokasi = inLokasi?.value;
+        const hasValidUpt = preserveValues && currentUpt && currentLokasi;
+        
+        if (!hasValidUpt) {
+            inUpt.innerHTML  = `<option value="">— Pilih Lokasi terlebih dahulu —</option>`;
+            inUpt.disabled   = true;
+        } else {
+            // Re-apply UPT options for current lokasi
+            applyUptSelect(currentLokasi, inUpt);
+            if (inUpt.querySelector(`option[value="${currentUpt}"]`)) {
+                inUpt.value = currentUpt;
+            }
+        }
+    }
+
+    // Edit form
+    if (editLokasi) repopulateSelect(editLokasi, lokasiHTML,
+        `<option value="" disabled selected>Pilih Lokasi</option>`, preserveValues);
+    if (editUpt) {
+        const currentEditUpt = editUpt.value;
+        const currentEditLokasi = editLokasi?.value;
+        const hasValidEditUpt = preserveValues && currentEditUpt && currentEditLokasi;
+        
+        if (!hasValidEditUpt) {
+            editUpt.innerHTML = `<option value="" disabled selected>Pilih UPT</option>`;
+            editUpt.disabled  = true;
+        } else {
+            applyUptSelect(currentEditLokasi, editUpt);
+            if (editUpt.querySelector(`option[value="${currentEditUpt}"]`)) {
+                editUpt.value = currentEditUpt;
+            }
+        }
+    }
 }
 
 function switchView(viewId) {
@@ -745,10 +1222,9 @@ function setupEventListeners() {
         uptSelectEl.disabled = false;
         const matches = uptDatabase.filter(u => u.lokasi === locCode);
         if (matches.length > 0) {
-            uptSelectEl.innerHTML = '<option value="">Pilih UPT...</option>' +
-                matches.map(m => `<option value="${m.upt}">${m.nama}</option>`).join('');
+            uptSelectEl.innerHTML = '<option value="">Pilih UPT...</option>' + matches.map(m => `<option value="${m.upt}">${m.nama || m.upt}</option>`).join('');
         } else {
-            uptSelectEl.innerHTML = `<option value="">Tidak ada UPT untuk lokasi ini</option>`;
+            uptSelectEl.innerHTML = `<option value="">Tidak ada UPT untuk lokasi ini...</option>`;
             uptSelectEl.disabled = true;
         }
         uptSelectEl.value = '';
@@ -757,6 +1233,10 @@ function setupEventListeners() {
     // Dynamic UPT Select
     document.getElementById('edit-lokasi')?.addEventListener('change', (e) => {
         applyUptSelect(e.target.value, document.getElementById('edit-upt'));
+    });
+
+    document.getElementById('in-lokasi')?.addEventListener('change', (e) => {
+        applyUptSelect(e.target.value, document.getElementById('in-upt'));
     });
 
     // SO / TSO buttons
@@ -786,16 +1266,35 @@ function setupEventListeners() {
         const tanggal   = document.getElementById('in-tanggal').value;
         const unit      = document.querySelector('input[name="in-unit"]:checked').value;
         const lokasi    = document.getElementById('in-lokasi').value;
+        const uptName   = document.getElementById('in-upt')?.value || '';
 
-        const yearStr = tanggal.split('-')[0].slice(-2);
-        const codeID  = `${alat}-${pengadaan}-${yearStr}-${unit}-${lokasi}`;
+        if (!lokasi) {
+            showToast('Pilih Lokasi/Wilayah terlebih dahulu.', 'warning');
+            return;
+        }
+        if (!uptName) {
+            showToast('Pilih UPT terlebih dahulu.', 'warning');
+            return;
+        }
+
+        // Year: last 2 digits for 2000+, full year for 1950-1999
+        const fullYear = parseInt(tanggal.split('-')[0], 10);
+        const yearStr  = fullYear >= 2000 ? String(fullYear).slice(-2) : String(fullYear);
+
+        // Use UPT code for id_lokasi and id_aset (not parent region code)
+        // This ensures matrix and lookups work by UPT code
+        const storageLokasi = uptName;  // JR1.1 (UPT code)
+        const parentLokasi  = lokasi;   // D1 (parent, for context tags only)
+
+        // ID format: <kode_alat>-<tahun>-<peruntukan>-<id_lokasi>
+        const codeID = `${alat}-${yearStr}-${unit}-${storageLokasi}`;
 
         const payload = {
-            id_aset: codeID,
-            kode_alat: alat,
-            id_lokasi: lokasi,
+            id_aset:           codeID,
+            kode_alat:         alat,
+            id_lokasi:         storageLokasi,  // UPT code, not parent
             tanggal_pembelian: tanggal,
-            sumber_pengadaan: pengadaan
+            sumber_pengadaan:  pengadaan,
         };
 
         try {
@@ -805,8 +1304,33 @@ function setupEventListeners() {
                 throw new Error(err.detail || "Gagal menyimpan data ke database.");
             }
             const result = await response.json();
+            
             showToast(`Berhasil disimpan! ID Aset: ${payload.id_aset}`, "success");
+            
+            // Create initial perbaikan record to store parent region context
+            try {
+                await apiFetch('/riwayat-kondisi', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        id_aset: payload.id_aset,
+                        kondisi: 'SO',
+                        keterangan: `[Peruntukan: ${unit}] [Lokasi: ${parentLokasi}] [UPT: ${uptName}] Registrasi aset baru`
+                    })
+                });
+            } catch (e) {
+                // Non-critical: asset is saved even if initial history fails
+                console.warn('Gagal menyimpan riwayat awal:', e);
+            }
+            
             this.reset();
+            
+            const inUpt = document.getElementById('in-upt');
+            const inLokasi = document.getElementById('in-lokasi');
+            if (inLokasi) inLokasi.value = '';
+            if (inUpt) {
+                inUpt.innerHTML = `<option value="">— Pilih Lokasi terlebih dahulu —</option>`;
+                inUpt.disabled  = true;
+            }
             fetchAsetFromServer();
         } catch (error) {
             if (error.message !== "Unauthorized") showToast(error.message, "error");
@@ -816,13 +1340,28 @@ function setupEventListeners() {
     document.getElementById('form-edit')?.addEventListener('submit', async function(e) {
         e.preventDefault();
 
+        const kondisi    = document.getElementById('edit-kondisi').value;
+        const keterangan = document.getElementById('edit-keterangan').value || '-';
+        const uptVal     = document.getElementById('edit-upt')?.value || '';
+        const lokasiVal  = document.getElementById('edit-lokasi')?.value || '';
+        const peruntukan = document.querySelector('input[name="edit-unit"]:checked')?.value || '';
+
+        if (!kondisi) return showToast("Pilih Kondisi Alat Kerja (SO/TSO)!", "warning");
+
+        // Build context prefix — stored invisibly inside keterangan
+        const ctxParts = [];
+        if (peruntukan) ctxParts.push(`[Peruntukan: ${peruntukan}]`);
+        if (lokasiVal)  ctxParts.push(`[Lokasi: ${lokasiVal}]`);
+        if (uptVal)     ctxParts.push(`[UPT: ${uptVal}]`);
+        const fullKeterangan = ctxParts.length
+            ? `${ctxParts.join(' ')} ${keterangan}`
+            : keterangan;
+
         const payload = {
             id_aset:    document.getElementById('edit-uid').value,
-            kondisi:    document.getElementById('edit-kondisi').value,
-            keterangan: document.getElementById('edit-keterangan').value || '-'
+            kondisi,
+            keterangan: fullKeterangan,
         };
-
-        if (!payload.kondisi) return showToast("Pilih Kondisi Alat Kerja (SO/TSO)!", "warning");
 
         try {
             const response = await apiFetch('/riwayat-kondisi', { method: 'POST', body: JSON.stringify(payload) });
@@ -922,19 +1461,30 @@ function setupEventListeners() {
         const uid        = document.getElementById('mutasi-uid').value;
         const lokasiTuju = document.getElementById('mutasi-lokasi-tuju').value;
         const alasan     = document.getElementById('mutasi-alasan').value.trim();
+        const uptTuju    = document.getElementById('mutasi-upt-tuju')?.value || '';
 
         if (!lokasiTuju) return showToast('Pilih lokasi tujuan terlebih dahulu.', 'warning');
+        
+        const currentLok = db.find(x => x.id_aset === uid)?.id_lokasi;
+        const isSameLok  = lokasiTuju === currentLok;
+        if (!isSameLok && !uptTuju) return showToast('Pilih UPT tujuan untuk mutasi ke wilayah berbeda.', 'warning');
 
         const btn  = document.getElementById('btn-submit-mutasi');
         const orig = btn.innerHTML;
         btn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> Memproses...`;
         btn.disabled  = true;
 
+        // Prepend UPT context to alasan invisibly
+        const fullAlasan = uptTuju
+            ? `[UPT Tujuan: ${uptTuju}] ${alasan || ''}`.trim()
+            : alasan || null;
+
         try {
             const res = await apiFetch('/mutasi', {
                 method: 'POST',
-                body: JSON.stringify({ id_aset: uid, id_lokasi_tujuan: lokasiTuju, alasan_mutasi: alasan || null })
+                body: JSON.stringify({ id_aset: uid, id_lokasi_tujuan: lokasiTuju, alasan_mutasi: fullAlasan || null })
             });
+
             const data = await res.json();
             if (!res.ok) throw new Error(data.detail || 'Gagal memproses mutasi.');
 
@@ -953,8 +1503,13 @@ function setupEventListeners() {
 
 // ── WEBSOCKET ──────────────────────────────────────────────────────────────
 
+const WS_MAX_RETRIES = 10;
+const WS_BASE_DELAY = 3000;
+const WS_MAX_DELAY = 60000;
+
 function setupWebSocket() {
     if (window._wsHeartbeat) clearInterval(window._wsHeartbeat);
+    if (window._wsReconnectTimer) clearTimeout(window._wsReconnectTimer);
 
     const protocol = NGROK_BASE_URL ? 'wss' : 'ws';
     const wsUrl = `${protocol}://${BACKEND_WS_HOST}/ws/updates`;
@@ -962,6 +1517,7 @@ function setupWebSocket() {
 
     ws.onopen = () => {
         _wsRetryCount = 0;
+        _wsNgrokFailed = false;  // Reset on successful connection
         updateWsDot(true);
         window._wsHeartbeat = setInterval(() => {
             if (ws.readyState === WebSocket.OPEN) ws.send("ping");
@@ -975,9 +1531,20 @@ function setupWebSocket() {
     ws.onclose = () => {
         clearInterval(window._wsHeartbeat);
         updateWsDot(false);
-        if (authToken && (!NGROK_BASE_URL || !_wsNgrokFailed)) {
-            setTimeout(setupWebSocket, 3000);
+        
+        if (!authToken) return;  // Don't reconnect if logged out
+        
+        if (_wsRetryCount >= WS_MAX_RETRIES) {
+            showToast("Koneksi server terputus. Muat ulang halaman untuk mencoba lagi.", "error");
+            return;
         }
+        
+        // Exponential backoff with jitter
+        const delay = Math.min(WS_BASE_DELAY * Math.pow(2, _wsRetryCount), WS_MAX_DELAY);
+        const jitter = Math.random() * 1000;
+        _wsRetryCount++;
+        
+        window._wsReconnectTimer = setTimeout(setupWebSocket, delay + jitter);
     };
 
     ws.onerror = (event) => {
@@ -1053,12 +1620,38 @@ function toggleSidebar() {
 window.openEdit = (uid) => {
     const item = db.find(x => x.id_aset === uid);
     if (!item) return;
-    document.getElementById('edit-uid').value      = item.id_aset;
-    document.getElementById('edit-subtitle').innerText = `${item.id_aset} | ${item.kode_alat}`;
-    document.getElementById('edit-teknisi').value  = currentUser;
 
     document.getElementById('form-edit').reset();
-    document.getElementById('edit-kondisi').value  = '';
+
+    const _v = id => document.getElementById(id);
+    if (_v('edit-uid'))      _v('edit-uid').value          = item.id_aset;
+    if (_v('edit-subtitle')) _v('edit-subtitle').innerText = `${item.id_aset} | ${item.kode_alat}`;
+    if (_v('edit-teknisi'))  _v('edit-teknisi').value      = currentUser;
+    if (_v('edit-kondisi'))  _v('edit-kondisi').value      = '';
+
+    // "Sebelumnya di" labels — derive from item's current lokasi + last keterangan UPT
+    // item.id_lokasi is now UPT code, get parent for region name
+    const parentCode = getParentLokasiCode(item.id_lokasi) || item.id_lokasi;
+    const lokasiName = item.id_lokasi_name || lokasiData.find(l => l.code === parentCode)?.name || item.id_lokasi || '—';
+    const summaryItem = _historySummary.find(x => x.id_aset === uid);
+    const lastKet = summaryItem?.repair?.latest_keterangan || '';
+    const lastCtx = parseCtxTags(lastKet);
+    const lastUpt = lastCtx.tags['UPT'] || '—';
+
+    const lokasiLabelEl = document.getElementById('edit-lokasi-label');
+    const uptLabelEl    = document.getElementById('edit-upt-label');
+    if (lokasiLabelEl) lokasiLabelEl.textContent = `Lokasi Perbaikan (sebelumnya di: ${lokasiName})`;
+    if (uptLabelEl)    uptLabelEl.textContent    = `UPT Pengirim (sebelumnya di: ${lastUpt})`;
+
+    // Re-lock UPT
+    const editLokasi = document.getElementById('edit-lokasi');
+    const editUpt    = document.getElementById('edit-upt');
+    if (editLokasi) editLokasi.value = '';
+    if (editUpt) {
+        editUpt.innerHTML = `<option value="">— Pilih Lokasi terlebih dahulu —</option>`;
+        editUpt.disabled  = true;
+    }
+
     document.querySelectorAll('.status-btn').forEach(btn => {
         btn.classList.remove('is-so', 'is-tso', 'is-idle');
         btn.classList.add('is-idle');
@@ -1084,7 +1677,9 @@ window.openQrModal = (uid) => {
     document.getElementById('qr-modal-subtitle').textContent = item.id_aset;
     document.getElementById('qr-label-kodeid').textContent   = item.id_aset;
     document.getElementById('qr-label-alat').textContent     = item.kode_alat;
-    document.getElementById('qr-label-lokasi').textContent   = item.id_lokasi;
+    const qrLokasiEntry = uptDatabase.find(u => u.upt === item.id_lokasi) ||
+                          lokasiData.find(l => l.code === item.id_lokasi);
+    document.getElementById('qr-label-lokasi').textContent   = qrLokasiEntry?.name || item.id_lokasi_name || item.id_lokasi;
 
     const canvas = document.getElementById('qr-canvas');
     canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
@@ -1160,16 +1755,28 @@ async function loadDetailRepair(uid) {
             tbody.innerHTML = `<tr><td colspan="6" class="p-4 text-center text-gray-500">Belum ada riwayat perbaikan.</td></tr>`;
             return;
         }
-        tbody.innerHTML = history.map((h, i) => `
+        tbody.innerHTML = history.map((h, i) => {
+            const ctx         = parseCtxTags(h.keterangan || '');
+            const lokasiTag   = ctx.tags['Lokasi']     || '—';
+            const uptTag      = ctx.tags['UPT']        || '—';
+            const peruntukanCode = ctx.tags['Peruntukan'] || '';
+            const peruntukanName = PERUNTUKAN_MAP[peruntukanCode] || peruntukanCode || '—';
+            return `
             <tr class="border-b dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50">
-                <td class="p-3">${i+1}</td>
+                <td class="p-3 text-center text-gray-400">${i + 1}</td>
                 <td class="p-3 font-mono text-xs">${formatUtcToLocal(h.waktu_lapor)}</td>
-                <td class="p-3">${h.id_pengguna}</td>
-                <td class="p-3">${h.id_pengguna}</td>
-                <td class="p-3 font-bold ${h.kondisi === 'SO' ? 'text-green-500' : 'text-red-500'}">${h.kondisi}</td>
-                <td class="p-3 whitespace-pre-wrap">${h.keterangan}</td>
-            </tr>
-        `).join('');
+                <td class="p-3 text-sm">${lokasiTag}</td>
+                <td class="p-3 text-sm">${uptTag}</td>
+                <td class="p-3 text-sm font-medium">${h.id_pengguna}</td>
+                <td class="p-3 text-center">
+                    <span class="text-xs font-bold px-2 py-0.5 rounded ${h.kondisi === 'SO' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'}">${h.kondisi}</span>
+                </td>
+                <td class="p-3 text-center">
+                    <span class="text-xs text-gray-600 dark:text-gray-300">${peruntukanName}</span>
+                </td>
+                <td class="p-3 text-xs text-gray-500 whitespace-pre-wrap">${ctx.clean || '—'}</td>
+            </tr>`;
+        }).join('');
     } catch (e) {
         if (e.message !== 'Unauthorized')
             tbody.innerHTML = `<tr><td colspan="6" class="p-4 text-center text-red-500">${e.message}</td></tr>`;
@@ -1187,17 +1794,46 @@ async function loadDetailMutasi(uid) {
         if (!res.ok) throw new Error("Gagal mengambil riwayat mutasi.");
         const data = await res.json();
 
+        // UPT Asal from first mutation's alasan, UPT Kini from last mutation's alasan
+        const firstCtx = parseCtxTags(data.mutasi?.[0]?.alasan_mutasi || '');
+        const lastCtx  = parseCtxTags(data.mutasi?.[data.mutasi.length - 1]?.alasan_mutasi || '');
+        const uptAsal  = firstCtx.tags['UPT Tujuan'] || '—'; // first destination = UPT Asal origin context
+        const uptKini  = lastCtx.tags['UPT Tujuan']  || '—';
+
         const returnedBadge = data.sudah_kembali
             ? `<span class="bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 px-3 py-1 rounded-full text-xs font-bold">✓ Sudah Kembali ke Lokasi Awal</span>`
             : `<span class="bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 px-3 py-1 rounded-full text-xs font-bold">⟳ Belum Kembali ke Asal</span>`;
+
+        // Resolve Lokasi Asal full name
+        // data.original_lokasi might be a code (if from before fix) or name
+        const lokasiAsalCode = data.original_lokasi || '';
+        const lokasiAsalEntry = lokasiData.find(l => l.code === lokasiAsalCode) || 
+                                uptDatabase.find(u => u.upt === lokasiAsalCode);
+        const lokasiAsalFull = lokasiAsalEntry?.name || data.original_lokasi || '—';
+        // UPT Asal: from first mutation's alasan [UPT] tag (the UPT that sent the asset away)
+        const uptAsalCodeTL  = firstCtx.tags['UPT'] || '';
+        const uptAsalEntryTL = uptDatabase.find(u => u.upt === uptAsalCodeTL);
+        const uptAsalLabelTL = uptAsalEntryTL ? `${uptAsalEntryTL.nama} (${uptAsalEntryTL.upt})` : (uptAsalCodeTL || '—');
+        // UPT Kini: from last mutation's [UPT Tujuan] tag
+        const uptKiniCodeTL  = lastCtx.tags['UPT Tujuan'] || '';
+        const uptKiniEntryTL = uptDatabase.find(u => u.upt === uptKiniCodeTL);
+        const uptKiniLabelTL = uptKiniEntryTL ? `${uptKiniEntryTL.nama} (${uptKiniEntryTL.upt})` : (uptKiniCodeTL || '—');
+
+        // Resolve lokasi sekarang name from code
+        const lokasiKiniEntry = lokasiData.find(l => l.code === data.lokasi_sekarang) ||
+                                uptDatabase.find(u => u.upt === data.lokasi_sekarang);
+        const lokasiKiniName = lokasiKiniEntry?.name || data.lokasi_sekarang || '—';
+        
         originBar.innerHTML = `
             <div class="flex-1 min-w-0">
                 <p class="text-xs text-gray-400">Lokasi Asal</p>
-                <p class="font-bold text-gray-700 dark:text-gray-200">${data.original_lokasi}</p>
+                <p class="font-bold text-gray-700 dark:text-gray-200">${lokasiAsalFull}</p>
+                <p class="text-[11px] text-gray-400 mt-0.5">${uptAsalLabelTL}</p>
             </div>
             <div class="flex-1 min-w-0">
                 <p class="text-xs text-gray-400">Lokasi Sekarang</p>
-                <p class="font-bold text-gray-700 dark:text-gray-200">${data.lokasi_sekarang}</p>
+                <p class="font-bold text-gray-700 dark:text-gray-200">${lokasiKiniName}</p>
+                <p class="text-[11px] text-gray-400 mt-0.5">${uptKiniLabelTL}</p>
             </div>
             ${returnedBadge}
         `;
@@ -1207,22 +1843,47 @@ async function loadDetailMutasi(uid) {
             return;
         }
 
-        timeline.innerHTML = data.mutasi.map((m, i) => `
+        timeline.innerHTML = data.mutasi.map((m, i) => {
+            const ctx     = parseCtxTags(m.alasan_mutasi || '');
+            const uptTuju = ctx.tags['UPT Tujuan'] || '';
+            const isLast  = i === data.mutasi.length - 1;
+
+            // Duration: difference from this mutation to next, or "Masih dalam proses" for last
+            let durasi = '';
+            if (!isLast) {
+                const tCurr = new Date(m.waktu_mutasi.replace(' ', 'T')).getTime(); // '+07:00'
+            const tNext = new Date(data.mutasi[i + 1].waktu_mutasi.replace(' ', 'T')).getTime(); // '+07:00'
+                const days  = Math.floor((tNext - tCurr) / (1000 * 60 * 60 * 24));
+                durasi = days === 0 ? 'kurang dari 1 hari' : `${days} hari`;
+            }
+
+            return `
             <div class="flex gap-4 items-start">
                 <div class="flex flex-col items-center">
                     <div class="w-8 h-8 rounded-full bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400 flex items-center justify-center text-xs font-bold shrink-0">${i + 1}</div>
-                    ${i < data.mutasi.length - 1 ? '<div class="w-0.5 flex-1 bg-gray-200 dark:bg-gray-700 mt-1"></div>' : ''}
+                    ${!isLast ? '<div class="w-0.5 flex-1 bg-gray-200 dark:bg-gray-700 mt-1"></div>' : ''}
                 </div>
-                <div class="bg-gray-50 dark:bg-gray-700/50 rounded-xl p-4 flex-1 mb-2 space-y-1 text-sm">
-                    <div class="flex justify-between items-start gap-2">
-                        <span class="font-bold text-orange-600 dark:text-orange-400">${m.id_lokasi_asal} → ${m.id_lokasi_tujuan}</span>
+                <div class="bg-gray-50 dark:bg-gray-700/50 rounded-xl p-4 flex-1 mb-2 space-y-1.5 text-sm">
+                    <div>
+                        <span class="font-bold text-orange-600 dark:text-orange-400">
+                            ${lokasiData.find(l => l.code === m.id_lokasi_asal)?.name || m.id_lokasi_asal}
+                            →
+                            ${lokasiData.find(l => l.code === m.id_lokasi_tujuan)?.name || m.id_lokasi_tujuan}
+                        </span>
+                        ${uptTuju ? (() => {
+                            const e = uptDatabase.find(u => u.upt === uptTuju);
+                            return `<span class="text-[11px] text-gray-400 ml-1">(${e ? e.nama : uptTuju})</span>`;
+                        })() : ''}
                     </div>
                     <p class="text-xs text-gray-500 font-mono">${formatUtcToLocal(m.waktu_mutasi)}</p>
-                    <p class="text-xs text-gray-600 dark:text-gray-400"><span class="font-semibold">Oleh ID:</span> ${m.id_pengguna}</p>
-                    <p class="text-xs text-gray-600 dark:text-gray-400 italic">${m.alasan_mutasi}</p>
+                    ${durasi
+                        ? `<p class="text-xs text-gray-500">Durasi di lokasi ini: <span class="font-semibold">${durasi}</span></p>`
+                        : `<p class="text-xs text-gray-400 italic">Masih dalam proses mutasi...</p>`}
+                    <p class="text-xs text-gray-600 dark:text-gray-400"><span class="font-semibold">Oleh:</span> ${m.id_pengguna}</p>
+                    <p class="text-xs text-gray-600 dark:text-gray-400 italic">${ctx.clean || '—'}</p>
                 </div>
-            </div>
-        `).join('');
+            </div>`;
+        }).join('');
     } catch (e) {
         if (e.message !== 'Unauthorized')
             timeline.innerHTML = `<div class="text-center text-red-400 py-6">${e.message}</div>`;
@@ -1235,6 +1896,8 @@ function renderDbCards() {
     const modeSelect  = document.getElementById('filter-mode');
     if (!container) return;
     
+    container.innerHTML = '';
+
     const isTeknisi = _currentRole === 'TEKNISI';
     if (modeSelect) modeSelect.style.display = isTeknisi ? 'none' : '';
     
@@ -1242,8 +1905,6 @@ function renderDbCards() {
     const mode    = isTeknisi ? 'public' : (modeSelect ? modeSelect.value : 'public');
     const isAdmin = _currentRole === 'SUPER_ADMIN' || _currentRole === 'ADMIN_WILAYAH';
     
-    container.innerHTML = '';
-
     const filteredItems = db.filter(item => {
         const matchSearch = (item.id_aset || '').toLowerCase().includes(searchQ) ||
                             (item.kode_alat || '').toLowerCase().includes(searchQ) ||
@@ -1257,64 +1918,118 @@ function renderDbCards() {
         return;
     }
 
+    const fragment = document.createDocumentFragment();
+    
     filteredItems.sort((a, b) => {
         const av = (a[_sortField] || '').toString().toLowerCase();
         const bv = (b[_sortField] || '').toString().toLowerCase();
         return _sortDir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av);
     }).forEach(item => {
-        const statusColor = item.status_terakhir === 'SO'  ? 'text-green-500' :
-                            item.status_terakhir === 'TSO' ? 'text-red-500'   : 'text-blue-500';
-
-        const mutasiBtn = isAdmin ? `
-            <button onclick="window.openMutasiModal('${item.id_aset}')"
-                class="flex-1 bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 py-2 rounded font-bold hover:bg-orange-200 dark:hover:bg-orange-800 transition text-sm">
-                <i class="fas fa-exchange-alt"></i> MUTASI
-            </button>` : '';
-
-        const isSuperAdmin = _currentRole === 'SUPER_ADMIN';
+        const isSuperAdmin   = _currentRole === 'SUPER_ADMIN';
         const isAdminWilayah = _currentRole === 'ADMIN_WILAYAH';
-        const canDelete = isSuperAdmin || isAdminWilayah;
+        const canDelete      = isSuperAdmin || isAdminWilayah;
 
-        container.innerHTML += `
-            <div class="bg-white dark:bg-gray-800 p-5 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 flex flex-col justify-between hover:border-kai-blue dark:hover:border-kai-orange transition-colors">
-                <div>
-                    <div class="flex justify-between items-start mb-2">
-                        <span class="text-lg font-bold font-mono text-kai-blue dark:text-blue-400">${item.id_aset}</span>
-                        <span class="text-xs font-bold px-2 py-0.5 rounded-full ${item.status_terakhir === 'SO' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : item.status_terakhir === 'TSO' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' : 'bg-blue-100 text-blue-700'}">
-                            <i class="fas fa-circle text-[8px] mr-1"></i>${item.status_terakhir}
+        // Decode original data from id_aset
+        const dec        = decodeAsetId(item.id_aset);
+        const peruntukanName = PERUNTUKAN_MAP[dec.peruntukan] || dec.peruntukan || '—';
+        // lokasiCode from id_aset is now UPT code (e.g. JR1.1)
+        // Get parent code for region name lookup
+        const parentCode    = getParentLokasiCode(dec.lokasiCode) || dec.lokasiCode;
+        const lokasiName    = lokasiData.find(l => l.code === parentCode)?.name || item.id_lokasi_name || parentCode || '—';
+        // Prefer the UPT from the last recorded keterangan context tag for this asset
+        const summaryForCard  = _historySummary.find(x => x.id_aset === item.id_aset);
+        const lastKetForCard  = summaryForCard?.repair?.latest_keterangan || '';
+        const lastCtxForCard  = parseCtxTags(lastKetForCard);
+        // 1st: UPT tag from latest keterangan (set during condition updates)
+        // 2nd: resolve the raw id_lokasi itself as a UPT code (set during asset creation via in-upt)
+        // 3rd: fallback to id_lokasi_name only if it's a UPT-type entry
+        // id_lokasi_raw is now the UPT code itself
+        const uptFromKet    = lastCtxForCard.tags['UPT'] || '';
+        const rawUptCode    = item.id_lokasi_raw || item.id_lokasi || '';
+        const uptEntry      = uptDatabase.find(u => u.upt === rawUptCode);
+        const uptDisplay    = uptFromKet
+            ? (uptDatabase.find(u => u.upt === uptFromKet)?.nama || uptFromKet)
+            : uptEntry
+                ? `${uptEntry.nama} (${uptEntry.upt})`
+                : (rawUptCode || '—');
+        const tahunFull     = dec.tahun
+            ? (dec.tahun.length === 2 ? (parseInt(dec.tahun) <= 30 ? `20${dec.tahun}` : `19${dec.tahun}`) : dec.tahun)
+            : '—';
+        const tanggalBeli   = item.tanggal_pembelian
+            ? new Date(item.tanggal_pembelian).toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' })
+            : tahunFull;
+
+        // Mutasi badge from history summary
+        const summaryItem   = _historySummary.find(x => x.id_aset === item.id_aset);
+        const mutasiInfo    = summaryItem?.mutasi;
+        const mutasiBadge   = mutasiInfo
+            ? mutasiInfo.sudah_kembali
+                ? `<span class="text-[10px] px-2 py-0.5 rounded-full font-bold bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">✓ Di Lokasi Asal</span>`
+                : `<span class="text-[10px] px-2 py-0.5 rounded-full font-bold bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400">⟳ Sedang Dimutasi</span>`
+            : '';
+
+        const statusBadgeCls = item.status_terakhir === 'SO'
+            ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+            : item.status_terakhir === 'TSO'
+            ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+            : 'bg-blue-100 text-blue-700';
+
+        const row = (label, val) =>
+            `<div class="flex gap-2 text-xs"><span class="text-gray-400 w-28 shrink-0">${label}</span><span class="text-gray-700 dark:text-gray-200 font-medium">${val}</span></div>`;
+
+        const card = document.createElement('div');
+        card.className = 'bg-white dark:bg-gray-800 p-5 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 flex flex-col justify-between hover:border-kai-blue dark:hover:border-kai-orange transition-colors';
+        
+        // Build card content using template literal, then set as innerHTML of card
+        card.innerHTML = `
+            <div>
+                <div class="flex justify-between items-start mb-1">
+                    <span class="text-base font-bold font-mono text-kai-blue dark:text-blue-400 leading-tight">${item.id_aset}</span>
+                    <div class="flex items-center gap-1.5 shrink-0 ml-2">
+                        <span class="text-[10px] font-bold px-2 py-0.5 rounded-full ${statusBadgeCls}">
+                            <i class="fas fa-circle text-[7px] mr-0.5"></i>${item.status_terakhir}
                         </span>
+                        ${mutasiBadge}
                     </div>
-                    <p class="text-sm text-gray-700 dark:text-gray-300 font-semibold mt-1">${item.kode_alat}</p>
-                    <p class="text-xs text-gray-400 mt-0.5">${item.id_lokasi}</p>
                 </div>
-                <div class="mt-4 space-y-2">
-                    <!-- Desktop (md+): 3 cols — Perbarui | Mutasi | QR -->
-                    <!-- Tablet (sm): 2 cols row1 + 1 col row2 -->
-                    <!-- Mobile: 1 col each -->
-                    <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
-                        <button onclick="window.openEdit('${item.id_aset}')"
-                            class="flex items-center justify-center gap-1.5 px-3 py-2.5 bg-kai-blue hover:bg-blue-800 active:bg-blue-900 text-white font-semibold rounded-lg transition text-sm shadow-sm">
-                            <i class="fas fa-edit text-sm"></i> Perbarui
-                        </button>
-                        ${isAdmin ? `
-                        <button onclick="window.openMutasiModal('${item.id_aset}')"
-                            class="flex items-center justify-center gap-1.5 px-3 py-2.5 bg-kai-orange hover:bg-orange-600 active:bg-orange-700 text-white font-semibold rounded-lg transition text-sm shadow-sm">
-                            <i class="fas fa-exchange-alt text-sm"></i> Mutasi
-                        </button>` : `<div class="hidden md:block"></div>`}
-                        <button onclick="window.openQrModal('${item.id_aset}')"
-                            class="flex items-center justify-center gap-1.5 px-3 py-2.5 bg-violet-600 dark:bg-violet-700 hover:bg-violet-500 dark:hover:bg-violet-600 text-white font-semibold rounded-lg transition text-sm shadow-sm sm:col-span-2 md:col-span-1">
-                            <i class="fas fa-qrcode text-sm"></i> <span class="sm:inline md:hidden">Pindai / Cetak </span>QR
-                        </button>
-                    </div>
-                    ${canDelete ? `
-                    <button onclick="window.deleteAset('${item.id_aset}')"
-                        class="w-full flex items-center justify-center gap-1.5 px-3 py-2 bg-red-600 hover:bg-red-700 active:bg-red-800 text-white font-semibold rounded-lg transition text-sm">
-                        <i class="fas fa-trash-alt text-sm"></i> Hapus Aset
-                    </button>` : ''}
+                <p class="text-sm text-gray-700 dark:text-gray-300 font-semibold">${item.kode_alat_name || item.kode_alat}</p>
+
+                <div class="mt-3 space-y-1 border-t border-gray-100 dark:border-gray-700 pt-3">
+                    ${row('Pengadaan', PENGADAAN_MAP[item.sumber_pengadaan] || item.sumber_pengadaan || '—')}
+                    ${row('Tanggal Beli', tanggalBeli)}
+                    ${row('Peruntukan', peruntukanName)}
+                    ${row('Lokasi', lokasiName)}
+                    ${row('UPT', uptDisplay)}
                 </div>
             </div>
+            <div class="mt-4 space-y-2">
+                <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
+                    <button onclick="window.openEdit('${item.id_aset}')"
+                        class="flex items-center justify-center gap-1.5 px-3 py-2.5 bg-kai-blue hover:bg-blue-800 active:bg-blue-900 text-white font-semibold rounded-lg transition text-sm shadow-sm">
+                        <i class="fas fa-edit text-sm"></i> Perbarui
+                    </button>
+                    ${isAdmin ? `
+                    <button onclick="window.openMutasiModal('${item.id_aset}')"
+                        class="flex items-center justify-center gap-1.5 px-3 py-2.5 bg-kai-orange hover:bg-orange-600 active:bg-orange-700 text-white font-semibold rounded-lg transition text-sm shadow-sm">
+                        <i class="fas fa-exchange-alt text-sm"></i> Mutasi
+                    </button>` : `<div class="hidden md:block"></div>`}
+                    <button onclick="window.openQrModal('${item.id_aset}')"
+                        class="flex items-center justify-center gap-1.5 px-3 py-2.5 bg-violet-600 dark:bg-violet-700 hover:bg-violet-500 dark:hover:bg-violet-600 text-white font-semibold rounded-lg transition text-sm shadow-sm sm:col-span-2 md:col-span-1">
+                        <i class="fas fa-qrcode text-sm"></i> <span class="sm:inline md:hidden">Pindai / Cetak </span>QR
+                    </button>
+                </div>
+                ${canDelete ? `
+                <button onclick="window.deleteAset('${item.id_aset}')"
+                    class="w-full flex items-center justify-center gap-1.5 px-3 py-2.5 bg-red-600 hover:bg-red-700 active:bg-red-800 text-white font-semibold rounded-lg transition text-sm">
+                    <i class="fas fa-trash-alt text-sm"></i> Hapus Aset
+                </button>` : ''}
+            </div>
         `;
+        
+        fragment.appendChild(card);
     });
+    
+    container.appendChild(fragment);
 }
 
 // ── HISTORY VIEW STATE ─────────────────────────────────────────────────────
@@ -1328,10 +2043,60 @@ async function loadHistorySummary() {
     } catch (e) { /* silent */ }
 }
 
+// ── Asset ID decoder ───────────────────────────────────────────────────────
+
+const PERUNTUKAN_MAP = { A: 'Jalan Rel', B: 'Jembatan', C: 'Mekanik', D: 'Balaiyasa' };
+const PENGADAAN_MAP  = { '1': 'PUSAT', '2': 'DAOP / DIVRE' };
+
+/**
+ * Decode id_aset format: <kode_alat>-<tahun>-<peruntukan>-<id_lokasi>
+ * Returns { kodeAlat, tahun, peruntukan, lokasiCode }
+ */
+function decodeAsetId(id) {
+    if (!id) return {};
+    const parts = id.split('-');
+    // Minimum 4 parts: kode_alat, tahun, peruntukan, lokasi
+    if (parts.length < 4) return {};
+    return {
+        kodeAlat:   parts[0],
+        tahun:      parts[1],
+        peruntukan: parts[2],
+        lokasiCode: parts.slice(3).join('-'), // lokasi may contain hyphens
+    };
+}
+
+/** Find UPT display name(s) for a given lokasi code from uptDatabase */
+function uptNamesForLokasi(lokasiCode) {
+    return uptDatabase.filter(u => u.lokasi === lokasiCode).map(u => u.upt);
+}
+
+// ── Context tag parsers ────────────────────────────────────────────────────
+
+/**
+ * Extract [TAG: value] prefixes from a keterangan/alasan string.
+ * Returns { tags: { Peruntukan, Lokasi, UPT, 'UPT Tujuan' }, clean: string }
+ */
+function parseCtxTags(text) {
+    if (!text) return { tags: {}, clean: '' };
+    const tags = {};
+    const clean = text.replace(/\[([^\]]+?):\s*([^\]]+?)\]/g, (_, key, val) => {
+        tags[key.trim()] = val.trim();
+        return '';
+    }).trim();
+    return { tags, clean };
+}
+
+function ctxUptBadge(uptName, label = 'UPT') {
+    if (!uptName) return '';
+    return `<span class="text-[10px] text-gray-400"><i class="fas fa-map-marker-alt mr-1 text-[9px]"></i>${label}: <span class="font-medium text-gray-600 dark:text-gray-300">${uptName}</span></span>`;
+}
+
 function renderHistoryCards() {
     const container   = document.getElementById('history-repair-container');
     const searchInput = document.getElementById('search-history');
     if (!container) return;
+
+    container.innerHTML = '';
 
     const searchQ = (searchInput?.value || '').toLowerCase();
 
@@ -1344,50 +2109,73 @@ function renderHistoryCards() {
         return;
     }
 
-    container.innerHTML = filtered.map(item => {
+    const fragment = document.createDocumentFragment();
+    
+    filtered.forEach(item => {
         const r = item.repair || {};
         const statusColor = item.status_terakhir === 'SO'  ? 'text-green-500' :
                             item.status_terakhir === 'TSO' ? 'text-red-500'   : 'text-blue-500';
         const kondisiColor = r.latest_kondisi === 'SO'  ? 'text-green-500' :
                              r.latest_kondisi === 'TSO' ? 'text-red-500'   : 'text-blue-400';
 
-        return `
-            <div class="bg-white dark:bg-gray-800 p-5 rounded-xl shadow border border-gray-200 dark:border-gray-700 flex flex-col justify-between">
-                <div class="flex flex-col gap-3">
-                    <div class="flex justify-between items-start border-b dark:border-gray-700 pb-3">
-                        <div>
-                            <h3 class="text-base font-bold font-mono text-kai-blue dark:text-blue-400">${item.id_aset}</h3>
-                            <p class="text-xs text-gray-500 dark:text-gray-200 mt-0.5">${item.kode_alat} — ${item.id_lokasi}</p>
-                        </div>
-                        <span class="text-sm font-bold ${statusColor} shrink-0"><i class="fas fa-circle text-xs mr-1"></i>${item.status_terakhir}</span>
+        const card = document.createElement('div');
+        card.className = 'bg-white dark:bg-gray-800 p-5 rounded-xl shadow border border-gray-200 dark:border-gray-700 flex flex-col justify-between';
+        card.innerHTML = `
+            <div class="flex flex-col gap-3">
+                <div class="flex justify-between items-start border-b dark:border-gray-700 pb-3">
+                    <div>
+                        <h3 class="text-base font-bold font-mono text-kai-blue dark:text-blue-400">${item.id_aset}</h3>
+                        <p class="text-xs text-gray-500 dark:text-gray-200 mt-0.5">${item.kode_alat_name || item.kode_alat} — ${item.id_lokasi_name || item.id_lokasi}</p>
                     </div>
-                    ${r.latest_date ? `
-                    <div class="space-y-1 text-xs text-gray-600 dark:text-gray-400">
-                        <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">Perbaruan Terakhir</span><span class="font-mono">${formatUtcToLocal(r.latest_date)}</span></div>
-                        <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">UPT Pengirim</span><span>${r.latest_upt || '—'}</span></div>
-                        <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">Petugas</span><span>${r.latest_teknisi || '—'}</span></div>
-                        <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">Keterangan</span><span class="italic">${r.latest_keterangan || '—'}</span></div>
-                    </div>` : `
-                    <div class="space-y-1 text-xs text-gray-600 dark:text-gray-400">
-                        <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">Perbaruan Terakhir</span><span>—</span></div>
-                        <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">UPT Pengirim</span><span>—</span></div>
-                        <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">Petugas</span><span>—</span></div>
-                        <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">Keterangan</span><span>—</span></div>
-                    </div>`}
+                    <span class="text-sm font-bold ${statusColor} shrink-0"><i class="fas fa-circle text-xs mr-1"></i>${item.status_terakhir}</span>
                 </div>
-                <button onclick="window.openHistoryDetail('${item.id_aset}', 'repair')"
-                    class="mt-4 w-full flex items-center justify-center gap-2 px-3 py-2.5 bg-kai-blue hover:bg-blue-800 active:bg-blue-900 text-white font-semibold rounded-lg transition text-sm shadow-sm">
-                    <i class="fas fa-list text-sm"></i> Lihat Riwayat Lengkap
-                </button>
+                ${r.latest_date ? (() => {
+                    const ctx          = parseCtxTags(r.latest_keterangan || '');
+                    const lokasiCode   = ctx.tags['Lokasi'] || '';
+                    const lokasiEntry  = lokasiData.find(l => l.code === lokasiCode);
+                    const lokasiLabel  = lokasiEntry ? lokasiEntry.name : (lokasiCode || '—');
+                    const uptCode      = ctx.tags['UPT'] || '';
+                    const uptEntry     = uptDatabase.find(u => u.upt === uptCode);
+                    const uptLabel     = uptEntry ? `${uptEntry.nama} (${uptEntry.upt})` : (uptCode || '—');
+                    const peruntukanCode = ctx.tags['Peruntukan'] || '';
+                    const peruntukanLabel = PERUNTUKAN_MAP[peruntukanCode] || peruntukanCode || '—';
+                    return `
+                <div class="space-y-1 text-xs text-gray-600 dark:text-gray-400">
+                    <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">Perbaruan Terakhir</span><span class="font-mono">${formatUtcToLocal(r.latest_date)}</span></div>
+                    <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">Peruntukan</span><span>${peruntukanLabel}</span></div>
+                    <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">Lokasi Pengirim</span><span>${lokasiLabel}</span></div>
+                    <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">UPT Pengirim</span><span>${uptLabel}</span></div>
+                    <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">Petugas</span><span>${r.latest_teknisi || '—'}</span></div>
+                    <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">Keterangan</span><span class="italic">${ctx.clean || '—'}</span></div>
+                </div>`;
+                })() : `
+                <div class="space-y-1 text-xs text-gray-600 dark:text-gray-400">
+                    <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">Perbaruan Terakhir</span><span>—</span></div>
+                    <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">Peruntukan</span><span>—</span></div>
+                    <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">Lokasi Pengirim</span><span>—</span></div>
+                    <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">UPT Pengirim</span><span>—</span></div>
+                    <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">Petugas</span><span>—</span></div>
+                    <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">Keterangan</span><span>—</span></div>
+                </div>`}
             </div>
+            <button onclick="window.openHistoryDetail('${item.id_aset}', 'repair')"
+                class="mt-4 w-full flex items-center justify-center gap-2 px-3 py-2.5 bg-kai-blue hover:bg-blue-800 active:bg-blue-900 text-white font-semibold rounded-lg transition text-sm shadow-sm">
+                <i class="fas fa-list text-sm"></i> Lihat Riwayat Lengkap
+            </button>
         `;
-    }).join('');
+
+        fragment.appendChild(card);
+    });
+
+    container.appendChild(fragment);
 }
 
 function renderMutasiCards() {
     const container   = document.getElementById('history-mutasi-container');
     const searchInput = document.getElementById('search-history');
     if (!container) return;
+
+    container.innerHTML = '';
 
     const searchQ = (searchInput?.value || '').toLowerCase();
 
@@ -1401,38 +2189,86 @@ function renderMutasiCards() {
         return;
     }
 
-    container.innerHTML = filtered.map(item => {
+    const fragment = document.createDocumentFragment();
+    
+    filtered.forEach(item => {
         const m = item.mutasi;
         const returnedBadge = m.sudah_kembali
             ? `<span class="bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 text-xs px-2 py-0.5 rounded-full font-bold">✓ Sudah Kembali ke Lokasi Asal</span>`
             : `<span class="bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 text-xs px-2 py-0.5 rounded-full font-bold">⟳ Belum Kembali</span>`;
-
-        return `
-            <div class="bg-white dark:bg-gray-800 p-5 rounded-xl shadow border border-gray-200 dark:border-gray-700 flex flex-col justify-between">
-                <div class="flex flex-col gap-3">
-                    <div class="flex justify-between items-start border-b dark:border-gray-700 pb-3">
-                        <div>
-                            <h3 class="text-base font-bold font-mono text-kai-orange dark:text-orange-400">${item.id_aset}</h3>
-                            <p class="text-xs text-gray-500 dark:text-gray-200 mt-0.5">${item.kode_alat} — ${item.id_lokasi}</p>
-                        </div>
-                        ${returnedBadge}
+        
+        const card = document.createElement('div');
+        card.className = 'bg-white dark:bg-gray-800 p-5 rounded-xl shadow border border-gray-200 dark:border-gray-700 flex flex-col justify-between';
+        card.innerHTML = `
+            <div class="flex flex-col gap-3">
+                <div class="flex justify-between items-start border-b dark:border-gray-700 pb-3">
+                    <div>
+                        <h3 class="text-base font-bold font-mono text-kai-orange dark:text-orange-400">${item.id_aset}</h3>
+                        <p class="text-xs text-gray-500 dark:text-gray-200 mt-0.5">${item.kode_alat} — ${item.id_lokasi}</p>
                     </div>
-                    <div class="space-y-1 text-xs text-gray-600 dark:text-gray-400">
-                        <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">Lokasi Asal</span><span class="font-semibold text-gray-700 dark:text-gray-200">${m.original_lokasi || '—'}</span></div>
-                        <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">Lokasi Kini</span><span class="font-semibold">${item.id_lokasi || '—'}</span></div>
-                        <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">Tanggal Mutasi</span><span class="font-mono">${m.latest_date ? formatUtcToLocal(m.latest_date) : '—'}</span></div>
-                        <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">Tujuan</span><span>${m.latest_lokasi_tuju || '—'}</span></div>
-                        <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">Alasan</span><span class="italic">${m.latest_alasan || '—'}</span></div>
-                        <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">Total Mutasi</span><span class="font-bold">${m.count}×</span></div>
-                    </div>
+                    ${returnedBadge}
                 </div>
-                <button onclick="window.openHistoryDetail('${item.id_aset}', 'mutasi')"
-                    class="mt-4 w-full flex items-center justify-center gap-2 px-3 py-2.5 bg-kai-orange hover:bg-orange-600 active:bg-orange-700 text-white font-semibold rounded-lg transition text-sm shadow-sm">
-                    <i class="fas fa-route text-sm"></i> Lihat Timeline Mutasi
-                </button>
+                ${(() => {
+                    const summaryForMutasi = _historySummary.find(x => x.id_aset === item.id_aset);
+
+                    const ctx = parseCtxTags(m.latest_alasan || '');
+                    // Resolve Lokasi Asal full name (now a code from backend)
+                    const lokasiAsalEntry = lokasiData.find(l => l.code === m.original_lokasi) ||
+                                            uptDatabase.find(u => u.upt === m.original_lokasi);
+                    const lokasiAsalLabel = lokasiAsalEntry?.name || m.original_lokasi || '—';
+
+                    // UPT Asal: from first mutasi alasan tag or last repair keterangan
+                    const uptAsalCode   = ctx.tags['UPT'] || parseCtxTags(summaryForMutasi?.repair?.latest_keterangan || '').tags['UPT'] || '';
+                    const uptAsalEntry  = uptDatabase.find(u => u.upt === uptAsalCode);
+                    const uptAsalLabel  = uptAsalEntry ? `${uptAsalEntry.nama} (${uptAsalEntry.upt})` : (uptAsalCode || '—');
+
+                    // Lokasi Kini: item.id_lokasi is now UPT code, resolve to name
+                    const lokasiKiniEntry = lokasiData.find(l => l.code === item.id_lokasi) ||
+                                            uptDatabase.find(u => u.upt === item.id_lokasi);
+                    const lokasiKiniLabel = lokasiKiniEntry?.name || item.id_lokasi || '—';
+
+                    // UPT Kini: from latest alasan UPT Tujuan tag
+                    const uptKiniCode  = ctx.tags['UPT Tujuan'] || '';
+                    const uptKiniEntry = uptDatabase.find(u => u.upt === uptKiniCode);
+                    const uptKiniLabel = uptKiniEntry ? `${uptKiniEntry.nama} (${uptKiniEntry.upt})` : (uptKiniCode || '—');
+
+                    // Lama proses: difference between first and latest mutasi dates
+                    let lamaProses = '—';
+                    if (m.count >= 2 && m.latest_date) {
+                        // We only have latest_date; duration shown as "since latest"
+                        const latestMs = new Date(m.latest_date.replace(' ', 'T')).getTime();
+                        const nowMs    = Date.now();
+                        const diffDays = Math.floor((nowMs - latestMs) / (1000 * 60 * 60 * 24));
+                        lamaProses = diffDays === 0 ? 'Hari ini' : `${diffDays} hari`;
+                    } else if (m.count === 1 && m.latest_date) {
+                        const latestMs = new Date(m.latest_date.replace(' ', 'T')).getTime();
+                        const diffDays = Math.floor((Date.now() - latestMs) / (1000 * 60 * 60 * 24));
+                        lamaProses = diffDays === 0 ? 'Hari ini' : `${diffDays} hari`;
+                    }
+
+                    return `
+                <div class="space-y-1 text-xs text-gray-600 dark:text-gray-400">
+                    <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">Lokasi Asal</span><span class="font-semibold text-gray-700 dark:text-gray-200">${lokasiAsalLabel}</span></div>
+                    <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">UPT Asal</span><span class="text-gray-500 dark:text-gray-400 text-[11px]">${uptAsalLabel}</span></div>
+                    <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">Lokasi Kini</span><span class="font-semibold">${lokasiKiniLabel}</span></div>
+                    <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">UPT Kini</span><span class="text-gray-500 dark:text-gray-400 text-[11px]">${uptKiniLabel}</span></div>
+                    <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">Tanggal Mutasi</span><span class="font-mono">${m.latest_date ? formatUtcToLocal(m.latest_date) : '—'}</span></div>
+                    <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">Lama Proses</span><span class="font-bold">${lamaProses}</span></div>
+                    <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">Alasan</span><span class="italic">${ctx.clean || '—'}</span></div>
+                    <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">Total Mutasi</span><span class="font-bold">${m.count}></span></div>
+                </div>`;
+                })()}
             </div>
+            <button onclick="window.openHistoryDetail('${item.id_aset}', 'mutasi')"
+                class="mt-4 w-full flex items-center justify-center gap-2 px-3 py-2.5 bg-kai-orange hover:bg-orange-600 active:bg-orange-700 text-white font-semibold rounded-lg transition text-sm shadow-sm">
+                <i class="fas fa-route text-sm"></i> Lihat Timeline Mutasi
+            </button>
         `;
-    }).join('');
+
+        fragment.appendChild(card);
+    });
+
+    container.appendChild(fragment);
 }
 
 // ── MASTER DATA UI ─────────────────────────────────────────────────────────
@@ -1571,7 +2407,7 @@ async function loadMasterLokasi() {
     tbody.innerHTML = `<tr><td colspan="4" class="px-4 py-6 text-center text-gray-400 text-sm"><i class="fas fa-spinner fa-spin mr-2"></i>Memuat...</td></tr>`;
 
     try {
-        const res  = await apiFetch('/master/lokasi');
+        const res  = await apiFetch('/master/lokasi?tipe=DAOP&tipe=DIVRE&tipe=BALAIYASA&tipe=PUSAT');
         const data = await res.json();
 
         if (!data.length) {
@@ -1935,7 +2771,8 @@ document.getElementById('btn-master-edit-save')?.addEventListener('click', async
             const tipe_lokasi = document.getElementById('edit-field-tipe').value;
             res = await apiFetch(`/master/lokasi/${id}`, { method: 'PUT', body: JSON.stringify({ id_lokasi: id, nama_lokasi, tipe: tipe_lokasi }) });
         } else if (type === 'upt') {
-            res = await apiFetch(`/master/lokasi/${id}`, { method: 'PUT', body: JSON.stringify({ id_lokasi: id, nama_lokasi: _masterEditCtx.val1, tipe: 'DAOP' }) });
+            const parentLokasi = document.getElementById('edit-field-lokasi')?.value || _masterEditCtx.val2 || '';
+            res = await apiFetch(`/master/lokasi/${id}`, { method: 'PUT', body: JSON.stringify({ id_lokasi: id, nama_lokasi: document.getElementById('edit-field-nama')?.value || _masterEditCtx.val1, tipe: 'UPT' }) });
         }
 
         if (!res.ok) { const err = await res.json(); throw new Error(err.detail); }
@@ -2252,21 +3089,112 @@ document.getElementById('btn-export-pdf')?.addEventListener('click', async () =>
 });
 
 window.openMutasiModal = (uid) => {
+    // Apply UPT Select function helper
+    function applyUptSelect(locCode, uptSelectEl) {
+        if (!uptSelectEl) return;
+        const loc = lokasiData.find(l => l.code === locCode);
+        const isBalaiyasa = loc?.tipe?.toUpperCase() === 'BALAIYASA';
+
+        if (isBalaiyasa) {
+            uptSelectEl.innerHTML = `<option value="">Belum ada UPT untuk lokasi Balaiyasa</option>`;
+            uptSelectEl.disabled = true;
+            return;
+        }
+
+        uptSelectEl.disabled = false;
+        const matches = uptDatabase.filter(u => u.lokasi === locCode);
+        if (matches.length > 0) {
+            uptSelectEl.innerHTML = '<option value="">Pilih UPT...</option>' + matches.map(m => `<option value="${m.upt}">${m.nama || m.upt}</option>`).join('');
+        } else {
+            uptSelectEl.innerHTML = `<option value="">Tidak ada UPT untuk lokasi ini...</option>`;
+            uptSelectEl.disabled = true;
+        }
+        uptSelectEl.value = '';
+    }
+
     const item = db.find(x => x.id_aset === uid);
     if (!item) return;
 
     document.getElementById('mutasi-uid').value = uid;
     document.getElementById('mutasi-modal-subtitle').innerText = item.id_aset;
-    document.getElementById('mutasi-lokasi-asal').textContent = item.id_lokasi;
+
+    // Lokasi Asal: use original lokasi from history summary (before any mutations)
+    // item.id_lokasi is now UPT code, so get parent for region name
+    const summaryItem  = _historySummary.find(x => x.id_aset === uid);
+    const parentCode   = getParentLokasiCode(item.id_lokasi) || item.id_lokasi;
+    const originalLok  = summaryItem?.mutasi?.original_lokasi
+        || lokasiData.find(l => l.code === parentCode)?.name
+        || item.id_lokasi_name || item.id_lokasi;
+
+    // UPT Asal: from last keterangan tag, fallback to current id_lokasi (which is UPT code)
+    const lastKetMut  = summaryItem?.repair?.latest_keterangan || '';
+    const lastCtxMut  = parseCtxTags(lastKetMut);
+    const uptAsalCode = lastCtxMut.tags['UPT'] || item.id_lokasi || '';
+    const uptAsalEntry = uptDatabase.find(u => u.upt === uptAsalCode);
+    const uptAsalLabel = uptAsalEntry ? `${uptAsalEntry.nama}` : (uptAsalCode || '—');
+
+    // Lokasi Kini — resolve full name from lokasiData or id_lokasi_name
+    const lokasiKiniCode = item.id_lokasi_raw || item.id_lokasi;
+    const lokasiKiniEntry = lokasiData.find(l => l.code === lokasiKiniCode);
+    const lokasiKiniName  = lokasiKiniEntry?.name || item.id_lokasi_name || lokasiKiniCode;
+
+    // UPT Kini: from latest keterangan tag, fallback to checking if id_lokasi is itself a UPT
+    const uptKiniCode  = lastCtxMut.tags['UPT'] || lokasiKiniCode;
+    const uptKiniEntry = uptDatabase.find(u => u.upt === uptKiniCode);
+    const uptKiniLabel = uptKiniEntry ? `${uptKiniEntry.nama}` : '—';
+
+    const asalEl = document.getElementById('mutasi-lokasi-asal');
+    const kiniEl = document.getElementById('mutasi-lokasi-kini');
+    if (asalEl) asalEl.textContent = `${originalLok} (${uptAsalLabel})`;
+    if (kiniEl) kiniEl.textContent = `${lokasiKiniName} (${uptKiniLabel})`;
 
     // Populate destination dropdown
     const tujuSel = document.getElementById('mutasi-lokasi-tuju');
-    const options = _currentRole === 'ADMIN_WILAYAH'
+    const options = _currentRole === ('ADMIN_WILAYAH' || 'SUPER_ADMIN')
         ? lokasiData.filter(l => l.code === (getJwtPayload(authToken)?.id_lokasi || ''))
-        : lokasiData.filter(l => l.code !== item.id_lokasi);
+        : lokasiData.filter(l => l.code);
 
     tujuSel.innerHTML = '<option value="">Pilih Lokasi Tujuan...</option>' +
         options.map(l => `<option value="${l.code}">${l.name}</option>`).join('');
+
+    // Wire tuju → UPT select (fix disabled bug: must re-wire every modal open)
+    const uptTujuEl  = document.getElementById('mutasi-upt-tuju');
+    const uptTujuLbl = document.getElementById('mutasi-upt-tuju-label'); // add id to the <label> in HTML if not present
+    if (uptTujuEl) {
+        uptTujuEl.innerHTML = '<option value="">Pilih Lokasi Tujuan dahulu...</option>';
+        uptTujuEl.disabled  = true;
+        uptTujuEl.required  = false;
+
+        tujuSel.onchange = () => {
+            const selectedLok = tujuSel.value;
+            const currentLok  = item.id_lokasi_raw || item.id_lokasi;
+            const isSameLok   = selectedLok === currentLok;
+
+            if (!selectedLok) {
+                uptTujuEl.innerHTML = '<option value="">Pilih Lokasi Tujuan dahulu...</option>';
+                uptTujuEl.disabled  = true;
+                uptTujuEl.required  = false;
+                if (uptTujuLbl) uptTujuLbl.textContent = 'Target UPT';
+                return;
+            }
+
+            // Enable and populate UPT dropdown
+            applyUptSelect(selectedLok, uptTujuEl);
+
+            if (isSameLok) {
+                // Same region → UPT is optional (just moving within the same DAOP/DIVRE)
+                uptTujuEl.required = false;
+                // Prepend "opsional" placeholder
+                if (uptTujuEl.options[0]) uptTujuEl.options[0].text = 'Pilih Target UPT (opsional)';
+                if (uptTujuLbl) uptTujuLbl.textContent = 'Target UPT (Opsional)';
+            } else {
+                // Different region → UPT is required
+                uptTujuEl.required = true;
+                if (uptTujuEl.options[0]) uptTujuEl.options[0].text = 'Pilih Target UPT...';
+                if (uptTujuLbl) uptTujuLbl.textContent = 'Target UPT (Wajib)';
+            }
+        };
+    }
 
     document.getElementById('mutasi-alasan').value = '';
     document.getElementById('mutasi-modal').classList.remove('hidden');
@@ -2447,22 +3375,52 @@ async function downloadQrPdf() {
     }
 }
 
+const _scriptLoadPromises = new Map();
+
 function loadScript(src) {
-    return new Promise((resolve, reject) => {
-        if (document.querySelector(`script[src="${src}"]`)) { resolve(); return; }
+    if (_scriptLoadPromises.has(src)) {
+        return _scriptLoadPromises.get(src);
+    }
+    
+    const promise = new Promise((resolve, reject) => {
+        const existing = document.querySelector(`script[src="${src}"]`);
+        if (existing) {
+            // If script exists but is still loading, we can't know.
+            // Best effort: resolve immediately (may cause race if not loaded yet).
+            // For production, use a script loader library.
+            resolve();
+            return;
+        }
         const s  = document.createElement('script');
         s.src    = src;
-        s.onload = resolve;
-        s.onerror = reject;
+        s.async  = true;
+        s.onload = () => {
+            _scriptLoadPromises.delete(src);
+            resolve();
+        };
+        s.onerror = () => {
+            _scriptLoadPromises.delete(src);
+            reject(new Error(`Failed to load ${src}`));
+        };
         document.head.appendChild(s);
     });
+    
+    _scriptLoadPromises.set(src, promise);
+    return promise;
 }
 
 // ── NOTIFICATIONS & CONFIRM DIALOG ────────────────────────────────────────
 
+const MAX_TOASTS = 5;
+
 function showToast(message, type = 'info') {
     const container = document.getElementById('toast-container');
     if (!container) return;
+
+    // Remove oldest toasts if over limit
+    while (container.children.length >= MAX_TOASTS) {
+        container.firstChild.remove();
+    }
 
     const toast = document.createElement('div');
 
@@ -2620,7 +3578,9 @@ document.getElementById('pulihkan-delete-btn')?.addEventListener('click', async 
 
 function formatUtcToLocal(utcStr) {
     if (!utcStr) return '—';
-    const date = new Date(utcStr.replace(' ', 'T'));
+    // Server sends naive local time (UTC+7). Append offset to parse correctly as local.
+    const localStr = utcStr.replace(' ', 'T'); // '+07:00'
+    const date = new Date(localStr);
     if (isNaN(date)) return utcStr; 
 
     const bulan = [

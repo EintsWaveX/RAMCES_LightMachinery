@@ -15,6 +15,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 
@@ -439,6 +440,85 @@
         :root:not(.dark) .bg-gray-900\/40 {
             background-color: rgba(15,23,42,0.55) !important;
         }
+
+        /* ── Dashboard matrix cell gradient ── */
+        .matrix-cell-mixed {
+            background: linear-gradient(135deg, #dcfce7 50%, #fee2e2 50%);
+        }
+        .dark .matrix-cell-mixed {
+            background: linear-gradient(135deg, rgba(21,128,61,0.35) 50%, rgba(185,28,28,0.35) 50%);
+        }
+
+        /* ── Dashboard tab panel ── */
+        .dash-tab-btn {
+            white-space: nowrap;
+            transition: all .15s;
+        }
+        .dash-tab-btn.is-active {
+            background-color: #164C81;
+            color: #ffffff;
+            font-weight: 700;
+            box-shadow: 0 2px 8px rgba(22,76,129,0.25);
+        }
+        .dark .dash-tab-btn.is-active {
+            background-color: #1e5fa3;
+        }
+        .dash-tab-btn:not(.is-active) {
+            color: #6b7280;
+        }
+        .dash-tab-btn:not(.is-active):hover {
+            background-color: rgba(22,76,129,0.1);
+            color: #164C81;
+        }
+        .dark .dash-tab-btn:not(.is-active):hover {
+            background-color: rgba(255,255,255,0.08);
+            color: #93c5fd;
+        }
+
+        /* ── Dashboard dot indicators ── */
+        .dash-dot {
+            width: 7px; height: 7px;
+            border-radius: 9999px;
+            background: #cbd5e1;
+            transition: background .2s, transform .2s;
+            cursor: pointer;
+        }
+        .dash-dot.is-active {
+            background: #164C81;
+            transform: scale(1.4);
+        }
+        .dark .dash-dot.is-active { background: #60a5fa; }
+
+        /* ── Matrix table ── */
+        #dash-matrix-table th,
+        #dash-matrix-table td {
+            min-width: 2.6rem;
+            text-align: center;
+            font-size: 0.7rem;
+            padding: 0.3rem 0.2rem;
+        }
+        #dash-matrix-table th { font-weight: 700; }
+
+        /* ── Matrix table fluid sizing ── */
+        #dash-matrix-table th,
+        #dash-matrix-table td {
+            padding: 0.35rem 0.5rem;
+            font-size: clamp(9px, 1vw, 12px);
+            white-space: nowrap;
+        }
+
+        #dash-matrix-table th {
+            font-weight: 600;
+        }
+
+        /* Wilayah column: values left, header center */
+        #dash-matrix-table td:first-child {
+            text-align: left !important;
+        }
+
+        #dash-matrix-table th:first-child {
+            text-align: center !important;
+        }
     </style>
 </head>
 
@@ -495,7 +575,7 @@
                     </div>
                     <button id="btn-next-step"
                         class="w-full bg-kai-blue hover:bg-blue-800 active:bg-blue-900 text-white font-semibold py-3 rounded-lg transition-colors shadow-md text-sm">
-                        Lanjutkan <i class="fas fa-arrow-right ml-2 text-sm opacity-70"></i>
+                        Lanjutkan <i class="fas fa-arrow-right ml-2 opacity-70"></i>
                     </button>
                 </div>
     
@@ -503,8 +583,8 @@
                 <div id="auth-step-2" class="hidden space-y-4">
                     <div class="flex items-center gap-3 mb-2">
                         <button id="btn-back-step1"
-                            class="flex items-center gap-2 px-4 py-2 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 font-semibold text-sm transition">
-                            <i class="fas fa-arrow-left text-sm"></i> Kembali
+                            class="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 font-semibold text-sm transition">
+                            <i class="fas fa-arrow-left"></i> Kembali
                         </button>
                         <div>
                             <p class="text-xs text-gray-400">Masuk sebagai</p>
@@ -556,8 +636,8 @@
                 <div id="auth-step-3" class="hidden space-y-4">
                     <div class="flex items-center gap-3 mb-2">
                         <button id="btn-back-step2"
-                            class="flex items-center gap-2 px-4 py-2 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 font-semibold text-sm transition">
-                            <i class="fas fa-arrow-left text-sm"></i> Kembali
+                            class="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 font-semibold text-sm transition">
+                            <i class="fas fa-arrow-left"></i> Kembali
                         </button>
                         <div>
                             <p class="text-xs text-gray-400">Masuk sebagai</p>
@@ -575,7 +655,7 @@
                     <input type="hidden" id="login-role" value="">
                     <button id="btn-login"
                         class="w-full bg-kai-blue hover:bg-blue-800 active:bg-blue-900 text-white font-semibold py-3 rounded-lg transition-colors shadow-md text-sm">
-                        Masuk <i class="fas fa-arrow-right ml-2 text-sm opacity-70"></i>
+                        Masuk <i class="fas fa-arrow-right ml-2 opacity-70"></i>
                     </button>
                 </div>
     
@@ -706,7 +786,7 @@
                     <!-- Bell -->
                     <button
                         class="relative w-8 h-8 flex items-center justify-center rounded-lg text-gray-400 hover:text-kai-blue hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
-                        <i class="far fa-bell text-xl"></i>
+                        <i class="fas fa-bell text-xl"></i>
                         <span
                             class="absolute top-1 right-1 w-2 h-2 bg-red-600 rounded-full border-2 border-white dark:border-gray-800"></span>
                     </button>
@@ -746,45 +826,150 @@
                 <!-- ─────────────────────────────────────────────
                  VIEW: DASHBOARD
                 ───────────────────────────────────────────── -->
-                <section id="view-dashboard" class="view-section space-y-6">
-
-                    <!-- Welcome card -->
+                <section id="view-dashboard" class="view-section space-y-5">
+                
+                    <!-- ── Zone 1: Welcome + KPI strip ── -->
                     <div
-                        class="bg-white dark:bg-gray-800 rounded-xl p-6 md:p-8 border border-gray-100 dark:border-gray-700 shadow-sm flex items-center justify-between">
+                        class="bg-white dark:bg-gray-800 rounded-xl px-5 py-4 border border-gray-100 dark:border-gray-700 shadow-sm flex items-center justify-between gap-4">
                         <div>
-                            <h2 class="text-xl font-bold text-gray-800 dark:text-white" id="dashboard-welcome">Selamat Datang</h2>
-                            <p class="text-sm text-gray-400 mt-1">Pantau kesiapan dan kondisi aset alat kerja secara langsung.</p>
+                            <h2 class="text-base font-bold text-gray-800 dark:text-white" id="dashboard-welcome">Selamat Datang</h2>
+                            <p class="text-xs text-gray-400 mt-0.5">Pantau kesiapan dan kondisi aset alat kerja secara langsung.</p>
+                        </div>
+                        <i class="fas fa-chart-line text-2xl text-kai-blue/30 dark:text-gray-600 hidden sm:block shrink-0"></i>
+                    </div>
+                
+                    <!-- KPI cards: 2 col mobile → 3 col sm → 5 col lg -->
+                    <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+                        <div
+                            class="bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm relative overflow-hidden group hover:border-kai-blue transition-colors">
+                            <p class="text-[9px] font-bold tracking-widest text-gray-400 uppercase mb-1">Total Aset</p>
+                            <h3 class="text-2xl font-bold text-gray-800 dark:text-white" id="stat-total">—</h3>
+                            <i
+                                class="fas fa-boxes absolute -bottom-3 -right-1 text-5xl text-slate-100 dark:text-slate-700/50 group-hover:scale-125 transition-transform"></i>
                         </div>
                         <div
-                            class="hidden md:flex w-14 h-14 rounded-full bg-blue-50 dark:bg-gray-700 items-center justify-center">
-                            <i class="fas fa-chart-line text-xl text-kai-blue dark:text-gray-400"></i>
+                            class="bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm relative overflow-hidden group hover:border-green-400 transition-colors">
+                            <p class="text-[9px] font-bold tracking-widest text-gray-400 uppercase mb-1">Siap Operasi</p>
+                            <h3 class="text-2xl font-bold text-green-500" id="stat-so">—</h3>
+                            <i
+                                class="fas fa-check-circle absolute -bottom-3 -right-1 text-5xl text-green-100 dark:text-green-900/30 group-hover:scale-125 transition-transform"></i>
+                        </div>
+                        <div
+                            class="bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm relative overflow-hidden group hover:border-red-400 transition-colors">
+                            <p class="text-[9px] font-bold tracking-widest text-gray-400 uppercase mb-1">Tidak Siap</p>
+                            <h3 class="text-2xl font-bold text-red-500" id="stat-tso">—</h3>
+                            <i
+                                class="fas fa-times-circle absolute -bottom-3 -right-1 text-5xl text-red-100 dark:text-red-900/30 group-hover:scale-125 transition-transform"></i>
+                        </div>
+                        <div
+                            class="bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm relative overflow-hidden group hover:border-kai-blue transition-colors">
+                            <p class="text-[9px] font-bold tracking-widest text-gray-400 uppercase mb-1">Ketersediaan</p>
+                            <h3 class="text-2xl font-bold text-kai-blue dark:text-blue-400" id="stat-avail">—</h3>
+                            <i
+                                class="fas fa-gauge-high absolute -bottom-3 -right-1 text-5xl text-blue-100 dark:text-blue-900/30 group-hover:scale-125 transition-transform"></i>
+                        </div>
+                        <div
+                            class="bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm relative overflow-hidden group hover:border-slate-400 transition-colors col-span-2 sm:col-span-1">
+                            <p class="text-[9px] font-bold tracking-widest text-gray-400 uppercase mb-1">Benchmark</p>
+                            <div class="flex items-end gap-1">
+                                <h3 class="text-2xl font-bold text-slate-500 dark:text-slate-400" id="stat-benchmark">59%</h3>
+                                <span id="stat-benchmark-delta" class="text-xs font-bold mb-0.5"></span>
+                            </div>
+                            <i
+                                class="fas fa-flag-checkered absolute -bottom-3 -right-1 text-5xl text-slate-100 dark:text-slate-700/50 group-hover:scale-125 transition-transform"></i>
                         </div>
                     </div>
-
-                    <!-- Stat cards -->
-                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-5">
-                        <div
-                            class="bg-white dark:bg-gray-800 p-6 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm relative overflow-hidden group hover:border-kai-blue transition-colors">
-                            <p class="text-[10px] font-bold tracking-widest text-gray-400 uppercase mb-1">Total Aset Aktif</p>
-                            <h3 class="text-4xl font-bold text-gray-800 dark:text-white" id="stat-total">—</h3>
-                            <i
-                                class="fas fa-boxes absolute -bottom-4 -right-2 text-7xl text-slate-200 dark:text-slate-700/60 group-hover:scale-150 transition-transform"></i>
+                
+                    <!-- ── Separator ── -->
+                    <hr class="border-gray-200 dark:border-gray-700">
+                
+                    <!-- ── Zone 3: Filter bar + Keterangan legend ── -->
+                    <div class="flex flex-col sm:flex-row gap-4 items-start sm:items-end">
+                        <!-- Left: filters -->
+                        <div class="flex flex-wrap gap-2 flex-1">
+                            <select id="dash-filter-alat"
+                                class="text-xs px-3 py-2.5 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 outline-none focus:border-kai-blue transition min-w-[140px]">
+                                <option value="">Semua Alat Kerja</option>
+                            </select>
+                            <select id="dash-filter-pengadaan"
+                                class="text-xs px-3 py-2.5 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 outline-none focus:border-kai-blue transition">
+                                <option value="">Semua Pengadaan</option>
+                                <option value="1">PUSAT</option>
+                                <option value="2">DAOP / DIVRE</option>
+                            </select>
+                            <select id="dash-filter-tahun"
+                                class="text-xs px-3 py-2.5 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 outline-none focus:border-kai-blue transition">
+                                <option value="">Semua Tahun</option>
+                            </select>
                         </div>
-                        <div
-                            class="bg-white dark:bg-gray-800 p-6 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm relative overflow-hidden group hover:border-green-400 transition-colors">
-                            <p class="text-[10px] font-bold tracking-widest text-gray-400 uppercase mb-1">Siap Operasi (SO)</p>
-                            <h3 class="text-4xl font-bold text-green-500" id="stat-so">—</h3>
-                            <i
-                                class="fas fa-check-circle absolute -bottom-4 -right-2 text-7xl text-green-100 dark:text-green-900/40 group-hover:scale-150 transition-transform"></i>
-                        </div>
-                        <div
-                            class="bg-white dark:bg-gray-800 p-6 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm relative overflow-hidden group hover:border-red-400 transition-colors">
-                            <p class="text-[10px] font-bold tracking-widest text-gray-400 uppercase mb-1">Tidak Siap (TSO)</p>
-                            <h3 class="text-4xl font-bold text-red-500" id="stat-tso">—</h3>
-                            <i
-                                class="fas fa-times-circle absolute -bottom-4 -right-2 text-7xl text-red-100 dark:text-red-900/40 group-hover:scale-150 transition-transform"></i>
+                        <!-- Right: Keterangan legend -->
+                        <div class="flex flex-wrap gap-x-4 gap-y-1 text-xs shrink-0">
+                            <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-sm bg-green-500 inline-block"></span> SO — Siap Operasi</span>
+                            <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-sm bg-red-500 inline-block"></span> TSO — Tidak Siap</span>
+                            <span class="flex items-center gap-1.5"><span
+                                    class="w-3 h-3 rounded-sm bg-gradient-to-br from-green-300 to-red-300 inline-block"></span> Lebih dari 1 Unit</span>
+                            <span class="flex items-center gap-1.5"><span
+                                    class="w-3 h-3 rounded-sm border border-gray-300 dark:border-gray-600 inline-block"></span> — Tidak ada Alat Kerja</span>
                         </div>
                     </div>
+                
+                    <!-- ── Zone 4+5: Tab switcher + panels ── -->
+                    <div
+                        class="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm overflow-hidden">
+                
+                        <!-- Tab header row -->
+                        <div class="flex items-center gap-2 px-4 pt-4 border-b border-gray-100 dark:border-gray-700">
+                            <!-- Left arrow -->
+                            <button id="dash-tab-prev"
+                                class="shrink-0 w-7 h-7 flex items-center justify-center rounded-full border border-gray-200 dark:border-gray-600 text-kai-blue dark:text-blue-400 hover:bg-kai-blue hover:text-white transition text-xs hidden sm:flex">
+                                <i class="fas fa-chevron-left"></i>
+                            </button>
+                            <!-- Scrollable tab list -->
+                            <div id="dash-tab-bar" class="flex gap-1 overflow-x-auto pb-0 scrollbar-none flex-1">
+                                <button class="dash-tab-btn is-active px-4 py-2.5 rounded-t-lg text-xs" data-dash-tab="matrix">
+                                    <i class="fas fa-table mr-1.5"></i>Matriks Kesiapan
+                                </button>
+                                <button class="dash-tab-btn px-4 py-2.5 rounded-t-lg text-xs" data-dash-tab="bar">
+                                    <i class="fas fa-chart-bar mr-1.5"></i>Grafik Ketersediaan
+                                </button>
+                                <button class="dash-tab-btn px-4 py-2.5 rounded-t-lg text-xs" data-dash-tab="trend">
+                                    <i class="fas fa-chart-line mr-1.5"></i>Tren Perbaikan
+                                </button>
+                            </div>
+                            <!-- Right arrow -->
+                            <button id="dash-tab-next"
+                                class="shrink-0 w-7 h-7 flex items-center justify-center rounded-full border border-gray-200 dark:border-gray-600 text-kai-blue dark:text-blue-400 hover:bg-kai-blue hover:text-white transition text-xs hidden sm:flex">
+                                <i class="fas fa-chevron-right"></i>
+                            </button>
+                        </div>
+                
+                        <!-- Tab panels -->
+                        <div class="relative">
+                            <!-- Panel: Matrix -->
+                            <div id="dash-panel-matrix" class="dash-panel p-2 overflow-x-auto overflow-y-auto" style="max-height:70vh">
+                                <table id="dash-matrix-table" class="w-full border-collapse text-xs">
+                                    <thead id="dash-matrix-thead"></thead>
+                                    <tbody id="dash-matrix-tbody"></tbody>
+                                </table>
+                            </div>
+                            <!-- Panel: Bar chart -->
+                            <div id="dash-panel-bar" class="dash-panel hidden p-4" style="max-height:70vh; overflow-y:auto">
+                                <canvas id="dash-chart-bar" style="max-height:420px"></canvas>
+                            </div>
+                            <!-- Panel: Trend line chart -->
+                            <div id="dash-panel-trend" class="dash-panel hidden p-4" style="max-height:70vh; overflow-y:auto">
+                                <canvas id="dash-chart-trend" style="max-height:420px"></canvas>
+                            </div>
+                        </div>
+                
+                        <!-- Dot indicators -->
+                        <div id="dash-dots" class="flex justify-center gap-2 py-3 border-t border-gray-100 dark:border-gray-700">
+                            <div class="dash-dot is-active" data-dot="0"></div>
+                            <div class="dash-dot" data-dot="1"></div>
+                            <div class="dash-dot" data-dot="2"></div>
+                        </div>
+                    </div>
+                
                 </section>
 
                 <!-- ─────────────────────────────────────────────
@@ -812,12 +997,12 @@
                                     <label class="flex items-center gap-2 cursor-pointer">
                                         <input type="radio" name="in-pengadaan" value="1" required
                                             class="accent-kai-orange w-4 h-4">
-                                        <span>PUSAT (1)</span>
+                                        <span>PUSAT</span>
                                     </label>
                                     <label class="flex items-center gap-2 cursor-pointer">
                                         <input type="radio" name="in-pengadaan" value="2"
                                             class="accent-kai-orange w-4 h-4">
-                                        <span>DAOP / DIVRE / BALAIYASA (2)</span>
+                                        <span>DAOP / DIVRE</span>
                                     </label>
                                 </div>
                             </div>
@@ -831,26 +1016,36 @@
                             <div class="md:col-span-2">
                                 <label class="block text-xs font-semibold mb-2 text-gray-600 dark:text-gray-400">4. Unit Peruntukan</label>
                                 <div
-                                    class="flex flex-wrap gap-4 bg-gray-50 dark:bg-gray-700/50 p-4 rounded-lg border border-gray-100 dark:border-gray-600 text-sm">
+                                    class="flex flex-wrap justify-between gap-4 bg-gray-50 dark:bg-gray-700/50 p-4 rounded-lg border border-gray-100 dark:border-gray-600 text-sm">
                                     <label class="flex items-center gap-2 cursor-pointer"><input type="radio"
                                             name="in-unit" value="A" required class="accent-kai-orange w-4 h-4">
-                                        <span>JALAN REL (A)</span></label>
+                                        <span>JALAN REL</span></label>
                                     <label class="flex items-center gap-2 cursor-pointer"><input type="radio"
                                             name="in-unit" value="B" class="accent-kai-orange w-4 h-4">
-                                        <span>JEMBATAN (B)</span></label>
+                                        <span>JEMBATAN</span></label>
                                     <label class="flex items-center gap-2 cursor-pointer"><input type="radio"
                                             name="in-unit" value="C" class="accent-kai-orange w-4 h-4">
-                                        <span>MEKANIK (C)</span></label>
+                                        <span>MEKANIK</span></label>
                                     <label class="flex items-center gap-2 cursor-pointer"><input type="radio"
                                             name="in-unit" value="D" class="accent-kai-orange w-4 h-4">
-                                        <span>BALAIYASA (D)</span></label>
+                                        <span>BALAIYASA</span></label>
                                 </div>
                             </div>
 
                             <div class="md:col-span-2">
                                 <label class="block text-xs font-semibold mb-2 text-gray-600 dark:text-gray-400">5. Lokasi Penempatan</label>
                                 <select id="in-lokasi" required
-                                    class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition"></select>
+                                    class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition">
+                                    <option value="">— Pilih Lokasi/Wilayah —</option>
+                                </select>
+                            </div>
+                            
+                            <div class="md:col-span-2">
+                                <label class="block text-xs font-semibold mb-2 text-gray-600 dark:text-gray-400">6. UPT / Sub-Lokasi</label>
+                                <select id="in-upt" disabled
+                                    class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition disabled:opacity-50 disabled:cursor-not-allowed">
+                                    <option value="">— Pilih Lokasi terlebih dahulu... —</option>
+                                </select>
                             </div>
                         </div>
 
@@ -890,17 +1085,22 @@
                             </div>
                         </div>
                         <!-- Row 2: download buttons -->
-                        <div class="flex gap-2">
-                            <button id="btn-db-download-xlsx"
-                                class="flex items-center gap-2 px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-semibold rounded-lg transition text-sm shadow-sm">
-                                <i class="fas fa-file-excel"></i>
-                                <span>Unduh Excel (.xlsx)</span>
-                            </button>
-                            <button id="btn-db-download-pdf"
-                                class="flex items-center gap-2 px-6 py-2.5 bg-red-600 hover:bg-red-700 active:bg-red-800 text-white font-semibold rounded-lg transition text-sm shadow-sm">
-                                <i class="fas fa-file-pdf"></i>
-                                <span>Unduh PDF</span>
-                            </button>
+                        <div class="flex flex-col md:flex-row flex-wrap md:flex-nowrap gap-2 items-start md:items-center">
+                            <p class="text-sm font-mono font-bold text-kai-blue dark:text-blue-400 w-full md:w-auto" id="save-aset-info">
+                                Simpan data aset kerja dalam kedua format berikut:
+                            </p>
+                            <div class="flex flex-wrap md:flex-nowrap gap-2 w-full md:w-auto">
+                                <button id="btn-db-download-xlsx"
+                                    class="flex items-center gap-2 px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-semibold rounded-lg transition text-sm shadow-sm flex-1 md:flex-none">
+                                    <i class="fas fa-file-excel"></i>
+                                    <span>Unduh Excel (.xlsx)</span>
+                                </button>
+                                <button id="btn-db-download-pdf"
+                                    class="flex items-center gap-2 px-6 py-2.5 bg-red-600 hover:bg-red-700 active:bg-red-800 text-white font-semibold rounded-lg transition text-sm shadow-sm flex-1 md:flex-none">
+                                    <i class="fas fa-file-pdf"></i>
+                                    <span>Unduh PDF</span>
+                                </button>
+                            </div>
                         </div>
                     </div>
 
@@ -932,18 +1132,33 @@
                                     class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition">
                             </div>
                             <div>
-                                <label class="block text-xs font-semibold mb-2 text-gray-600 dark:text-gray-400">Lokasi Perbaikan</label>
+                                <label id="edit-lokasi-label" class="block text-xs font-semibold mb-2 text-gray-600 dark:text-gray-400">Lokasi Perbaikan</label>
                                 <select id="edit-lokasi" required
                                     class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition">
                                     <option value="" disabled selected>Pilih lokasi...</option>
                                 </select>
                             </div>
                             <div>
-                                <label class="block text-xs font-semibold mb-2 text-gray-600 dark:text-gray-400">UPT Pengirim</label>
+                                <label id="edit-upt-label" class="block text-xs font-semibold mb-2 text-gray-600 dark:text-gray-400">UPT Pengirim</label>
                                 <select id="edit-upt" required
                                     class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition">
                                     <option value="">Pilih lokasi dahulu...</option>
                                 </select>
+                            </div>
+                        </div>
+
+                        <div class="md:col-span-2">
+                            <label class="block text-xs font-semibold mb-2 text-gray-600 dark:text-gray-400">Unit Peruntukan</label>
+                            <div
+                                class="flex flex-wrap justify-between gap-4 bg-gray-50 dark:bg-gray-700/50 p-4 rounded-lg border border-gray-100 dark:border-gray-600 text-sm">
+                                <label class="flex items-center gap-2 cursor-pointer"><input type="radio" name="edit-unit" value="A"
+                                        class="accent-kai-orange w-4 h-4"> <span>JALAN REL</span></label>
+                                <label class="flex items-center gap-2 cursor-pointer"><input type="radio" name="edit-unit" value="B"
+                                        class="accent-kai-orange w-4 h-4"> <span>JEMBATAN</span></label>
+                                <label class="flex items-center gap-2 cursor-pointer"><input type="radio" name="edit-unit" value="C"
+                                        class="accent-kai-orange w-4 h-4"> <span>MEKANIK</span></label>
+                                <label class="flex items-center gap-2 cursor-pointer"><input type="radio" name="edit-unit" value="D"
+                                        class="accent-kai-orange w-4 h-4"> <span>BALAIYASA</span></label>
                             </div>
                         </div>
 
@@ -972,11 +1187,11 @@
                         <div class="pt-2 flex gap-3">
                             <button type="button" id="close-edit-btn"
                                 class="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 font-semibold text-sm transition">
-                                <i class="fas fa-arrow-left text-xs"></i> Kembali
+                                <i class="fas fa-arrow-left"></i> Kembali
                             </button>
                             <button type="submit"
                                 class="flex-1 flex items-center justify-center gap-2 px-5 py-2.5 bg-kai-blue hover:bg-blue-800 active:bg-blue-900 text-white font-semibold rounded-lg transition text-sm shadow-sm">
-                                <i class="fas fa-save text-xs"></i> Simpan Pembaruan
+                                <i class="fas fa-save"></i> Simpan Pembaruan
                             </button>
                         </div>
                     </form>
@@ -996,11 +1211,11 @@
                         </div>
                         <div class="flex bg-gray-100 dark:bg-gray-700 rounded-lg p-1 shrink-0">
                             <button id="hist-tab-repair"
-                                class="hist-tab px-5 py-2 text-sm font-semibold rounded-md bg-kai-orange text-white shadow-sm transition flex items-center gap-2">
+                                class="hist-tab px-5 py-2.5 text-sm font-semibold rounded-md bg-kai-orange text-white shadow-sm transition flex items-center gap-2">
                                 <i class="fas fa-inbox"></i> Perbaikan
                             </button>
                             <button id="hist-tab-mutasi"
-                                class="hist-tab px-5 py-2 text-sm font-medium rounded-md text-gray-500 dark:text-gray-400 hover:bg-kai-orange/20 hover:text-kai-orange transition flex items-center gap-2">
+                                class="hist-tab px-5 py-2.5 text-sm font-medium rounded-md text-gray-500 dark:text-gray-400 hover:bg-kai-orange/20 hover:text-kai-orange transition flex items-center gap-2">
                                 <i class="fas fa-exchange-alt"></i> Mutasi
                             </button>
                         </div>
@@ -1025,19 +1240,19 @@
                                     id="hist-detail-subtitle">—</p>
                             </div>
                             <button id="close-hist-btn"
-                                class="flex items-center gap-2 px-4 py-2 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 font-semibold text-sm transition">
-                                <i class="fas fa-arrow-left text-sm"></i> Kembali
+                                class="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 font-semibold text-sm transition">
+                                <i class="fas fa-arrow-left"></i> Kembali
                             </button>
                         </div>
 
                         <!-- Sub-tabs -->
                         <div class="flex bg-gray-100 dark:bg-gray-700 rounded-lg p-1 mb-6 w-fit">
                             <button id="detail-tab-repair"
-                                class="detail-tab-btn px-5 py-2 text-sm font-semibold rounded-md bg-kai-orange text-white shadow-sm transition flex items-center gap-2">
+                                class="detail-tab-btn px-5 py-2.5 text-sm font-semibold rounded-md bg-kai-orange text-white shadow-sm transition flex items-center gap-2">
                                 <i class="fas fa-wrench text-sm"></i> Riwayat Perbaikan
                             </button>
                             <button id="detail-tab-mutasi"
-                                class="detail-tab-btn px-5 py-2 text-sm font-medium rounded-md text-gray-500 dark:text-gray-400 hover:bg-kai-orange/20 hover:text-kai-orange transition flex items-center gap-2">
+                                class="detail-tab-btn px-5 py-2.5 text-sm font-medium rounded-md text-gray-500 dark:text-gray-400 hover:bg-kai-orange/20 hover:text-kai-orange transition flex items-center gap-2">
                                 <i class="fas fa-exchange-alt text-sm"></i> Jalur Mutasi
                             </button>
                         </div>
@@ -1050,9 +1265,11 @@
                                         <tr>
                                             <th class="p-4 font-semibold w-10">No.</th>
                                             <th class="p-4 font-semibold">Tanggal</th>
+                                            <th class="p-4 font-semibold">Lokasi Pengirim</th>
                                             <th class="p-4 font-semibold">UPT Pengirim</th>
                                             <th class="p-4 font-semibold">Petugas</th>
-                                            <th class="p-4 font-semibold">Kondisi</th>
+                                            <th class="p-4 font-semibold text-center">Kondisi</th>
+                                            <th class="p-4 font-semibold text-center">Peruntukan</th>
                                             <th class="p-4 font-semibold">Keterangan</th>
                                         </tr>
                                     </thead>
@@ -1195,22 +1412,22 @@
                     <div
                         class="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm p-2 grid grid-cols-2 lg:grid-cols-4 gap-1">
                         <button data-tab="users"
-                            class="master-tab py-2 text-sm rounded-lg transition text-center bg-kai-orange text-white font-semibold shadow-sm">
+                            class="master-tab py-2.5 text-sm rounded-lg transition text-center bg-kai-orange text-white font-semibold shadow-sm">
                             <i class="fas fa-user-plus"></i> 
                             Pengguna
                         </button>
                         <button data-tab="alat"
-                            class="master-tab py-2 text-sm rounded-lg text-gray-500 transition text-center">
+                            class="master-tab py-2.5 text-sm rounded-lg text-gray-500 transition text-center">
                             <i class="fas fa-gears"></i> 
                             Alat Kerja
                         </button>
                         <button data-tab="lokasi"
-                            class="master-tab py-2 text-sm rounded-lg text-gray-500 transition text-center">
+                            class="master-tab py-2.5 text-sm rounded-lg text-gray-500 transition text-center">
                             <i class="fas fa-map"></i> 
                             Lokasi
                         </button>
                         <button data-tab="upt"
-                            class="master-tab py-2 text-sm rounded-lg text-gray-500 transition text-center">
+                            class="master-tab py-2.5 text-sm rounded-lg text-gray-500 transition text-center">
                             <i class="fas fa-sitemap"></i> 
                             UPT
                         </button>
@@ -1457,6 +1674,14 @@
                         class="w-full p-2.5 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-orange transition"></select>
                 </div>
                 <div>
+                    <label id="mutasi-upt-tuju-label" class="block text-xs font-semibold mb-1.5 text-gray-500">UPT Tujuan <span
+                            class="text-gray-400 font-normal">(opsional)</span></label>
+                    <select id="mutasi-upt-tuju" disabled
+                        class="w-full p-2.5 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-orange transition disabled:opacity-50 disabled:cursor-not-allowed">
+                        <option value="">Pilih Lokasi Tujuan dahulu...</option>
+                    </select>
+                </div>
+                <div>
                     <label class="block text-xs font-semibold mb-1.5 text-gray-500">Keterangan / BKO</label>
                     <textarea id="mutasi-alasan" rows="2" placeholder="Alasan mutasi atau nomor BKO..."
                         class="w-full p-2.5 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-orange resize-none transition"></textarea>
@@ -1505,7 +1730,7 @@
             <!-- Landing link row -->
             <div class="px-5 pb-3">
                 <div
-                    class="flex items-center gap-2 bg-gray-50 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2">
+                    class="flex items-center gap-2 bg-gray-50 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2.5">
                     <a id="qr-landing-link" href="#" target="_blank" rel="noopener"
                         class="text-[10px] text-kai-blue dark:text-blue-400 truncate flex-1 hover:underline font-mono">
                         <span id="qr-landing-link-text">...</span>
@@ -1575,7 +1800,7 @@
             <div class="flex gap-3">
                 <button id="confirm-cancel"
                     class="flex-1 py-2.5 flex items-center justify-center gap-2 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-600 dark:text-gray-200 rounded-lg text-sm font-semibold transition">
-                    <i class="fas fa-arrow-left text-sm"></i> Batal
+                    <i class="fas fa-arrow-left"></i> Batal
                 </button>
                 <button id="confirm-ok"
                     class="flex-1 py-2.5 bg-kai-blue hover:bg-blue-800 text-white rounded-lg text-sm font-semibold transition">
@@ -1610,10 +1835,10 @@
                 </div>
                 <div class="flex gap-2">
                     <button data-dir="asc"
-                        class="sort-dir-btn flex-1 py-2 rounded-lg border-2 border-kai-blue bg-blue-50 dark:bg-blue-900/20 text-kai-blue dark:text-blue-300 text-xs font-semibold transition">A
+                        class="sort-dir-btn flex-1 py-2.5 rounded-lg border-2 border-kai-blue bg-blue-50 dark:bg-blue-900/20 text-kai-blue dark:text-blue-300 text-xs font-semibold transition">A
                         → Z</button>
                     <button data-dir="desc"
-                        class="sort-dir-btn flex-1 py-2 rounded-lg border-2 border-gray-200 dark:border-gray-600 text-gray-500 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 text-xs font-semibold transition">Z
+                        class="sort-dir-btn flex-1 py-2.5 rounded-lg border-2 border-gray-200 dark:border-gray-600 text-gray-500 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 text-xs font-semibold transition">Z
                         → A</button>
                 </div>
                 <button id="btn-apply-sort"
@@ -1693,7 +1918,7 @@
                     <p class="text-sm text-gray-500 dark:text-gray-400 mb-3">Pilih file Excel (.xlsx)</p>
                     <input type="file" id="import-alat-file" accept=".xlsx" class="hidden">
                     <button type="button" onclick="document.getElementById('import-alat-file').click()"
-                        class="px-4 py-2 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 rounded-lg text-sm font-semibold transition">
+                        class="px-4 py-2.5 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 rounded-lg text-sm font-semibold transition">
                         Pilih File
                     </button>
                     <p id="import-alat-filename" class="text-xs text-gray-400 mt-2">Belum ada file dipilih</p>
