@@ -9,7 +9,7 @@ from sqlalchemy import (
     text,
     Text,
 )
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, backref
 from datetime import datetime, timezone
 from database import Base
 
@@ -29,6 +29,15 @@ class Lokasi(Base):
     tipe = Column(String(20), nullable=False)  # PUSAT, DAOP, DIVRE
 
     asets = relationship("Aset", back_populates="lokasi_ref")
+
+    id_lokasi = Column(String(10), primary_key=True)
+    id_induk = Column(String(10), ForeignKey("lokasi.id_lokasi"), nullable=True)
+    unit_peruntukan = Column(String(20), nullable=True)
+
+    # Gunakan string "Lokasi.id_lokasi" pada remote_side
+    sub_lokasi = relationship(
+        "Lokasi", backref=backref("induk", remote_side="Lokasi.id_lokasi")
+    )
 
 
 class Pengguna(Base):
@@ -90,3 +99,4 @@ class RiwayatMutasi(Base):
     lokasi_asal = relationship("Lokasi", foreign_keys=[id_lokasi_asal])
     lokasi_tujuan = relationship("Lokasi", foreign_keys=[id_lokasi_tujuan])
     pengguna_ref = relationship("Pengguna")
+

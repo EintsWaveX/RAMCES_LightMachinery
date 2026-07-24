@@ -481,6 +481,48 @@ def get_master_upt(db: Session = Depends(get_db)):
 # ==================================================================
 
 
+@app.get("/api/aset/{id_aset}/lokasi-asal", response_model=dict)
+def get_nama_lokasi_asal_aset(
+    id_aset: str,
+    db: Session = Depends(get_db),
+    current_user: models.Pengguna = Depends(get_current_user),
+):
+    # 1. Cek mutasi paling awal
+    mutasi_pertama = (
+        db.query(models.RiwayatMutasi)
+        .options(joinedload(models.RiwayatMutasi.lokasi_asal))
+        .filter_by(id_aset=id_aset)
+        .order_by(models.RiwayatMutasi.waktu_mutasi.asc())
+        .first()  # Pakai .first() bukan .all() agar cepat
+    )
+
+    if mutasi_pertama:
+        nama_lokasi = (
+            mutasi_pertama.lokasi_asal.nama_lokasi
+            if mutasi_pertama.lokasi_asal
+            else "—"
+        )
+        return {"id_aset": id_aset, "original_lokasi": nama_lokasi}
+
+    # 2. Jika belum pernah dimutasi, ambil lokasi dari tabel Aset
+    aset = (
+        db.query(models.Aset)
+        .options(joinedload(models.Aset.lokasi_ref))
+        .filter_by(id_aset=id_aset)
+        .first()
+    )
+
+    if not aset:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Aset dengan ID {id_aset} tidak ditemukan.",
+        )
+
+    nama_lokasi = aset.lokasi_ref.nama_lokasi if aset.lokasi_ref else "—"
+
+    return {"id_aset": id_aset, "original_lokasi": nama_lokasi}
+
+
 @app.post("/api/aset")
 async def create_aset(
     aset_in: AsetCreate,
@@ -545,8 +587,12 @@ def get_afkir_aset(db: Session = Depends(get_db)):
             "kode_alat": a.kategori.nama_alat if a.kategori else a.kode_alat,
             "id_lokasi": a.lokasi_ref.nama_lokasi if a.lokasi_ref else a.id_lokasi,
             "status_terakhir": a.status_terakhir,
-            "tanggal_pembelian": str(a.tanggal_pembelian) if a.tanggal_pembelian else None,
-            "waktu_update": a.waktu_update.strftime("%Y-%m-%d %H:%M:%S") if a.waktu_update else None,
+            "tanggal_pembelian": str(a.tanggal_pembelian)
+            if a.tanggal_pembelian
+            else None,
+            "waktu_update": a.waktu_update.strftime("%Y-%m-%d %H:%M:%S")
+            if a.waktu_update
+            else None,
         }
         for a in asets
     ]
@@ -570,13 +616,18 @@ async def afkir_aset(
     return {"message": "Aset berhasil di-afkir."}
 
 
-@app.post("/api/aset/pulihkan/{id_aset}", dependencies=[Depends(require_role(["SUPER_ADMIN"]))])
+@app.post(
+    "/api/aset/pulihkan/{id_aset}",
+    dependencies=[Depends(require_role(["SUPER_ADMIN"]))],
+)
 async def pulihkan_aset(id_aset: str, db: Session = Depends(get_db)):
     aset = db.query(models.Aset).filter_by(id_aset=id_aset).first()
     if not aset:
         raise HTTPException(status_code=404, detail="Aset tidak ditemukan.")
     if aset.status_terakhir != "AFKIR":
-        raise HTTPException(status_code=400, detail="Aset ini tidak dalam status AFKIR.")
+        raise HTTPException(
+            status_code=400, detail="Aset ini tidak dalam status AFKIR."
+        )
     aset.status_terakhir = "SO"
     db.commit()
     await manager.broadcast("REFRESH_ASSET_LIST")
@@ -692,15 +743,30 @@ def get_mutasi_by_aset(
 ):
     mutasi = (
         db.query(models.RiwayatMutasi)
+        .options(
+            joinedload(models.RiwayatMutasi.lokasi_asal),
+            joinedload(models.RiwayatMutasi.lokasi_tujuan),
+            joinedload(models.RiwayatMutasi.pengguna_ref),
+        )
         .filter_by(id_aset=id_aset)
         .order_by(models.RiwayatMutasi.waktu_mutasi.asc())
         .all()
     )
 
     aset = db.query(models.Aset).filter_by(id_aset=id_aset).first()
-    original_lokasi = (
-        mutasi[0].id_lokasi_asal if mutasi else (aset.id_lokasi if aset else "—")
-    )
+
+    # Get original_lokasi Name & ID for clean comparison
+    if mutasi:
+        original_lokasi_nama = (
+            mutasi[0].lokasi_asal.nama_lokasi if mutasi[0].lokasi_asal else "—"
+        )
+        original_lokasi_id = mutasi[0].id_lokasi_asal
+    elif aset:
+        original_lokasi_nama = aset.lokasi_ref.nama_lokasi if aset.lokasi_ref else "—"
+        original_lokasi_id = aset.id_lokasi
+    else:
+        original_lokasi_nama = "—"
+        original_lokasi_id = None
 
     results = []
     for m in mutasi:
@@ -724,8 +790,8 @@ def get_mutasi_by_aset(
 
     return {
         "mutasi": results,
-        "original_lokasi": original_lokasi,
-        "sudah_kembali": aset.id_lokasi == original_lokasi if aset else False,
+        "original_lokasi": original_lokasi_nama,
+        "sudah_kembali": aset.id_lokasi == original_lokasi_id if aset else False,
         "lokasi_sekarang": aset.lokasi_ref.nama_lokasi
         if aset and aset.lokasi_ref
         else "—",
@@ -817,7 +883,24 @@ def export_riwayat(
         rows = []
         for a in asets:
             nama_alat = a.kategori.nama_alat if a.kategori else a.kode_alat
-            nama_lokasi = a.lokasi_ref.nama_lokasi if a.lokasi_ref else a.id_lokasi
+
+            # 1. Tentukan original_lokasi sekali saja untuk aset ini
+            all_mutasi = (
+                db.query(models.RiwayatMutasi)
+                .options(joinedload(models.RiwayatMutasi.lokasi_asal))
+                .filter_by(id_aset=a.id_aset)
+                .order_by(models.RiwayatMutasi.waktu_mutasi.asc())
+                .all()
+            )
+
+            if all_mutasi and all_mutasi[0].lokasi_asal:
+                original_lokasi = all_mutasi[0].lokasi_asal.nama_lokasi
+            else:
+                original_lokasi = (
+                    a.lokasi_ref.nama_lokasi if a.lokasi_ref else a.id_lokasi
+                )
+
+            # 2. Ambil riwayat kondisi
             riwayat = (
                 db.query(models.RiwayatKondisi)
                 .filter_by(id_aset=a.id_aset)
@@ -832,7 +915,7 @@ def export_riwayat(
                         "tanggal": "—",
                         "id_aset": a.id_aset,
                         "kode_alat": nama_alat,
-                        "id_lokasi_asal": nama_lokasi,
+                        "original_lokasi": original_lokasi,  # Direct field
                         "id_pengguna": "—",
                         "kondisi": a.status_terakhir,
                         "keterangan": "Belum ada riwayat",
@@ -848,7 +931,7 @@ def export_riwayat(
                             else "—",
                             "id_aset": a.id_aset,
                             "kode_alat": nama_alat,
-                            "id_lokasi_asal": nama_lokasi,
+                            "original_lokasi": original_lokasi,  # Direct field
                             "id_pengguna": r.pengguna_ref.username
                             if r.pengguna_ref
                             else str(r.id_pengguna),
@@ -858,13 +941,24 @@ def export_riwayat(
                     )
         return rows
 
+    # Gunakan joinedload pada query utama Aset agar efisien
+    active_asets = (
+        db.query(models.Aset)
+        .options(joinedload(models.Aset.kategori), joinedload(models.Aset.lokasi_ref))
+        .filter(models.Aset.status_terakhir != "AFKIR")
+        .all()
+    )
+
+    afkir_asets = (
+        db.query(models.Aset)
+        .options(joinedload(models.Aset.kategori), joinedload(models.Aset.lokasi_ref))
+        .filter(models.Aset.status_terakhir == "AFKIR")
+        .all()
+    )
+
     return {
-        "active": build_rows(
-            db.query(models.Aset).filter(models.Aset.status_terakhir != "AFKIR").all()
-        ),
-        "afkir": build_rows(
-            db.query(models.Aset).filter(models.Aset.status_terakhir == "AFKIR").all()
-        ),
+        "active": build_rows(active_asets),
+        "afkir": build_rows(afkir_asets),
     }
 
 
@@ -876,7 +970,7 @@ def export_mutasi(
     asets = db.query(models.Aset).filter(models.Aset.status_terakhir != "AFKIR").all()
     rows = []
     for a in asets:
-        nama_alat   = a.kategori.nama_alat   if a.kategori   else a.kode_alat
+        nama_alat = a.kategori.nama_alat if a.kategori else a.kode_alat
         nama_lokasi = a.lokasi_ref.nama_lokasi if a.lokasi_ref else a.id_lokasi
         mutasi_list = (
             db.query(models.RiwayatMutasi)
@@ -887,16 +981,26 @@ def export_mutasi(
         if not mutasi_list:
             continue
         for i, m in enumerate(mutasi_list, start=1):
-            rows.append({
-                "no":              i,
-                "id_aset":         a.id_aset,
-                "kode_alat":       nama_alat,
-                "lokasi_asal":     m.lokasi_asal.nama_lokasi    if m.lokasi_asal    else m.id_lokasi_asal,
-                "lokasi_tujuan":   m.lokasi_tujuan.nama_lokasi  if m.lokasi_tujuan  else m.id_lokasi_tujuan,
-                "waktu_mutasi":    m.waktu_mutasi.strftime("%Y-%m-%d %H:%M:%S") if m.waktu_mutasi else "—",
-                "oleh":            m.pengguna_ref.username       if m.pengguna_ref   else str(m.id_pengguna),
-                "alasan":          m.alasan_mutasi or "—",
-            })
+            rows.append(
+                {
+                    "no": i,
+                    "id_aset": a.id_aset,
+                    "kode_alat": nama_alat,
+                    "lokasi_asal": m.lokasi_asal.nama_lokasi
+                    if m.lokasi_asal
+                    else m.id_lokasi_asal,
+                    "lokasi_tujuan": m.lokasi_tujuan.nama_lokasi
+                    if m.lokasi_tujuan
+                    else m.id_lokasi_tujuan,
+                    "waktu_mutasi": m.waktu_mutasi.strftime("%Y-%m-%d %H:%M:%S")
+                    if m.waktu_mutasi
+                    else "—",
+                    "oleh": m.pengguna_ref.username
+                    if m.pengguna_ref
+                    else str(m.id_pengguna),
+                    "alasan": m.alasan_mutasi or "—",
+                }
+            )
     return rows
 
 
@@ -912,8 +1016,13 @@ async def delete_aset(
     if not aset:
         raise HTTPException(status_code=404, detail="Aset tidak ditemukan.")
 
-    if current_user.role == "ADMIN_WILAYAH" and aset.id_lokasi != current_user.id_lokasi:
-        raise HTTPException(status_code=403, detail="Hanya bisa menghapus aset dari wilayah Anda.")
+    if (
+        current_user.role == "ADMIN_WILAYAH"
+        and aset.id_lokasi != current_user.id_lokasi
+    ):
+        raise HTTPException(
+            status_code=403, detail="Hanya bisa menghapus aset dari wilayah Anda."
+        )
 
     # Cascade delete child records first
     db.query(models.RiwayatKondisi).filter_by(id_aset=id_aset).delete()
@@ -984,3 +1093,4 @@ async def serve_css(file_name: str):
     if os.path.exists(path):
         return FileResponse(path, media_type="text/css")
     raise HTTPException(status_code=404, detail="File not found.")
+

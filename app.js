@@ -1187,6 +1187,7 @@ async function loadDetailMutasi(uid) {
         if (!res.ok) throw new Error("Gagal mengambil riwayat mutasi.");
         const data = await res.json();
 
+        console.log(data)
         const returnedBadge = data.sudah_kembali
             ? `<span class="bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 px-3 py-1 rounded-full text-xs font-bold">✓ Sudah Kembali ke Lokasi Awal</span>`
             : `<span class="bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 px-3 py-1 rounded-full text-xs font-bold">⟳ Belum Kembali ke Asal</span>`;
@@ -2082,21 +2083,22 @@ function renderExportPreview(rows) {
 
     const preview = rows.slice(0, 10);
     if (!preview.length) {
-        tbody.innerHTML = `<tr><td colspan="8" class="px-3 py-4 text-center text-gray-400">Tidak ada data dengan filter ini.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="9" class="px-3 py-4 text-center text-gray-400">Tidak ada data dengan filter ini.</td></tr>`;
         return;
     }
 
+    // Render murni tanpa network call
     tbody.innerHTML = preview.map(r => `
         <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50">
             <td class="px-3 py-2 text-center text-gray-400">${r.no ?? '—'}</td>
-            <td class="px-3 py-2 font-mono text-xs">${r.tanggal || '—'}</td>
+            <td class="px-3 py-2 font-mono text-xs">${r.tanggal || r.waktu_mutasi || '—'}</td>
             <td class="px-3 py-2 font-bold text-kai-blue dark:text-blue-400 font-mono">${r.id_aset}</td>
             <td class="px-3 py-2">${r.kode_alat || '—'}</td>
-            <td class="px-3 py-2">${r.id_lokasi_asal || r.id_lokasi || '—'}</td>
-            <td class="px-3 py-2">${r.upt || r.id_pengguna || '—'}</td>
-            <td class="px-3 py-2">${r.id_pengguna || '—'}</td>
-            <td class="px-3 py-2 font-bold ${r.kondisi === 'SO' ? 'text-green-500' : r.kondisi === 'TSO' ? 'text-red-500' : 'text-blue-400'}">${r.kondisi || '—'}</td>
-            <td class="px-3 py-2 text-gray-500 italic text-xs">${r.keterangan || '—'}</td>
+            <td class="px-3 py-2 font-medium">${r.original_lokasi || '—'}</td>
+            <td class="px-3 py-2">${r.upt || r.id_pengguna || r.oleh || '—'}</td>
+            <td class="px-3 py-2">${r.id_pengguna || r.oleh || '—'}</td>
+            <td class="px-3 py-2 font-bold ${r.kondisi === 'SO' ? 'text-green-500' : r.kondisi === 'TSO' ? 'text-red-500' : 'text-blue-400'}">${r.kondisi || 'MUTASI'}</td>
+            <td class="px-3 py-2 text-gray-500 italic text-xs">${r.keterangan || r.alasan || '—'}</td>
         </tr>
     `).join('');
 }
@@ -2251,13 +2253,35 @@ document.getElementById('btn-export-pdf')?.addEventListener('click', async () =>
     }
 });
 
-window.openMutasiModal = (uid) => {
+window.openMutasiModal = async (uid) => {
     const item = db.find(x => x.id_aset === uid);
     if (!item) return;
 
+    let lokasi_asal = '-';
+    try {
+        // Fix 1: Gunakan 'uid' atau 'item.id_aset' untuk URL
+        const res = await fetch(`/api/aset/${uid}/lokasi-asal`, {
+            headers: {
+                'Authorization': `Bearer ${authToken}`
+            }
+        });
+        
+        if (!res.ok) throw new Error('Gagal mengambil data lokasi asal');
+
+        // Fix 2: Parse response JSON terlebih dahulu
+        const data = await res.json();
+        
+        // Sesuaikan dengan key JSON yang dikembalikan backend (misal: original_lokasi)
+        lokasi_asal = data.original_lokasi || '-'; 
+    } catch (err) { 
+        showToast(err.message, 'error'); 
+    }
+
     document.getElementById('mutasi-uid').value = uid;
     document.getElementById('mutasi-modal-subtitle').innerText = item.id_aset;
-    document.getElementById('mutasi-lokasi-asal').textContent = item.id_lokasi;
+    document.getElementById('mutasi-lokasi-asal').textContent = lokasi_asal;
+    document.getElementById('mutasi-lokasi-kini').textContent = item.id_lokasi;
+    console.log(item);
 
     // Populate destination dropdown
     const tujuSel = document.getElementById('mutasi-lokasi-tuju');
