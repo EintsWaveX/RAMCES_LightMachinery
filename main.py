@@ -102,6 +102,7 @@ class PerbaikanCreate(BaseModel):
     id_aset: str
     kondisi: str
     keterangan: Optional[str] = "-"
+    id_lokasi: Optional[str] = None  # Wajib ditambahkan
 
 
 class MutasiCreate(BaseModel):
@@ -672,6 +673,7 @@ async def catat_perbaikan(
             id_pengguna=current_user.id_pengguna,
             kondisi=laporan.kondisi,
             keterangan=laporan.keterangan,
+            id_lokasi=laporan.id_lokasi,
         )
     )
     aset.status_terakhir = laporan.kondisi
@@ -751,6 +753,7 @@ def get_riwayat_aset(
             "id_pengguna": r.pengguna_ref.username if r.pengguna_ref else r.id_pengguna,
             "kondisi": r.kondisi,
             "keterangan": r.keterangan or "—",
+            "id_lokasi": r.id_lokasi,
         }
         for i, r in enumerate(riwayat, start=1)
     ]

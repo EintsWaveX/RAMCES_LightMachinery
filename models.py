@@ -9,7 +9,7 @@ from sqlalchemy import (
     text,
     Text,
 )
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, backref
 from datetime import datetime, timezone
 from database import Base
 
@@ -30,6 +30,15 @@ class Lokasi(Base):
 
     asets = relationship("Aset", back_populates="lokasi_ref")
 
+    id_lokasi = Column(String(10), primary_key=True)
+    id_induk = Column(String(10), ForeignKey("lokasi.id_lokasi"), nullable=True)
+    unit_peruntukan = Column(String(20), nullable=True)
+
+    # Gunakan string "Lokasi.id_lokasi" pada remote_side
+    sub_lokasi = relationship(
+        "Lokasi", backref=backref("induk", remote_side="Lokasi.id_lokasi")
+    )
+
 
 class Pengguna(Base):
     __tablename__ = "pengguna"
@@ -45,18 +54,16 @@ class Pengguna(Base):
 class Aset(Base):
     __tablename__ = "aset"
     id_aset = Column(String(50), primary_key=True, index=True)
-    kode_alat = Column(
-        String(10), ForeignKey("kategori_alat.kode_alat"), nullable=False
-    )
+    kode_alat = Column(String(10), ForeignKey("kategori_alat.kode_alat"))
     id_lokasi = Column(String(10), ForeignKey("lokasi.id_lokasi"))
     tanggal_pembelian = Column(Date, nullable=False)
     sumber_pengadaan = Column(String(50), nullable=False)
-    status_terakhir = Column(String(20), server_default="SO", index=True)
+    status_terakhir = Column(String(20), server_default="SO")
     # HAPUS BARIS is_afkir DISINI
     waktu_update = Column(
         DateTime,
         server_default=text("CURRENT_TIMESTAMP"),
-        onupdate=text("CURRENT_TIMESTAMP"),
+        onupdate=datetime.now(timezone.utc),
     )
 
     kategori = relationship("KategoriAlat", back_populates="asets")
@@ -73,6 +80,7 @@ class RiwayatKondisi(Base):
     kondisi = Column(String(20), nullable=False)
     keterangan = Column(Text)
     waktu_lapor = Column(DateTime, server_default=text("CURRENT_TIMESTAMP"))
+    id_lokasi = Column(String(10), ForeignKey("lokasi.id_lokasi"))
 
     aset_ref = relationship("Aset", back_populates="riwayat_kondisi")
     pengguna_ref = relationship("Pengguna")
@@ -92,4 +100,3 @@ class RiwayatMutasi(Base):
     lokasi_asal = relationship("Lokasi", foreign_keys=[id_lokasi_asal])
     lokasi_tujuan = relationship("Lokasi", foreign_keys=[id_lokasi_tujuan])
     pengguna_ref = relationship("Pengguna")
-
