@@ -1591,9 +1591,16 @@ function setupEventListeners() {
         'input[name="in-pengadaan"]:checked',
       ).value;
       const tanggal = document.getElementById("in-tanggal").value;
-      const unit = document.querySelector(
+      const unitRaw = document.querySelector(
         'input[name="in-unit"]:checked',
       ).value;
+      const peruntukanMap = {
+        A: "jalan rel",
+        B: "jembatan",
+        C: "mekanik",
+        D: "balaiyasa",
+      };
+      const peruntukanVal = peruntukanMap[unitRaw] || "jalan rel";
       const lokasi = document.getElementById("in-lokasi").value; // Parent (misal: D1)
       const uptName = document.getElementById("in-upt")?.value || ""; // UPT (misal: JR1.1)
 
@@ -1613,7 +1620,7 @@ function setupEventListeners() {
         parent_lokasi: lokasi, // Dibutuhkan backend untuk merakit ID (D1, dst)
         tanggal_pembelian: tanggal,
         sumber_pengadaan: pengadaan,
-        unit: unit, // Dibutuhkan backend untuk merakit ID
+        peruntukan: peruntukanVal,
       };
 
       try {
@@ -1657,25 +1664,21 @@ function setupEventListeners() {
         document.getElementById("edit-keterangan").value || "-";
       const uptVal = document.getElementById("edit-upt")?.value || "";
       const lokasiVal = document.getElementById("edit-lokasi")?.value || "";
+
       const peruntukan =
         document.querySelector('input[name="edit-unit"]:checked')?.value || "";
 
       if (!kondisi)
         return showToast("Pilih Kondisi Alat Kerja (SO/TSO)!", "warning");
 
-      // Build context prefix — stored invisibly inside keterangan
-      const ctxParts = [];
-      if (peruntukan) ctxParts.push(`[Peruntukan: ${peruntukan}]`);
-      if (lokasiVal) ctxParts.push(`[Lokasi: ${lokasiVal}]`);
-      if (uptVal) ctxParts.push(`[UPT: ${uptVal}]`);
-      const fullKeterangan = ctxParts.length
-        ? `${ctxParts.join(" ")} ${keterangan}`
-        : keterangan;
+      const targetLokasi = uptVal;
 
       const payload = {
         id_aset: document.getElementById("edit-uid").value,
         kondisi,
-        keterangan: fullKeterangan,
+        keterangan: keterangan, // Bersih tanpa prefix tag
+        id_lokasi: targetLokasi,
+        peruntukan: peruntukan,
       };
 
       try {
@@ -2004,6 +2007,12 @@ window.openEdit = (uid) => {
   if (_v("edit-teknisi")) _v("edit-teknisi").value = currentUser;
   if (_v("edit-kondisi")) _v("edit-kondisi").value = "";
 
+  const radioPeruntukan = document.querySelectorAll('input[name="edit-unit"]');
+  radioPeruntukan.forEach((r) => {
+    // Pastikan perbandingan konsisten dengan nilai yang dikembalikan API backend
+    r.checked = r.value === item.peruntukan;
+  });
+
   // "Sebelumnya di" labels — derive from item's current lokasi + last keterangan UPT
   // item.id_lokasi is now UPT code, get parent for region name
   const parentCode = getParentLokasiCode(item.id_lokasi) || item.id_lokasi;
@@ -2013,9 +2022,9 @@ window.openEdit = (uid) => {
     item.id_lokasi ||
     "—";
   const summaryItem = _historySummary.find((x) => x.id_aset === uid);
-  const lastKet = summaryItem?.repair?.latest_keterangan || "";
-  const lastCtx = parseCtxTags(lastKet);
-  const lastUpt = lastCtx.tags["UPT"] || "—";
+  const rawLokasiCode = summaryItem?.repair?.latest_id_lokasi || item.id_lokasi;
+  const lastUptEntry = uptDatabase.find((u) => u.upt === rawLokasiCode);
+  const lastUpt = lastUptEntry ? lastUptEntry.nama : rawLokasiCode || "—";
 
   const lokasiLabelEl = document.getElementById("edit-lokasi-label");
   const uptLabelEl = document.getElementById("edit-upt-label");
@@ -2154,28 +2163,59 @@ async function loadDetailRepair(uid) {
       tbody.innerHTML = `<tr><td colspan="6" class="p-4 text-center text-gray-500">Belum ada riwayat perbaikan.</td></tr>`;
       return;
     }
+
+    // 1. Ambil data aset dari memori global berdasarkan uid sebelum looping
+    const asetTerkait = db.find((x) => x.id_aset === uid);
+    // 2. Ekstrak peruntukannya
+    const peruntukanName =
+      asetTerkait && asetTerkait.peruntukan ? asetTerkait.peruntukan : "—";
+
     tbody.innerHTML = history
       .map((h, i) => {
-        const ctx = parseCtxTags(h.keterangan || "");
-        const lokasiTag = ctx.tags["Lokasi"] || "—";
-        const uptTag = ctx.tags["UPT"] || "—";
-        const peruntukanCode = ctx.tags["Peruntukan"] || "";
-        const peruntukanName =
-          PERUNTUKAN_MAP[peruntukanCode] || peruntukanCode || "—";
+        // Ambil langsung id_lokasi dari payload backend
+        const rawLokasiCode = h.id_lokasi || "—";
+
+        // Helper untuk meresolve kode lokasi menjadi Nama Induk (DAOP/DIVRE) dan UPT
+        const resolveLokasi = (kode) => {
+          if (!kode || kode === "—") return { parentName: "—", uptName: "—" };
+
+          // 1. Cek apakah ini level UPT
+          const uptEntry = uptDatabase.find((u) => u.upt === kode);
+          if (uptEntry) {
+            const parentCode = getParentLokasiCode(kode) || uptEntry.lokasi;
+            const parentEntry = lokasiData.find((l) => l.code === parentCode);
+            return {
+              parentName: parentEntry ? parentEntry.name : parentCode,
+              uptName: uptEntry.nama,
+            };
+          }
+
+          // 2. Cek apakah ini level Induk / Parent
+          const parentEntry = lokasiData.find((l) => l.code === kode);
+          if (parentEntry) {
+            return { parentName: parentEntry.name, uptName: "—" };
+          }
+
+          // Fallback
+          return { parentName: kode, uptName: "—" };
+        };
+
+        const lokasi = resolveLokasi(rawLokasiCode);
+
         return `
             <tr class="border-b dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50">
                 <td class="p-3 text-center text-gray-400">${i + 1}</td>
                 <td class="p-3 font-mono text-xs">${formatUtcToLocal(h.waktu_lapor)}</td>
-                <td class="p-3 text-sm">${lokasiTag}</td>
-                <td class="p-3 text-sm">${uptTag}</td>
+                <td class="p-3 text-sm">${lokasi.parentName}</td>
+                <td class="p-3 text-sm">${lokasi.uptName}</td>
                 <td class="p-3 text-sm font-medium">${h.id_pengguna}</td>
                 <td class="p-3 text-center">
                     <span class="text-xs font-bold px-2 py-0.5 rounded ${h.kondisi === "SO" ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"}">${h.kondisi}</span>
                 </td>
                 <td class="p-3 text-center">
-                    <span class="text-xs text-gray-600 dark:text-gray-300">${peruntukanName}</span>
+                    <span class="text-xs text-gray-600 dark:text-gray-300 capitalize">${peruntukanName}</span>
                 </td>
-                <td class="p-3 text-xs text-gray-500 whitespace-pre-wrap">${ctx.clean || "—"}</td>
+                <td class="p-3 text-xs text-gray-500 whitespace-pre-wrap">${h.keterangan || "—"}</td>
             </tr>`;
       })
       .join("");
@@ -2184,7 +2224,6 @@ async function loadDetailRepair(uid) {
       tbody.innerHTML = `<tr><td colspan="6" class="p-4 text-center text-red-500">${e.message}</td></tr>`;
   }
 }
-
 async function loadDetailMutasi(uid) {
   const timeline = document.getElementById("mutasi-timeline");
   const originBar = document.getElementById("mutasi-origin-bar");
@@ -2196,57 +2235,58 @@ async function loadDetailMutasi(uid) {
     if (!res.ok) throw new Error("Gagal mengambil riwayat mutasi.");
     const data = await res.json();
 
-    // UPT Asal from first mutation's alasan, UPT Kini from last mutation's alasan
-    const firstCtx = parseCtxTags(data.mutasi?.[0]?.alasan_mutasi || "");
-    const lastCtx = parseCtxTags(
-      data.mutasi?.[data.mutasi.length - 1]?.alasan_mutasi || "",
-    );
-    const uptAsal = firstCtx.tags["UPT Tujuan"] || "—"; // first destination = UPT Asal origin context
-    const uptKini = lastCtx.tags["UPT Tujuan"] || "—";
-
     const returnedBadge = data.sudah_kembali
       ? `<span class="bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 px-3 py-1 rounded-full text-xs font-bold">✓ Sudah Kembali ke Lokasi Awal</span>`
       : `<span class="bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 px-3 py-1 rounded-full text-xs font-bold">⟳ Belum Kembali ke Asal</span>`;
 
-    // Resolve Lokasi Asal full name
-    // data.original_lokasi might be a code (if from before fix) or name
-    const lokasiAsalCode = data.original_lokasi || "";
-    const lokasiAsalEntry =
-      lokasiData.find((l) => l.code === lokasiAsalCode) ||
-      uptDatabase.find((u) => u.upt === lokasiAsalCode);
-    const lokasiAsalFull = lokasiAsalEntry?.name || data.original_lokasi || "—";
-    // UPT Asal: from first mutation's alasan [UPT] tag (the UPT that sent the asset away)
-    const uptAsalCodeTL = firstCtx.tags["UPT"] || "";
-    const uptAsalEntryTL = uptDatabase.find((u) => u.upt === uptAsalCodeTL);
-    const uptAsalLabelTL = uptAsalEntryTL
-      ? `${uptAsalEntryTL.nama} (${uptAsalEntryTL.upt})`
-      : uptAsalCodeTL || "—";
-    // UPT Kini: from last mutation's [UPT Tujuan] tag
-    const uptKiniCodeTL = lastCtx.tags["UPT Tujuan"] || "";
-    const uptKiniEntryTL = uptDatabase.find((u) => u.upt === uptKiniCodeTL);
-    const uptKiniLabelTL = uptKiniEntryTL
-      ? `${uptKiniEntryTL.nama} (${uptKiniEntryTL.upt})`
-      : uptKiniCodeTL || "—";
+    // Helper untuk meresolve kode lokasi menjadi Nama Induk (DAOP/DIVRE) dan UPT
+    const resolveLokasi = (kode) => {
+      if (!kode || kode === "—")
+        return { parentName: "—", uptName: "—", uptCode: "" };
 
-    // Resolve lokasi sekarang name from code
-    const lokasiKiniEntry =
-      lokasiData.find((l) => l.code === data.lokasi_sekarang) ||
-      uptDatabase.find((u) => u.upt === data.lokasi_sekarang);
-    const lokasiKiniName = lokasiKiniEntry?.name || data.lokasi_sekarang || "—";
+      // 1. Cek apakah ini level UPT (contoh: JR1.1)
+      const uptEntry = uptDatabase.find((u) => u.upt === kode);
+      if (uptEntry) {
+        const parentCode = getParentLokasiCode(kode) || uptEntry.lokasi;
+        const parentEntry = lokasiData.find((l) => l.code === parentCode);
+        return {
+          parentName: parentEntry ? parentEntry.name : parentCode,
+          uptName: uptEntry.nama,
+          uptCode: uptEntry.upt,
+        };
+      }
+
+      // 2. Cek apakah ini level Induk / Parent (contoh: D1)
+      const parentEntry = lokasiData.find((l) => l.code === kode);
+      if (parentEntry) {
+        return {
+          parentName: parentEntry.name,
+          uptName: "—", // Karena tidak ada UPT spesifik
+          uptCode: "",
+        };
+      }
+
+      // Fallback
+      return { parentName: kode, uptName: "—", uptCode: "" };
+    };
+
+    // Resolve Lokasi Asal dan Kini untuk Origin Bar
+    const asal = resolveLokasi(data.original_lokasi);
+    const kini = resolveLokasi(data.lokasi_sekarang);
 
     originBar.innerHTML = `
-            <div class="flex-1 min-w-0">
-                <p class="text-xs text-gray-400">Lokasi Asal</p>
-                <p class="font-bold text-gray-700 dark:text-gray-200">${lokasiAsalFull}</p>
-                <p class="text-[11px] text-gray-400 mt-0.5">${uptAsalLabelTL}</p>
-            </div>
-            <div class="flex-1 min-w-0">
-                <p class="text-xs text-gray-400">Lokasi Sekarang</p>
-                <p class="font-bold text-gray-700 dark:text-gray-200">${lokasiKiniName}</p>
-                <p class="text-[11px] text-gray-400 mt-0.5">${uptKiniLabelTL}</p>
-            </div>
-            ${returnedBadge}
-        `;
+        <div class="flex-1 min-w-0">
+            <p class="text-xs text-gray-400">Lokasi Asal</p>
+            <p class="font-bold text-gray-700 dark:text-gray-200">${asal.parentName}</p>
+            <p class="text-[11px] text-gray-400 mt-0.5">${asal.uptName !== "—" ? `${asal.uptName} (${asal.uptCode})` : "—"}</p>
+        </div>
+        <div class="flex-1 min-w-0">
+            <p class="text-xs text-gray-400">Lokasi Sekarang</p>
+            <p class="font-bold text-gray-700 dark:text-gray-200">${kini.parentName}</p>
+            <p class="text-[11px] text-gray-400 mt-0.5">${kini.uptName !== "—" ? `${kini.uptName} (${kini.uptCode})` : "—"}</p>
+        </div>
+        ${returnedBadge}
+    `;
 
     if (!data.mutasi || !data.mutasi.length) {
       timeline.innerHTML = `<div class="text-center text-gray-400 py-6">Belum ada riwayat mutasi.</div>`;
@@ -2255,55 +2295,51 @@ async function loadDetailMutasi(uid) {
 
     timeline.innerHTML = data.mutasi
       .map((m, i) => {
-        const ctx = parseCtxTags(m.alasan_mutasi || "");
-        const uptTuju = ctx.tags["UPT Tujuan"] || "";
         const isLast = i === data.mutasi.length - 1;
 
-        // Duration: difference from this mutation to next, or "Masih dalam proses" for last
+        // Resolve lokasi untuk setiap tahapan mutasi
+        const mutAsal = resolveLokasi(m.id_lokasi_asal);
+        const mutTuju = resolveLokasi(m.id_lokasi_tujuan);
+
+        // Hitung durasi di lokasi tertentu
         let durasi = "";
         if (!isLast) {
-          const tCurr = new Date(m.waktu_mutasi.replace(" ", "T")).getTime(); // '+07:00'
+          const tCurr = new Date(m.waktu_mutasi.replace(" ", "T")).getTime();
           const tNext = new Date(
             data.mutasi[i + 1].waktu_mutasi.replace(" ", "T"),
-          ).getTime(); // '+07:00'
+          ).getTime();
           const days = Math.floor((tNext - tCurr) / (1000 * 60 * 60 * 24));
           durasi = days === 0 ? "kurang dari 1 hari" : `${days} hari`;
         }
 
         return `
-            <div class="flex gap-4 items-start">
-                <div class="flex flex-col items-center">
-                    <div class="w-8 h-8 rounded-full bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400 flex items-center justify-center text-xs font-bold shrink-0">${i + 1}</div>
-                    ${!isLast ? '<div class="w-0.5 flex-1 bg-gray-200 dark:bg-gray-700 mt-1"></div>' : ""}
+        <div class="flex gap-4 items-start">
+            <div class="flex flex-col items-center">
+                <div class="w-8 h-8 rounded-full bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400 flex items-center justify-center text-xs font-bold shrink-0">${i + 1}</div>
+                ${!isLast ? '<div class="w-0.5 flex-1 bg-gray-200 dark:bg-gray-700 mt-1"></div>' : ""}
+            </div>
+            <div class="bg-gray-50 dark:bg-gray-700/50 rounded-xl p-4 flex-1 mb-2 space-y-1.5 text-sm">
+                <div>
+                    <span class="font-bold text-orange-600 dark:text-orange-400">
+                        ${mutAsal.parentName}
+                        →
+                        ${mutTuju.parentName}
+                    </span>
                 </div>
-                <div class="bg-gray-50 dark:bg-gray-700/50 rounded-xl p-4 flex-1 mb-2 space-y-1.5 text-sm">
-                    <div>
-                        <span class="font-bold text-orange-600 dark:text-orange-400">
-                            ${lokasiData.find((l) => l.code === m.id_lokasi_asal)?.name || m.id_lokasi_asal}
-                            →
-                            ${lokasiData.find((l) => l.code === m.id_lokasi_tujuan)?.name || m.id_lokasi_tujuan}
-                        </span>
-                        ${
-                          uptTuju
-                            ? (() => {
-                                const e = uptDatabase.find(
-                                  (u) => u.upt === uptTuju,
-                                );
-                                return `<span class="text-[11px] text-gray-400 ml-1">(${e ? e.nama : uptTuju})</span>`;
-                              })()
-                            : ""
-                        }
-                    </div>
-                    <p class="text-xs text-gray-500 font-mono">${formatUtcToLocal(m.waktu_mutasi)}</p>
-                    ${
-                      durasi
-                        ? `<p class="text-xs text-gray-500">Durasi di lokasi ini: <span class="font-semibold">${durasi}</span></p>`
-                        : `<p class="text-xs text-gray-400 italic">Masih dalam proses mutasi...</p>`
-                    }
-                    <p class="text-xs text-gray-600 dark:text-gray-400"><span class="font-semibold">Oleh:</span> ${m.id_pengguna}</p>
-                    <p class="text-xs text-gray-600 dark:text-gray-400 italic">${ctx.clean || "—"}</p>
+                <div class="text-[11px] text-gray-500 mb-1">
+                    <span class="block">Dari UPT: ${mutAsal.uptName !== "—" ? `${mutAsal.uptName} (${mutAsal.uptCode})` : "—"}</span>
+                    <span class="block">Ke UPT: ${mutTuju.uptName !== "—" ? `${mutTuju.uptName} (${mutTuju.uptCode})` : "—"}</span>
                 </div>
-            </div>`;
+                <p class="text-xs text-gray-500 font-mono">${formatUtcToLocal(m.waktu_mutasi)}</p>
+                ${
+                  durasi
+                    ? `<p class="text-xs text-gray-500">Durasi di lokasi ini: <span class="font-semibold">${durasi}</span></p>`
+                    : `<p class="text-xs text-gray-400 italic">Masih dalam proses mutasi...</p>`
+                }
+                <p class="text-xs text-gray-600 dark:text-gray-400"><span class="font-semibold">Oleh:</span> ${m.id_pengguna}</p>
+                <p class="text-xs text-gray-600 dark:text-gray-400 italic">${m.alasan_mutasi || "—"}</p>
+            </div>
+        </div>`;
       })
       .join("");
   } catch (e) {
@@ -2359,11 +2395,7 @@ function renderDbCards() {
       const dec = decodeAsetId(item.id_aset);
 
       // Peruntukan: Prioritas 1 dari database, Prioritas 2 ekstrak dari ID aset
-      const kodePeruntukan = dec.peruntukan;
-      const peruntukanName =
-        item.unit_peruntukan && item.unit_peruntukan !== "—"
-          ? item.unit_peruntukan
-          : PERUNTUKAN_MAP[kodePeruntukan] || kodePeruntukan || "—";
+      const peruntukanName = item.peruntukan ? item.peruntukan : "—";
 
       // Lokasi Induk (DAOP/DIVRE)
       const parentCode =
@@ -2379,18 +2411,17 @@ function renderDbCards() {
       const summaryForCard = _historySummary.find(
         (x) => x.id_aset === item.id_aset,
       );
-      const lastKetForCard = summaryForCard?.repair?.latest_keterangan || "";
-      const lastCtxForCard = parseCtxTags(lastKetForCard);
 
-      const uptFromKet = lastCtxForCard.tags["UPT"] || "";
-      const rawUptCode = item.id_lokasi_raw || item.id_lokasi || "";
+      const rawUptCode =
+        summaryForCard?.repair?.latest_id_lokasi ||
+        item.id_lokasi_raw ||
+        item.id_lokasi ||
+        "";
       const uptEntry = uptDatabase.find((u) => u.upt === rawUptCode);
 
-      const uptDisplay = uptFromKet
-        ? uptDatabase.find((u) => u.upt === uptFromKet)?.nama || uptFromKet
-        : uptEntry
-          ? `${uptEntry.nama}`
-          : item.lokasi_name || rawUptCode || "—";
+      const uptDisplay = uptEntry
+        ? `${uptEntry.nama}`
+        : item.lokasi_name || rawUptCode || "—";
 
       const tahunFull = dec.tahun
         ? dec.tahun.length === 2
@@ -2446,7 +2477,7 @@ function renderDbCards() {
                 </div>
                 <p class="text-sm text-gray-700 dark:text-gray-300 font-semibold">${item.kode_alat_name || item.kode_alat}</p>
 
-                <div class="mt-3 space-y-1 border-t border-gray-100 dark:border-gray-700 pt-3">
+                <div class="mt-3 space-y-1 border-t border-gray-100 dark:border-gray-700 pt-3 capitalize">
                     ${row("Pengadaan", PENGADAAN_MAP[item.sumber_pengadaan] || item.sumber_pengadaan || "—")}
                     ${row("Tanggal Beli", tanggalBeli)}
                     ${row("Peruntukan", peruntukanName)}
@@ -2624,34 +2655,42 @@ function renderHistoryCards() {
                 ${
                   r.latest_date
                     ? (() => {
-                        const ctx = parseCtxTags(r.latest_keterangan || "");
-                        const lokasiCode = ctx.tags["Lokasi"] || "";
-                        const lokasiEntry = lokasiData.find(
-                          (l) => l.code === lokasiCode,
-                        );
-                        const lokasiLabel = lokasiEntry
-                          ? lokasiEntry.name
-                          : lokasiCode || "—";
-                        const uptCode = ctx.tags["UPT"] || "";
+                        // Ambil lokasi langsung dari data repair terbaru
+                        const rawLokasiCode =
+                          r.latest_id_lokasi || item.id_lokasi;
                         const uptEntry = uptDatabase.find(
-                          (u) => u.upt === uptCode,
+                          (u) => u.upt === rawLokasiCode,
                         );
+                        const lokasiEntry = lokasiData.find(
+                          (l) => l.code === rawLokasiCode,
+                        );
+
                         const uptLabel = uptEntry
-                          ? `${uptEntry.nama} (${uptEntry.upt})`
-                          : uptCode || "—";
-                        const peruntukanCode = ctx.tags["Peruntukan"] || "";
-                        const peruntukanLabel =
-                          PERUNTUKAN_MAP[peruntukanCode] ||
-                          peruntukanCode ||
-                          "—";
+                          ? `${uptEntry.nama}`
+                          : rawLokasiCode || "—";
+                        const lokasiLabel = uptEntry
+                          ? lokasiData.find((l) => l.code === uptEntry.lokasi)
+                              ?.name || uptEntry.lokasi
+                          : lokasiEntry
+                            ? lokasiEntry.name
+                            : "—";
+
+                        // Decode original data dari id_aset menggunakan fungsi yang baru
+                        const dec = decodeAsetId(item.id_aset);
+
+                        // Peruntukan: Prioritas 1 dari database, Prioritas 2 ekstrak dari ID aset
+                        const peruntukanLabel = item.peruntukan
+                          ? item.peruntukan
+                          : "—";
+
                         return `
                 <div class="space-y-1 text-xs text-gray-600 dark:text-gray-400">
                     <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">Perbaruan Terakhir</span><span class="font-mono">${formatUtcToLocal(r.latest_date)}</span></div>
-                    <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">Peruntukan</span><span>${peruntukanLabel}</span></div>
+                    <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">Peruntukan</span><span class="capitalize">${peruntukanLabel}</span></div>
                     <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">Lokasi Pengirim</span><span>${lokasiLabel}</span></div>
                     <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">UPT Pengirim</span><span>${uptLabel}</span></div>
                     <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">Petugas</span><span>${r.latest_teknisi || "—"}</span></div>
-                    <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">Keterangan</span><span class="italic">${ctx.clean || "—"}</span></div>
+                    <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">Keterangan</span><span class="italic">${r.latest_keterangan || "—"}</span></div>
                 </div>`;
                       })()
                     : `
@@ -2708,6 +2747,7 @@ function renderMutasiCards() {
     const card = document.createElement("div");
     card.className =
       "bg-white dark:bg-gray-800 p-5 rounded-xl shadow border border-gray-200 dark:border-gray-700 flex flex-col justify-between";
+
     card.innerHTML = `
             <div class="flex flex-col gap-3">
                 <div class="flex justify-between items-start border-b dark:border-gray-700 pb-3">
@@ -2718,62 +2758,46 @@ function renderMutasiCards() {
                     ${returnedBadge}
                 </div>
                 ${(() => {
-                  const summaryForMutasi = _historySummary.find(
-                    (x) => x.id_aset === item.id_aset,
-                  );
+                  // Helper untuk meresolve lokasi (menerima code atau nama)
+                  const resolveLokasi = (val) => {
+                    if (!val || val === "—")
+                      return { parentName: "—", uptLabel: "—" };
 
-                  const ctx = parseCtxTags(m.latest_alasan || "");
-                  // Resolve Lokasi Asal full name (now a code from backend)
-                  const lokasiAsalEntry =
-                    lokasiData.find((l) => l.code === m.original_lokasi) ||
-                    uptDatabase.find((u) => u.upt === m.original_lokasi);
-                  const lokasiAsalLabel =
-                    lokasiAsalEntry?.name || m.original_lokasi || "—";
-
-                  // UPT Asal: from first mutasi alasan tag or last repair keterangan
-                  const uptAsalCode =
-                    ctx.tags["UPT"] ||
-                    parseCtxTags(
-                      summaryForMutasi?.repair?.latest_keterangan || "",
-                    ).tags["UPT"] ||
-                    "";
-                  const uptAsalEntry = uptDatabase.find(
-                    (u) => u.upt === uptAsalCode,
-                  );
-                  const uptAsalLabel = uptAsalEntry
-                    ? `${uptAsalEntry.nama} (${uptAsalEntry.upt})`
-                    : uptAsalCode || "—";
-
-                  // Lokasi Kini: item.id_lokasi is now UPT code, resolve to name
-                  const lokasiKiniEntry =
-                    lokasiData.find((l) => l.code === item.id_lokasi) ||
-                    uptDatabase.find((u) => u.upt === item.id_lokasi);
-                  const lokasiKiniLabel =
-                    lokasiKiniEntry?.name || item.id_lokasi || "—";
-
-                  // UPT Kini: from latest alasan UPT Tujuan tag
-                  const uptKiniCode = ctx.tags["UPT Tujuan"] || "";
-                  const uptKiniEntry = uptDatabase.find(
-                    (u) => u.upt === uptKiniCode,
-                  );
-                  const uptKiniLabel = uptKiniEntry
-                    ? `${uptKiniEntry.nama} (${uptKiniEntry.upt})`
-                    : uptKiniCode || "—";
-
-                  // Lama proses: difference between first and latest mutasi dates
-                  let lamaProses = "—";
-                  if (m.count >= 2 && m.latest_date) {
-                    // We only have latest_date; duration shown as "since latest"
-                    const latestMs = new Date(
-                      m.latest_date.replace(" ", "T"),
-                    ).getTime();
-                    const nowMs = Date.now();
-                    const diffDays = Math.floor(
-                      (nowMs - latestMs) / (1000 * 60 * 60 * 24),
+                    // Cek data UPT
+                    const uptEntry = uptDatabase.find(
+                      (u) => u.upt === val || u.nama === val,
                     );
-                    lamaProses =
-                      diffDays === 0 ? "Hari ini" : `${diffDays} hari`;
-                  } else if (m.count === 1 && m.latest_date) {
+                    if (uptEntry) {
+                      const parentCode =
+                        getParentLokasiCode(uptEntry.upt) || uptEntry.lokasi;
+                      const parentEntry = lokasiData.find(
+                        (l) => l.code === parentCode,
+                      );
+                      return {
+                        parentName: parentEntry ? parentEntry.name : parentCode,
+                        uptLabel: `${uptEntry.nama}`,
+                      };
+                    }
+
+                    // Cek data Parent
+                    const parentEntry = lokasiData.find(
+                      (l) => l.code === val || l.name === val,
+                    );
+                    if (parentEntry) {
+                      return { parentName: parentEntry.name, uptLabel: "—" };
+                    }
+
+                    // Fallback
+                    return { parentName: val, uptLabel: "—" };
+                  };
+
+                  // Resolve nama Induk & UPT
+                  const asal = resolveLokasi(m.original_lokasi);
+                  const kini = resolveLokasi(item.id_lokasi);
+
+                  // Lama proses: dihitung dari mutasi terakhir hingga waktu sekarang
+                  let lamaProses = "—";
+                  if (m.latest_date) {
                     const latestMs = new Date(
                       m.latest_date.replace(" ", "T"),
                     ).getTime();
@@ -2781,19 +2805,19 @@ function renderMutasiCards() {
                       (Date.now() - latestMs) / (1000 * 60 * 60 * 24),
                     );
                     lamaProses =
-                      diffDays === 0 ? "Hari ini" : `${diffDays} hari`;
+                      diffDays <= 0 ? "Hari ini" : `${diffDays} hari`;
                   }
 
                   return `
                 <div class="space-y-1 text-xs text-gray-600 dark:text-gray-400">
-                    <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">Lokasi Asal</span><span class="font-semibold text-gray-700 dark:text-gray-200">${lokasiAsalLabel}</span></div>
-                    <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">UPT Asal</span><span class="text-gray-500 dark:text-gray-400 text-[11px]">${uptAsalLabel}</span></div>
-                    <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">Lokasi Kini</span><span class="font-semibold">${lokasiKiniLabel}</span></div>
-                    <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">UPT Kini</span><span class="text-gray-500 dark:text-gray-400 text-[11px]">${uptKiniLabel}</span></div>
+                    <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">Lokasi Asal</span><span class="font-semibold text-gray-700 dark:text-gray-200">${asal.parentName}</span></div>
+                    <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">UPT Asal</span><span class="text-gray-500 dark:text-gray-700">${asal.uptLabel}</span></div>
+                    <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">Lokasi Kini</span><span class="font-semibold text-gray-700 dark:text-gray-200">${kini.parentName}</span></div>
+                    <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">UPT Kini</span><span class="text-gray-500 dark:text-gray-700">${kini.uptLabel}</span></div>
                     <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">Tanggal Mutasi</span><span class="font-mono">${m.latest_date ? formatUtcToLocal(m.latest_date) : "—"}</span></div>
                     <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">Lama Proses</span><span class="font-bold">${lamaProses}</span></div>
-                    <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">Alasan</span><span class="italic">${ctx.clean || "—"}</span></div>
-                    <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">Total Mutasi</span><span class="font-bold">${m.count}></span></div>
+                    <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">Alasan</span><span class="italic">${m.latest_alasan || "—"}</span></div>
+                    <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">Total Mutasi</span><span class="font-bold">${m.count}</span></div>
                 </div>`;
                 })()}
             </div>
@@ -2808,7 +2832,6 @@ function renderMutasiCards() {
 
   container.appendChild(fragment);
 }
-
 // ── MASTER DATA UI ─────────────────────────────────────────────────────────
 
 // Tab switching
@@ -3969,22 +3992,21 @@ window.openMutasiModal = (uid) => {
     item.id_lokasi;
 
   // UPT Asal: from last keterangan tag, fallback to current id_lokasi (which is UPT code)
-  const lastKetMut = summaryItem?.repair?.latest_keterangan || "";
-  const lastCtxMut = parseCtxTags(lastKetMut);
-  const uptAsalCode = lastCtxMut.tags["UPT"] || item.id_lokasi || "";
+  const uptAsalCode =
+    summaryItem?.repair?.latest_id_lokasi || item.id_lokasi || "";
   const uptAsalEntry = uptDatabase.find((u) => u.upt === uptAsalCode);
   const uptAsalLabel = uptAsalEntry
     ? `${uptAsalEntry.nama}`
     : uptAsalCode || "—";
-
   // Lokasi Kini — resolve full name from lokasiData or id_lokasi_name
+
   const lokasiKiniCode = item.id_lokasi_raw || item.id_lokasi;
   const lokasiKiniEntry = lokasiData.find((l) => l.code === lokasiKiniCode);
   const lokasiKiniName =
     lokasiKiniEntry?.name || item.id_lokasi_name || lokasiKiniCode;
 
   // UPT Kini: from latest keterangan tag, fallback to checking if id_lokasi is itself a UPT
-  const uptKiniCode = lastCtxMut.tags["UPT"] || lokasiKiniCode;
+  const uptKiniCode = lokasiKiniCode;
   const uptKiniEntry = uptDatabase.find((u) => u.upt === uptKiniCode);
   const uptKiniLabel = uptKiniEntry ? `${uptKiniEntry.nama}` : "—";
 
