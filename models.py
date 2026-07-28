@@ -45,7 +45,9 @@ class Pengguna(Base):
 class Aset(Base):
     __tablename__ = "aset"
     id_aset = Column(String(50), primary_key=True, index=True)
-    kode_alat = Column(String(10), ForeignKey("kategori_alat.kode_alat"), nullable=False)
+    kode_alat = Column(
+        String(10), ForeignKey("kategori_alat.kode_alat"), nullable=False
+    )
     id_lokasi = Column(String(10), ForeignKey("lokasi.id_lokasi"))
     tanggal_pembelian = Column(Date, nullable=False)
     sumber_pengadaan = Column(String(50), nullable=False)
@@ -90,3 +92,4 @@ class RiwayatMutasi(Base):
     lokasi_asal = relationship("Lokasi", foreign_keys=[id_lokasi_asal])
     lokasi_tujuan = relationship("Lokasi", foreign_keys=[id_lokasi_tujuan])
     pengguna_ref = relationship("Pengguna")
+
