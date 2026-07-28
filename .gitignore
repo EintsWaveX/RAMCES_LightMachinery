@@ -1,4 +1,13 @@
 *.json
+*.sql
+*.bak
 __pycache__
+sql_backup
+temp
 .vscode
 _test.py
+main_.py
+seed_master_new.py
+seed_master_old.py
+schemas.py
+database.py

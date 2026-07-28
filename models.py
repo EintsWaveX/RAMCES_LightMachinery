@@ -1,71 +1,95 @@
-from sqlalchemy import Column, Integer, String, Text, Boolean, Date, DateTime, ForeignKey
+from sqlalchemy import (
+    Column,
+    String,
+    Integer,
+    Date,
+    DateTime,
+    ForeignKey,
+    Boolean,
+    text,
+    Text,
+)
 from sqlalchemy.orm import relationship
-from datetime import datetime
+from datetime import datetime, timezone
 from database import Base
 
-class User(Base):
-    __tablename__ = "users"
 
-    id = Column(Integer, primary_key=True, index=True)
-    username = Column(String(50), unique=True, index=True, nullable=False)
-    hashed_password = Column(String(255), nullable=False)
-    role = Column(String(20)) # Roles: 'SUPER_ADMIN', 'ADMIN_DAOP', 'TEKNISI'
-    assigned_region = Column(String(10), nullable=True) # e.g., 'D1', 'D2', 'D3', etc.
-
-class MasterKatalog(Base):
-    __tablename__ = "master_katalog"
-
+class KategoriAlat(Base):
+    __tablename__ = "kategori_alat"
     kode_alat = Column(String(10), primary_key=True, index=True)
     nama_alat = Column(String(100), nullable=False)
-    deskripsi = Column(Text)
 
-    # Establish a one-to-many relationship with Aset
-    asets = relationship("Aset", back_populates="katalog")
+    asets = relationship("Aset", back_populates="kategori")
+
 
 class Lokasi(Base):
     __tablename__ = "lokasi"
-
-    kode_lokasi = Column(String(10), primary_key=True, index=True)
+    id_lokasi = Column(String(10), primary_key=True, index=True)
     nama_lokasi = Column(String(100), nullable=False)
-    tipe_lokasi = Column(String(50)) # 'DAOP', 'DIVRE', 'BALAIYASA'
+    tipe = Column(String(20), nullable=False)  # PUSAT, DAOP, DIVRE
 
-    asets = relationship("Aset", back_populates="lokasi_ref") # From: lokasi_ref = relationship("Lokasi", back_populates="asets")
+    asets = relationship("Aset", back_populates="lokasi_ref")
+
+
+class Pengguna(Base):
+    __tablename__ = "pengguna"
+    id_pengguna = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    username = Column(String(50), unique=True, nullable=False)
+    hashed_password = Column(String(255), nullable=True)  # Wajib untuk autentikasi
+    role = Column(String(20), nullable=False)  # SUPER_ADMIN, ADMIN_WILAYAH, TEKNISI
+    id_lokasi = Column(String(10), ForeignKey("lokasi.id_lokasi"), nullable=True)
+
+    lokasi_ref = relationship("Lokasi")
+
 
 class Aset(Base):
     __tablename__ = "aset"
+    id_aset = Column(String(50), primary_key=True, index=True)
+    kode_alat = Column(
+        String(10), ForeignKey("kategori_alat.kode_alat"), nullable=False
+    )
+    id_lokasi = Column(String(10), ForeignKey("lokasi.id_lokasi"))
+    tanggal_pembelian = Column(Date, nullable=False)
+    sumber_pengadaan = Column(String(50), nullable=False)
+    status_terakhir = Column(String(20), server_default="SO", index=True)
+    # HAPUS BARIS is_afkir DISINI
+    waktu_update = Column(
+        DateTime,
+        server_default=text("CURRENT_TIMESTAMP"),
+        onupdate=text("CURRENT_TIMESTAMP"),
+    )
 
-    uid = Column(String(50), primary_key=True, index=True)
-    kode_id = Column(String(50), unique=True, nullable=False, index=True)
-    
-    # Foreign Keys linking to master tables
-    kode_alat = Column(String(10), ForeignKey("master_katalog.kode_alat"))
-    kode_lokasi = Column(String(10), ForeignKey("lokasi.kode_lokasi"))
-    
-    pengadaan = Column(String(20))
-    tahun_pembelian = Column(Integer)
-    unit_peruntukan = Column(String(50))
-    status_kondisi = Column(String(20), default="BARU")
-    is_afkir = Column(Boolean, default=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    creator = Column(String(50))
-
-    # Bi-directional relationships
-    katalog = relationship("MasterKatalog", back_populates="asets")
+    kategori = relationship("KategoriAlat", back_populates="asets")
     lokasi_ref = relationship("Lokasi", back_populates="asets")
-    riwayat = relationship("RiwayatPerbaikan", back_populates="aset_ref")
+    riwayat_kondisi = relationship("RiwayatKondisi", back_populates="aset_ref")
+    riwayat_mutasi = relationship("RiwayatMutasi", back_populates="aset_ref")
 
-class RiwayatPerbaikan(Base):
-    __tablename__ = "riwayat_perbaikan"
 
-    id = Column(Integer, primary_key=True, index=True)
-    aset_uid = Column(String(50), ForeignKey("aset.uid"))
-    
-    tanggal_perbaikan = Column(DateTime, nullable=False)
-    lokasi_perbaikan = Column(String(10), nullable=True)
-    upt_perbaikan = Column(String(100), nullable=True)
-    teknisi = Column(String(100), nullable=False)
-    status_baru = Column(String(20), nullable=False)
+class RiwayatKondisi(Base):
+    __tablename__ = "riwayat_kondisi"
+    id_riwayat = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    id_aset = Column(String(50), ForeignKey("aset.id_aset"))
+    id_pengguna = Column(Integer, ForeignKey("pengguna.id_pengguna"))
+    kondisi = Column(String(20), nullable=False)
     keterangan = Column(Text)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    waktu_lapor = Column(DateTime, server_default=text("CURRENT_TIMESTAMP"))
 
-    aset_ref = relationship("Aset", back_populates="riwayat")
+    aset_ref = relationship("Aset", back_populates="riwayat_kondisi")
+    pengguna_ref = relationship("Pengguna")
+
+
+class RiwayatMutasi(Base):
+    __tablename__ = "riwayat_mutasi"
+    id_mutasi = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    id_aset = Column(String(50), ForeignKey("aset.id_aset"))
+    id_lokasi_asal = Column(String(10), ForeignKey("lokasi.id_lokasi"))
+    id_lokasi_tujuan = Column(String(10), ForeignKey("lokasi.id_lokasi"))
+    id_pengguna = Column(Integer, ForeignKey("pengguna.id_pengguna"))
+    alasan_mutasi = Column(Text)
+    waktu_mutasi = Column(DateTime, server_default=text("CURRENT_TIMESTAMP"))
+
+    aset_ref = relationship("Aset", back_populates="riwayat_mutasi")
+    lokasi_asal = relationship("Lokasi", foreign_keys=[id_lokasi_asal])
+    lokasi_tujuan = relationship("Lokasi", foreign_keys=[id_lokasi_tujuan])
+    pengguna_ref = relationship("Pengguna")
+

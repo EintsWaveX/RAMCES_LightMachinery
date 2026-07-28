@@ -1,25 +1,45 @@
-from fastapi import FastAPI, Depends, HTTPException, WebSocket, WebSocketDisconnect
+import asyncio
+import os
+import re
+from dotenv import load_dotenv
+from fastapi import (
+    FastAPI,
+    Depends,
+    HTTPException,
+    WebSocket,
+    WebSocketDisconnect,
+    Query,
+)
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
-from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from fastapi.security import OAuth2PasswordBearer
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy.orm import Session
-from datetime import datetime, timedelta
-from typing import List
+from sqlalchemy.orm import Session, joinedload
+from datetime import datetime, timedelta, date
+from typing import List, Optional
+from sqlalchemy import or_, func
 import bcrypt
 import jwt
-import os
-import uuid
 
-# Import from our previous files
+# ── IMPORTS ────────────────────────────────────────────────────────
 import models
-import schemas
 from database import engine, SessionLocal
+from pydantic import BaseModel
 
-# Create all tables in the PostgreSQL database (if they don't exist yet)
+
+def parse_ctx_upt_from_keterangan(keterangan: Optional[str]) -> str:
+    """Extract [UPT: value] from keterangan context tags."""
+    if not keterangan:
+        return "—"
+    match = re.search(r"\[UPT:\s*([^\]]+)\]", keterangan)
+    return match.group(1).strip() if match else "—"
+
+
+# Inisialisasi Database
 models.Base.metadata.create_all(bind=engine)
+load_dotenv()
 
-app = FastAPI(title="Warehouse Asset API")
+app = FastAPI(title="SIMA-KAI Asset API")
 
 app.add_middleware(
     CORSMiddleware,
@@ -29,7 +49,72 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Dependency to get the database session
+# ==================================================================
+# ── PYDANTIC SCHEMAS (Pengganti schemas.py) ───────────────────────
+# ==================================================================
+
+
+class Token(BaseModel):
+    access_token: str
+    token_type: str
+
+
+class LoginForm(BaseModel):
+    username: str
+    role: str = "TEKNISI"
+    id_lokasi: Optional[str] = None
+
+
+class UserCreate(BaseModel):
+    username: str
+    password: Optional[str] = None
+    role: str
+    id_lokasi: Optional[str] = None
+
+
+class UserUpdate(BaseModel):
+    role: str
+    id_lokasi: Optional[str] = None
+
+
+class MasterAlatCreate(BaseModel):
+    kode_alat: str
+    nama_alat: str
+
+
+class LokasiCreate(BaseModel):
+    id_lokasi: str
+    nama_lokasi: str
+    tipe: str
+
+
+class AsetCreate(BaseModel):
+    # id_aset: str
+    kode_alat: str
+    id_lokasi: str
+    tanggal_pembelian: date
+    sumber_pengadaan: str
+    parent_lokasi: str
+    unit: str
+
+
+class PerbaikanCreate(BaseModel):
+    id_aset: str
+    kondisi: str
+    keterangan: Optional[str] = "-"
+
+
+class MutasiCreate(BaseModel):
+    id_aset: str
+    id_lokasi_tujuan: str
+    alasan_mutasi: Optional[str] = None
+
+
+# ==================================================================
+# ── DATABASE SESSION & WEBSOCKET ──────────────────────────────────
+# ==================================================================
+
+
 def get_db():
     db = SessionLocal()
     try:
@@ -37,121 +122,263 @@ def get_db():
     finally:
         db.close()
 
-# Keep a list of all active browser connections
+
 class ConnectionManager:
     def __init__(self):
         self.active_connections: List[WebSocket] = []
+        self._lock = asyncio.Lock()
 
     async def connect(self, websocket: WebSocket):
         await websocket.accept()
-        self.active_connections.append(websocket)
+        async with self._lock:
+            self.active_connections.append(websocket)
 
-    def disconnect(self, websocket: WebSocket):
-        self.active_connections.remove(websocket)
+    async def disconnect(self, websocket: WebSocket):
+        async with self._lock:
+            if websocket in self.active_connections:
+                self.active_connections.remove(websocket)
 
     async def broadcast(self, message: str):
-        for connection in self.active_connections:
-            await connection.send_text(message)
+        async with self._lock:
+            connections = list(self.active_connections)
+        for connection in connections:
+            try:
+                await connection.send_text(message)
+            except Exception:
+                # Client disconnected between copy and send
+                pass
+
 
 manager = ConnectionManager()
 
-# --- SECURITY CONFIGURATION ---
-SECRET_KEY = "KAI_warehouse_super_secret_key"  # Change this in production
-ALGORITHM  = "HS256"
+
+@app.get("/api/config")
+def get_config():
+    ngrok_url = os.environ.get("NGROK_URL", "").rstrip("/")
+    return {"ngrok_url": ngrok_url}
+
+
+# ==================================================================
+# ── SECURITY & AUTHENTICATION ─────────────────────────────────────
+# ==================================================================
+
+SECRET_KEY = os.environ.get("SECRET_KEY", "KAI_warehouse_super_secret_key")
+ALGORITHM = "HS256"
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/login")
 
-def get_password_hash(password):
-    pwd_bytes = password.encode('utf-8')
-    return bcrypt.hashpw(pwd_bytes, bcrypt.gensalt()).decode('utf-8')
 
-def verify_password(plain_password, hashed_password):
-    pwd_bytes    = plain_password.encode('utf-8')
-    hashed_bytes = hashed_password.encode('utf-8')
-    return bcrypt.checkpw(pwd_bytes, hashed_bytes)
+def get_password_hash(password: str) -> str:
+    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
 
-def create_access_token(data: dict):
-    to_encode = data.copy()
-    expire    = datetime.utcnow() + timedelta(hours=12)
-    to_encode.update({"exp": expire})
-    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
-def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
+def verify_password(plain: str, hashed: str) -> bool:
+    return bcrypt.checkpw(plain.encode("utf-8"), hashed.encode("utf-8"))
+
+
+def create_access_token(data: dict) -> str:
+    payload = data.copy()
+    payload["exp"] = datetime.utcnow() + timedelta(hours=12)
+    return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
+
+
+def get_current_user(
+    token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)
+) -> models.Pengguna:
     try:
-        payload  = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        username: str = payload.get("sub")
-        if username is None:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        username = payload.get("sub")
+        if not username:
             raise HTTPException(status_code=401, detail="Token invalid")
     except jwt.PyJWTError:
         raise HTTPException(status_code=401, detail="Token invalid")
 
-    user = db.query(models.User).filter(models.User.username == username).first()
-    if user is None:
+    user = (
+        db.query(models.Pengguna).filter(models.Pengguna.username == username).first()
+    )
+    if not user:
         raise HTTPException(status_code=401, detail="User not found")
     return user
 
+
 def require_role(allowed_roles: list):
-    def role_checker(current_user: models.User = Depends(get_current_user)):
+    def checker(current_user: models.Pengguna = Depends(get_current_user)):
         if current_user.role not in allowed_roles:
             raise HTTPException(
                 status_code=403,
-                detail="Anda tidak memiliki izin untuk melakukan aksi ini."
+                detail="Anda tidak memiliki izin untuk melakukan aksi ini.",
             )
         return current_user
-    return role_checker
 
-# ---------------------------------------------------------
-# ENDPOINT 0.1: USER AUTHENTICATION
-# ---------------------------------------------------------
-@app.post("/api/register")
-def register_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
-    """
-    Register a new user.
-    This endpoint is only available if there are no users in the database.
-    Once a user exists, registration is closed to the public.
-    """
-    
-    user_count = db.query(models.User).count()
-    if user_count > 0:
-        raise HTTPException(status_code=403, detail="Registrasi publik ditutup. Hubungi admin.")
+    return checker
 
-    db_user = db.query(models.User).filter(models.User.username == user.username).first()
-    if db_user:
-        raise HTTPException(status_code=400, detail="Username sudah terdaftar")
 
-    hashed_pw = get_password_hash(user.password)
-    new_user  = models.User(
-        username=user.username,
-        hashed_password=hashed_pw,
-        role=user.role,
-        assigned_region=user.assigned_region
+# ── AUTH ENDPOINTS ──
+
+
+@app.post("/api/login", response_model=Token)
+def login(form_data: LoginForm, db: Session = Depends(get_db)):
+    user = db.query(models.Pengguna).filter_by(username=form_data.username).first()
+
+    if not user:
+        # Pendaftaran otomatis untuk login pertama (Sesuai alur UI sebelumnya)
+        if not form_data.id_lokasi and form_data.role != "SUPER_ADMIN":
+            raise HTTPException(
+                status_code=400, detail="Region wajib diisi untuk pendaftaran pertama."
+            )
+
+        user = models.Pengguna(
+            username=form_data.username,
+            hashed_password=None,
+            role=form_data.role,
+            id_lokasi=form_data.id_lokasi if form_data.role != "SUPER_ADMIN" else None,
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+
+    return {
+        "access_token": create_access_token(
+            {
+                "sub": user.username,
+                "role": user.role,
+                "id_pengguna": user.id_pengguna,
+                "id_lokasi": user.id_lokasi,
+            }
+        ),
+        "token_type": "bearer",
+    }
+
+
+@app.post("/api/users/create")
+def create_user(
+    user_data: UserCreate,
+    db: Session = Depends(get_db),
+    current_user: models.Pengguna = Depends(
+        require_role(["SUPER_ADMIN", "ADMIN_WILAYAH"])
+    ),
+):
+    if db.query(models.Pengguna).filter_by(username=user_data.username).first():
+        raise HTTPException(status_code=400, detail="Username sudah terdaftar.")
+
+    if current_user.role == "ADMIN_WILAYAH":
+        if user_data.role != "TEKNISI":
+            raise HTTPException(
+                status_code=403, detail="ADMIN_WILAYAH hanya bisa membuat akun TEKNISI."
+            )
+        region = current_user.id_lokasi
+    else:
+        region = user_data.id_lokasi
+
+    db.add(
+        models.Pengguna(
+            username=user_data.username,
+            hashed_password=get_password_hash(user_data.password)
+            if user_data.password
+            else None,
+            role=user_data.role,
+            id_lokasi=region,
+        )
     )
-
-    db.add(new_user)
     db.commit()
-    return {"message": f"User {user.username} berhasil didaftarkan sebagai {user.role}"}
+    return {"message": f"User {user_data.username} berhasil dibuat."}
 
-# ---------------------------------------------------------
-# ENDPOINT 0.2: LOGIN & GET TOKEN
-# ---------------------------------------------------------
-@app.post("/api/login", response_model=schemas.Token)
-def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
-    """
-    Login and retrieve access token.
-    The token is valid for 12 hours and must be included in the Authorization header for protected endpoints.
-    """
-    
-    user = db.query(models.User).filter(models.User.username == form_data.username).first()
 
-    if not user or not verify_password(form_data.password, user.hashed_password):
-        raise HTTPException(status_code=401, detail="Username atau password salah")
+@app.get("/api/users")
+def get_all_users(
+    db: Session = Depends(get_db),
+    current_user: models.Pengguna = Depends(get_current_user),
+):
+    if current_user.role == "TEKNISI":
+        raise HTTPException(status_code=403, detail="Akses ditolak.")
 
-    access_token = create_access_token(data={"sub": user.username, "role": user.role})
-    return {"access_token": access_token, "token_type": "bearer"}
+    query = db.query(models.Pengguna)
+    if current_user.role == "ADMIN_WILAYAH":
+        query = query.filter(
+            models.Pengguna.id_lokasi == current_user.id_lokasi,
+            models.Pengguna.role.in_(["ADMIN_WILAYAH", "TEKNISI"]),
+        )
 
-# ---------------------------------------------------------
-# ENDPOINT 0.3: WEBSOCKET FOR REAL-TIME UPDATES
-# ---------------------------------------------------------
+    users = query.order_by(models.Pengguna.role, models.Pengguna.username).all()
+    return [
+        {
+            "id_pengguna": u.id_pengguna,
+            "username": u.username,
+            "role": u.role,
+            "id_lokasi": u.id_lokasi,
+        }
+        for u in users
+    ]
+
+
+@app.put("/api/users/{user_id}")
+def update_user(
+    user_id: int,
+    data: UserUpdate,
+    db: Session = Depends(get_db),
+    current_user: models.Pengguna = Depends(get_current_user),
+):
+    if current_user.role == "TEKNISI":
+        raise HTTPException(status_code=403, detail="Akses ditolak.")
+
+    target = db.query(models.Pengguna).filter_by(id_pengguna=user_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="User tidak ditemukan.")
+
+    if current_user.role == "ADMIN_WILAYAH":
+        if target.id_lokasi != current_user.id_lokasi:
+            raise HTTPException(
+                status_code=403, detail="Hanya bisa mengedit user di region Anda."
+            )
+        data.id_lokasi = current_user.id_lokasi
+
+    if current_user.id_pengguna == target.id_pengguna:
+        raise HTTPException(
+            status_code=400, detail="Tidak bisa mengedit akun sendiri dari menu ini."
+        )
+
+    target.role = data.role
+    target.id_lokasi = data.id_lokasi
+    db.commit()
+    return {"message": "User berhasil diperbarui."}
+
+
+@app.delete("/api/users/{user_id}")
+def delete_user(
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.Pengguna = Depends(get_current_user),
+):
+    if current_user.role == "TEKNISI":
+        raise HTTPException(status_code=403, detail="Akses ditolak.")
+    target = db.query(models.Pengguna).filter_by(id_pengguna=user_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="User tidak ditemukan.")
+    if current_user.id_pengguna == target.id_pengguna:
+        raise HTTPException(
+            status_code=400, detail="Tidak bisa menghapus akun sendiri dari sini."
+        )
+
+    db.delete(target)
+    db.commit()
+    return {"message": "User berhasil dihapus."}
+
+
+@app.delete("/api/users/me")
+def delete_own_account(
+    db: Session = Depends(get_db),
+    current_user: models.Pengguna = Depends(get_current_user),
+):
+    db.delete(current_user)
+    db.commit()
+    return {"message": "Akun berhasil dihapus."}
+
+
+# ==================================================================
+# ── WEBSOCKET ─────────────────────────────────────────────────────
+# ==================================================================
+
+
 @app.websocket("/ws/updates")
 async def websocket_endpoint(websocket: WebSocket):
     await manager.connect(websocket)
@@ -161,360 +388,803 @@ async def websocket_endpoint(websocket: WebSocket):
             if data == "ping":
                 await websocket.send_text("pong")
     except WebSocketDisconnect:
-        manager.disconnect(websocket)
+        await manager.disconnect(websocket)
 
-# ---------------------------------------------------------
-# ENDPOINT 1: INPUT ALAT KERJA BARU
-# ---------------------------------------------------------
-@app.post("/api/aset", response_model=schemas.AsetResponse)
+
+# ==================================================================
+# ── MASTER DATA ENDPOINTS ─────────────────────────────────────────
+# ==================================================================
+
+
+@app.get("/api/master/alat")
+def get_master_alat(db: Session = Depends(get_db)):
+    return db.query(models.KategoriAlat).all()
+
+
+@app.post("/api/master/alat", dependencies=[Depends(require_role(["SUPER_ADMIN"]))])
+def create_master_alat(data: MasterAlatCreate, db: Session = Depends(get_db)):
+    if db.query(models.KategoriAlat).filter_by(kode_alat=data.kode_alat).first():
+        raise HTTPException(status_code=400, detail="Kode alat sudah ada.")
+    db.add(models.KategoriAlat(kode_alat=data.kode_alat, nama_alat=data.nama_alat))
+    db.commit()
+    return {"message": "Alat berhasil ditambahkan."}
+
+
+@app.put(
+    "/api/master/alat/{kode}", dependencies=[Depends(require_role(["SUPER_ADMIN"]))]
+)
+def update_master_alat(
+    kode: str, data: MasterAlatCreate, db: Session = Depends(get_db)
+):
+    item = db.query(models.KategoriAlat).filter_by(kode_alat=kode).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Kode alat tidak ditemukan.")
+    item.nama_alat = data.nama_alat
+    db.commit()
+    return {"message": "Alat diperbarui."}
+
+
+@app.delete(
+    "/api/master/alat/{kode}", dependencies=[Depends(require_role(["SUPER_ADMIN"]))]
+)
+def delete_master_alat(kode: str, db: Session = Depends(get_db)):
+    item = db.query(models.KategoriAlat).filter_by(kode_alat=kode).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Kode alat tidak ditemukan.")
+    db.delete(item)
+    db.commit()
+    return {"message": "Alat dihapus."}
+
+
+@app.get("/api/master/lokasi")
+def get_master_lokasi(tipe: List[str] = Query(None), db: Session = Depends(get_db)):
+    query = db.query(models.Lokasi)
+    if tipe:
+        # Exact match for known types, case-insensitive
+        valid_types = {"PUSAT", "DAOP", "DIVRE", "BALAIYASA", "UPT"}
+        filtered_types = [t.upper() for t in tipe if t.upper() in valid_types]
+        if filtered_types:
+            query = query.filter(models.Lokasi.tipe.in_(filtered_types))
+    # return query.order_by(models.Lokasi.tipe, models.Lokasi.nama_lokasi).all()
+    return query.all()
+
+
+@app.post("/api/master/lokasi", dependencies=[Depends(require_role(["SUPER_ADMIN"]))])
+def create_master_lokasi(data: LokasiCreate, db: Session = Depends(get_db)):
+    if db.query(models.Lokasi).filter_by(id_lokasi=data.id_lokasi).first():
+        raise HTTPException(status_code=400, detail="ID Lokasi sudah ada.")
+    if (
+        db.query(models.Lokasi)
+        .filter(models.Lokasi.nama_lokasi.ilike(data.nama_lokasi))
+        .first()
+    ):
+        raise HTTPException(status_code=400, detail="Nama lokasi sudah digunakan.")
+    db.add(
+        models.Lokasi(
+            id_lokasi=data.id_lokasi, nama_lokasi=data.nama_lokasi, tipe=data.tipe
+        )
+    )
+    db.commit()
+    return {"message": "Lokasi berhasil ditambahkan."}
+
+
+@app.put(
+    "/api/master/lokasi/{kode}", dependencies=[Depends(require_role(["SUPER_ADMIN"]))]
+)
+def update_master_lokasi(kode: str, data: LokasiCreate, db: Session = Depends(get_db)):
+    item = db.query(models.Lokasi).filter_by(id_lokasi=kode).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Lokasi tidak ditemukan.")
+    item.nama_lokasi = data.nama_lokasi
+    item.tipe = data.tipe
+    db.commit()
+    return {"message": "Lokasi diperbarui."}
+
+
+@app.delete(
+    "/api/master/lokasi/{kode}", dependencies=[Depends(require_role(["SUPER_ADMIN"]))]
+)
+def delete_master_lokasi(kode: str, db: Session = Depends(get_db)):
+    item = db.query(models.Lokasi).filter_by(id_lokasi=kode).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Lokasi tidak ditemukan.")
+    db.delete(item)
+    db.commit()
+    return {"message": "Lokasi dihapus."}
+
+
+@app.get("/api/master/upt")
+def get_master_upt(db: Session = Depends(get_db)):
+    # Fallback/Legacy jika UI masih memanggil endpoint ini
+    return db.query(models.Lokasi).filter_by(tipe="UPT").all()
+
+
+# ==================================================================
+# ── TRANSAKSIONAL ASET & RIWAYAT ──────────────────────────────────
+# ==================================================================
+
+
+@app.post("/api/aset")
 async def create_aset(
-    aset_in: schemas.AsetCreate,
+    aset_in: AsetCreate,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(require_role(["SUPER_ADMIN", "ADMIN_DAOP"]))
+    current_user: models.Pengguna = Depends(
+        require_role(["SUPER_ADMIN", "ADMIN_WILAYAH"])
+    ),
 ):
-    """
-    Create a new asset.
-    - Only SUPER_ADMIN and ADMIN_DAOP can create assets.
-    - The asset's UID is auto-generated and returned in the response.
-    - The creator field is automatically set to the current user's username.
-    """
+    # 1. Hitung urutan (Sequence) berdasarkan kode_alat
+    # Ini mencari tahu sudah ada berapa alat tipe ini di database
+    jumlah_aset_sejenis = (
+        db.query(models.Aset).filter(models.Aset.kode_alat == aset_in.kode_alat).count()
+    )
+    nomor_urut = jumlah_aset_sejenis + 1
 
-    existing_aset = db.query(models.Aset).filter(models.Aset.kode_id == aset_in.kode_id).first()
-    if existing_aset:
-        raise HTTPException(status_code=400, detail="Kode ID sudah terdaftar.")
+    # 2. Format komponen ID
+    id_pengadaan = 1 if aset_in.sumber_pengadaan == "PUSAT" else 2
 
-    new_uid  = "WH-" + str(uuid.uuid4())[:8].upper()
-    db_aset  = models.Aset(
-        uid=new_uid,
-        kode_id=aset_in.kode_id,
+    tahun = aset_in.tanggal_pembelian.year
+    year_str = str(tahun)[-2:] if tahun >= 2000 else str(tahun)
+
+    # 3. Rakit Final ID Aset
+    # Format: nomor_urut.kode_alat.id_pengadaan.tahun.unit.parent_lokasi
+    # Contoh: 6.RGM.1.24.A.D1
+    generated_id_aset = f"{nomor_urut}.{aset_in.kode_alat}.{id_pengadaan}.{year_str}.{aset_in.unit}.{aset_in.parent_lokasi}"
+
+    # Pastikan tidak ada duplikasi akibat bentrok (meskipun sangat kecil kemungkinannya)
+    if db.query(models.Aset).filter_by(id_aset=generated_id_aset).first():
+        raise HTTPException(
+            status_code=400, detail="Terjadi konflik ID. Silakan coba lagi."
+        )
+
+    # 4. Simpan ke database
+    db_aset = models.Aset(
+        id_aset=generated_id_aset,
         kode_alat=aset_in.kode_alat,
-        kode_lokasi=aset_in.kode_lokasi,
-        pengadaan=aset_in.pengadaan,
-        tahun_pembelian=aset_in.tahun_pembelian,
-        unit_peruntukan=aset_in.unit_peruntukan,
-        status_kondisi="BARU",
-        creator=current_user.username
+        id_lokasi=aset_in.id_lokasi,  # Disimpan dengan kode UPT asli (e.g. JR1.1)
+        tanggal_pembelian=aset_in.tanggal_pembelian,
+        sumber_pengadaan=aset_in.sumber_pengadaan,
+        status_terakhir="SO",
     )
-
     db.add(db_aset)
-    db.commit()
-    db.refresh(db_aset)
 
-    await manager.broadcast("REFRESH_ASSET_LIST")
-    return {
-        "uid":              db_aset.uid,
-        "kode_id":          db_aset.kode_id,
-        "kode_alat":        db_aset.kode_alat,
-        "kode_lokasi":      db_aset.kode_lokasi,
-        "pengadaan":        db_aset.pengadaan,
-        "tahun_pembelian":  db_aset.tahun_pembelian,
-        "unit_peruntukan":  db_aset.unit_peruntukan,
-        "status_kondisi":   db_aset.status_kondisi,
-        "status":           db_aset.status_kondisi,
-        "is_afkir":         db_aset.is_afkir,
-        "creator":          db_aset.creator,
-        "created_at":       db_aset.created_at,
-        "alat":   db_aset.katalog.nama_alat    if db_aset.katalog    else db_aset.kode_alat,
-        "lokasi": db_aset.lokasi_ref.nama_lokasi if db_aset.lokasi_ref else db_aset.kode_lokasi,
-    }
-
-# ---------------------------------------------------------
-# ENDPOINT 2: UPDATE KONDISI & CATAT RIWAYAT
-# ---------------------------------------------------------
-@app.post("/api/perbaikan")
-async def catat_perbaikan(
-    laporan: schemas.PerbaikanCreate,
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_user)
-):
-    """
-    Record a repair/maintenance entry for an asset.
-    - The asset's status is updated to the new status provided.
-    - Only authenticated users can record repairs.
-    - The repair entry includes the date, location, UPT, technician, new status,
-      and optional notes.
-    """
-    
-    aset = db.query(models.Aset).filter(models.Aset.uid == laporan.aset_uid).first()
-    if not aset:
-        raise HTTPException(status_code=404, detail="Aset tidak ditemukan.")
-
-    if laporan.status_baru not in ["SO", "TSO"]:
-        raise HTTPException(status_code=400, detail="Status harus SO atau TSO.")
-
-    riwayat = models.RiwayatPerbaikan(
-        aset_uid=laporan.aset_uid,
-        tanggal_perbaikan=laporan.tanggal_perbaikan,
-        lokasi_perbaikan=laporan.lokasi_perbaikan,
-        upt_perbaikan=laporan.upt_perbaikan,
-        teknisi=laporan.teknisi,
-        status_baru=laporan.status_baru,
-        keterangan=laporan.keterangan
+    # Inisiasi Riwayat Awal (Sesuai perbaikan arsitektur sebelumnya)
+    inisiasi_riwayat = models.RiwayatKondisi(
+        id_aset=generated_id_aset,
+        id_pengguna=current_user.id_pengguna,
+        kondisi="SO",
+        keterangan="Aset Baru",
     )
+    db.add(inisiasi_riwayat)
 
-    aset.status_kondisi = laporan.status_baru
-
-    db.add(riwayat)
     db.commit()
-
     await manager.broadcast("REFRESH_ASSET_LIST")
-    return {"message": f"Data perbaikan untuk {aset.kode_id} berhasil dicatat."}
 
-# ---------------------------------------------------------
-# ENDPOINT 3: AMBIL SEMUA DATA ASET (requires auth)
-# ---------------------------------------------------------
+    return {"message": "Aset berhasil ditambahkan", "id_aset": db_aset.id_aset}
+
+
 @app.get("/api/aset")
-def get_all_aset(db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
-    """
-    Retrieve a list of all active assets.
-    """
-    
-    asets = db.query(models.Aset).filter(models.Aset.is_afkir == False).all()
-
-    results = []
-    for a in asets:
-        results.append({
-            "uid":     a.uid,
-            "kode_id": a.kode_id,
-            "status":  a.status_kondisi,
-            "alat":    a.katalog.nama_alat    if a.katalog    else "Unknown",
-            "lokasi":  a.lokasi_ref.nama_lokasi if a.lokasi_ref else "Unknown",
-            "creator": a.creator
-        })
-    return results
-
-# ---------------------------------------------------------
-# ENDPOINT 4: AMBIL RIWAYAT PERBAIKAN SPESIFIK (requires auth)
-# ---------------------------------------------------------
-@app.get("/api/riwayat/{aset_uid}")
-def get_riwayat_aset(
-    aset_uid: str,
+def get_all_aset(
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_user)
+    current_user: models.Pengguna = Depends(get_current_user),
 ):
-    """
-    Returns the repair history for a specific asset, ordered by creation date.
-    """
-    
-    aset = db.query(models.Aset).filter(models.Aset.uid == aset_uid).first()
-    if not aset:
-        raise HTTPException(status_code=404, detail="Aset tidak ditemukan")
-
-    riwayat = (
-        db.query(models.RiwayatPerbaikan)
-        .filter(models.RiwayatPerbaikan.aset_uid == aset_uid)
-        .order_by(models.RiwayatPerbaikan.created_at.asc())
-        .all()
-    )
-
-    results = []
-    for i, r in enumerate(riwayat, start=1):
-        results.append({
-            "no":         i,
-            "date":       f"{r.tanggal_perbaikan.strftime('%Y-%m-%d')} {r.created_at.strftime('%H:%M:%S')}",
-            "upt":        f"{r.upt_perbaikan} ({r.lokasi_perbaikan})" if r.upt_perbaikan and r.lokasi_perbaikan else "Unknown",
-            "teknisi":    r.teknisi,
-            "kondisi":    r.status_baru,
-            "keterangan": r.keterangan
-        })
-
-    return results
-
-# ---------------------------------------------------------
-# ENDPOINT 5: DECOMMISSIONING
-# ---------------------------------------------------------
-@app.post("/api/aset/afkir/{uid}")
-async def afkir_aset(
-    uid: str,
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(require_role(["SUPER_ADMIN", "ADMIN_DAOP"]))
-):
-    """
-    Decommission an asset by marking it as afkir.
-    This action is irreversible and will hide the asset from all listings.
-    """
-    
-    aset = db.query(models.Aset).filter(models.Aset.uid == uid).first()
-    if not aset:
-        raise HTTPException(status_code=404, detail="Aset tidak ditemukan.")
-
-    aset.is_afkir = True
-    db.commit()
-
-    await manager.broadcast("REFRESH_ASSET_LIST")
-    return {"message": f"Aset {aset.kode_id} telah berhasil di-afkir."}
-
-# ---------------------------------------------------------
-# ENDPOINT 6: ADMIN USER MANAGEMENT (HIERARCHICAL)
-# ---------------------------------------------------------
-@app.post("/api/users/create")
-async def create_user_hierarchical(
-    user_data: schemas.UserCreate,
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(require_role(["SUPER_ADMIN", "ADMIN_DAOP"]))
-):
-    """
-    Create a new user with hierarchical role restrictions:
-    - SUPER_ADMIN can create any role (SUPER_ADMIN, ADMIN_DAOP, TEKNISI)
-    - ADMIN_DAOP can only create TEKNISI accounts, and the assigned_region is automatically set to the ADMIN_DAOP's region.
-    """
-    
-    db_user = db.query(models.User).filter(models.User.username == user_data.username).first()
-    if db_user:
-        raise HTTPException(status_code=400, detail="Username sudah terdaftar.")
-
-    if current_user.role == "ADMIN_DAOP":
-        if user_data.role != "TEKNISI":
-            raise HTTPException(status_code=403, detail="ADMIN_DAOP hanya bisa membuat akun TEKNISI.")
-        region = current_user.assigned_region
-    else:
-        region = user_data.assigned_region
-
-    hashed_pw = get_password_hash(user_data.password)
-    new_user  = models.User(
-        username=user_data.username,
-        hashed_password=hashed_pw,
-        role=user_data.role,
-        assigned_region=region
-    )
-
-    db.add(new_user)
-    db.commit()
-    return {"message": f"User {user_data.username} berhasil dibuat sebagai {user_data.role}."}
-
-# ---------------------------------------------------------
-# ENDPOINT 7: PUBLIC ASSET INFO — no auth required
-#   Used by landing.html after a QR scan.
-#   Returns only the fields safe for public display.
-# ---------------------------------------------------------
-@app.get("/api/public/aset/{uid}")
-def get_public_aset(uid: str, db: Session = Depends(get_db)):
-    """
-    Returns minimal, read-only asset information without requiring a JWT.
-    This endpoint is intentionally unauthenticated so that field workers
-    can scan a QR code and view the asset card + repair form without logging in.
-
-    Only non-afkir assets are served; afkir assets return 404.
-    """
-    
-    aset = (
+    asets = (
         db.query(models.Aset)
-        .filter(models.Aset.uid == uid, models.Aset.is_afkir == False)
-        .first()
-    )
-    if not aset:
-        raise HTTPException(status_code=404, detail="Aset tidak ditemukan atau sudah di-afkir.")
-
-    # Latest repair entry (for "last checked" display)
-    latest_riwayat = (
-        db.query(models.RiwayatPerbaikan)
-        .filter(models.RiwayatPerbaikan.aset_uid == uid)
-        .order_by(models.RiwayatPerbaikan.created_at.desc())
-        .first()
-    )
-
-    return {
-        "uid":            aset.uid,
-        "kode_id":        aset.kode_id,
-        "status":         aset.status_kondisi,
-        "alat":           aset.katalog.nama_alat      if aset.katalog    else aset.kode_alat,
-        "lokasi":         aset.lokasi_ref.nama_lokasi if aset.lokasi_ref else aset.kode_lokasi,
-        "unit_peruntukan": aset.unit_peruntukan,
-        "tahun_pembelian": aset.tahun_pembelian,
-        "last_updated":   latest_riwayat.created_at.strftime("%d %b %Y %H:%M") if latest_riwayat else None,
-        "last_teknisi":   latest_riwayat.teknisi if latest_riwayat else None,
-    }
-
-# ---------------------------------------------------------
-# ENDPOINT 8: PUBLIC REPAIR HISTORY — no auth required
-#   Returns the repair history for display on the landing page.
-# ---------------------------------------------------------
-@app.get("/api/public/riwayat/{uid}")
-def get_public_riwayat(uid: str, db: Session = Depends(get_db)):
-    """
-    Returns the repair history for an asset without authentication.
-    Limited to the 10 most recent entries to keep the public page light.
-    """
-    
-    aset = (
-        db.query(models.Aset)
-        .filter(models.Aset.uid == uid, models.Aset.is_afkir == False)
-        .first()
-    )
-    if not aset:
-        raise HTTPException(status_code=404, detail="Aset tidak ditemukan.")
-
-    riwayat = (
-        db.query(models.RiwayatPerbaikan)
-        .filter(models.RiwayatPerbaikan.aset_uid == uid)
-        .order_by(models.RiwayatPerbaikan.created_at.desc())
-        .limit(10)
+        .options(joinedload(models.Aset.kategori), joinedload(models.Aset.lokasi_ref))
+        .filter(func.upper(models.Aset.status_terakhir) != "AFKIR")
         .all()
     )
 
     return [
         {
-            "no":         i + 1,
-            "date":       r.tanggal_perbaikan.strftime("%d %b %Y"),
-            "upt":        r.upt_perbaikan or "—",
-            "teknisi":    r.teknisi,
-            "kondisi":    r.status_baru,
-            "keterangan": r.keterangan or "—",
+            "id_aset": a.id_aset,
+            "kode_alat": a.kode_alat,
+            "kode_alat_name": a.kategori.nama_alat if a.kategori else a.kode_alat,
+            "id_lokasi": a.id_lokasi,
+            "lokasi_name": a.lokasi_ref.nama_lokasi if a.lokasi_ref else a.id_lokasi,
+            "unit_peruntukan": a.lokasi_ref.unit_peruntukan
+            if hasattr(a.lokasi_ref, "unit_peruntukan") and a.lokasi_ref.unit_peruntukan
+            else "—",
+            "status_terakhir": a.status_terakhir,
+            "sumber_pengadaan": a.sumber_pengadaan,
+            "tanggal_pembelian": str(a.tanggal_pembelian)
+            if a.tanggal_pembelian
+            else None,
         }
-        for i, r in enumerate(riwayat)
+        for a in asets
     ]
 
-# ---------------------------------------------------------
-# SERVE HTML FILES (Add this at the very bottom)
-# ---------------------------------------------------------
 
-# Get the directory where this file is located
+@app.get("/api/aset/afkir", dependencies=[Depends(require_role(["SUPER_ADMIN"]))])
+def get_afkir_aset(db: Session = Depends(get_db)):
+    asets = (
+        db.query(models.Aset)
+        .options(joinedload(models.Aset.kategori), joinedload(models.Aset.lokasi_ref))
+        .filter(func.upper(models.Aset.status_terakhir) != "AFKIR")
+        .all()
+    )
+    return [
+        {
+            "id_aset": a.id_aset,
+            "kode_alat": a.kategori.nama_alat if a.kategori else a.kode_alat,
+            "id_lokasi": a.lokasi_ref.nama_lokasi if a.lokasi_ref else a.id_lokasi,
+            "status_terakhir": a.status_terakhir,
+            "tanggal_pembelian": str(a.tanggal_pembelian)
+            if a.tanggal_pembelian
+            else None,
+            "waktu_update": a.waktu_update.strftime("%Y-%m-%d %H:%M:%S")
+            if a.waktu_update
+            else None,
+        }
+        for a in asets
+    ]
+
+
+@app.post("/api/aset/afkir/{id_aset}")
+async def afkir_aset(
+    id_aset: str,
+    db: Session = Depends(get_db),
+    current_user: models.Pengguna = Depends(
+        require_role(["SUPER_ADMIN", "ADMIN_WILAYAH"])
+    ),
+):
+    aset = db.query(models.Aset).filter_by(id_aset=id_aset).first()
+    if not aset:
+        raise HTTPException(status_code=404, detail="Aset tidak ditemukan.")
+    # aset.is_afkir = True
+    aset.status_terakhir = "AFKIR"
+    db.commit()
+    await manager.broadcast("REFRESH_ASSET_LIST")
+    return {"message": "Aset berhasil di-afkir."}
+
+
+@app.post(
+    "/api/aset/pulihkan/{id_aset}",
+    dependencies=[Depends(require_role(["SUPER_ADMIN"]))],
+)
+async def pulihkan_aset(id_aset: str, db: Session = Depends(get_db)):
+    aset = db.query(models.Aset).filter_by(id_aset=id_aset).first()
+    if not aset:
+        raise HTTPException(status_code=404, detail="Aset tidak ditemukan.")
+    if aset.status_terakhir != "AFKIR":
+        raise HTTPException(
+            status_code=400, detail="Aset ini tidak dalam status AFKIR."
+        )
+    aset.status_terakhir = "SO"
+    db.commit()
+    await manager.broadcast("REFRESH_ASSET_LIST")
+    return {"message": f"Aset {id_aset} berhasil dipulihkan."}
+
+
+@app.post("/api/perbaikan")
+@app.post("/api/riwayat-kondisi")
+async def catat_perbaikan(
+    laporan: PerbaikanCreate,
+    db: Session = Depends(get_db),
+    current_user: models.Pengguna = Depends(get_current_user),
+):
+    aset = db.query(models.Aset).filter_by(id_aset=laporan.id_aset).first()
+    if not aset:
+        raise HTTPException(status_code=404, detail="Aset tidak ditemukan.")
+
+    db.add(
+        models.RiwayatKondisi(
+            id_aset=laporan.id_aset,
+            id_pengguna=current_user.id_pengguna,
+            kondisi=laporan.kondisi,
+            keterangan=laporan.keterangan,
+        )
+    )
+    aset.status_terakhir = laporan.kondisi
+    db.commit()
+    await manager.broadcast("REFRESH_ASSET_LIST")
+    return {"message": "Laporan kondisi berhasil dicatat."}
+
+
+@app.post("/api/mutasi")
+async def submit_mutasi(
+    mutasi: MutasiCreate,
+    db: Session = Depends(get_db),
+    current_user: models.Pengguna = Depends(
+        require_role(["SUPER_ADMIN", "ADMIN_WILAYAH"])
+    ),
+):
+    aset = (
+        db.query(models.Aset)
+        .filter(
+            models.Aset.id_aset == mutasi.id_aset,
+            models.Aset.status_terakhir != "AFKIR",
+        )
+        .first()
+    )
+    if not aset:
+        raise HTTPException(status_code=404, detail="Aset tidak ditemukan.")
+
+    # if aset.id_lokasi == mutasi.id_lokasi_tujuan:
+    #     raise HTTPException(status_code=400, detail="Lokasi tujuan sama dengan asal.")
+
+    if (
+        current_user.role == "ADMIN_WILAYAH"
+        and aset.id_lokasi != current_user.id_lokasi
+    ):
+        raise HTTPException(
+            status_code=403, detail="Hanya bisa memindahkan aset dari wilayah sendiri."
+        )
+
+    db.add(
+        models.RiwayatMutasi(
+            id_aset=mutasi.id_aset,
+            id_lokasi_asal=aset.id_lokasi,
+            id_lokasi_tujuan=mutasi.id_lokasi_tujuan,
+            id_pengguna=current_user.id_pengguna,
+            alasan_mutasi=mutasi.alasan_mutasi,
+        )
+    )
+    aset.id_lokasi = mutasi.id_lokasi_tujuan
+    db.commit()
+    await manager.broadcast("REFRESH_ASSET_LIST")
+    return {"message": "Aset berhasil dimutasi."}
+
+
+# ==================================================================
+# ── DATA HISTORY & SUMMARY ────────────────────────────────────────
+# ==================================================================
+
+
+@app.get("/api/riwayat-kondisi/{id_aset}")
+def get_riwayat_aset(
+    id_aset: str,
+    db: Session = Depends(get_db),
+    current_user: models.Pengguna = Depends(get_current_user),
+):
+    riwayat = (
+        db.query(models.RiwayatKondisi)
+        .filter_by(id_aset=id_aset)
+        .order_by(models.RiwayatKondisi.waktu_lapor.asc())
+        .all()
+    )
+    return [
+        {
+            "no": i,
+            "waktu_lapor": r.waktu_lapor.strftime("%Y-%m-%d %H:%M:%S")
+            if r.waktu_lapor
+            else None,
+            "id_pengguna": r.pengguna_ref.username if r.pengguna_ref else r.id_pengguna,
+            "kondisi": r.kondisi,
+            "keterangan": r.keterangan or "—",
+        }
+        for i, r in enumerate(riwayat, start=1)
+    ]
+
+
+@app.get("/api/mutasi/{id_aset}")
+def get_mutasi_by_aset(
+    id_aset: str,
+    db: Session = Depends(get_db),
+    current_user: models.Pengguna = Depends(get_current_user),
+):
+    mutasi = (
+        db.query(models.RiwayatMutasi)
+        .filter_by(id_aset=id_aset)
+        .order_by(models.RiwayatMutasi.waktu_mutasi.asc())
+        .all()
+    )
+
+    aset = db.query(models.Aset).filter_by(id_aset=id_aset).first()
+    # original_lokasi should be the parent region code, not UPT code
+    # For mutations, use the asal lokasi; for no mutations, use asset's current parent
+    if mutasi:
+        original_lokasi = mutasi[0].id_lokasi_asal
+    elif aset:
+        # Try to get parent from UPT code, fallback to asset's lokasi
+        # This requires a helper or we just send the code and let frontend resolve
+        original_lokasi = aset.id_lokasi
+    else:
+        original_lokasi = "—"
+
+    results = []
+    for m in mutasi:
+        results.append(
+            {
+                "id_lokasi_asal": m.id_lokasi_asal,
+                "id_lokasi_asal_name": m.lokasi_asal.nama_lokasi
+                if m.lokasi_asal
+                else m.id_lokasi_asal,
+                "id_lokasi_tujuan": m.id_lokasi_tujuan,
+                "id_lokasi_tujuan_name": m.lokasi_tujuan.nama_lokasi
+                if m.lokasi_tujuan
+                else m.id_lokasi_tujuan,
+                "waktu_mutasi": m.waktu_mutasi.strftime("%Y-%m-%d %H:%M:%S")
+                if m.waktu_mutasi
+                else None,
+                "id_pengguna": m.pengguna_ref.username
+                if m.pengguna_ref
+                else m.id_pengguna,
+                "alasan_mutasi": m.alasan_mutasi or "—",
+            }
+        )
+
+    return {
+        "mutasi": results,
+        "original_lokasi": original_lokasi,
+        "original_lokasi_name": aset.lokasi_ref.nama_lokasi
+        if aset and aset.lokasi_ref
+        else original_lokasi,
+        "sudah_kembali": aset.id_lokasi == original_lokasi if aset else False,
+        "lokasi_sekarang": aset.id_lokasi if aset else "—",
+        "lokasi_sekarang_name": aset.lokasi_ref.nama_lokasi
+        if aset and aset.lokasi_ref
+        else "—",
+    }
+
+
+@app.get("/api/history/summary")
+def get_history_summary(
+    db: Session = Depends(get_db),
+    current_user: models.Pengguna = Depends(get_current_user),
+):
+    from sqlalchemy.orm import joinedload
+    from sqlalchemy import func
+
+    # Batch load all assets with their relationships
+    asets = (
+        db.query(models.Aset)
+        .options(joinedload(models.Aset.kategori), joinedload(models.Aset.lokasi_ref))
+        .filter(models.Aset.status_terakhir != "AFKIR")
+        .all()
+    )
+
+    if not asets:
+        return []
+
+    aset_ids = [a.id_aset for a in asets]
+
+    # Batch load latest repair per asset using window function approach
+    latest_repair_subq = (
+        db.query(
+            models.RiwayatKondisi.id_aset,
+            models.RiwayatKondisi.kondisi,
+            models.RiwayatKondisi.keterangan,
+            models.RiwayatKondisi.waktu_lapor,
+            models.RiwayatKondisi.id_pengguna,
+            func.row_number()
+            .over(
+                partition_by=models.RiwayatKondisi.id_aset,
+                order_by=models.RiwayatKondisi.waktu_lapor.desc(),
+            )
+            .label("rn"),
+        )
+        .filter(models.RiwayatKondisi.id_aset.in_(aset_ids))
+        .subquery()
+    )
+
+    latest_repairs = (
+        db.query(latest_repair_subq).filter(latest_repair_subq.c.rn == 1).all()
+    )
+    repair_map = {r.id_aset: r for r in latest_repairs}
+
+    # Batch load all mutasi for these assets
+    all_mutasi = (
+        db.query(models.RiwayatMutasi)
+        .options(
+            joinedload(models.RiwayatMutasi.lokasi_asal),
+            joinedload(models.RiwayatMutasi.lokasi_tujuan),
+            joinedload(models.RiwayatMutasi.pengguna_ref),
+        )
+        .filter(models.RiwayatMutasi.id_aset.in_(aset_ids))
+        .order_by(models.RiwayatMutasi.waktu_mutasi.asc())
+        .all()
+    )
+
+    # Group mutasi by asset
+    mutasi_map = {}
+    for m in all_mutasi:
+        if m.id_aset not in mutasi_map:
+            mutasi_map[m.id_aset] = []
+        mutasi_map[m.id_aset].append(m)
+
+    # Batch load pengguna for repairs
+    pengguna_ids = list(set(r.id_pengguna for r in latest_repairs if r.id_pengguna))
+    pengguna_map = {}
+    if pengguna_ids:
+        penggunas = (
+            db.query(models.Pengguna)
+            .filter(models.Pengguna.id_pengguna.in_(pengguna_ids))
+            .all()
+        )
+        pengguna_map = {p.id_pengguna: p for p in penggunas}
+
+    results = []
+    for a in asets:
+        latest_repair = repair_map.get(a.id_aset)
+        all_mutasi_for_a = mutasi_map.get(a.id_aset, [])
+        latest_mutasi = all_mutasi_for_a[-1] if all_mutasi_for_a else None
+
+        results.append(
+            {
+                "id_aset": a.id_aset,
+                "kode_alat": a.kategori.nama_alat if a.kategori else a.kode_alat,
+                "id_lokasi": a.id_lokasi,
+                "id_lokasi_name": a.lokasi_ref.nama_lokasi
+                if a.lokasi_ref
+                else a.id_lokasi,
+                "status_terakhir": a.status_terakhir,
+                "repair": {
+                    "latest_date": latest_repair.waktu_lapor.strftime(
+                        "%Y-%m-%d %H:%M:%S"
+                    )
+                    if latest_repair and latest_repair.waktu_lapor
+                    else None,
+                    "latest_kondisi": latest_repair.kondisi
+                    if latest_repair
+                    else a.status_terakhir,
+                    "latest_keterangan": latest_repair.keterangan
+                    if latest_repair
+                    else None,
+                    "latest_teknisi": pengguna_map.get(
+                        latest_repair.id_pengguna
+                    ).username
+                    if latest_repair and latest_repair.id_pengguna in pengguna_map
+                    else (str(latest_repair.id_pengguna) if latest_repair else None),
+                },
+                "mutasi": {
+                    # PERBAIKAN: Gunakan all_mutasi_for_a, bukan all_mutasi
+                    "count": len(all_mutasi_for_a),
+                    "latest_date": latest_mutasi.waktu_mutasi.strftime(
+                        "%Y-%m-%d %H:%M:%S"
+                    )
+                    if latest_mutasi and latest_mutasi.waktu_mutasi
+                    else None,
+                    "latest_lokasi_tuju": latest_mutasi.lokasi_tujuan.nama_lokasi
+                    if latest_mutasi and latest_mutasi.lokasi_tujuan
+                    else None,
+                    "latest_oleh": latest_mutasi.pengguna_ref.username
+                    if latest_mutasi and latest_mutasi.pengguna_ref
+                    else None,
+                    "latest_alasan": latest_mutasi.alasan_mutasi
+                    if latest_mutasi
+                    else None,
+                    "sudah_kembali": a.id_lokasi
+                    == (
+                        all_mutasi_for_a[0].id_lokasi_asal
+                        if all_mutasi_for_a
+                        else a.id_lokasi
+                    ),
+                    "original_lokasi": all_mutasi_for_a[0].lokasi_asal.nama_lokasi
+                    if all_mutasi_for_a and all_mutasi_for_a[0].lokasi_asal
+                    else a.id_lokasi,
+                }
+                if all_mutasi_for_a  # PERBAIKAN: Evaluasi berdasarkan mutasi aset ini saja
+                else None,
+            }
+        )
+    return results
+
+
+# ==================================================================
+# ── EXPORT ────────────────────────────────────────────────────────
+# ==================================================================
+
+
+@app.get("/api/export/riwayat")
+def export_riwayat(
+    db: Session = Depends(get_db),
+    current_user: models.Pengguna = Depends(get_current_user),
+):
+    def build_rows(asets):
+        rows = []
+        for a in asets:
+            nama_alat = a.kategori.nama_alat if a.kategori else a.kode_alat
+            nama_lokasi = a.lokasi_ref.nama_lokasi if a.lokasi_ref else a.id_lokasi
+            riwayat = (
+                db.query(models.RiwayatKondisi)
+                .filter_by(id_aset=a.id_aset)
+                .order_by(models.RiwayatKondisi.waktu_lapor.asc())
+                .all()
+            )
+
+            if not riwayat:
+                rows.append(
+                    {
+                        "no": None,
+                        "tanggal": "—",
+                        "id_aset": a.id_aset,
+                        "kode_alat": nama_alat,
+                        "id_lokasi_asal": nama_lokasi,
+                        "upt": "—",
+                        "id_pengguna": "—",
+                        "kondisi": a.status_terakhir,
+                        "keterangan": "Belum ada riwayat",
+                    }
+                )
+            else:
+                for i, r in enumerate(riwayat, start=1):
+                    rows.append(
+                        {
+                            "no": i,
+                            "tanggal": r.waktu_lapor.strftime("%Y-%m-%d %H:%M:%S")
+                            if r.waktu_lapor
+                            else "—",
+                            "id_aset": a.id_aset,
+                            "kode_alat": nama_alat,
+                            "id_lokasi_asal": nama_lokasi,
+                            "upt": parse_ctx_upt_from_keterangan(r.keterangan),
+                            "id_pengguna": r.pengguna_ref.username
+                            if r.pengguna_ref
+                            else str(r.id_pengguna),
+                            "kondisi": r.kondisi,
+                            "keterangan": r.keterangan or "—",
+                        }
+                    )
+        return rows
+
+    return {
+        "active": build_rows(
+            db.query(models.Aset).filter(models.Aset.status_terakhir != "AFKIR").all()
+        ),
+        "afkir": build_rows(
+            db.query(models.Aset).filter(models.Aset.status_terakhir == "AFKIR").all()
+        ),
+    }
+
+
+@app.get("/api/export/mutasi")
+def export_mutasi(
+    db: Session = Depends(get_db),
+    current_user: models.Pengguna = Depends(get_current_user),
+):
+    asets = db.query(models.Aset).filter(models.Aset.status_terakhir != "AFKIR").all()
+    rows = []
+    for a in asets:
+        nama_alat = a.kategori.nama_alat if a.kategori else a.kode_alat
+        nama_lokasi = a.lokasi_ref.nama_lokasi if a.lokasi_ref else a.id_lokasi
+        mutasi_list = (
+            db.query(models.RiwayatMutasi)
+            .filter_by(id_aset=a.id_aset)
+            .order_by(models.RiwayatMutasi.waktu_mutasi.asc())
+            .all()
+        )
+        if not mutasi_list:
+            continue
+        for i, m in enumerate(mutasi_list, start=1):
+            rows.append(
+                {
+                    "no": i,
+                    "id_aset": a.id_aset,
+                    "kode_alat": nama_alat,
+                    "lokasi_asal": m.lokasi_asal.nama_lokasi
+                    if m.lokasi_asal
+                    else m.id_lokasi_asal,
+                    "lokasi_tujuan": m.lokasi_tujuan.nama_lokasi
+                    if m.lokasi_tujuan
+                    else m.id_lokasi_tujuan,
+                    "waktu_mutasi": m.waktu_mutasi.strftime("%Y-%m-%d %H:%M:%S")
+                    if m.waktu_mutasi
+                    else "—",
+                    "oleh": m.pengguna_ref.username
+                    if m.pengguna_ref
+                    else str(m.id_pengguna),
+                    "alasan": m.alasan_mutasi or "—",
+                }
+            )
+    return rows
+
+
+@app.delete("/api/aset/{id_aset}")
+async def delete_aset(
+    id_aset: str,
+    db: Session = Depends(get_db),
+    current_user: models.Pengguna = Depends(
+        require_role(["SUPER_ADMIN", "ADMIN_WILAYAH"])
+    ),
+):
+    aset = db.query(models.Aset).filter_by(id_aset=id_aset).first()
+    if not aset:
+        raise HTTPException(status_code=404, detail="Aset tidak ditemukan.")
+
+    if (
+        current_user.role == "ADMIN_WILAYAH"
+        and aset.id_lokasi != current_user.id_lokasi
+    ):
+        raise HTTPException(
+            status_code=403, detail="Hanya bisa menghapus aset dari wilayah Anda."
+        )
+
+    # Cascade delete child records first
+    db.query(models.RiwayatKondisi).filter_by(id_aset=id_aset).delete()
+    db.query(models.RiwayatMutasi).filter_by(id_aset=id_aset).delete()
+    db.delete(aset)
+    db.commit()
+    await manager.broadcast("REFRESH_ASSET_LIST")
+    return {"message": f"Aset {id_aset} berhasil dihapus permanen."}
+
+
+# ==================================================================
+# ── PUBLIC ENDPOINTS (Landing Page / QR) ──────────────────────────
+# ==================================================================
+
+
+@app.get("/api/public/aset/{id_aset}")
+def get_public_aset(id_aset: str, db: Session = Depends(get_db)):
+    aset = (
+        db.query(models.Aset)
+        .filter(models.Aset.id_aset == id_aset, models.Aset.status_terakhir != "AFKIR")
+        .first()
+    )
+    if not aset:
+        raise HTTPException(
+            status_code=404, detail="Aset tidak ditemukan atau di-afkir."
+        )
+
+    return {
+        "id_aset": aset.id_aset,
+        "kode_alat": aset.kategori.nama_alat if aset.kategori else aset.kode_alat,
+        "id_lokasi": aset.lokasi_ref.nama_lokasi if aset.lokasi_ref else aset.id_lokasi,
+        "status_terakhir": aset.status_terakhir,
+        "tanggal_pembelian": aset.tanggal_pembelian,
+    }
+
+
+# ==================================================================
+# ── STATIC FILES ──────────────────────────────────────────────────
+# ==================================================================
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-
-# Serve static files (CSS, JS, images)
 app.mount("/static", StaticFiles(directory=BASE_DIR), name="static")
 
-# Serve HTML files
+
 @app.get("/")
 async def serve_index():
-    """Serve the main index.html file"""
     return FileResponse(os.path.join(BASE_DIR, "index.html"))
 
-@app.get("/landing.html")
-async def serve_landing():
-    """Serve the landing.html file"""
-    return FileResponse(os.path.join(BASE_DIR, "landing.html"))
 
-# Catch-all route to serve any other HTML files
-# Place this LAST so it doesn't override API routes
 @app.get("/{file_name}.html")
 async def serve_html(file_name: str):
-    """Serve any HTML file"""
-    file_path = os.path.join(BASE_DIR, f"{file_name}.html")
-    if os.path.exists(file_path):
-        return FileResponse(file_path)
-    raise HTTPException(status_code=404, detail="File not found")
+    # Sanitize: only allow alphanumeric, hyphen, underscore
+    if not re.match(r"^[a-zA-Z0-9_-]+$", file_name):
+        raise HTTPException(status_code=400, detail="Invalid filename.")
+
+    path = os.path.join(BASE_DIR, f"{file_name}.html")
+    # Ensure path is within BASE_DIR (prevent traversal)
+    real_path = os.path.realpath(path)
+    real_base = os.path.realpath(BASE_DIR)
+    if not real_path.startswith(real_base):
+        raise HTTPException(status_code=403, detail="Access denied.")
+
+    if os.path.exists(real_path) and os.path.isfile(real_path):
+        return FileResponse(real_path)
+    raise HTTPException(status_code=404, detail="File not found.")
+
 
 @app.get("/{file_name}.js")
-async def serve_js(file_name: str):
-    """Serve JavaScript files"""
-    file_path = os.path.join(BASE_DIR, f"{file_name}.js")
-    if os.path.exists(file_path):
-        return FileResponse(file_path, media_type="application/javascript")
-    raise HTTPException(status_code=404, detail="File not found")
+async def serve_html(file_name: str):
+    # Sanitize: only allow alphanumeric, hyphen, underscore
+    if not re.match(r"^[a-zA-Z0-9_-]+$", file_name):
+        raise HTTPException(status_code=400, detail="Invalid filename.")
+
+    path = os.path.join(BASE_DIR, f"{file_name}.js")
+    # Ensure path is within BASE_DIR (prevent traversal)
+    real_path = os.path.realpath(path)
+    real_base = os.path.realpath(BASE_DIR)
+    if not real_path.startswith(real_base):
+        raise HTTPException(status_code=403, detail="Access denied.")
+
+    if os.path.exists(real_path) and os.path.isfile(real_path):
+        return FileResponse(real_path, media_type="application/javascript")
+    raise HTTPException(status_code=404, detail="File not found.")
+
 
 @app.get("/{file_name}.css")
-async def serve_css(file_name: str):
-    """Serve CSS files"""
-    file_path = os.path.join(BASE_DIR, f"{file_name}.css")
-    if os.path.exists(file_path):
-        return FileResponse(file_path, media_type="text/css")
-    raise HTTPException(status_code=404, detail="File not found")
+async def serve_html(file_name: str):
+    # Sanitize: only allow alphanumeric, hyphen, underscore
+    if not re.match(r"^[a-zA-Z0-9_-]+$", file_name):
+        raise HTTPException(status_code=400, detail="Invalid filename.")
 
-@app.get("/data.json")
-async def serve_data_json():
-    """Serve the data.json file for UPT database"""
-    file_path = os.path.join(BASE_DIR, "data.json")
-    if os.path.exists(file_path):
-        return FileResponse(file_path, media_type="application/json")
-    raise HTTPException(status_code=404, detail="data.json not found")
+    path = os.path.join(BASE_DIR, f"{file_name}.css")
+    # Ensure path is within BASE_DIR (prevent traversal)
+    real_path = os.path.realpath(path)
+    real_base = os.path.realpath(BASE_DIR)
+    if not real_path.startswith(real_base):
+        raise HTTPException(status_code=403, detail="Access denied.")
+
+    if os.path.exists(real_path) and os.path.isfile(real_path):
+        return FileResponse(real_path, media_type="text/css")
+    raise HTTPException(status_code=404, detail="File not found.")

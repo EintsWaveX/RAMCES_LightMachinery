@@ -1,431 +1,2997 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SIMA-KAI | Warehouse Monitoring</title>
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SIMA-KAI | Sistem Informasi Manajemen Aset</title>
+
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+
+    <!-- External Libraries -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
+    />
+
     <script>
-        tailwind.config = {
-            darkMode: 'class',
-            theme: { extend: { fontFamily: { consolas: ['Consolas', 'Monaco', 'monospace'] } } }
-        }
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            fontFamily: {
+              sans: ["Inter", "sans-serif"],
+              mono: ["Consolas", "Monaco", "monospace"],
+            },
+            colors: {
+              kai: {
+                blue: "#164C81",
+                orange: "#F3861B",
+                bg: "#F0F4F8",
+              },
+            },
+          },
+        },
+      };
     </script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <!-- Inline: theme bootstrap before first paint to avoid flash -->
+    <script>
+      (function () {
+        const saved = localStorage.getItem("theme");
+        const dark =
+          saved === "dark" ||
+          (!saved && window.matchMedia("(prefers-color-scheme: dark)").matches);
+        if (dark) document.documentElement.classList.add("dark");
+      })();
+    </script>
+
     <style>
-        ::-webkit-scrollbar { width: 8px; }
-        ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
-        .dark ::-webkit-scrollbar-thumb { background: #475569; }
-        .consolas-input { font-family: 'Consolas', monospace; }
-        .status-btn.active.so  { background-color: #22c55e !important; color: white !important; opacity: 1 !important; }
-        .status-btn.active.tso { background-color: #ef4444 !important; color: white !important; opacity: 1 !important; }
-        .status-btn.inactive   { background-color: #9ca3af !important; color: #f3f4f6 !important; opacity: 0.5 !important; }
+      /* ── Custom scrollbar ── */
+      ::-webkit-scrollbar {
+        width: 5px;
+        height: 5px;
+      }
 
-        /* QR print styles — only the label area prints */
-        @media print {
-            body > *:not(#qr-print-area) { display: none !important; }
-            #qr-print-area {
-                display: flex !important;
-                position: fixed;
-                inset: 0;
-                align-items: center;
-                justify-content: center;
-                background: white;
-            }
+      ::-webkit-scrollbar-track {
+        background: transparent;
+      }
+
+      ::-webkit-scrollbar-thumb {
+        background: #cbd5e1;
+        border-radius: 4px;
+      }
+
+      .dark ::-webkit-scrollbar-thumb {
+        background: #475569;
+      }
+
+      /* ── Sidebar layout ── */
+      #sidebar {
+        position: fixed;
+        top: 0;
+        left: 0;
+        height: 100%;
+        width: 17rem;
+        z-index: 50;
+        transform: translateX(-100%);
+        transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+      }
+
+      #sidebar.open {
+        transform: translateX(0);
+      }
+
+      #sidebar-toggle-btn {
+        width: 3.6rem;
+        height: 2.45rem;
+        border-radius: 9999px;
+        right: -1.2rem;
+        transform: translateX(0);
+        transition:
+          width 0.24s ease,
+          height 0.24s ease,
+          border-radius 0.24s ease,
+          transform 0.24s ease,
+          right 0.24s ease;
+        will-change: width, height, border-radius, right;
+      }
+
+      #sidebar-toggle-btn.is-open {
+        width: 2.7rem;
+        height: 2.7rem;
+        border-radius: 9999px;
+        right: -1.35rem;
+      }
+
+      /* Desktop: push content */
+      @media (min-width: 1024px) {
+        #main-content-area {
+          margin-left: 0;
+          transition: margin-left 0.28s cubic-bezier(0.4, 0, 0.2, 1);
         }
+
+        #main-content-area.sidebar-open {
+          margin-left: 16rem;
+        }
+
+        #sidebar-overlay {
+          display: none !important;
+        }
+      }
+
+      /* Mobile: overlay */
+      @media (max-width: 1023px) {
+        #sidebar-overlay {
+          display: none;
+          position: fixed;
+          inset: 0;
+          z-index: 40;
+          background: rgba(0, 0, 0, 0.45);
+          -webkit-backdrop-filter: blur(2px);
+          backdrop-filter: blur(2px);
+        }
+
+        #sidebar-overlay.active {
+          display: block;
+        }
+      }
+
+      /* ── Nav active state ── */
+      .nav-btn {
+        position: relative;
+      }
+
+      .nav-btn.is-active {
+        background-color: rgba(255, 255, 255, 0.12) !important;
+        color: white !important;
+        font-weight: 600;
+      }
+
+      .nav-btn.is-active::before {
+        content: "";
+        position: absolute;
+        left: 0;
+        top: 20%;
+        bottom: 20%;
+        width: 3px;
+        border-radius: 0 3px 3px 0;
+        background: #f3861b;
+      }
+
+      /* ── Sidebar styling stays consistent across themes ── */
+      #sidebar {
+        background: linear-gradient(
+          180deg,
+          #0a1f44 0%,
+          #164c81 100%
+        ) !important;
+        color: #ffffff !important;
+      }
+
+      #sidebar nav p {
+        color: rgba(255, 255, 255, 0.58) !important;
+      }
+
+      .nav-btn {
+        color: rgba(255, 255, 255, 0.9) !important;
+        background-color: transparent !important;
+      }
+
+      .nav-btn:hover,
+      .nav-btn:focus-visible {
+        background-color: rgba(243, 134, 27, 0.25) !important;
+        color: #ffffff !important;
+      }
+
+      .nav-btn.is-active {
+        background-color: #f3861b !important;
+        color: #ffffff !important;
+        font-weight: 700 !important;
+        box-shadow: 0 2px 8px rgba(243, 134, 27, 0.35) !important;
+      }
+
+      .nav-btn.is-active::before {
+        display: none; /* orange fill replaces the left bar */
+      }
+
+      .nav-btn .fas,
+      .nav-btn .far,
+      .nav-btn .fab,
+      .nav-btn span {
+        color: inherit !important;
+      }
+
+      .hover\:bg-white\/8:hover {
+        background-color: rgba(10, 31, 68, 0.38) !important;
+      }
+
+      /* ── Light mode: topbar text forced dark ── */
+      :root:not(.dark) #topbar-page-title {
+        color: #111827 !important;
+        font-weight: 700 !important;
+      }
+
+      :root:not(.dark) #topbar-page-subtitle {
+        color: #374151 !important;
+        font-weight: 600 !important;
+      }
+
+      :root:not(.dark) #topbar-username {
+        color: #111827 !important;
+        font-weight: 700 !important;
+      }
+
+      :root:not(.dark) #topbar-role {
+        color: #374151 !important;
+        font-weight: 600 !important;
+      }
+
+      :root:not(.dark) #topbar-clock {
+        color: #111827 !important;
+        font-weight: 700 !important;
+      }
+
+      :root:not(.dark) #topbar-date {
+        color: #374151 !important;
+        font-weight: 600 !important;
+      }
+
+      /* ── SO / TSO toggle buttons ── */
+      .status-btn {
+        transition: all 0.15s;
+        border-width: 2px;
+      }
+
+      .status-btn.is-so {
+        background: #dcfce7 !important;
+        color: #15803d !important;
+        border-color: #22c55e !important;
+      }
+
+      .status-btn.is-tso {
+        background: #fee2e2 !important;
+        color: #b91c1c !important;
+        border-color: #ef4444 !important;
+      }
+
+      .status-btn.is-idle {
+        background: #f3f4f6 !important;
+        color: #9ca3af !important;
+        border-color: #e5e7eb !important;
+      }
+
+      .dark .status-btn.is-idle {
+        background: #374151 !important;
+        color: #6b7280 !important;
+        border-color: #4b5563 !important;
+      }
+
+      /* ── Toast container ── */
+      #toast-container {
+        position: fixed;
+        z-index: 9999;
+        display: flex;
+        flex-direction: column;
+        gap: 0.6rem;
+        /* mobile: bottom-center */
+        bottom: 1.25rem;
+        left: 50%;
+        transform: translateX(-50%);
+        width: max-content;
+        max-width: calc(100vw - 2rem);
+      }
+
+      @media (min-width: 640px) {
+        #toast-container {
+          bottom: auto;
+          top: 1.25rem;
+          right: 1.25rem;
+          left: auto;
+          transform: none;
+          align-items: flex-end;
+        }
+      }
+
+      /* ── Print: QR only ── */
+      @media print {
+        body > *:not(#qr-print-area) {
+          display: none !important;
+        }
+
+        #qr-print-area {
+          display: flex !important;
+          position: fixed;
+          inset: 0;
+          align-items: center;
+          justify-content: center;
+          background: white;
+        }
+      }
+
+      /* ── Misc helpers ── */
+      .view-section {
+        display: none;
+      }
+
+      .view-section.is-visible {
+        display: block;
+      }
+
+      .view-section.is-flex {
+        display: flex;
+        flex-direction: column;
+      }
+
+      /* History-detail & database need flex column */
+      #view-database,
+      #view-history {
+        display: none;
+      }
+
+      #view-database.is-visible,
+      #view-history.is-visible {
+        display: flex;
+        flex-direction: column;
+      }
+
+      /* Master edit modal field label helper */
+      .field-label {
+        display: block;
+        font-size: 0.75rem;
+        font-weight: 600;
+        margin-bottom: 0.375rem;
+        color: #6b7280;
+      }
+
+      .dark .field-label {
+        color: #9ca3af;
+      }
+
+      .field-input {
+        width: 100%;
+        padding: 0.625rem;
+        background-color: #f9fafb;
+        border: 1px solid #e5e7eb;
+        border-radius: 0.5rem;
+        font-size: 0.875rem;
+        outline: none;
+        transition: border-color 0.15s;
+      }
+
+      .dark .field-input {
+        background-color: #374151;
+        border-color: #4b5563;
+      }
+
+      .field-input:focus {
+        border-color: #164c81;
+      }
+
+      .dark .field-input:focus {
+        border-color: #f3861b;
+      }
+
+      /* ── Light mode contrast boost ── */
+      :root:not(.dark) body {
+        background-color: #e8edf3;
+      }
+
+      :root:not(.dark) .bg-white {
+        box-shadow:
+          0 1px 3px rgba(0, 0, 0, 0.08),
+          0 0 0 1px rgba(0, 0, 0, 0.06);
+      }
+
+      :root:not(.dark) .border-gray-100 {
+        border-color: #cbd5e1 !important;
+      }
+
+      :root:not(.dark) .border-gray-200 {
+        border-color: #94a3b8 !important;
+      }
+
+      :root:not(.dark) input:not([type="radio"]):not([type="checkbox"]),
+      :root:not(.dark) select,
+      :root:not(.dark) textarea {
+        border-color: #94a3b8 !important;
+        background-color: #ffffff !important;
+      }
+
+      :root:not(.dark) input:focus,
+      :root:not(.dark) select:focus,
+      :root:not(.dark) textarea:focus {
+        border-color: #164c81 !important;
+        box-shadow: 0 0 0 3px rgba(22, 76, 129, 0.12) !important;
+      }
+
+      :root:not(.dark) table thead tr {
+        background-color: #f1f5f9;
+      }
+
+      :root:not(.dark) table tbody tr:hover {
+        background-color: #f0f4f8 !important;
+      }
+
+      :root:not(.dark) .divide-gray-100 > * + * {
+        border-color: #cbd5e1 !important;
+      }
+
+      :root:not(.dark) .hover\:bg-white\/8:hover,
+      :root:not(.dark) .hover\:bg-gray-50:hover {
+        background-color: #f8fafc !important;
+      }
+
+      /* Tab active states */
+      :root:not(.dark) .hist-tab.is-active,
+      :root:not(.dark) button.is-active {
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+      }
+
+      /* Card hover borders */
+      :root:not(.dark) .rounded-xl:hover {
+        border-color: #94a3b8;
+      }
+
+      /* Topbar border */
+      :root:not(.dark) header {
+        border-bottom-color: #cbd5e1 !important;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+      }
+
+      /* Breadcrumb area */
+      :root:not(.dark) .bg-gray-50 {
+        background-color: #f1f5f9 !important;
+      }
+
+      /* Modal backdrop stronger in light */
+      :root:not(.dark) .bg-gray-900\/40 {
+        background-color: rgba(15, 23, 42, 0.55) !important;
+      }
+
+      /* ── Dashboard matrix cell gradient ── */
+      .matrix-cell-mixed {
+        background: linear-gradient(135deg, #dcfce7 50%, #fee2e2 50%);
+      }
+      .dark .matrix-cell-mixed {
+        background: linear-gradient(
+          135deg,
+          rgba(21, 128, 61, 0.35) 50%,
+          rgba(185, 28, 28, 0.35) 50%
+        );
+      }
+
+      /* ── Dashboard tab panel ── */
+      .dash-tab-btn {
+        white-space: nowrap;
+        transition: all 0.15s;
+      }
+      .dash-tab-btn.is-active {
+        background-color: #164c81;
+        color: #ffffff;
+        font-weight: 700;
+        box-shadow: 0 2px 8px rgba(22, 76, 129, 0.25);
+      }
+      .dark .dash-tab-btn.is-active {
+        background-color: #1e5fa3;
+      }
+      .dash-tab-btn:not(.is-active) {
+        color: #6b7280;
+      }
+      .dash-tab-btn:not(.is-active):hover {
+        background-color: rgba(22, 76, 129, 0.1);
+        color: #164c81;
+      }
+      .dark .dash-tab-btn:not(.is-active):hover {
+        background-color: rgba(255, 255, 255, 0.08);
+        color: #93c5fd;
+      }
+
+      /* ── Dashboard dot indicators ── */
+      .dash-dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 9999px;
+        background: #cbd5e1;
+        transition:
+          background 0.2s,
+          transform 0.2s;
+        cursor: pointer;
+      }
+      .dash-dot.is-active {
+        background: #164c81;
+        transform: scale(1.4);
+      }
+      .dark .dash-dot.is-active {
+        background: #60a5fa;
+      }
+
+      /* ── Matrix table ── */
+      #dash-matrix-table th,
+      #dash-matrix-table td {
+        min-width: 2.6rem;
+        text-align: center;
+        font-size: 0.7rem;
+        padding: 0.3rem 0.2rem;
+      }
+      #dash-matrix-table th {
+        font-weight: 700;
+      }
+
+      /* ── Matrix table fluid sizing ── */
+      #dash-matrix-table th,
+      #dash-matrix-table td {
+        padding: 0.35rem 0.5rem;
+        font-size: clamp(9px, 1vw, 12px);
+        white-space: nowrap;
+      }
+
+      #dash-matrix-table th {
+        font-weight: 600;
+      }
+
+      /* Wilayah column: values left, header center */
+      #dash-matrix-table td:first-child {
+        text-align: left !important;
+      }
+
+      #dash-matrix-table th:first-child {
+        text-align: center !important;
+      }
     </style>
-    <script>
-        (function() {
-            const saved = localStorage.getItem('theme');
-            const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-            if (saved === 'dark' || (!saved && prefersDark)) {
-                document.documentElement.classList.add('dark');
-            }
-            if (sessionStorage.getItem('activeUser') && sessionStorage.getItem('authToken')) {
-                document.addEventListener('DOMContentLoaded', function() {
-                    document.getElementById('auth-view').classList.add('hidden');
-                });
-            }
-        })();
-    </script>
-</head>
-<body class="bg-gray-50 text-gray-900 dark:bg-gray-900 dark:text-gray-100 transition-colors duration-200 flex h-screen overflow-hidden">
+  </head>
 
-    <!-- AUTHENTICATION VIEW -->
-    <div id="auth-view" class="fixed inset-0 z-50 bg-gray-50 dark:bg-gray-900 flex items-center justify-center">
-        <div class="bg-white dark:bg-gray-800 p-8 rounded-xl shadow-2xl w-full max-w-md border border-gray-200 dark:border-gray-700">
-            <div class="text-center mb-8">
-                <i class="fas fa-train text-4xl text-blue-600 dark:text-blue-400 mb-2"></i>
-                <h2 class="text-3xl font-bold text-gray-800 dark:text-gray-100">SIMA-KAI</h2>
-                <p class="text-sm text-gray-500">Sistem Informasi Manajemen Aset</p>
-            </div>
-            <div class="space-y-4">
-                <div>
-                    <label class="block text-sm font-semibold mb-2">Username</label>
-                    <input type="text" id="login-username" class="consolas-input w-full p-3 border rounded-lg dark:bg-gray-700 dark:border-gray-600 focus:ring-2 focus:ring-blue-500">
-                </div>
-                <div>
-                    <label class="block text-sm font-semibold mb-2">Password</label>
-                    <input type="password" id="login-password" class="consolas-input w-full p-3 border rounded-lg dark:bg-gray-700 dark:border-gray-600 focus:ring-2 focus:ring-blue-500">
-                </div>
-                <button type="button" id="btn-login" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg transition-colors mt-4">
-                    <i class="fas fa-sign-in-alt mr-2"></i> Login
-                </button>
-            </div>
+  <body
+    class="bg-kai-bg text-gray-800 dark:bg-gray-900 dark:text-gray-200 font-sans flex h-screen overflow-hidden"
+  >
+    <!-- ══════════════════════════════════════════════════════════════════
+     AUTH VIEW
+    ═══════════════════════════════════════════════════════════════════ -->
+    <div id="auth-view" class="fixed inset-0 z-[60] flex">
+      <!-- Left: Hero Panel -->
+      <div
+        class="hidden lg:flex flex-1 relative overflow-hidden"
+        style="
+          background: linear-gradient(
+            135deg,
+            #0a1f44 0%,
+            #164c81 50%,
+            #1a5fa8 100%
+          );
+        "
+      >
+        <!-- Placeholder watermark -->
+        <div
+          class="absolute inset-0 flex flex-col items-center justify-center gap-4 select-none pointer-events-none"
+        >
+          <div
+            class="w-32 h-32 rounded-2xl border-4 border-dashed border-white/20 flex items-center justify-center"
+          >
+            <i class="fas fa-image text-5xl text-white/20"></i>
+          </div>
+          <p class="text-white/25 text-sm font-bold tracking-widest uppercase">
+            [ Hero Image Placeholder ]
+          </p>
+          <p class="text-white/15 text-xs">
+            Replace with real background photo
+          </p>
         </div>
+        <!-- Overlay gradient -->
+        <div
+          class="absolute inset-0"
+          style="
+            background: linear-gradient(
+              to right,
+              transparent 60%,
+              rgba(10, 31, 68, 0.4) 100%
+            );
+          "
+        ></div>
+        <!-- Bottom branding -->
+        <div class="absolute bottom-10 left-10">
+          <h1 class="text-4xl font-black text-white tracking-tight">
+            SIMA-KAI
+          </h1>
+          <p class="text-white/50 text-sm mt-1 tracking-widest">
+            Sistem Informasi Manajemen Aset
+          </p>
+          <p class="text-white/30 text-xs mt-3">
+            © 2026 PT Kereta Api Indonesia (Persero)
+          </p>
+        </div>
+      </div>
+
+      <!-- Right: Auth Card -->
+      <div
+        class="w-full lg:w-[420px] flex items-center justify-center bg-white dark:bg-gray-900 px-8 py-12 overflow-y-auto"
+      >
+        <div class="w-full max-w-sm">
+          <!-- Logo -->
+          <div class="text-center mb-8 flex flex-col items-center">
+            <div
+              class="w-16 h-16 bg-blue-50 dark:bg-gray-700 rounded-2xl flex items-center justify-center mb-4 shadow-sm"
+            >
+              <i class="fas fa-cogs text-3xl text-kai-orange"></i>
+            </div>
+            <h2 class="text-2xl font-bold text-kai-blue dark:text-blue-400">
+              SIMA-KAI
+            </h2>
+            <p class="text-xs text-gray-400 mt-1 tracking-wide">
+              Sistem Informasi Manajemen Aset KAI
+            </p>
+          </div>
+
+          <!-- Step 1: Username -->
+          <div id="auth-step-1" class="space-y-4">
+            <div>
+              <label
+                class="block text-xs font-semibold mb-1.5 text-gray-600 dark:text-gray-300"
+                >Nama Pengguna</label
+              >
+              <input
+                type="text"
+                id="login-username"
+                autocomplete="username"
+                class="w-full p-3 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-kai-blue outline-none text-sm transition"
+              />
+            </div>
+            <button
+              id="btn-next-step"
+              class="w-full bg-kai-blue hover:bg-blue-800 active:bg-blue-900 text-white font-semibold py-3 rounded-lg transition-colors shadow-md text-sm"
+            >
+              Lanjutkan <i class="fas fa-arrow-right ml-2 opacity-70"></i>
+            </button>
+          </div>
+
+          <!-- Step 2: Division Role Cards -->
+          <div id="auth-step-2" class="hidden space-y-4">
+            <div class="flex items-center gap-3 mb-2">
+              <button
+                id="btn-back-step1"
+                class="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 font-semibold text-sm transition"
+              >
+                <i class="fas fa-arrow-left"></i> Kembali
+              </button>
+              <div>
+                <p class="text-xs text-gray-400">Masuk sebagai</p>
+                <p
+                  class="text-sm font-bold text-gray-700 dark:text-gray-200"
+                  id="auth-display-username"
+                >
+                  —
+                </p>
+              </div>
+            </div>
+            <p
+              class="text-xs font-semibold text-gray-500 uppercase tracking-widest"
+            >
+              Pilih Divisi
+            </p>
+            <div class="grid grid-cols-3 gap-3">
+              <!-- TraKSI -->
+              <button
+                data-division="TEKNISI"
+                class="division-card flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-gray-200 dark:border-gray-600 hover:border-kai-blue hover:bg-blue-50 dark:hover:bg-blue-900/20 transition group"
+              >
+                <div
+                  class="w-10 h-10 rounded-lg bg-gray-100 dark:bg-gray-700 flex items-center justify-center group-hover:bg-kai-blue transition"
+                >
+                  <!-- [REPLACE: TraKSI Logo] -->
+                  <span
+                    class="text-[10px] font-black text-kai-blue group-hover:text-white transition leading-none text-center"
+                    >Tra<br />KSI</span
+                  >
+                </div>
+                <span
+                  class="text-[10px] font-bold text-gray-500 dark:text-gray-400 group-hover:text-kai-blue dark:group-hover:text-blue-400 transition text-center leading-tight"
+                  >TEKNISI</span
+                >
+              </button>
+              <!-- Admin Wilayah -->
+              <button
+                data-division="ADMIN_WILAYAH"
+                class="division-card flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-gray-200 dark:border-gray-600 hover:border-kai-orange hover:bg-orange-50 dark:hover:bg-orange-900/20 transition group"
+              >
+                <div
+                  class="w-10 h-10 rounded-lg bg-gray-100 dark:bg-gray-700 flex items-center justify-center group-hover:bg-kai-orange transition"
+                >
+                  <!-- [REPLACE: Admin DAOP Logo] -->
+                  <span
+                    class="text-[10px] font-black text-kai-orange group-hover:text-white transition leading-none text-center"
+                    >ADM<br />DAOP</span
+                  >
+                </div>
+                <span
+                  class="text-[10px] font-bold text-gray-500 dark:text-gray-400 group-hover:text-kai-orange dark:group-hover:text-orange-400 transition text-center leading-tight"
+                  >ADMIN WILAYAH</span
+                >
+              </button>
+              <!-- RAMCES -->
+              <button
+                data-division="SUPER_ADMIN"
+                class="division-card flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-gray-200 dark:border-gray-600 hover:border-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 transition group"
+              >
+                <div
+                  class="w-10 h-10 rounded-lg bg-gray-100 dark:bg-gray-700 flex items-center justify-center group-hover:bg-emerald-500 transition"
+                >
+                  <!-- [REPLACE: RAMCES Logo] -->
+                  <span
+                    class="text-[10px] font-black text-emerald-600 group-hover:text-white transition leading-none text-center"
+                    >RAM<br />CES</span
+                  >
+                </div>
+                <span
+                  class="text-[10px] font-bold text-gray-500 dark:text-gray-400 group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition text-center leading-tight"
+                  >SUPER ADMIN</span
+                >
+              </button>
+            </div>
+          </div>
+
+          <!-- Step 3: Region + Login -->
+          <div id="auth-step-3" class="hidden space-y-4">
+            <div class="flex items-center gap-3 mb-2">
+              <button
+                id="btn-back-step2"
+                class="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 font-semibold text-sm transition"
+              >
+                <i class="fas fa-arrow-left"></i> Kembali
+              </button>
+              <div>
+                <p class="text-xs text-gray-400">Masuk sebagai</p>
+                <p
+                  class="text-sm font-bold text-gray-700 dark:text-gray-200"
+                  id="auth-display-role"
+                >
+                  —
+                </p>
+              </div>
+            </div>
+            <div>
+              <label
+                class="block text-xs font-semibold mb-1.5 text-gray-600 dark:text-gray-300"
+                >Wilayah / Region</label
+              >
+              <select
+                id="login-region"
+                class="w-full p-3 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg outline-none focus:ring-2 focus:ring-kai-blue text-sm transition"
+              >
+                <option value="">Memuat...</option>
+              </select>
+            </div>
+            <!-- Hidden role field carried from step 2 -->
+            <input type="hidden" id="login-role" value="" />
+            <button
+              id="btn-login"
+              class="w-full bg-kai-blue hover:bg-blue-800 active:bg-blue-900 text-white font-semibold py-3 rounded-lg transition-colors shadow-md text-sm"
+            >
+              Masuk <i class="fas fa-arrow-right ml-2 opacity-70"></i>
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
 
-    <!-- MAIN APP -->
-    <div id="main-app" class="flex w-full h-full hidden">
+    <!-- ══════════════════════════════════════════════════════════════════
+     SIDEBAR OVERLAY (mobile)
+    ═══════════════════════════════════════════════════════════════════ -->
+    <div id="sidebar-overlay"></div>
 
-        <!-- Sidebar -->
-        <aside id="sidebar" class="w-64 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 flex flex-col transition-all duration-300">
-            <div class="p-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
-                <h1 class="text-lg font-bold truncate">SIMA-KAI</h1>
-                <button id="close-sidebar-btn" class="lg:hidden text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">
-                    <i class="fas fa-bars"></i>
-                </button>
-            </div>
-            <nav class="flex-1 p-4 space-y-2 overflow-y-auto">
-                <button data-target="dashboard" class="nav-btn w-full flex items-center p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
-                    <i class="fas fa-chart-pie w-6"></i> <span>Dashboard Utama</span>
-                </button>
-                <button data-target="input" class="nav-btn w-full flex items-center p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
-                    <i class="fas fa-plus-square w-6"></i> <span>Input Alat Kerja</span>
-                </button>
-                <button data-target="database" class="nav-btn w-full flex items-center p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
-                    <i class="fas fa-database w-6"></i> <span>Database & Edit</span>
-                </button>
-                <button data-target="history" class="nav-btn w-full flex items-center p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
-                    <i class="fas fa-history w-6"></i> <span>History Card</span>
-                </button>
-                <button data-target="usermanagement" id="nav-user-management" class="nav-btn w-full flex items-center p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 hidden text-purple-600 dark:text-purple-400 font-bold border border-purple-200 dark:border-purple-900 mt-4">
-                    <i class="fas fa-users-cog w-6"></i> <span>Manajemen User</span>
-                </button>
-            </nav>
-            <div class="p-4 border-t border-gray-200 dark:border-gray-700 space-y-2">
-                <button id="theme-toggle-btn" class="w-full flex items-center justify-center p-2 bg-gray-200 dark:bg-gray-700 rounded-lg">
-                    <i class="fas fa-moon dark:hidden"></i><i class="fas fa-sun hidden dark:block text-yellow-400"></i><span class="ml-2">Theme</span>
-                </button>
-                <button id="logout-btn" class="w-full flex items-center justify-center p-2 bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded-lg">
-                    <i class="fas fa-sign-out-alt"></i><span class="ml-2">Logout</span>
-                </button>
-            </div>
-        </aside>
+    <!-- ══════════════════════════════════════════════════════════════════
+     MAIN APP SHELL
+    ═══════════════════════════════════════════════════════════════════ -->
+    <div id="main-app" class="hidden w-full h-full">
+      <!-- ── SIDEBAR ── -->
+      <aside id="sidebar" class="bg-kai-blue flex flex-col text-white">
+        <!-- Toggle pill (desktop) -->
+        <button
+          id="sidebar-toggle-btn"
+          class="absolute top-6 bg-kai-orange text-white shadow-lg z-50 hidden lg:flex items-center justify-center hover:scale-110 transition-transform text-sm"
+        >
+          <i class="fas fa-chevron-left text-lg" id="sidebar-chevron-icon"></i>
+        </button>
 
-        <!-- Main Content -->
-        <main class="flex-1 flex flex-col h-screen overflow-hidden">
-            <header class="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 p-4 flex justify-between items-center shadow-sm z-10">
-                <button id="open-sidebar-btn" class="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">
-                    <i class="fas fa-bars text-xl"></i>
-                </button>
-                <div class="flex items-center space-x-4">
-                    <span class="font-medium text-sm border-r pr-4 dark:border-gray-600">User: <span id="current-username">...</span></span>
-                    <i class="fas fa-user-circle text-2xl text-blue-500"></i>
-                </div>
-            </header>
-
-            <div class="flex-1 overflow-y-auto p-6 relative" id="view-container">
-
-                <!-- VIEW: DASHBOARD -->
-                <section id="view-dashboard" class="view-section max-w-6xl mx-auto hidden space-y-6">
-                    <div class="bg-gradient-to-r from-blue-600 to-blue-800 rounded-2xl p-8 text-white shadow-lg flex justify-between items-center">
-                        <div>
-                            <h2 class="text-3xl font-bold mb-2" id="welcome-message">Selamat Datang, ---</h2>
-                            <p class="text-blue-100 opacity-90">Pantau kesiapan dan kondisi aset alat kerja secara real-time.</p>
-                        </div>
-                        <i class="fas fa-chart-line text-6xl opacity-20 hidden md:block"></i>
-                    </div>
-                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                        <div class="bg-white dark:bg-gray-800 p-6 rounded-xl shadow border border-gray-200 dark:border-gray-700">
-                            <div class="flex justify-between items-start">
-                                <div>
-                                    <p class="text-sm text-gray-500 font-bold">TOTAL ASET AKTIF</p>
-                                    <h3 class="text-4xl font-black mt-2 text-blue-600 dark:text-blue-400" id="stat-total">0</h3>
-                                </div>
-                                <div class="p-3 bg-blue-100 dark:bg-blue-900/30 rounded-lg text-blue-600 dark:text-blue-400"><i class="fas fa-boxes text-xl"></i></div>
-                            </div>
-                        </div>
-                        <div class="bg-white dark:bg-gray-800 p-6 rounded-xl shadow border border-gray-200 dark:border-gray-700">
-                            <div class="flex justify-between items-start">
-                                <div>
-                                    <p class="text-sm text-gray-500 font-bold">KONDISI SO (SIAP OPERASI)</p>
-                                    <h3 class="text-4xl font-black mt-2 text-green-500" id="stat-so">0</h3>
-                                </div>
-                                <div class="p-3 bg-green-100 dark:bg-green-900/30 rounded-lg text-green-600 dark:text-green-400"><i class="fas fa-check-circle text-xl"></i></div>
-                            </div>
-                        </div>
-                        <div class="bg-white dark:bg-gray-800 p-6 rounded-xl shadow border border-gray-200 dark:border-gray-700">
-                            <div class="flex justify-between items-start">
-                                <div>
-                                    <p class="text-sm text-gray-500 font-bold">KONDISI TSO (TIDAK SIAP)</p>
-                                    <h3 class="text-4xl font-black mt-2 text-red-500" id="stat-tso">0</h3>
-                                </div>
-                                <div class="p-3 bg-red-100 dark:bg-red-900/30 rounded-lg text-red-600 dark:text-red-400"><i class="fas fa-times-circle text-xl"></i></div>
-                            </div>
-                        </div>
-                    </div>
-                </section>
-
-                <!-- VIEW: INPUT ALAT KERJA BARU -->
-                <section id="view-input" class="view-section max-w-4xl mx-auto hidden">
-                    <h2 class="text-2xl font-bold mb-6 border-b pb-2 dark:border-gray-700">Input Data Alat Kerja Baru</h2>
-                    <form id="form-input-baru" class="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6 space-y-6">
-                        <div>
-                            <label class="block text-sm font-semibold mb-2">1. Alat Kerja</label>
-                            <select id="in-alat" required class="consolas-input w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600"></select>
-                        </div>
-                        <div>
-                            <label class="block text-sm font-semibold mb-2">2. Pengadaan</label>
-                            <div class="flex space-x-6 consolas-input">
-                                <label class="flex items-center space-x-2"><input type="radio" name="in-pengadaan" value="1" required class="w-4 h-4 text-blue-600"> <span>PUSAT (1)</span></label>
-                                <label class="flex items-center space-x-2"><input type="radio" name="in-pengadaan" value="2" class="w-4 h-4 text-blue-600"> <span>DAOP/DIVRE (2)</span></label>
-                            </div>
-                        </div>
-                        <div>
-                            <label class="block text-sm font-semibold mb-2">3. Tanggal Pembelian</label>
-                            <input type="date" id="in-tanggal" required class="consolas-input w-full md:w-1/2 p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600">
-                        </div>
-                        <div>
-                            <label class="block text-sm font-semibold mb-2">4. Unit Peruntukan</label>
-                            <div class="flex flex-wrap gap-4 consolas-input">
-                                <label class="flex items-center space-x-2"><input type="radio" name="in-unit" value="A" required class="w-4 h-4 text-blue-600"> <span>JALAN REL (A)</span></label>
-                                <label class="flex items-center space-x-2"><input type="radio" name="in-unit" value="B" class="w-4 h-4 text-blue-600"> <span>JEMBATAN (B)</span></label>
-                                <label class="flex items-center space-x-2"><input type="radio" name="in-unit" value="C" class="w-4 h-4 text-blue-600"> <span>MEKANIK (C)</span></label>
-                                <label class="flex items-center space-x-2"><input type="radio" name="in-unit" value="D" class="w-4 h-4 text-blue-600"> <span>BALAIYASA (D)</span></label>
-                            </div>
-                        </div>
-                        <div>
-                            <label class="block text-sm font-semibold mb-2">5. Lokasi (DAOP/DIVRE/BALAIYASA)</label>
-                            <select id="in-lokasi" required class="consolas-input w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600"></select>
-                        </div>
-                        <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg transition-colors">
-                            <i class="fas fa-save mr-2"></i> Submit Data
-                        </button>
-                    </form>
-                </section>
-
-                <!-- VIEW: DATABASE SEARCH -->
-                <section id="view-database" class="view-section hidden h-full flex flex-col">
-                    <div class="flex gap-4 mb-4">
-                        <input type="text" id="search-db" placeholder="Cari ID, Alat, atau Lokasi..." class="w-full p-3 border rounded-lg shadow-sm dark:bg-gray-800 dark:border-gray-700 consolas-input">
-                        <select id="filter-mode" class="p-3 border rounded-lg shadow-sm dark:bg-gray-800 dark:border-gray-700 font-semibold">
-                            <option value="public">🌍 Publik (Semua Aset)</option>
-                            <option value="local">👤 Lokal (Aset Saya)</option>
-                        </select>
-                    </div>
-                    <div id="db-cards-container" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 overflow-y-auto pb-20"></div>
-                </section>
-
-                <!-- VIEW: EDIT CARD -->
-                <section id="view-edit" class="view-section hidden bg-white dark:bg-gray-800 rounded-xl shadow-2xl p-6 md:p-8 min-h-full">
-                    <div class="flex justify-between items-center border-b pb-4 mb-6 dark:border-gray-700">
-                        <div>
-                            <h2 class="text-3xl font-bold text-blue-600 dark:text-blue-400">Perbaikan Alat Kerja</h2>
-                            <p class="font-mono mt-1 text-lg" id="edit-subtitle">ID: ---</p>
-                        </div>
-                        <button id="close-edit-btn" class="text-gray-400 hover:text-red-500 text-2xl"><i class="fas fa-times"></i></button>
-                    </div>
-                    <form id="form-edit" class="space-y-6">
-                        <input type="hidden" id="edit-uid">
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            <div>
-                                <label class="block text-sm font-semibold mb-2">Tanggal Perbaikan</label>
-                                <input type="date" id="edit-tanggal" required class="consolas-input w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600">
-                            </div>
-                            <div>
-                                <label class="block text-sm font-semibold mb-2">Teknisi</label>
-                                <input type="text" id="edit-teknisi" required class="consolas-input w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600" placeholder="Nama Teknisi">
-                            </div>
-                            <div>
-                                <label class="block text-sm font-semibold mb-2">Lokasi Perbaikan</label>
-                                <select id="edit-lokasi" required class="consolas-input w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600"></select>
-                            </div>
-                            <div>
-                                <label class="block text-sm font-semibold mb-2">UPT Pengirim</label>
-                                <select id="edit-upt" required class="consolas-input w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600">
-                                    <option value="">Pilih Lokasi Perbaikan Dahulu...</option>
-                                </select>
-                            </div>
-                        </div>
-                        <div>
-                            <label class="block text-sm font-semibold mb-2">Kondisi Alat Kerja</label>
-                            <div class="flex gap-4">
-                                <button type="button" id="btn-so"  data-status="SO"  class="status-btn flex-1 py-3 rounded-lg font-bold border-2 border-green-500 text-green-600 dark:text-green-400">SO</button>
-                                <button type="button" id="btn-tso" data-status="TSO" class="status-btn flex-1 py-3 rounded-lg font-bold border-2 border-red-500   text-red-600   dark:text-red-400">TSO</button>
-                            </div>
-                            <input type="hidden" id="edit-kondisi" required>
-                        </div>
-                        <div>
-                            <label class="block text-sm font-semibold mb-2">Keterangan (Opsional)</label>
-                            <textarea id="edit-keterangan" rows="3" class="consolas-input w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600"></textarea>
-                        </div>
-                        <button type="submit" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-lg transition-colors">
-                            <i class="fas fa-check-circle mr-2"></i> Update Data
-                        </button>
-                    </form>
-                </section>
-
-                <!-- VIEW: HISTORY -->
-                <section id="view-history" class="view-section hidden h-full flex flex-col">
-                    <input type="text" id="search-history" placeholder="Cari History ID..." class="w-full p-3 mb-6 border rounded-lg shadow-sm dark:bg-gray-800 dark:border-gray-700 consolas-input">
-                    <div id="history-cards-container" class="grid grid-cols-1 lg:grid-cols-2 gap-4 overflow-y-auto pb-20"></div>
-                </section>
-
-                <!-- VIEW: HISTORY DETAIL -->
-                <section id="view-history-detail" class="view-section hidden bg-white dark:bg-gray-800 rounded-xl shadow-2xl p-6 md:p-8 min-h-full">
-                    <div class="flex justify-between items-center border-b pb-4 mb-6 dark:border-gray-700">
-                        <div>
-                            <h2 class="text-2xl font-bold text-gray-800 dark:text-gray-100">Riwayat Perbaikan</h2>
-                            <p class="font-mono mt-1 text-lg text-blue-500" id="hist-detail-subtitle">ID: ---</p>
-                        </div>
-                        <button id="close-hist-btn" class="text-gray-400 hover:text-red-500 text-2xl"><i class="fas fa-times"></i></button>
-                    </div>
-                    <div class="overflow-x-auto">
-                        <table class="w-full text-left border-collapse">
-                            <thead>
-                                <tr class="bg-gray-100 dark:bg-gray-700">
-                                    <th class="p-3 border dark:border-gray-600">NO.</th>
-                                    <th class="p-3 border dark:border-gray-600">TANGGAL</th>
-                                    <th class="p-3 border dark:border-gray-600">UPT PENGIRIM</th>
-                                    <th class="p-3 border dark:border-gray-600">PETUGAS</th>
-                                    <th class="p-3 border dark:border-gray-600">STATUS</th>
-                                    <th class="p-3 border dark:border-gray-600">KETERANGAN</th>
-                                </tr>
-                            </thead>
-                            <tbody id="hist-table-body" class="font-mono text-sm"></tbody>
-                        </table>
-                    </div>
-                </section>
-
-                <!-- VIEW: MANAJEMEN USER -->
-                <section id="view-usermanagement" class="view-section max-w-4xl mx-auto hidden">
-                    <h2 class="text-2xl font-bold mb-6 border-b pb-2 dark:border-gray-700 text-purple-600 dark:text-purple-400">
-                        <i class="fas fa-users-cog mr-2"></i>Registrasi User Baru
-                    </h2>
-                    <form id="form-register-user" class="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6 space-y-6 border border-gray-200 dark:border-gray-700">
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            <div>
-                                <label class="block text-sm font-semibold mb-2">Username Baru</label>
-                                <input type="text" id="reg-username" required class="consolas-input w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600">
-                            </div>
-                            <div>
-                                <label class="block text-sm font-semibold mb-2">Password Temporer</label>
-                                <input type="password" id="reg-password" required class="consolas-input w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600">
-                            </div>
-                            <div>
-                                <label class="block text-sm font-semibold mb-2">Role Akses</label>
-                                <select id="reg-role" required class="w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600">
-                                    <option value="ADMIN_DAOP" id="opt-admin-daop">ADMIN DAOP (Manajemen Wilayah)</option>
-                                    <option value="TEKNISI">TEKNISI (Laporan Lapangan)</option>
-                                </select>
-                            </div>
-                            <div>
-                                <label class="block text-sm font-semibold mb-2">Penempatan Region (Wajib)</label>
-                                <select id="reg-region" required class="consolas-input w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600"></select>
-                            </div>
-                        </div>
-                        <button type="submit" class="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 rounded-lg transition-colors">
-                            <i class="fas fa-user-plus mr-2"></i> Daftarkan User
-                        </button>
-                    </form>
-                </section>
-
-            </div><!-- end #view-container -->
-        </main>
-    </div><!-- end #main-app -->
-
-    <!-- ============================================================ -->
-    <!-- QR CODE MODAL                                                -->
-    <!-- ============================================================ -->
-    <div id="qr-modal" class="hidden fixed inset-0 z-[90] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-        <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-sm border border-gray-200 dark:border-gray-700">
-
-            <!-- Modal header -->
-            <div class="flex justify-between items-center p-5 border-b dark:border-gray-700">
-                <div>
-                    <h3 class="text-lg font-bold text-gray-800 dark:text-gray-100">
-                        <i class="fas fa-qrcode mr-2 text-blue-500"></i>Label QR Aset
-                    </h3>
-                    <p class="text-xs text-gray-500 font-mono mt-0.5" id="qr-modal-subtitle">---</p>
-                </div>
-                <button id="close-qr-modal" class="text-gray-400 hover:text-red-500 text-xl">
-                    <i class="fas fa-times"></i>
-                </button>
-            </div>
-
-            <!-- QR label preview — this exact div is also used for PNG export -->
-            <div class="p-6 flex flex-col items-center">
-                <div id="qr-label-preview" class="bg-white border-2 border-gray-800 rounded-xl p-4 w-64 flex flex-col items-center gap-3 shadow-lg">
-                    <!-- Top: system name -->
-                    <div class="w-full text-center border-b border-gray-300 pb-2">
-                        <p class="text-xs font-bold text-gray-500 tracking-widest">SIMA-KAI</p>
-                        <p class="text-[10px] text-gray-400">Sistem Informasi Manajemen Aset</p>
-                    </div>
-                    <!-- QR canvas — filled by JS -->
-                    <canvas id="qr-canvas" width="180" height="180"></canvas>
-                    <!-- Asset info below QR -->
-                    <div class="w-full text-center border-t border-gray-300 pt-2 space-y-0.5">
-                        <p class="text-xs font-black text-gray-800 font-mono tracking-tight" id="qr-label-kodeid">---</p>
-                        <p class="text-[10px] text-gray-500" id="qr-label-alat">---</p>
-                        <p class="text-[10px] text-gray-400" id="qr-label-lokasi">---</p>
-                        <p class="text-[9px] text-gray-400 mt-1">Scan untuk Form Perbaikan & Riwayat</p>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Action buttons -->
-             <!-- Landing URL display + copy -->
-            <div class="mx-5 mb-4 flex items-center gap-2 bg-gray-100 dark:bg-gray-700 rounded-lg px-3 py-2">
-                <a id="qr-landing-link"
-                href="#" target="_blank" rel="noopener"
-                class="flex-1 min-w-0 text-xs font-mono text-blue-600 dark:text-blue-400 hover:underline truncate"
-                title="Buka di tab baru">
-                    <span id="qr-landing-link-text">—</span>
-                </a>
-                <button id="btn-copy-link"
-                        title="Salin link"
-                        class="shrink-0 text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 transition p-1 rounded">
-                    <i class="fas fa-copy"></i>
-                </button>
-            </div>
-
-            <!-- Download buttons -->
-            <div class="flex gap-3 px-5 pb-5">
-                <button id="btn-qr-download-png" class="flex-1 flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 rounded-lg transition-colors text-sm">
-                    <i class="fas fa-image"></i> Unduh PNG
-                </button>
-                <button id="btn-qr-download-pdf" class="flex-1 flex items-center justify-center gap-2 bg-gray-700 hover:bg-gray-800 dark:bg-gray-600 dark:hover:bg-gray-500 text-white font-bold py-2.5 rounded-lg transition-colors text-sm">
-                    <i class="fas fa-file-pdf"></i> Unduh PDF
-                </button>
-            </div>
+        <!-- Brand -->
+        <div class="px-5 pt-6 pb-4 flex items-center gap-3 shrink-0">
+          <i class="fas fa-cogs text-kai-orange text-xl"></i>
+          <div class="leading-none">
+            <p class="text-lg font-bold tracking-wide">RAMCES</p>
+            <p class="text-sm text-white/40 tracking-widest mt-0.5">SIMA-KAI</p>
+          </div>
         </div>
+
+        <!-- Nav -->
+        <nav class="flex-1 px-3 pb-4 overflow-y-auto space-y-0.5">
+          <p
+            class="text-[9px] text-white/40 tracking-[.18em] font-bold px-3 mt-4"
+          >
+            MENU UTAMA
+          </p>
+          <button
+            data-view="dashboard"
+            class="nav-btn w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors text-sm"
+          >
+            <i class="fas fa-th-large w-4 text-center text-xs"></i>
+            <span>Dashboard</span>
+          </button>
+
+          <p
+            class="text-[9px] text-white/40 tracking-[.18em] font-bold px-3 mt-4"
+          >
+            MANAJEMEN ASET
+          </p>
+          <button
+            data-view="input"
+            id="nav-input"
+            class="nav-btn w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors text-sm"
+          >
+            <i class="fas fa-plus-square w-4 text-center text-xs"></i>
+            <span>Tambah Alat Kerja</span>
+          </button>
+          <button
+            data-view="database"
+            class="nav-btn w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors text-sm"
+          >
+            <i class="fas fa-database w-4 text-center text-xs"></i>
+            <span>Kelola Data Aset</span>
+          </button>
+          <button
+            data-view="history"
+            class="nav-btn w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors text-sm"
+          >
+            <i class="fas fa-history w-4 text-center text-xs"></i>
+            <span>Pantau Riwayat Aset</span>
+          </button>
+          <button
+            data-view="laporan"
+            class="nav-btn w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors text-sm"
+          >
+            <i class="fas fa-file-export w-4 text-center text-xs"></i>
+            <span>Proses Laporan</span>
+          </button>
+
+          <p
+            id="admin-helper"
+            class="hidden text-[9px] text-white/40 tracking-[.18em] font-bold px-3 mt-4"
+          >
+            ADMINISTRASI
+          </p>
+          <button
+            data-view="masterdata"
+            id="nav-masterdata"
+            class="nav-btn hidden w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors text-sm"
+          >
+            <i class="fas fa-server w-4 text-center text-xs"></i>
+            <span>Pusat Data</span>
+          </button>
+          <button
+            data-view="afkir"
+            id="nav-afkir"
+            class="nav-btn hidden w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors text-sm"
+          >
+            <i class="fas fa-recycle w-4 text-center text-xs"></i>
+            <span>Pulihkan Aset Afkir</span>
+          </button>
+        </nav>
+
+        <!-- Bottom actions -->
+        <div
+          class="px-3 pb-4 pt-3 border-t border-white/10 space-y-0.5 shrink-0"
+        >
+          <button
+            id="theme-toggle-btn"
+            class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors text-sm"
+          >
+            <i class="fas fa-moon w-4 text-center text-xs dark:hidden"></i>
+            <i
+              class="fas fa-sun w-4 text-center text-xs hidden dark:block text-yellow-300"
+            ></i>
+            <span>Ganti Tema</span>
+          </button>
+        </div>
+      </aside>
+
+      <!-- ── MAIN CONTENT ── -->
+      <main
+        id="main-content-area"
+        class="flex-1 flex flex-col h-screen overflow-hidden bg-kai-bg dark:bg-gray-900"
+      >
+        <!-- TOPBAR -->
+        <header
+          class="h-16 bg-white dark:bg-gray-800 flex items-center justify-between px-4 md:px-6 border-b border-gray-200 dark:border-gray-700/60 shrink-0 z-10 gap-4"
+        >
+          <!-- Left: hamburger -->
+          <div class="flex items-center gap-3 shrink-0">
+            <button
+              id="mobile-menu-btn"
+              class="lg:hidden w-9 h-9 flex items-center justify-center rounded-lg text-gray-400 hover:text-kai-blue hover:bg-gray-100 dark:hover:bg-gray-700 dark:hover:text-gray-200 transition-colors"
+            >
+              <i class="fas fa-bars text-lg"></i>
+            </button>
+          </div>
+
+          <!-- Center: page title -->
+          <div class="flex-1 text-center min-w-0">
+            <h1
+              class="text-base font-bold text-gray-800 dark:text-white truncate"
+              id="topbar-page-title"
+            >
+              Dashboard
+            </h1>
+            <p
+              class="text-xs text-gray-500 dark:text-gray-300 truncate"
+              id="topbar-page-subtitle"
+            >
+              Pantau Kesiapan dan Kondisi Aset Alat Kerja
+            </p>
+          </div>
+
+          <!-- Right: clock + WS status + bell + user -->
+          <div class="flex items-center gap-3 shrink-0">
+            <!-- Live clock -->
+            <div class="hidden sm:block text-right">
+              <p
+                class="text-[16px] font-mono font-semibold text-slate-700 dark:text-slate-300"
+                id="topbar-clock"
+              >
+                --:--:--
+              </p>
+              <p
+                class="text-[12px] text-slate-600 dark:text-slate-200 font-mono"
+                id="topbar-date"
+              >
+                ---
+              </p>
+            </div>
+
+            <!-- WS status dot -->
+            <div class="relative group">
+              <div
+                id="ws-status-dot"
+                class="w-2.5 h-2.5 rounded-full bg-gray-300 dark:bg-gray-600 transition-colors"
+                title="Status koneksi server"
+              ></div>
+              <span
+                class="absolute bottom-full right-0 mb-1.5 px-2 py-1 bg-gray-800 text-white text-[10px] rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none"
+                id="ws-status-label"
+                >Menghubungkan...</span
+              >
+            </div>
+
+            <!-- Bell -->
+            <button
+              class="relative w-8 h-8 flex items-center justify-center rounded-lg text-gray-400 hover:text-kai-blue hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+            >
+              <i class="fas fa-bell text-xl"></i>
+              <span
+                class="absolute top-1 right-1 w-2 h-2 bg-red-600 rounded-full border-2 border-white dark:border-gray-800"
+              ></span>
+            </button>
+
+            <!-- User profile button -->
+            <button
+              id="profile-btn"
+              class="flex items-center gap-2 pl-3 border-l border-gray-200 dark:border-gray-700 hover:opacity-80 transition-opacity"
+            >
+              <div class="hidden sm:block text-right leading-none">
+                <p
+                  class="text-sm font-semibold text-gray-800 dark:text-gray-100"
+                  id="topbar-username"
+                >
+                  ...
+                </p>
+                <p class="text-[10px] text-gray-400 mt-0.5" id="topbar-role">
+                  ...
+                </p>
+              </div>
+              <div class="relative">
+                <div
+                  id="topbar-avatar"
+                  class="w-8 h-8 rounded-full bg-kai-blue text-white flex items-center justify-center text-xs font-bold border-2 border-blue-200 dark:border-blue-800 select-none"
+                >
+                  ?
+                </div>
+                <!-- WS dot mirrored on avatar -->
+                <span
+                  id="avatar-ws-dot"
+                  class="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border-2 border-white dark:border-gray-800 bg-gray-300"
+                ></span>
+              </div>
+            </button>
+          </div>
+        </header>
+
+        <!-- BREADCRUMB -->
+        <div class="px-6 md:px-10 pt-5 pb-1 shrink-0">
+          <p
+            class="text-xs text-gray-400 dark:text-gray-500 flex items-center gap-1.5"
+          >
+            <span class="hover:text-kai-blue cursor-default transition-colors"
+              >RAMCES</span
+            >
+            <i class="fas fa-chevron-right text-[7px]"></i>
+            <span
+              class="font-semibold text-kai-blue dark:text-gray-300"
+              id="breadcrumb-label"
+              >Dashboard</span
+            >
+          </p>
+        </div>
+
+        <!-- SCROLLABLE VIEW CONTAINER -->
+        <div
+          class="flex-1 overflow-y-auto px-6 md:px-10 pb-16"
+          id="view-container"
+        >
+          <!-- ─────────────────────────────────────────────
+                 VIEW: DASHBOARD
+                ───────────────────────────────────────────── -->
+          <section id="view-dashboard" class="view-section space-y-5">
+            <!-- ── Zone 1: Welcome + KPI strip ── -->
+            <div
+              class="bg-white dark:bg-gray-800 rounded-xl px-5 py-4 border border-gray-100 dark:border-gray-700 shadow-sm flex items-center justify-between gap-4"
+            >
+              <div>
+                <h2
+                  class="text-base font-bold text-gray-800 dark:text-white"
+                  id="dashboard-welcome"
+                >
+                  Selamat Datang
+                </h2>
+                <p class="text-xs text-gray-400 mt-0.5">
+                  Pantau kesiapan dan kondisi aset alat kerja secara langsung.
+                </p>
+              </div>
+              <i
+                class="fas fa-chart-line text-2xl text-kai-blue/30 dark:text-gray-600 hidden sm:block shrink-0"
+              ></i>
+            </div>
+
+            <!-- KPI cards: 2 col mobile → 3 col sm → 5 col lg -->
+            <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+              <div
+                class="bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm relative overflow-hidden group hover:border-kai-blue transition-colors"
+              >
+                <p
+                  class="text-[9px] font-bold tracking-widest text-gray-400 uppercase mb-1"
+                >
+                  Total Aset
+                </p>
+                <h3
+                  class="text-2xl font-bold text-gray-800 dark:text-white"
+                  id="stat-total"
+                >
+                  —
+                </h3>
+                <i
+                  class="fas fa-boxes absolute -bottom-3 -right-1 text-5xl text-slate-100 dark:text-slate-700/50 group-hover:scale-125 transition-transform"
+                ></i>
+              </div>
+              <div
+                class="bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm relative overflow-hidden group hover:border-green-400 transition-colors"
+              >
+                <p
+                  class="text-[9px] font-bold tracking-widest text-gray-400 uppercase mb-1"
+                >
+                  Siap Operasi
+                </p>
+                <h3 class="text-2xl font-bold text-green-500" id="stat-so">
+                  —
+                </h3>
+                <i
+                  class="fas fa-check-circle absolute -bottom-3 -right-1 text-5xl text-green-100 dark:text-green-900/30 group-hover:scale-125 transition-transform"
+                ></i>
+              </div>
+              <div
+                class="bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm relative overflow-hidden group hover:border-red-400 transition-colors"
+              >
+                <p
+                  class="text-[9px] font-bold tracking-widest text-gray-400 uppercase mb-1"
+                >
+                  Tidak Siap
+                </p>
+                <h3 class="text-2xl font-bold text-red-500" id="stat-tso">—</h3>
+                <i
+                  class="fas fa-times-circle absolute -bottom-3 -right-1 text-5xl text-red-100 dark:text-red-900/30 group-hover:scale-125 transition-transform"
+                ></i>
+              </div>
+              <div
+                class="bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm relative overflow-hidden group hover:border-kai-blue transition-colors"
+              >
+                <p
+                  class="text-[9px] font-bold tracking-widest text-gray-400 uppercase mb-1"
+                >
+                  Ketersediaan
+                </p>
+                <h3
+                  class="text-2xl font-bold text-kai-blue dark:text-blue-400"
+                  id="stat-avail"
+                >
+                  —
+                </h3>
+                <i
+                  class="fas fa-gauge-high absolute -bottom-3 -right-1 text-5xl text-blue-100 dark:text-blue-900/30 group-hover:scale-125 transition-transform"
+                ></i>
+              </div>
+              <div
+                class="bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm relative overflow-hidden group hover:border-slate-400 transition-colors col-span-2 sm:col-span-1"
+              >
+                <p
+                  class="text-[9px] font-bold tracking-widest text-gray-400 uppercase mb-1"
+                >
+                  Benchmark
+                </p>
+                <div class="flex items-end gap-1">
+                  <h3
+                    class="text-2xl font-bold text-slate-500 dark:text-slate-400"
+                    id="stat-benchmark"
+                  >
+                    59%
+                  </h3>
+                  <span
+                    id="stat-benchmark-delta"
+                    class="text-xs font-bold mb-0.5"
+                  ></span>
+                </div>
+                <i
+                  class="fas fa-flag-checkered absolute -bottom-3 -right-1 text-5xl text-slate-100 dark:text-slate-700/50 group-hover:scale-125 transition-transform"
+                ></i>
+              </div>
+            </div>
+
+            <!-- ── Separator ── -->
+            <hr class="border-gray-200 dark:border-gray-700" />
+
+            <!-- ── Zone 3: Filter bar + Keterangan legend ── -->
+            <div
+              class="flex flex-col sm:flex-row gap-4 items-start sm:items-end"
+            >
+              <!-- Left: filters -->
+              <div class="flex flex-wrap gap-2 flex-1">
+                <select
+                  id="dash-filter-alat"
+                  class="text-xs px-3 py-2.5 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 outline-none focus:border-kai-blue transition min-w-[140px]"
+                >
+                  <option value="">Semua Alat Kerja</option>
+                </select>
+                <select
+                  id="dash-filter-pengadaan"
+                  class="text-xs px-3 py-2.5 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 outline-none focus:border-kai-blue transition"
+                >
+                  <option value="">Semua Pengadaan</option>
+                  <option value="1">PUSAT</option>
+                  <option value="2">DAOP / DIVRE</option>
+                </select>
+                <select
+                  id="dash-filter-tahun"
+                  class="text-xs px-3 py-2.5 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 outline-none focus:border-kai-blue transition"
+                >
+                  <option value="">Semua Tahun</option>
+                </select>
+              </div>
+              <!-- Right: Keterangan legend -->
+              <div class="flex flex-wrap gap-x-4 gap-y-1 text-xs shrink-0">
+                <span class="flex items-center gap-1.5"
+                  ><span
+                    class="w-3 h-3 rounded-sm bg-green-500 inline-block"
+                  ></span>
+                  SO — Siap Operasi</span
+                >
+                <span class="flex items-center gap-1.5"
+                  ><span
+                    class="w-3 h-3 rounded-sm bg-red-500 inline-block"
+                  ></span>
+                  TSO — Tidak Siap</span
+                >
+                <span class="flex items-center gap-1.5"
+                  ><span
+                    class="w-3 h-3 rounded-sm bg-gradient-to-br from-green-300 to-red-300 inline-block"
+                  ></span>
+                  Lebih dari 1 Unit</span
+                >
+                <span class="flex items-center gap-1.5"
+                  ><span
+                    class="w-3 h-3 rounded-sm border border-gray-300 dark:border-gray-600 inline-block"
+                  ></span>
+                  — Tidak ada Alat Kerja</span
+                >
+              </div>
+            </div>
+
+            <!-- ── Zone 4+5: Tab switcher + panels ── -->
+            <div
+              class="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm overflow-hidden"
+            >
+              <!-- Tab header row -->
+              <div
+                class="flex items-center gap-2 px-4 pt-4 border-b border-gray-100 dark:border-gray-700"
+              >
+                <!-- Left arrow -->
+                <button
+                  id="dash-tab-prev"
+                  class="shrink-0 w-7 h-7 flex items-center justify-center rounded-full border border-gray-200 dark:border-gray-600 text-kai-blue dark:text-blue-400 hover:bg-kai-blue hover:text-white transition text-xs hidden sm:flex"
+                >
+                  <i class="fas fa-chevron-left"></i>
+                </button>
+                <!-- Scrollable tab list -->
+                <div
+                  id="dash-tab-bar"
+                  class="flex gap-1 overflow-x-auto pb-0 scrollbar-none flex-1"
+                >
+                  <button
+                    class="dash-tab-btn is-active px-4 py-2.5 rounded-t-lg text-xs"
+                    data-dash-tab="matrix"
+                  >
+                    <i class="fas fa-table mr-1.5"></i>Matriks Kesiapan
+                  </button>
+                  <button
+                    class="dash-tab-btn px-4 py-2.5 rounded-t-lg text-xs"
+                    data-dash-tab="bar"
+                  >
+                    <i class="fas fa-chart-bar mr-1.5"></i>Grafik Ketersediaan
+                  </button>
+                  <button
+                    class="dash-tab-btn px-4 py-2.5 rounded-t-lg text-xs"
+                    data-dash-tab="trend"
+                  >
+                    <i class="fas fa-chart-line mr-1.5"></i>Tren Perbaikan
+                  </button>
+                </div>
+                <!-- Right arrow -->
+                <button
+                  id="dash-tab-next"
+                  class="shrink-0 w-7 h-7 flex items-center justify-center rounded-full border border-gray-200 dark:border-gray-600 text-kai-blue dark:text-blue-400 hover:bg-kai-blue hover:text-white transition text-xs hidden sm:flex"
+                >
+                  <i class="fas fa-chevron-right"></i>
+                </button>
+              </div>
+
+              <!-- Tab panels -->
+              <div class="relative">
+                <!-- Panel: Matrix -->
+                <div
+                  id="dash-panel-matrix"
+                  class="dash-panel p-2 overflow-x-auto overflow-y-auto"
+                  style="max-height: 70vh"
+                >
+                  <table
+                    id="dash-matrix-table"
+                    class="w-full border-collapse text-xs"
+                  >
+                    <thead id="dash-matrix-thead"></thead>
+                    <tbody id="dash-matrix-tbody"></tbody>
+                  </table>
+                </div>
+                <!-- Panel: Bar chart -->
+                <div
+                  id="dash-panel-bar"
+                  class="dash-panel hidden p-4"
+                  style="max-height: 70vh; overflow-y: auto"
+                >
+                  <canvas
+                    id="dash-chart-bar"
+                    style="max-height: 420px"
+                  ></canvas>
+                </div>
+                <!-- Panel: Trend line chart -->
+                <div
+                  id="dash-panel-trend"
+                  class="dash-panel hidden p-4"
+                  style="max-height: 70vh; overflow-y: auto"
+                >
+                  <canvas
+                    id="dash-chart-trend"
+                    style="max-height: 420px"
+                  ></canvas>
+                </div>
+              </div>
+
+              <!-- Dot indicators -->
+              <div
+                id="dash-dots"
+                class="flex justify-center gap-2 py-3 border-t border-gray-100 dark:border-gray-700"
+              >
+                <div class="dash-dot is-active" data-dot="0"></div>
+                <div class="dash-dot" data-dot="1"></div>
+                <div class="dash-dot" data-dot="2"></div>
+              </div>
+            </div>
+          </section>
+
+          <!-- ─────────────────────────────────────────────
+                 VIEW: INPUT (Tambah Aset)
+                ───────────────────────────────────────────── -->
+          <section
+            id="view-input"
+            class="view-section max-w-3xl mx-auto w-full"
+          >
+            <form
+              id="form-input-baru"
+              class="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm p-6 md:p-8 space-y-6"
+            >
+              <div class="border-b border-gray-100 dark:border-gray-700 pb-4">
+                <h2 class="text-base font-bold text-gray-800 dark:text-white">
+                  Formulir Alat Kerja Baru
+                </h2>
+                <p class="text-xs text-gray-400 mt-0.5">
+                  Mohon untuk melengkapi seluruh teks masukan untuk meregistrasi
+                  aset baru.
+                </p>
+              </div>
+
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+                <div class="md:col-span-2">
+                  <label
+                    class="block text-xs font-semibold mb-2 text-gray-600 dark:text-gray-400"
+                    >1. Alat Kerja</label
+                  >
+                  <select
+                    id="in-alat"
+                    required
+                    class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition"
+                  ></select>
+                </div>
+
+                <div>
+                  <label
+                    class="block text-xs font-semibold mb-2 text-gray-600 dark:text-gray-400"
+                    >2. Sumber Pengadaan</label
+                  >
+                  <div class="space-y-2 text-sm">
+                    <label class="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="in-pengadaan"
+                        value="PUSAT"
+                        required
+                        class="accent-kai-orange w-4 h-4"
+                      />
+                      <span>PUSAT</span>
+                    </label>
+                    <label class="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="in-pengadaan"
+                        value="DAOP/DIVRE"
+                        class="accent-kai-orange w-4 h-4"
+                      />
+                      <span>DAOP / DIVRE</span>
+                    </label>
+                  </div>
+                </div>
+
+                <div>
+                  <label
+                    class="block text-xs font-semibold mb-2 text-gray-600 dark:text-gray-400"
+                    >3. Tanggal Pembelian</label
+                  >
+                  <input
+                    type="date"
+                    id="in-tanggal"
+                    required
+                    class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition"
+                  />
+                </div>
+
+                <div class="md:col-span-2">
+                  <label
+                    class="block text-xs font-semibold mb-2 text-gray-600 dark:text-gray-400"
+                    >4. Unit Peruntukan</label
+                  >
+                  <div
+                    class="flex flex-wrap justify-between gap-4 bg-gray-50 dark:bg-gray-700/50 p-4 rounded-lg border border-gray-100 dark:border-gray-600 text-sm"
+                  >
+                    <label class="flex items-center gap-2 cursor-pointer"
+                      ><input
+                        type="radio"
+                        name="in-unit"
+                        value="A"
+                        required
+                        class="accent-kai-orange w-4 h-4"
+                      />
+                      <span>JALAN REL</span></label
+                    >
+                    <label class="flex items-center gap-2 cursor-pointer"
+                      ><input
+                        type="radio"
+                        name="in-unit"
+                        value="B"
+                        class="accent-kai-orange w-4 h-4"
+                      />
+                      <span>JEMBATAN</span></label
+                    >
+                    <label class="flex items-center gap-2 cursor-pointer"
+                      ><input
+                        type="radio"
+                        name="in-unit"
+                        value="C"
+                        class="accent-kai-orange w-4 h-4"
+                      />
+                      <span>MEKANIK</span></label
+                    >
+                    <label class="flex items-center gap-2 cursor-pointer"
+                      ><input
+                        type="radio"
+                        name="in-unit"
+                        value="D"
+                        class="accent-kai-orange w-4 h-4"
+                      />
+                      <span>BALAIYASA</span></label
+                    >
+                  </div>
+                </div>
+
+                <div class="md:col-span-2">
+                  <label
+                    class="block text-xs font-semibold mb-2 text-gray-600 dark:text-gray-400"
+                    >5. Lokasi Penempatan</label
+                  >
+                  <select
+                    id="in-lokasi"
+                    required
+                    class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition"
+                  >
+                    <option value="">— Pilih Lokasi/Wilayah —</option>
+                  </select>
+                </div>
+
+                <div class="md:col-span-2">
+                  <label
+                    class="block text-xs font-semibold mb-2 text-gray-600 dark:text-gray-400"
+                    >6. UPT / Sub-Lokasi</label
+                  >
+                  <select
+                    id="in-upt"
+                    disabled
+                    class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <option value="">
+                      — Pilih Lokasi terlebih dahulu... —
+                    </option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="pt-2">
+                <button
+                  type="submit"
+                  class="px-8 py-2.5 bg-kai-orange hover:bg-orange-600 active:bg-orange-700 text-white font-semibold rounded-lg transition-colors text-sm shadow-sm flex items-center gap-2"
+                >
+                  <i class="fas fa-pencil"></i> Simpan Data Aset
+                </button>
+              </div>
+            </form>
+          </section>
+
+          <!-- ─────────────────────────────────────────────
+                 VIEW: DATABASE
+                ───────────────────────────────────────────── -->
+          <section id="view-database" class="view-section">
+            <!-- Toolbar -->
+            <div class="flex flex-col gap-3 mb-5 shrink-0">
+              <!-- Row 1: search + filter + sort -->
+              <div
+                class="flex flex-col sm:flex-row gap-3 bg-white dark:bg-gray-800 p-3 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm"
+              >
+                <div class="relative flex-1">
+                  <i
+                    class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs"
+                  ></i>
+                  <input
+                    type="text"
+                    id="search-db"
+                    placeholder="Cari UID atau Kode ID..."
+                    class="w-full pl-8 pr-3 py-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue font-mono transition"
+                  />
+                </div>
+                <div class="flex gap-2 shrink-0">
+                  <select
+                    id="filter-mode"
+                    class="py-2.5 px-3 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none cursor-pointer focus:border-kai-blue transition"
+                  >
+                    <option value="public">Semua Aset</option>
+                    <option value="local">Aset Saya</option>
+                  </select>
+                  <button
+                    id="btn-sort-db"
+                    class="w-10 h-10 flex items-center justify-center bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-gray-500 hover:text-kai-blue transition"
+                  >
+                    <i class="fas fa-sort-amount-down text-sm"></i>
+                  </button>
+                </div>
+              </div>
+              <!-- Row 2: download buttons -->
+              <div
+                class="flex flex-col md:flex-row flex-wrap md:flex-nowrap gap-2 items-start md:items-center"
+              >
+                <p
+                  class="text-sm font-mono font-bold text-kai-blue dark:text-blue-400 w-full md:w-auto"
+                  id="save-aset-info"
+                >
+                  Simpan data aset kerja dalam kedua format berikut:
+                </p>
+                <div
+                  class="flex flex-wrap md:flex-nowrap gap-2 w-full md:w-auto"
+                >
+                  <button
+                    id="btn-db-download-xlsx"
+                    class="flex items-center gap-2 px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-semibold rounded-lg transition text-sm shadow-sm flex-1 md:flex-none"
+                  >
+                    <i class="fas fa-file-excel"></i>
+                    <span>Unduh Excel (.xlsx)</span>
+                  </button>
+                  <button
+                    id="btn-db-download-pdf"
+                    class="flex items-center gap-2 px-6 py-2.5 bg-red-600 hover:bg-red-700 active:bg-red-800 text-white font-semibold rounded-lg transition text-sm shadow-sm flex-1 md:flex-none"
+                  >
+                    <i class="fas fa-file-pdf"></i>
+                    <span>Unduh PDF</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div
+              id="db-cards-container"
+              class="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4"
+            ></div>
+          </section>
+
+          <!-- ─────────────────────────────────────────────
+                 VIEW: EDIT (Update Kondisi)
+                ───────────────────────────────────────────── -->
+          <section id="view-edit" class="view-section max-w-3xl mx-auto w-full">
+            <form
+              id="form-edit"
+              class="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm p-6 md:p-8 space-y-6"
+            >
+              <div class="border-b border-gray-100 dark:border-gray-700 pb-4">
+                <h2 class="text-base font-bold text-gray-800 dark:text-white">
+                  Pembaruan Kondisi Aset
+                </h2>
+                <p
+                  class="text-xs font-mono text-kai-blue dark:text-blue-400 mt-1"
+                  id="edit-subtitle"
+                >
+                  ID: —
+                </p>
+              </div>
+
+              <input type="hidden" id="edit-uid" />
+
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+                <div>
+                  <label
+                    class="block text-xs font-semibold mb-2 text-gray-600 dark:text-gray-400"
+                    >Tanggal Perbaikan</label
+                  >
+                  <input
+                    type="date"
+                    id="edit-tanggal"
+                    required
+                    class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition"
+                  />
+                </div>
+                <div>
+                  <label
+                    class="block text-xs font-semibold mb-2 text-gray-600 dark:text-gray-400"
+                    >Teknisi Bertugas</label
+                  >
+                  <input
+                    type="text"
+                    id="edit-teknisi"
+                    required
+                    placeholder="Nama Lengkap"
+                    class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition"
+                  />
+                </div>
+                <div>
+                  <label
+                    id="edit-lokasi-label"
+                    class="block text-xs font-semibold mb-2 text-gray-600 dark:text-gray-400"
+                    >Lokasi Perbaikan</label
+                  >
+                  <select
+                    id="edit-lokasi"
+                    required
+                    class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition"
+                  >
+                    <option value="" disabled selected>Pilih lokasi...</option>
+                  </select>
+                </div>
+                <div>
+                  <label
+                    id="edit-upt-label"
+                    class="block text-xs font-semibold mb-2 text-gray-600 dark:text-gray-400"
+                    >UPT Pengirim</label
+                  >
+                  <select
+                    id="edit-upt"
+                    required
+                    class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition"
+                  >
+                    <option value="">Pilih lokasi dahulu...</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="md:col-span-2">
+                <label
+                  class="block text-xs font-semibold mb-2 text-gray-600 dark:text-gray-400"
+                  >Unit Peruntukan</label
+                >
+                <div
+                  class="flex flex-wrap justify-between gap-4 bg-gray-50 dark:bg-gray-700/50 p-4 rounded-lg border border-gray-100 dark:border-gray-600 text-sm"
+                >
+                  <label class="flex items-center gap-2 cursor-pointer"
+                    ><input
+                      type="radio"
+                      name="edit-unit"
+                      value="A"
+                      class="accent-kai-orange w-4 h-4"
+                    />
+                    <span>JALAN REL</span></label
+                  >
+                  <label class="flex items-center gap-2 cursor-pointer"
+                    ><input
+                      type="radio"
+                      name="edit-unit"
+                      value="B"
+                      class="accent-kai-orange w-4 h-4"
+                    />
+                    <span>JEMBATAN</span></label
+                  >
+                  <label class="flex items-center gap-2 cursor-pointer"
+                    ><input
+                      type="radio"
+                      name="edit-unit"
+                      value="C"
+                      class="accent-kai-orange w-4 h-4"
+                    />
+                    <span>MEKANIK</span></label
+                  >
+                  <label class="flex items-center gap-2 cursor-pointer"
+                    ><input
+                      type="radio"
+                      name="edit-unit"
+                      value="D"
+                      class="accent-kai-orange w-4 h-4"
+                    />
+                    <span>BALAIYASA</span></label
+                  >
+                </div>
+              </div>
+
+              <div>
+                <label
+                  class="block text-xs font-semibold mb-2 text-gray-600 dark:text-gray-400"
+                  >Status Kondisi Terkini</label
+                >
+                <div class="flex gap-3">
+                  <button
+                    type="button"
+                    id="btn-so"
+                    data-status="SO"
+                    class="status-btn is-idle flex-1 py-3 rounded-lg font-bold text-sm border-2 transition flex items-center justify-center gap-2"
+                  >
+                    <i class="fas fa-check-circle text-xl"></i> SO — Siap
+                    Operasi
+                  </button>
+                  <button
+                    type="button"
+                    id="btn-tso"
+                    data-status="TSO"
+                    class="status-btn is-idle flex-1 py-3 rounded-lg font-bold text-sm border-2 transition flex items-center justify-center gap-2"
+                  >
+                    <i class="fas fa-times-circle text-xl"></i> TSO — Tidak Siap
+                  </button>
+                </div>
+                <input type="hidden" id="edit-kondisi" />
+              </div>
+
+              <div>
+                <label
+                  class="block text-xs font-semibold mb-2 text-gray-600 dark:text-gray-400"
+                  >Catatan Teknisi</label
+                >
+                <textarea
+                  id="edit-keterangan"
+                  rows="3"
+                  placeholder="Tindakan yang dilakukan..."
+                  class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition resize-none"
+                ></textarea>
+              </div>
+
+              <div class="pt-2 flex gap-3">
+                <button
+                  type="button"
+                  id="close-edit-btn"
+                  class="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 font-semibold text-sm transition"
+                >
+                  <i class="fas fa-arrow-left"></i> Kembali
+                </button>
+                <button
+                  type="submit"
+                  class="flex-1 flex items-center justify-center gap-2 px-5 py-2.5 bg-kai-blue hover:bg-blue-800 active:bg-blue-900 text-white font-semibold rounded-lg transition text-sm shadow-sm"
+                >
+                  <i class="fas fa-save"></i> Simpan Pembaruan
+                </button>
+              </div>
+            </form>
+          </section>
+
+          <!-- ─────────────────────────────────────────────
+                 VIEW: HISTORY (Riwayat)
+                ───────────────────────────────────────────── -->
+          <section id="view-history" class="view-section">
+            <!-- Toolbar -->
+            <div
+              class="flex flex-col sm:flex-row gap-3 mb-5 bg-white dark:bg-gray-800 p-3 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm shrink-0"
+            >
+              <div class="relative flex-1">
+                <i
+                  class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs"
+                ></i>
+                <input
+                  type="text"
+                  id="search-history"
+                  placeholder="Cari UID atau Kode ID..."
+                  class="w-full pl-8 pr-3 py-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue font-mono transition"
+                />
+              </div>
+              <div
+                class="flex bg-gray-100 dark:bg-gray-700 rounded-lg p-1 shrink-0"
+              >
+                <button
+                  id="hist-tab-repair"
+                  class="hist-tab px-5 py-2.5 text-sm font-semibold rounded-md bg-kai-orange text-white shadow-sm transition flex items-center gap-2"
+                >
+                  <i class="fas fa-inbox"></i> Perbaikan
+                </button>
+                <button
+                  id="hist-tab-mutasi"
+                  class="hist-tab px-5 py-2.5 text-sm font-medium rounded-md text-gray-500 dark:text-gray-400 hover:bg-kai-orange/20 hover:text-kai-orange transition flex items-center gap-2"
+                >
+                  <i class="fas fa-exchange-alt"></i> Mutasi
+                </button>
+              </div>
+            </div>
+            <div
+              id="history-repair-container"
+              class="grid grid-cols-1 lg:grid-cols-2 gap-4 flex-1"
+            ></div>
+            <div
+              id="history-mutasi-container"
+              class="grid grid-cols-1 lg:grid-cols-2 gap-4 flex-1 hidden"
+            ></div>
+          </section>
+
+          <!-- ─────────────────────────────────────────────
+                 VIEW: HISTORY DETAIL
+                ───────────────────────────────────────────── -->
+          <section id="view-history-detail" class="view-section">
+            <div
+              class="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm p-6 md:p-8"
+            >
+              <!-- Header row -->
+              <div
+                class="flex justify-between items-start border-b border-gray-100 dark:border-gray-700 pb-4 mb-5"
+              >
+                <div>
+                  <h2 class="text-base font-bold text-gray-800 dark:text-white">
+                    Detail Riwayat Aset
+                  </h2>
+                  <p
+                    class="text-xs font-mono text-kai-blue dark:text-blue-400 mt-1"
+                    id="hist-detail-subtitle"
+                  >
+                    —
+                  </p>
+                </div>
+                <button
+                  id="close-hist-btn"
+                  class="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 font-semibold text-sm transition"
+                >
+                  <i class="fas fa-arrow-left"></i> Kembali
+                </button>
+              </div>
+
+              <!-- Sub-tabs -->
+              <div
+                class="flex bg-gray-100 dark:bg-gray-700 rounded-lg p-1 mb-6 w-fit"
+              >
+                <button
+                  id="detail-tab-repair"
+                  class="detail-tab-btn px-5 py-2.5 text-sm font-semibold rounded-md bg-kai-orange text-white shadow-sm transition flex items-center gap-2"
+                >
+                  <i class="fas fa-wrench text-sm"></i> Riwayat Perbaikan
+                </button>
+                <button
+                  id="detail-tab-mutasi"
+                  class="detail-tab-btn px-5 py-2.5 text-sm font-medium rounded-md text-gray-500 dark:text-gray-400 hover:bg-kai-orange/20 hover:text-kai-orange transition flex items-center gap-2"
+                >
+                  <i class="fas fa-exchange-alt text-sm"></i> Jalur Mutasi
+                </button>
+              </div>
+
+              <!-- Panel: Repair -->
+              <div id="detail-panel-repair">
+                <div
+                  class="overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-700"
+                >
+                  <table class="w-full text-left text-sm whitespace-nowrap">
+                    <thead
+                      class="bg-gray-50 dark:bg-gray-700/50 text-gray-500 text-xs"
+                    >
+                      <tr>
+                        <th class="p-4 font-semibold w-10">No.</th>
+                        <th class="p-4 font-semibold">Tanggal</th>
+                        <th class="p-4 font-semibold">Lokasi Pengirim</th>
+                        <th class="p-4 font-semibold">UPT Pengirim</th>
+                        <th class="p-4 font-semibold">Petugas</th>
+                        <th class="p-4 font-semibold text-center">Kondisi</th>
+                        <th class="p-4 font-semibold text-center">
+                          Peruntukan
+                        </th>
+                        <th class="p-4 font-semibold">Keterangan</th>
+                      </tr>
+                    </thead>
+                    <tbody
+                      id="hist-repair-tbody"
+                      class="divide-y divide-gray-100 dark:divide-gray-700/50"
+                    ></tbody>
+                  </table>
+                </div>
+              </div>
+
+              <!-- Panel: Mutasi -->
+              <div id="detail-panel-mutasi" class="hidden">
+                <div
+                  id="mutasi-origin-bar"
+                  class="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-5 flex flex-wrap gap-5 items-center border border-gray-100 dark:border-gray-700 mb-6"
+                ></div>
+                <div id="mutasi-timeline" class="space-y-4 px-1"></div>
+              </div>
+            </div>
+          </section>
+
+          <!-- ─────────────────────────────────────────────
+                 VIEW: LAPORAN & EXPORT
+                ───────────────────────────────────────────── -->
+          <section
+            id="view-laporan"
+            class="view-section max-w-4xl mx-auto w-full space-y-6"
+          >
+            <!-- Stat strip -->
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div
+                class="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 p-5"
+              >
+                <p
+                  class="text-[10px] text-gray-400 font-bold tracking-widest uppercase"
+                >
+                  Aset Aktif
+                </p>
+                <h3
+                  class="text-2xl font-bold mt-1 text-gray-800 dark:text-white"
+                  id="exp-stat-total"
+                >
+                  —
+                </h3>
+              </div>
+              <div
+                class="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 p-5"
+              >
+                <p
+                  class="text-[10px] text-gray-400 font-bold tracking-widest uppercase"
+                >
+                  Kondisi SO
+                </p>
+                <h3
+                  class="text-2xl font-bold mt-1 text-green-500"
+                  id="exp-stat-so"
+                >
+                  —
+                </h3>
+              </div>
+              <div
+                class="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 p-5"
+              >
+                <p
+                  class="text-[10px] text-gray-400 font-bold tracking-widest uppercase"
+                >
+                  Kondisi TSO
+                </p>
+                <h3
+                  class="text-2xl font-bold mt-1 text-red-500"
+                  id="exp-stat-tso"
+                >
+                  —
+                </h3>
+              </div>
+              <div
+                class="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 p-5"
+              >
+                <p
+                  class="text-[10px] text-gray-400 font-bold tracking-widest uppercase"
+                >
+                  Aset Afkir
+                </p>
+                <h3
+                  class="text-2xl font-bold mt-1 text-gray-400"
+                  id="exp-stat-afkir"
+                >
+                  —
+                </h3>
+              </div>
+            </div>
+
+            <!-- Filter + export -->
+            <div
+              class="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm p-6 md:p-8"
+            >
+              <h3
+                class="text-sm font-bold text-gray-800 dark:text-white mb-5 pb-3 border-b border-gray-100 dark:border-gray-700"
+              >
+                Parameter Filter Ekspor
+              </h3>
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-5">
+                <div>
+                  <label class="block text-xs font-medium mb-1.5 text-gray-500"
+                    >Mulai Tanggal</label
+                  >
+                  <input
+                    type="date"
+                    id="exp-date-from"
+                    class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition"
+                  />
+                </div>
+                <div>
+                  <label class="block text-xs font-medium mb-1.5 text-gray-500"
+                    >Sampai Tanggal</label
+                  >
+                  <input
+                    type="date"
+                    id="exp-date-to"
+                    class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition"
+                  />
+                </div>
+                <div>
+                  <label class="block text-xs font-medium mb-1.5 text-gray-500"
+                    >Lokasi Penempatan</label
+                  >
+                  <select
+                    id="exp-filter-lokasi"
+                    class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition"
+                  >
+                    <option value="">Semua Lokasi</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="block text-xs font-medium mb-1.5 text-gray-500"
+                    >Status Kondisi</label
+                  >
+                  <select
+                    id="exp-filter-kondisi"
+                    class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition"
+                  >
+                    <option value="">Semua Kondisi</option>
+                    <option value="SO">Siap Operasi (SO)</option>
+                    <option value="TSO">Tidak Siap (TSO)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div
+                class="flex items-center gap-2 bg-blue-50 dark:bg-gray-700/50 border border-blue-100 dark:border-gray-600 rounded-lg px-4 py-2.5 mb-5"
+              >
+                <i
+                  class="fas fa-info-circle text-kai-blue text-xs shrink-0"
+                ></i>
+                <p
+                  class="text-xs text-kai-blue dark:text-blue-300 font-medium"
+                  id="exp-preview-count"
+                >
+                  Memuat data...
+                </p>
+              </div>
+
+              <div class="flex flex-col sm:flex-row gap-3">
+                <button
+                  id="btn-export-excel"
+                  class="flex-1 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-semibold py-2.5 rounded-lg transition text-sm flex items-center justify-center gap-2 shadow-sm"
+                >
+                  <i class="fas fa-file-excel"></i> Unduh Excel (.xlsx)
+                </button>
+                <button
+                  id="btn-export-pdf"
+                  class="flex-1 bg-red-600 hover:bg-red-700 active:bg-red-800 text-white font-semibold py-2.5 rounded-lg transition text-sm flex items-center justify-center gap-2 shadow-sm"
+                >
+                  <i class="fas fa-file-pdf"></i> Unduh PDF
+                </button>
+              </div>
+            </div>
+
+            <!-- Preview table -->
+            <div
+              class="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm overflow-hidden"
+            >
+              <div
+                class="px-5 py-3.5 border-b border-gray-100 dark:border-gray-700 bg-gray-50/60 dark:bg-gray-800"
+              >
+                <h3
+                  class="text-[10px] font-bold text-gray-500 dark:text-gray-400 tracking-widest uppercase"
+                >
+                  Pratinjau — 10 Baris Pertama
+                </h3>
+              </div>
+              <div class="overflow-x-auto">
+                <table class="w-full text-left text-xs whitespace-nowrap">
+                  <thead class="bg-gray-50 dark:bg-gray-700/50 text-gray-400">
+                    <tr>
+                      <th class="px-3 py-3 font-semibold w-8">No.</th>
+                      <th class="px-3 py-3 font-semibold">Tanggal & Waktu</th>
+                      <th class="px-3 py-3 font-semibold">ID Aset</th>
+                      <th class="px-3 py-3 font-semibold">Kode Alat</th>
+                      <th class="px-3 py-3 font-semibold">Lokasi Asal</th>
+                      <th class="px-3 py-3 font-semibold">UPT</th>
+                      <th class="px-3 py-3 font-semibold">Petugas</th>
+                      <th class="px-3 py-3 font-semibold">Kondisi</th>
+                      <th class="px-3 py-3 font-semibold">Keterangan</th>
+                    </tr>
+                  </thead>
+                  <tbody
+                    id="exp-preview-body"
+                    class="divide-y divide-gray-100 dark:divide-gray-700/50 text-gray-600 dark:text-gray-300"
+                  ></tbody>
+                </table>
+              </div>
+            </div>
+          </section>
+
+          <!-- ─────────────────────────────────────────────
+                 VIEW: MASTER DATA (Super Admin only)
+                ───────────────────────────────────────────── -->
+          <section
+            id="view-masterdata"
+            class="view-section max-w-5xl mx-auto w-full space-y-6"
+          >
+            <!-- Tab switcher -->
+            <div
+              class="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm p-2 grid grid-cols-2 lg:grid-cols-4 gap-1"
+            >
+              <button
+                data-tab="users"
+                class="master-tab py-2.5 text-sm rounded-lg transition text-center bg-kai-orange text-white font-semibold shadow-sm"
+              >
+                <i class="fas fa-user-plus"></i>
+                Pengguna
+              </button>
+              <button
+                data-tab="alat"
+                class="master-tab py-2.5 text-sm rounded-lg text-gray-500 transition text-center"
+              >
+                <i class="fas fa-gears"></i>
+                Alat Kerja
+              </button>
+              <button
+                data-tab="lokasi"
+                class="master-tab py-2.5 text-sm rounded-lg text-gray-500 transition text-center"
+              >
+                <i class="fas fa-map"></i>
+                Lokasi
+              </button>
+              <button
+                data-tab="upt"
+                class="master-tab py-2.5 text-sm rounded-lg text-gray-500 transition text-center"
+              >
+                <i class="fas fa-sitemap"></i>
+                UPT
+              </button>
+            </div>
+
+            <!-- Panel: Users -->
+            <div id="master-panel-users" class="master-tab-panel space-y-5">
+              <form
+                id="form-add-user"
+                class="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm p-5"
+              >
+                <h4
+                  class="text-sm font-bold mb-4 text-gray-800 dark:text-white"
+                >
+                  Registrasi Pengguna Baru
+                </h4>
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+                  <div>
+                    <label class="block text-xs text-gray-500 mb-1"
+                      >Nama Pengguna</label
+                    >
+                    <input
+                      type="text"
+                      id="new-user-username"
+                      class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition"
+                    />
+                  </div>
+                  <div>
+                    <label class="block text-xs text-gray-500 mb-1"
+                      >Peran</label
+                    >
+                    <select
+                      id="new-user-role"
+                      onchange="syncNewUserRegion()"
+                      class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition"
+                    >
+                      <option value="TEKNISI">TEKNISI</option>
+                      <option value="ADMIN_WILAYAH">ADMIN WILAYAH</option>
+                      <option value="SUPER_ADMIN">SUPER ADMIN</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label class="block text-xs text-gray-500 mb-1"
+                      >Wilayah</label
+                    >
+                    <select
+                      id="new-user-region"
+                      class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition"
+                    ></select>
+                  </div>
+                </div>
+                <button
+                  type="submit"
+                  id="btn-add-user"
+                  class="shrink-0 bg-kai-blue hover:bg-blue-800 text-white font-semibold px-6 py-2.5 rounded-lg text-sm transition flex items-center gap-2"
+                >
+                  <i class="fas fa-user-plus"></i> Tambah Pengguna
+                </button>
+              </form>
+              <div
+                class="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm"
+              >
+                <div class="overflow-x-auto">
+                  <table class="w-full text-left text-sm whitespace-nowrap">
+                    <thead
+                      class="bg-gray-50 dark:bg-gray-700/50 text-gray-500 text-xs border-b border-gray-100 dark:border-gray-700"
+                    >
+                      <tr>
+                        <th class="px-4 py-3 font-semibold">Nama Pengguna</th>
+                        <th class="px-4 py-3 font-semibold">Peran</th>
+                        <th class="px-4 py-3 font-semibold">Wilayah</th>
+                        <th class="px-4 py-3 font-semibold text-right">Opsi</th>
+                      </tr>
+                    </thead>
+                    <tbody
+                      id="table-users"
+                      class="divide-y divide-gray-100 dark:divide-gray-700/50"
+                    ></tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
+            <!-- Panel: Alat -->
+            <div
+              id="master-panel-alat"
+              class="master-tab-panel hidden space-y-5"
+            >
+              <form
+                id="form-add-alat"
+                class="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm p-5"
+              >
+                <h4
+                  class="text-sm font-bold mb-4 text-gray-800 dark:text-white"
+                >
+                  Tambah Alat Kerja Baru
+                </h4>
+                <div class="flex flex-col sm:flex-row gap-4 mb-4">
+                  <div class="flex-1">
+                    <label class="block text-xs text-gray-500 mb-1">Kode</label
+                    ><input
+                      type="text"
+                      id="new-alat-kode"
+                      class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm uppercase outline-none focus:border-kai-blue transition"
+                    />
+                  </div>
+                  <div class="flex-1">
+                    <label class="block text-xs text-gray-500 mb-1"
+                      >Nama Alat</label
+                    ><input
+                      type="text"
+                      id="new-alat-nama"
+                      class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition"
+                    />
+                  </div>
+                </div>
+                <div class="flex gap-3">
+                  <button
+                    type="submit"
+                    class="shrink-0 bg-kai-blue hover:bg-blue-800 text-white font-semibold px-6 py-2.5 rounded-lg text-sm transition flex items-center gap-2"
+                  >
+                    <i class="fas fa-gears"></i> Simpan Alat
+                  </button>
+                  <button
+                    type="button"
+                    id="btn-import-alat"
+                    class="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold px-6 py-2.5 rounded-lg text-sm transition flex items-center gap-2"
+                  >
+                    <i class="fas fa-file-import"></i> Impor Massal (.xlsx)
+                  </button>
+                </div>
+              </form>
+              <div
+                class="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm"
+              >
+                <div class="overflow-x-auto">
+                  <table class="w-full text-left text-sm whitespace-nowrap">
+                    <thead
+                      class="bg-gray-50 dark:bg-gray-700/50 text-gray-500 text-xs border-b border-gray-100 dark:border-gray-700"
+                    >
+                      <tr>
+                        <th class="px-4 py-3 font-semibold">Kode</th>
+                        <th class="px-4 py-3 font-semibold">Nama Alat</th>
+                        <th class="px-4 py-3 font-semibold text-right">Opsi</th>
+                      </tr>
+                    </thead>
+                    <tbody
+                      id="table-alat"
+                      class="divide-y divide-gray-100 dark:divide-gray-700/50"
+                    ></tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
+            <!-- Panel: Lokasi -->
+            <div
+              id="master-panel-lokasi"
+              class="master-tab-panel hidden space-y-5"
+            >
+              <form
+                id="form-add-lokasi"
+                class="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm p-5"
+              >
+                <h4
+                  class="text-sm font-bold mb-4 text-gray-800 dark:text-white"
+                >
+                  Tambah Lokasi Baru
+                </h4>
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+                  <div>
+                    <label class="block text-xs text-gray-500 mb-1">Kode</label
+                    ><input
+                      type="text"
+                      id="new-lokasi-kode"
+                      class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm uppercase outline-none focus:border-kai-blue transition"
+                    />
+                  </div>
+                  <div>
+                    <label class="block text-xs text-gray-500 mb-1"
+                      >Nama Lokasi</label
+                    ><input
+                      type="text"
+                      id="new-lokasi-nama"
+                      class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition"
+                    />
+                  </div>
+                  <div>
+                    <label class="block text-xs text-gray-500 mb-1">Tipe</label>
+                    <select
+                      id="new-lokasi-tipe"
+                      class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition"
+                    >
+                      <option value="PUSAT">PUSAT</option>
+                      <option value="DAOP">DAOP</option>
+                      <option value="DIVRE">DIVRE</option>
+                      <option value="BALAIYASA">BALAIYASA</option>
+                    </select>
+                  </div>
+                </div>
+                <button
+                  type="submit"
+                  class="shrink-0 bg-kai-blue hover:bg-blue-800 text-white font-semibold px-6 py-2.5 rounded-lg text-sm transition flex items-center gap-2"
+                >
+                  <i class="fas fa-map"></i> Simpan Lokasi
+                </button>
+              </form>
+              <div
+                class="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm"
+              >
+                <div class="overflow-x-auto">
+                  <table class="w-full text-left text-sm whitespace-nowrap">
+                    <thead
+                      class="bg-gray-50 dark:bg-gray-700/50 text-gray-500 text-xs border-b border-gray-100 dark:border-gray-700"
+                    >
+                      <tr>
+                        <th class="px-4 py-3 font-semibold">Kode</th>
+                        <th class="px-4 py-3 font-semibold">Nama Lokasi</th>
+                        <th class="px-4 py-3 font-semibold">Tipe</th>
+                        <th class="px-4 py-3 font-semibold text-right">Opsi</th>
+                      </tr>
+                    </thead>
+                    <tbody
+                      id="table-lokasi"
+                      class="divide-y divide-gray-100 dark:divide-gray-700/50"
+                    ></tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
+            <!-- Panel: UPT -->
+            <div
+              id="master-panel-upt"
+              class="master-tab-panel hidden space-y-5"
+            >
+              <form
+                id="form-add-upt"
+                class="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm p-5"
+              >
+                <h4
+                  class="text-sm font-bold mb-4 text-gray-800 dark:text-white"
+                >
+                  Tambah UPT Baru
+                </h4>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+                  <div>
+                    <label class="block text-xs text-gray-500 mb-1"
+                      >Nama UPT</label
+                    ><input
+                      type="text"
+                      id="new-upt-nama"
+                      class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition"
+                    />
+                  </div>
+                  <div>
+                    <label class="block text-xs text-gray-500 mb-1"
+                      >Induk Lokasi</label
+                    >
+                    <select
+                      id="new-upt-lokasi"
+                      class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition"
+                    ></select>
+                  </div>
+                </div>
+                <button
+                  type="submit"
+                  class="shrink-0 bg-kai-blue hover:bg-blue-800 text-white font-semibold px-6 py-2.5 rounded-lg text-sm transition flex items-center gap-2"
+                >
+                  <i class="fas fa-sitemap"></i> Simpan UPT
+                </button>
+              </form>
+              <div
+                class="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm"
+              >
+                <div class="overflow-x-auto">
+                  <table class="w-full text-left text-sm whitespace-nowrap">
+                    <thead
+                      class="bg-gray-50 dark:bg-gray-700/50 text-gray-500 text-xs border-b border-gray-100 dark:border-gray-700"
+                    >
+                      <tr>
+                        <th class="px-4 py-3 font-semibold">#</th>
+                        <th class="px-4 py-3 font-semibold">Nama UPT</th>
+                        <th class="px-4 py-3 font-semibold">Induk Lokasi</th>
+                        <th class="px-4 py-3 font-semibold text-right">Opsi</th>
+                      </tr>
+                    </thead>
+                    <tbody
+                      id="table-upt"
+                      class="divide-y divide-gray-100 dark:divide-gray-700/50"
+                    ></tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- ─────────────────────────────────────────────
+                 VIEW: AFKIR (Pulihkan Aset Afkir)
+                ───────────────────────────────────────────── -->
+          <section id="view-afkir" class="view-section">
+            <div class="flex flex-col gap-3 mb-5 shrink-0">
+              <div
+                class="bg-white dark:bg-gray-800 p-3 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm flex items-center gap-3"
+              >
+                <div class="relative flex-1">
+                  <i
+                    class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs"
+                  ></i>
+                  <input
+                    type="text"
+                    id="search-afkir"
+                    placeholder="Cari UID atau Kode Aset..."
+                    class="w-full pl-8 pr-3 py-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue font-mono transition"
+                  />
+                </div>
+              </div>
+            </div>
+            <div
+              id="afkir-cards-container"
+              class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 flex-1"
+            ></div>
+          </section>
+        </div>
+        <!-- end #view-container -->
+
+        <!-- Footer watermark -->
+        <div class="absolute bottom-3 right-6 pointer-events-none">
+          <p
+            class="text-[10px] text-gray-300 dark:text-gray-700 font-medium select-none"
+          >
+            © 2026 SIMA-KAI · PT Kereta Api Indonesia (Persero)
+          </p>
+        </div>
+      </main>
+    </div>
+    <!-- end #main-app -->
+
+    <!-- ══════════════════════════════════════════════════════════════════
+     MODALS
+    ═══════════════════════════════════════════════════════════════════ -->
+
+    <!-- ── Mutasi Modal ── -->
+    <div
+      id="mutasi-modal"
+      class="hidden fixed inset-0 z-[100] bg-gray-900/40 backdrop-blur-sm flex items-center justify-center p-4"
+    >
+      <div
+        class="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-md border border-gray-100 dark:border-gray-700 overflow-hidden"
+      >
+        <div
+          class="flex justify-between items-center px-5 py-4 border-b border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800"
+        >
+          <div>
+            <h3 class="text-sm font-bold text-gray-800 dark:text-white">
+              Proses Mutasi Aset
+            </h3>
+            <p
+              class="text-sm font-mono text-kai-blue dark:text-blue-400 mt-0.5"
+              id="mutasi-modal-subtitle"
+            >
+              —
+            </p>
+          </div>
+          <button
+            id="close-mutasi-modal"
+            class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition w-7 h-7 flex items-center justify-center rounded-full hover:bg-gray-100 dark:hover:bg-gray-700"
+          >
+            <i class="fas fa-times text-xl"></i>
+          </button>
+        </div>
+        <div class="p-5 space-y-4">
+          <input type="hidden" id="mutasi-uid" />
+          <div
+            class="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-3.5 border border-gray-100 dark:border-gray-600"
+          >
+            <p
+              class="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1"
+            >
+              Lokasi Asal
+            </p>
+            <p
+              class="font-semibold text-gray-800 dark:text-gray-200 text-sm"
+              id="mutasi-lokasi-asal"
+            >
+              —
+            </p>
+            <br />
+            <p
+              class="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1"
+            >
+              Lokasi Kini
+            </p>
+            <p
+              class="font-semibold text-gray-800 dark:text-gray-200 text-sm"
+              id="mutasi-lokasi-kini"
+            >
+              —
+            </p>
+          </div>
+          <div>
+            <label class="block text-xs font-semibold mb-1.5 text-gray-500"
+              >Tujuan Mutasi</label
+            >
+            <select
+              id="mutasi-lokasi-tuju"
+              class="w-full p-2.5 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-orange transition"
+            ></select>
+          </div>
+          <div>
+            <label
+              id="mutasi-upt-tuju-label"
+              class="block text-xs font-semibold mb-1.5 text-gray-500"
+              >UPT Tujuan
+              <span class="text-gray-400 font-normal">(opsional)</span></label
+            >
+            <select
+              id="mutasi-upt-tuju"
+              disabled
+              class="w-full p-2.5 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-orange transition disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <option value="">Pilih Lokasi Tujuan dahulu...</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs font-semibold mb-1.5 text-gray-500"
+              >Keterangan / BKO</label
+            >
+            <textarea
+              id="mutasi-alasan"
+              rows="2"
+              placeholder="Alasan mutasi atau nomor BKO..."
+              class="w-full p-2.5 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-orange resize-none transition"
+            ></textarea>
+          </div>
+          <button
+            id="btn-submit-mutasi"
+            class="w-full bg-kai-orange hover:bg-orange-600 active:bg-orange-700 text-white font-semibold py-2.5 rounded-lg transition text-sm"
+          >
+            Konfirmasi Mutasi
+          </button>
+        </div>
+      </div>
     </div>
 
-    <!-- Hidden area used only during PDF/print export -->
+    <!-- ── QR Modal ── -->
+    <div
+      id="qr-modal"
+      class="hidden fixed inset-0 z-[100] bg-gray-900/40 backdrop-blur-sm flex items-center justify-center p-4"
+    >
+      <div
+        class="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-sm border border-gray-100 dark:border-gray-700 overflow-hidden"
+      >
+        <div
+          class="flex justify-between items-center px-5 py-4 border-b border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800"
+        >
+          <div>
+            <h3 class="text-sm font-bold text-gray-800 dark:text-white">
+              Label QR Aset
+            </h3>
+            <p
+              class="text-xs font-mono text-kai-blue dark:text-blue-400 mt-0.5"
+              id="qr-modal-subtitle"
+            >
+              —
+            </p>
+          </div>
+          <button
+            id="close-qr-modal"
+            class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition w-7 h-7 flex items-center justify-center rounded-full hover:bg-gray-100 dark:hover:bg-gray-700"
+          >
+            <i class="fas fa-times text-xl"></i>
+          </button>
+        </div>
+
+        <!-- Label preview -->
+        <div
+          class="p-6 flex flex-col items-center bg-gray-50 dark:bg-gray-800/50"
+        >
+          <div
+            id="qr-label-preview"
+            class="bg-white border-2 border-gray-800 rounded-xl p-4 w-56 flex flex-col items-center gap-3 shadow-sm"
+          >
+            <div class="w-full text-center border-b border-gray-200 pb-2">
+              <p
+                class="text-[10px] font-extrabold text-gray-700 tracking-[.2em]"
+              >
+                SIMA-KAI
+              </p>
+            </div>
+            <canvas id="qr-canvas" width="160" height="160"></canvas>
+            <div
+              class="w-full text-center border-t border-gray-200 pt-2 space-y-0.5"
+            >
+              <p
+                class="text-xs font-bold text-gray-800 font-mono tracking-tight"
+                id="qr-label-kodeid"
+              >
+                —
+              </p>
+              <p class="text-[9px] text-gray-500 truncate" id="qr-label-alat">
+                —
+              </p>
+              <p class="text-[9px] text-gray-400 truncate" id="qr-label-lokasi">
+                —
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Landing link row -->
+        <div class="px-5 pb-3">
+          <div
+            class="flex items-center gap-2 bg-gray-50 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2.5"
+          >
+            <a
+              id="qr-landing-link"
+              href="#"
+              target="_blank"
+              rel="noopener"
+              class="text-[10px] text-kai-blue dark:text-blue-400 truncate flex-1 hover:underline font-mono"
+            >
+              <span id="qr-landing-link-text">...</span>
+            </a>
+            <button
+              id="btn-copy-link"
+              title="Salin link"
+              class="shrink-0 text-gray-400 hover:text-kai-blue transition text-xs px-1"
+            >
+              <i class="fas fa-copy"></i>
+            </button>
+          </div>
+        </div>
+
+        <!-- Actions -->
+        <div class="px-5 pb-5 flex gap-2">
+          <button
+            id="btn-qr-download-png"
+            class="flex-1 bg-kai-blue hover:bg-blue-800 text-white font-semibold py-2.5 rounded-lg transition text-sm"
+          >
+            <i class="fas fa-download"></i> Unduh PNG
+          </button>
+          <button
+            id="btn-qr-download-pdf"
+            class="flex-1 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 font-semibold py-2.5 rounded-lg transition text-sm"
+          >
+            <i class="fas fa-file-pdf"></i> Cetak PDF
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Master Edit Modal ── -->
+    <div
+      id="master-edit-modal"
+      class="hidden fixed inset-0 z-[100] bg-gray-900/40 backdrop-blur-sm flex items-center justify-center p-4"
+    >
+      <div
+        class="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-md border border-gray-100 dark:border-gray-700 overflow-hidden"
+      >
+        <div
+          class="flex justify-between items-center px-5 py-4 border-b border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800"
+        >
+          <h3
+            class="text-sm font-bold text-gray-800 dark:text-white"
+            id="master-edit-title"
+          >
+            Ubah Data
+          </h3>
+          <button
+            id="close-master-edit"
+            class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition w-7 h-7 flex items-center justify-center rounded-full hover:bg-gray-100 dark:hover:bg-gray-700"
+          >
+            <i class="fas fa-times text-xl"></i>
+          </button>
+        </div>
+        <div class="p-5">
+          <div id="master-edit-fields" class="space-y-4 mb-5"></div>
+          <div class="flex gap-3">
+            <button
+              id="btn-master-edit-save"
+              class="flex-1 bg-kai-blue hover:bg-blue-800 text-white font-semibold py-2.5 rounded-lg transition text-sm"
+            >
+              Simpan
+            </button>
+            <button
+              id="btn-master-edit-delete"
+              class="flex-1 bg-red-600 hover:bg-red-700 active:bg-red-800 text-white font-semibold py-2.5 rounded-lg transition text-sm"
+            >
+              Hapus
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Confirm Dialog ── -->
+    <div
+      id="confirm-modal"
+      class="hidden fixed inset-0 z-[110] bg-gray-900/40 backdrop-blur-sm flex items-center justify-center p-4"
+    >
+      <div
+        class="bg-white dark:bg-gray-800 p-7 rounded-2xl shadow-2xl max-w-sm w-full border border-gray-100 dark:border-gray-700 text-center"
+      >
+        <div
+          class="w-12 h-12 bg-amber-50 dark:bg-amber-900/20 rounded-full flex items-center justify-center mx-auto mb-4 text-amber-500 text-xl"
+        >
+          <i class="fas fa-exclamation-triangle"></i>
+        </div>
+        <h3 class="text-base font-bold text-gray-800 dark:text-white mb-2">
+          Konfirmasi
+        </h3>
+        <p
+          class="text-sm text-gray-500 dark:text-gray-400 mb-6 whitespace-pre-line"
+          id="confirm-message"
+        >
+          Apakah Anda yakin?
+        </p>
+        <div class="flex gap-3">
+          <button
+            id="confirm-cancel"
+            class="flex-1 py-2.5 flex items-center justify-center gap-2 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-600 dark:text-gray-200 rounded-lg text-sm font-semibold transition"
+          >
+            <i class="fas fa-arrow-left"></i> Batal
+          </button>
+          <button
+            id="confirm-ok"
+            class="flex-1 py-2.5 bg-kai-blue hover:bg-blue-800 text-white rounded-lg text-sm font-semibold transition"
+          >
+            Lanjutkan
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Sort Modal ── -->
+    <div
+      id="sort-modal"
+      class="hidden fixed inset-0 z-[100] bg-gray-900/40 backdrop-blur-sm flex items-center justify-center p-4"
+    >
+      <div
+        class="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-xs w-full border border-gray-100 dark:border-gray-700 overflow-hidden"
+      >
+        <div
+          class="flex justify-between items-center px-4 py-3.5 border-b border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800"
+        >
+          <h3 class="text-sm font-bold text-gray-800 dark:text-white">
+            Pengurutan Data
+          </h3>
+          <button
+            id="close-sort-modal"
+            class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition w-7 h-7 flex items-center justify-center rounded-full hover:bg-gray-100 dark:hover:bg-gray-700"
+          >
+            <i class="fas fa-times text-xl"></i>
+          </button>
+        </div>
+        <div class="p-5 space-y-4">
+          <div>
+            <label class="block text-xs font-semibold mb-1.5 text-gray-500"
+              >Urutkan Berdasarkan</label
+            >
+            <select
+              id="sort-field"
+              class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition"
+            >
+              <option value="kode_id">Kode ID</option>
+              <option value="alat">Nama Alat</option>
+              <option value="lokasi">Lokasi</option>
+            </select>
+          </div>
+          <div class="flex gap-2">
+            <button
+              data-dir="asc"
+              class="sort-dir-btn flex-1 py-2.5 rounded-lg border-2 border-kai-blue bg-blue-50 dark:bg-blue-900/20 text-kai-blue dark:text-blue-300 text-xs font-semibold transition"
+            >
+              A → Z
+            </button>
+            <button
+              data-dir="desc"
+              class="sort-dir-btn flex-1 py-2.5 rounded-lg border-2 border-gray-200 dark:border-gray-600 text-gray-500 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 text-xs font-semibold transition"
+            >
+              Z → A
+            </button>
+          </div>
+          <button
+            id="btn-apply-sort"
+            class="w-full bg-gray-800 hover:bg-gray-900 dark:bg-kai-blue dark:hover:bg-blue-700 text-white py-2.5 rounded-lg text-sm font-semibold transition"
+          >
+            Terapkan
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Profile Modal ── -->
+    <div
+      id="profile-modal"
+      class="hidden fixed inset-0 z-[110] bg-gray-900/40 backdrop-blur-sm flex items-center justify-center p-4"
+    >
+      <div
+        class="relative bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-xs border border-gray-100 dark:border-gray-700 overflow-hidden"
+      >
+        <!-- Close — inside card -->
+        <button
+          id="close-profile-modal"
+          class="absolute top-3 right-3 w-7 h-7 flex items-center justify-center rounded-full text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition z-10"
+        >
+          <i class="fas fa-times text-xl"></i>
+        </button>
+        <!-- Avatar + info -->
+        <div
+          class="px-6 pt-6 pb-5 flex flex-col items-center gap-3 text-center"
+        >
+          <div class="relative">
+            <div
+              id="profile-modal-avatar"
+              class="w-20 h-20 rounded-full bg-kai-blue text-white flex items-center justify-center text-2xl font-bold select-none border-4 border-blue-100 dark:border-blue-900"
+            >
+              ?
+            </div>
+            <span
+              id="profile-modal-ws-dot"
+              class="absolute bottom-1 right-1 w-4 h-4 rounded-full border-2 border-white dark:border-gray-800 bg-gray-300"
+              title="Status koneksi"
+            ></span>
+          </div>
+          <div>
+            <p
+              class="text-lg font-bold text-slate-800 dark:text-white"
+              id="profile-modal-username"
+            >
+              —
+            </p>
+            <p
+              class="text-sm text-slate-600 dark:text-slate-200 mt-0.5 tracking-widest uppercase"
+              id="profile-modal-role"
+            >
+              —
+            </p>
+          </div>
+        </div>
+
+        <div class="border-t border-gray-100 dark:border-gray-700"></div>
+
+        <!-- Actions -->
+        <div class="p-3 space-y-1">
+          <button
+            id="profile-logout-btn"
+            class="w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-red-600 hover:bg-red-700 active:bg-red-800 text-white transition text-sm font-semibold border border-transparent hover:border-red-200 dark:hover:border-red-800"
+          >
+            <i class="fas fa-sign-out-alt w-4 text-center"></i>
+            <span>Keluar</span>
+          </button>
+          <!-- Delete account — hidden for SUPER_ADMIN -->
+          <button
+            id="profile-delete-btn"
+            class="hidden w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-red-600 hover:bg-red-700 active:bg-red-800 text-white transition text-sm font-medium border border-transparent hover:border-red-200 dark:hover:border-red-800"
+          >
+            <i class="fas fa-user-slash w-4 text-center"></i>
+            <span>Hapus Akun Saya</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Import Alat Modal ── -->
+    <div
+      id="import-alat-modal"
+      class="hidden fixed inset-0 z-[100] bg-gray-900/40 backdrop-blur-sm flex items-center justify-center p-4"
+    >
+      <div
+        class="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-md border border-gray-100 dark:border-gray-700 overflow-hidden"
+      >
+        <div
+          class="flex justify-between items-center px-5 py-4 border-b border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800"
+        >
+          <div>
+            <h3 class="text-sm font-bold text-gray-800 dark:text-white">
+              Import Alat Kerja
+            </h3>
+            <p class="text-xs text-gray-400 mt-0.5">
+              Format: kolom Kode, kolom Nama Alat (boleh ada kolom nomor
+              sebelumnya)
+            </p>
+          </div>
+          <button
+            id="close-import-alat-modal"
+            class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition w-7 h-7 flex items-center justify-center rounded-full hover:bg-gray-100 dark:hover:bg-gray-700"
+          >
+            <i class="fas fa-times text-xl"></i>
+          </button>
+        </div>
+        <div class="p-5 space-y-4">
+          <div
+            class="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-xl p-6 text-center"
+          >
+            <i
+              class="fas fa-file-excel text-3xl text-emerald-500 mb-2 block"
+            ></i>
+            <p class="text-sm text-gray-500 dark:text-gray-400 mb-3">
+              Pilih file Excel (.xlsx)
+            </p>
+            <input
+              type="file"
+              id="import-alat-file"
+              accept=".xlsx"
+              class="hidden"
+            />
+            <button
+              type="button"
+              onclick="document.getElementById('import-alat-file').click()"
+              class="px-4 py-2.5 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 rounded-lg text-sm font-semibold transition"
+            >
+              Pilih File
+            </button>
+            <p id="import-alat-filename" class="text-xs text-gray-400 mt-2">
+              Belum ada file dipilih
+            </p>
+          </div>
+          <button
+            id="btn-import-alat-submit"
+            class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-2.5 rounded-lg transition text-sm"
+          >
+            Proses Data Impor...
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Pulihkan Aset Modal ── -->
+    <div
+      id="pulihkan-modal"
+      class="hidden fixed inset-0 z-[110] bg-gray-900/40 backdrop-blur-sm flex items-center justify-center p-4"
+    >
+      <div
+        class="relative bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-sm border border-gray-100 dark:border-gray-700 overflow-hidden"
+      >
+        <div
+          class="flex justify-between items-center px-5 py-4 border-b border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800"
+        >
+          <div>
+            <h3 class="text-sm font-bold text-gray-800 dark:text-white">
+              Pulihkan Aset
+            </h3>
+            <p
+              class="text-xs font-mono text-kai-blue dark:text-blue-400 mt-0.5"
+              id="pulihkan-modal-subtitle"
+            >
+              —
+            </p>
+          </div>
+          <button
+            id="close-pulihkan-modal"
+            class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition w-7 h-7 flex items-center justify-center rounded-full hover:bg-gray-100 dark:hover:bg-gray-700"
+          >
+            <i class="fas fa-times text-xl"></i>
+          </button>
+        </div>
+        <div class="p-5 space-y-3">
+          <input type="hidden" id="pulihkan-uid" />
+          <p class="text-sm text-gray-500 dark:text-gray-400">
+            Pilih tindakan untuk aset ini:
+          </p>
+          <!-- Row 1: Cancel + Confirm -->
+          <div class="flex gap-3">
+            <button
+              id="pulihkan-cancel-btn"
+              class="flex-1 py-2.5 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 rounded-lg text-sm font-semibold transition"
+            >
+              Batal
+            </button>
+            <button
+              id="pulihkan-confirm-btn"
+              class="flex-1 py-2.5 bg-green-600 hover:bg-green-700 active:bg-green-800 text-white rounded-lg text-sm font-semibold transition"
+            >
+              <i class="fas fa-undo mr-1"></i> Pulihkan
+            </button>
+          </div>
+          <!-- Row 2: Delete permanently -->
+          <button
+            id="pulihkan-delete-btn"
+            class="w-full py-2.5 bg-red-600 hover:bg-red-700 active:bg-red-800 text-white rounded-lg text-sm font-semibold transition border-2 border-red-700 hover:border-red-800"
+          >
+            <i class="fas fa-trash-alt mr-1"></i> Hapus Permanen dari Sistem
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Toast container -->
+    <div id="toast-container"></div>
+
+    <!-- QR print area (visible only via @media print) -->
     <div id="qr-print-area" class="hidden"></div>
 
-    <!-- Toast Notifications -->
-    <div id="toast-container" class="fixed top-4 right-4 z-[100] flex flex-col gap-2"></div>
-
-    <!-- Confirm Modal -->
-    <div id="confirm-modal" class="hidden fixed inset-0 z-[100] bg-black/50 backdrop-blur-sm flex items-center justify-center transition-opacity">
-        <div class="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-2xl max-w-sm w-full border border-gray-200 dark:border-gray-700">
-            <h3 class="text-xl font-bold mb-2 text-gray-900 dark:text-gray-100" id="confirm-title">
-                <i class="fas fa-exclamation-triangle text-yellow-500 mr-2"></i>Konfirmasi
-            </h3>
-            <p class="mb-6 text-gray-600 dark:text-gray-400" id="confirm-message">Apakah Anda yakin?</p>
-            <div class="flex justify-end gap-3">
-                <button id="confirm-cancel" class="px-4 py-2 bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-200 rounded-lg font-bold transition">Batal</button>
-                <button id="confirm-ok"     class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold transition">Yakin</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- QR generation library (tiny, no build step needed) -->
+    <!-- Scripts -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-    <!-- App Logic -->
     <script src="app.js"></script>
-</body>
+  </body>
 </html>
