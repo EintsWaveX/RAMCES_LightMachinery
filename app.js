@@ -3349,8 +3349,8 @@ function _populateYearDropdowns(fromId, toId) {
 
 // ── Helper: populate alat+lokasi dropdowns in sort modal ──
 function _populateSortDropdowns(prefix) {
-  // Alat
-  const alatSel = document.getElementById(`${prefix}-alat`) || document.getElementById(`${prefix}-id-alat`);
+  // Alat (id_aset panel)
+  const alatSel = document.getElementById(`${prefix}-id-alat`);
   if (alatSel && alatSel.options.length <= 1) {
     alatKerjaData.forEach((a) => {
       const o = document.createElement("option");
@@ -3359,26 +3359,65 @@ function _populateSortDropdowns(prefix) {
       alatSel.appendChild(o);
     });
   }
-  // Lokasi
-  const lokSel = document.getElementById(`${prefix}-lok-lokasi`) || document.getElementById(`${prefix}-lokasi`);
-  if (lokSel && lokSel.options.length <= 1) {
-    lokasiData.forEach((l) => {
+  // Alat filter (kode_alat_name panel)
+  const alatFilterSel = document.getElementById(`${prefix}-alat-filter`) || document.getElementById(`${prefix}-alat`);
+  if (alatFilterSel && alatFilterSel !== alatSel && alatFilterSel.options.length <= 1) {
+    alatKerjaData.forEach((a) => {
       const o = document.createElement("option");
-      o.value = l.code;
-      o.textContent = `${l.name} (${l.code})`;
-      lokSel.appendChild(o);
+      o.value = a.code;
+      o.textContent = `${a.code} — ${a.name}`;
+      alatFilterSel.appendChild(o);
     });
   }
-  // UPT (for id_lokasi panel)
+  // Lokasi dropdowns (id_aset panel + id_lokasi panel)
+  [`${prefix}-id-lokasi`, `${prefix}-lok-lokasi`].forEach((id) => {
+    const lokSel = document.getElementById(id);
+    if (lokSel && lokSel.options.length <= 1) {
+      lokasiData.forEach((l) => {
+        const o = document.createElement("option");
+        o.value = l.code;
+        o.textContent = `${l.name} (${l.code})`;
+        lokSel.appendChild(o);
+      });
+    }
+  });
+  // UPT dropdown — start empty, filled by Lokasi cascade
   const uptSel = document.getElementById(`${prefix}-lok-upt`);
-  if (uptSel && uptSel.options.length <= 1) {
-    uptDatabase.forEach((u) => {
-      const o = document.createElement("option");
-      o.value = u.upt;
-      o.textContent = `${u.nama || u.upt} (${u.upt})`;
-      uptSel.appendChild(o);
+  if (uptSel) {
+    uptSel.innerHTML = `<option value="">— Pilih Lokasi dahulu —</option>`;
+  }
+  // Wire Lokasi → UPT cascade (only once per prefix)
+  const lokMain = document.getElementById(`${prefix}-lok-lokasi`);
+  if (lokMain && !lokMain.dataset.cascadeWired) {
+    lokMain.dataset.cascadeWired = "1";
+    lokMain.addEventListener("change", () => {
+      _filterUptByLokasi(`${prefix}-lok-lokasi`, `${prefix}-lok-upt`);
     });
   }
+  // Also wire the id_aset-panel lokasi dropdown if it exists
+  const lokId = document.getElementById(`${prefix}-id-lokasi`);
+  if (lokId && !lokId.dataset.cascadeWired) {
+    lokId.dataset.cascadeWired = "1";
+    // No paired UPT in id_aset panel — no cascade needed here
+  }
+}
+
+// ── Helper: filter UPT dropdown based on selected Lokasi ──
+function _filterUptByLokasi(lokSelId, uptSelId) {
+  const lokSel = document.getElementById(lokSelId);
+  const uptSel = document.getElementById(uptSelId);
+  if (!lokSel || !uptSel) return;
+  const chosenLok = lokSel.value;
+  uptSel.innerHTML = `<option value="">— Semua UPT —</option>`;
+  const filtered = chosenLok
+    ? uptDatabase.filter((u) => u.lokasi === chosenLok)
+    : uptDatabase;
+  filtered.forEach((u) => {
+    const o = document.createElement("option");
+    o.value = u.upt;
+    o.textContent = `${u.nama || u.upt} (${u.upt})`;
+    uptSel.appendChild(o);
+  });
 }
 
 // ── Helper: show/hide sort custom panels ──
@@ -3410,7 +3449,19 @@ function _syncSortPanels(fieldVal, customChecked, panelPrefix, allLabelId, custo
 // ── DB Sort Modal ──
 document.getElementById("btn-sort-db")?.addEventListener("click", () => {
   _populateYearDropdowns("sort-id-tahun-from", "sort-id-tahun-to");
+  _populateYearDropdowns("sort-tgl-from", "sort-tgl-to");  // ← ADD THIS LINE
   _populateSortDropdowns("sort");
+
+  // Also populate sort-alat-filter (the kode_alat_name panel dropdown)
+  const alatFilterSel = document.getElementById("sort-alat-filter");
+  if (alatFilterSel && alatFilterSel.options.length <= 1) {
+    alatKerjaData.forEach((a) => {
+      const o = document.createElement("option");
+      o.value = a.code;
+      o.textContent = `${a.code} — ${a.name}`;
+      alatFilterSel.appendChild(o);
+    });
+  }
 
   // Sync panels and Terbaru/Terlama visibility for current field
   const curField = document.getElementById("sort-field")?.value || "id_aset";
@@ -3460,15 +3511,10 @@ document.getElementById("btn-sort-db")?.addEventListener("click", () => {
       lokLokSel.appendChild(o);
     });
   }
+  // UPT is now cascade-driven by Lokasi selection — reset it on modal open
   const lokUptSel = document.getElementById("sort-lok-upt");
-  if (lokUptSel && lokUptSel.options.length <= 1) {
-    uptDatabase.forEach((u) => {
-      const o = document.createElement("option");
-      o.value = u.upt;
-      o.textContent = `${u.nama || u.upt} (${u.upt})`;
-      lokUptSel.appendChild(o);
-    });
-  }
+  if (lokUptSel) lokUptSel.innerHTML = `<option value="">— Pilih Lokasi dahulu —</option>`;
+  _filterUptByLokasi("sort-lok-lokasi", "sort-lok-upt");
   document.getElementById("sort-modal").classList.remove("hidden");
 });
 
@@ -3592,12 +3638,14 @@ document.getElementById("btn-sort-history")?.addEventListener("click", () => {
   });
 
   const histUptSel = document.getElementById("hist-sort-lok-upt");
-  if (histUptSel && histUptSel.options.length <= 1) {
-    uptDatabase.forEach((u) => {
-      const o = document.createElement("option");
-      o.value = u.upt;
-      o.textContent = `${u.nama || u.upt} (${u.upt})`;
-      histUptSel.appendChild(o);
+  if (histUptSel) histUptSel.innerHTML = `<option value="">— Pilih Lokasi dahulu —</option>`;
+  _filterUptByLokasi("hist-sort-lok-lokasi", "hist-sort-lok-upt");
+  // Wire cascade if not yet done
+  const histLokSel = document.getElementById("hist-sort-lok-lokasi");
+  if (histLokSel && !histLokSel.dataset.cascadeWired) {
+    histLokSel.dataset.cascadeWired = "1";
+    histLokSel.addEventListener("change", () => {
+      _filterUptByLokasi("hist-sort-lok-lokasi", "hist-sort-lok-upt");
     });
   }
 
@@ -5116,8 +5164,8 @@ function downloadKdakSampleExcel() {
     "Unit (A/B/C/D)",
   ];
   const sampleRows = [
-    ["RGM", "JR1.1", "2024-03-15", "PUSAT", "D1", "A"],
-    ["CWL", "JB2.1", "2023-11-01", "DAOP/DIVRE", "D2", "B"],
+    ["RGM", "JR1.1", "2026-12-31", "PUSAT", "D1", "A"],
+    ["BOR", "JR2.1", "2026-12-31", "DAOP / DIVRE", "D2", "B"],
   ];
   const wsData = [headers, ...sampleRows];
   const ws = XLSX.utils.aoa_to_sheet(wsData);
@@ -5169,13 +5217,15 @@ async function processKdakImportFile(file) {
         let failed = 0;
 
         for (const row of dataRows) {
+          const _unitMap = { A: "JALAN REL", B: "JEMBATAN", C: "MEKANIK", D: "BALAIYASA" };
+          const unitRaw = String(row[5] || "").trim().toUpperCase();
           const payload = {
             kode_alat: String(row[0] || "").trim(),
             id_lokasi: String(row[1] || "").trim(),
             tanggal_pembelian: String(row[2] || "").trim(),
             sumber_pengadaan: String(row[3] || "").trim(),
             parent_lokasi: String(row[4] || "").trim(),
-            unit: String(row[5] || "").trim(),
+            peruntukan: _unitMap[unitRaw] || "JALAN REL",
           };
 
           try {
@@ -5357,14 +5407,16 @@ function setupKdakListeners() {
         });
       }
     });
-    // Populate UPT dropdown
+    // UPT is cascade-driven by Lokasi — reset on modal open
     const uptSel = document.getElementById("kdak-sort-lok-upt");
-    if (uptSel && uptSel.options.length <= 1) {
-      uptDatabase.forEach((u) => {
-        const o = document.createElement("option");
-        o.value = u.upt;
-        o.textContent = `${u.nama || u.upt} (${u.upt})`;
-        uptSel.appendChild(o);
+    if (uptSel) uptSel.innerHTML = `<option value="">— Pilih Lokasi dahulu —</option>`;
+    _filterUptByLokasi("kdak-sort-lok-lokasi", "kdak-sort-lok-upt");
+    // Wire cascade if not yet done
+    const kdakLokSel = document.getElementById("kdak-sort-lok-lokasi");
+    if (kdakLokSel && !kdakLokSel.dataset.cascadeWired) {
+      kdakLokSel.dataset.cascadeWired = "1";
+      kdakLokSel.addEventListener("change", () => {
+        _filterUptByLokasi("kdak-sort-lok-lokasi", "kdak-sort-lok-upt");
       });
     }
     document.getElementById("kdak-sort-modal")?.classList.remove("hidden");
