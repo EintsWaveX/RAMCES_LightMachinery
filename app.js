@@ -2488,8 +2488,13 @@ function renderDbCards() {
 
   filteredItems
     .sort((a, b) => {
+      if (_sortDir === "date-desc") {
+        return new Date(b.tanggal_pembelian || 0) - new Date(a.tanggal_pembelian || 0);
+      }
+      if (_sortDir === "date-asc") {
+        return new Date(a.tanggal_pembelian || 0) - new Date(b.tanggal_pembelian || 0);
+      }
       if (_sortDir === "count-desc") {
-        // Count-based: sort by status SO first (most "ready")
         const aScore = _historySummary.filter(s => s.id_aset === a.id_aset).length;
         const bScore = _historySummary.filter(s => s.id_aset === b.id_aset).length;
         return bScore - aScore;
@@ -2750,6 +2755,8 @@ function renderHistoryCards() {
   });
 
   filtered = filtered.sort((a, b) => {
+    if (_histSortDir === "date-desc") return new Date(b.tanggal_pembelian || 0) - new Date(a.tanggal_pembelian || 0);
+    if (_histSortDir === "date-asc") return new Date(a.tanggal_pembelian || 0) - new Date(b.tanggal_pembelian || 0);
     if (_histSortDir === "count-desc") return (b.repair ? 1 : 0) - (a.repair ? 1 : 0);
     if (_histSortDir === "count-asc") return (a.repair ? 1 : 0) - (b.repair ? 1 : 0);
     const av = (a[_histSortField] || "").toString().toLowerCase();
@@ -2968,6 +2975,8 @@ function renderMutasiCards() {
   });
 
   filtered = filtered.sort((a, b) => {
+    if (_histSortDir === "date-desc") return new Date(b.tanggal_pembelian || 0) - new Date(a.tanggal_pembelian || 0);
+    if (_histSortDir === "date-asc") return new Date(a.tanggal_pembelian || 0) - new Date(b.tanggal_pembelian || 0);
     if (_histSortDir === "count-desc") return (b.mutasi?.count || 0) - (a.mutasi?.count || 0);
     if (_histSortDir === "count-asc") return (a.mutasi?.count || 0) - (b.mutasi?.count || 0);
     const av = (a[_histSortField] || "").toString().toLowerCase();
@@ -3316,11 +3325,11 @@ async function loadMasterUpt() {
 // ── SORT MODAL ────────────────────────────────────────────────────
 
 let _sortField = "id_aset";
-let _sortDir = "asc";
+let _sortDir = "date-desc";
 let _sortFilters = {}; // custom filter values for db sort
 
 let _histSortField = "id_aset";
-let _histSortDir = "asc";
+let _histSortDir = "date-desc";
 let _histSortFilters = {};
 
 // ── Helper: populate year dropdowns ──
@@ -3381,28 +3390,48 @@ function _syncSortPanels(fieldVal, customChecked, panelPrefix, allLabelId, custo
   if (!customChecked || !fieldVal) {
     allLabel.classList.remove("hidden");
     customPanels.classList.add("hidden");
-    return;
-  }
-  allLabel.classList.add("hidden");
-  customPanels.classList.remove("hidden");
+  } else {
+    allLabel.classList.add("hidden");
+    customPanels.classList.remove("hidden");
 
-  // Hide all sub-panels first (covers all three prefix families)
-  customPanels
-    .querySelectorAll("[id^='sort-panel-'], [id^='hist-sort-panel-'], [id^='kdak-sort-panel-']")
-    .forEach((p) => p.classList.add("hidden"));
-  // Show the one matching the active prefix + field
-  const panel =
-    document.getElementById(`${panelPrefix}-panel-${fieldVal}`) ||
-    document.getElementById(`sort-panel-${fieldVal}`) ||
-    document.getElementById(`hist-sort-panel-${fieldVal}`);
-  if (panel) panel.classList.remove("hidden");
+    // Hide all sub-panels first (covers all three prefix families)
+    customPanels
+      .querySelectorAll("[id^='sort-panel-'], [id^='hist-sort-panel-'], [id^='kdak-sort-panel-']")
+      .forEach((p) => p.classList.add("hidden"));
+    // Show the one matching the active prefix + field
+    const panel =
+      document.getElementById(`${panelPrefix}-panel-${fieldVal}`) ||
+      document.getElementById(`sort-panel-${fieldVal}`) ||
+      document.getElementById(`hist-sort-panel-${fieldVal}`);
+    if (panel) panel.classList.remove("hidden");
+  }
 }
 
 // ── DB Sort Modal ──
 document.getElementById("btn-sort-db")?.addEventListener("click", () => {
   _populateYearDropdowns("sort-id-tahun-from", "sort-id-tahun-to");
-  _populateYearDropdowns("sort-tgl-from", "sort-tgl-to");
   _populateSortDropdowns("sort");
+
+  // Sync panels and Terbaru/Terlama visibility for current field
+  const curField = document.getElementById("sort-field")?.value || "id_aset";
+  const curChecked = document.getElementById("sort-custom-spec")?.checked || false;
+  _syncSortPanels(curField, curChecked, "sort", "sort-all-data-label", "sort-custom-panels");
+
+  // Paint active direction button
+  document.querySelectorAll(".sort-dir-btn").forEach((b) => {
+    const active = b.dataset.dir === _sortDir;
+    b.classList.toggle("border-kai-blue", active);
+    b.classList.toggle("bg-sky-100", active);
+    b.classList.toggle("dark:bg-sky-900/20", active);
+    b.classList.toggle("text-kai-blue", active);
+    b.classList.toggle("dark:text-sky-300", active);
+    b.classList.toggle("border-gray-200", !active);
+    b.classList.toggle("dark:border-gray-600", !active);
+    b.classList.toggle("bg-white", !active);
+    b.classList.toggle("dark:bg-gray-700", !active);
+    b.classList.toggle("text-gray-500", !active);
+  });
+
   // Also populate sort-id-alat and sort-id-lokasi specifically
   const idAlatSel = document.getElementById("sort-id-alat");
   if (idAlatSel && idAlatSel.options.length <= 1) {
@@ -3516,16 +3545,62 @@ document.getElementById("btn-apply-sort")?.addEventListener("click", () => {
 
 // ── History Sort Modal ──
 document.getElementById("btn-sort-history")?.addEventListener("click", () => {
-  _populateYearDropdowns("hist-sort-tahun-from", "hist-sort-tahun-to");
-  const histAlatSel = document.getElementById("hist-sort-alat");
-  if (histAlatSel && histAlatSel.options.length <= 1) {
-    alatKerjaData.forEach((a) => {
+  _populateYearDropdowns("hist-sort-tgl-from", "hist-sort-tgl-to");
+
+  // Sync panels and Terbaru/Terlama visibility for current field
+  const curField = document.getElementById("hist-sort-field")?.value || "id_aset";
+  const curChecked = document.getElementById("hist-sort-custom-spec")?.checked || false;
+  _syncSortPanels(curField, curChecked, "hist-sort", "hist-sort-all-data-label", "hist-sort-custom-panels");
+
+  // Paint active direction button
+  document.querySelectorAll(".hist-sort-dir-btn").forEach((b) => {
+    const active = b.dataset.histDir === _histSortDir;
+    b.classList.toggle("border-kai-orange", active);
+    b.classList.toggle("bg-orange-50", active);
+    b.classList.toggle("dark:bg-orange-900/20", active);
+    b.classList.toggle("text-kai-orange", active);
+    b.classList.toggle("dark:text-orange-300", active);
+    b.classList.toggle("border-gray-200", !active);
+    b.classList.toggle("dark:border-gray-600", !active);
+    b.classList.toggle("bg-white", !active);
+    b.classList.toggle("dark:bg-gray-700", !active);
+    b.classList.toggle("text-gray-500", !active);
+  });
+
+  ["hist-sort-alat-filter"].forEach((id) => {
+    const sel = document.getElementById(id);
+    if (sel && sel.options.length <= 1) {
+      alatKerjaData.forEach((a) => {
+        const o = document.createElement("option");
+        o.value = a.code;
+        o.textContent = `${a.code} — ${a.name}`;
+        sel.appendChild(o);
+      });
+    }
+  });
+
+  ["hist-sort-lok-lokasi"].forEach((id) => {
+    const sel = document.getElementById(id);
+    if (sel && sel.options.length <= 1) {
+      lokasiData.forEach((l) => {
+        const o = document.createElement("option");
+        o.value = l.code;
+        o.textContent = `${l.name} (${l.code})`;
+        sel.appendChild(o);
+      });
+    }
+  });
+
+  const histUptSel = document.getElementById("hist-sort-lok-upt");
+  if (histUptSel && histUptSel.options.length <= 1) {
+    uptDatabase.forEach((u) => {
       const o = document.createElement("option");
-      o.value = a.code;
-      o.textContent = `${a.code} — ${a.name}`;
-      histAlatSel.appendChild(o);
+      o.value = u.upt;
+      o.textContent = `${u.nama || u.upt} (${u.upt})`;
+      histUptSel.appendChild(o);
     });
   }
+
   document.getElementById("sort-history-modal").classList.remove("hidden");
 });
 
@@ -3563,14 +3638,27 @@ document.querySelectorAll(".hist-sort-dir-btn").forEach((btn) => {
 });
 
 document.getElementById("btn-apply-hist-sort")?.addEventListener("click", () => {
-  _histSortField = document.getElementById("hist-sort-field")?.value || "id_aset";
+  const fieldVal = document.getElementById("hist-sort-field")?.value || "id_aset";
+  _histSortField = fieldVal;
   const customChecked = document.getElementById("hist-sort-custom-spec")?.checked;
   _histSortFilters = {};
-  if (customChecked) {
-    _histSortFilters.alat = document.getElementById("hist-sort-alat")?.value || "";
-    _histSortFilters.pengadaan = document.querySelector('input[name="hist-sort-pengadaan"]:checked')?.value || "";
-    _histSortFilters.tahunFrom = document.getElementById("hist-sort-tahun-from")?.value || "";
-    _histSortFilters.tahunTo = document.getElementById("hist-sort-tahun-to")?.value || "";
+  if (customChecked && fieldVal) {
+    if (fieldVal === "id_aset") {
+      _histSortFilters.idFrom = parseInt(document.getElementById("hist-sort-id-from")?.value) || null;
+      _histSortFilters.idTo = parseInt(document.getElementById("hist-sort-id-to")?.value) || null;
+    } else if (fieldVal === "kode_alat_name") {
+      _histSortFilters.alat = document.getElementById("hist-sort-alat-filter")?.value || "";
+    } else if (fieldVal === "sumber_pengadaan") {
+      _histSortFilters.pengadaan = document.querySelector('input[name="hist-sort-pengadaan-filter"]:checked')?.value || "";
+    } else if (fieldVal === "tanggal_pembelian") {
+      _histSortFilters.tahunFrom = document.getElementById("hist-sort-tgl-from")?.value || "";
+      _histSortFilters.tahunTo = document.getElementById("hist-sort-tgl-to")?.value || "";
+    } else if (fieldVal === "unit_peruntukan") {
+      _histSortFilters.peruntukan = document.querySelector('input[name="hist-sort-peruntukan-filter"]:checked')?.value || "";
+    } else if (fieldVal === "id_lokasi") {
+      _histSortFilters.lokasi = document.getElementById("hist-sort-lok-lokasi")?.value || "";
+      _histSortFilters.upt = document.getElementById("hist-sort-lok-upt")?.value || "";
+    }
   }
   document.getElementById("sort-history-modal").classList.add("hidden");
   if (_historyMode === "repair") renderHistoryCards();
@@ -4779,7 +4867,7 @@ function updateKdakStats() {
 // ── Table ──
 let _kdakSearch = "";
 let _kdakSortField = "id_aset";
-let _kdakSortDir = "count-desc";
+let _kdakSortDir = "date-desc";
 let _kdakSortFilters = {};
 
 function renderKdakTable() {
@@ -4823,6 +4911,8 @@ function renderKdakTable() {
 
   // Sort — mirrors renderDbCards logic
   filtered = [...filtered].sort((a, b) => {
+    if (_kdakSortDir === "date-desc") return new Date(b.tanggal_pembelian || 0) - new Date(a.tanggal_pembelian || 0);
+    if (_kdakSortDir === "date-asc") return new Date(a.tanggal_pembelian || 0) - new Date(b.tanggal_pembelian || 0);
     if (_kdakSortDir === "count-desc") {
       return (b.status_terakhir === "SO" ? 1 : 0) - (a.status_terakhir === "SO" ? 1 : 0);
     }
@@ -5222,6 +5312,27 @@ function setupKdakListeners() {
   document.getElementById("kdak-btn-sort")?.addEventListener("click", () => {
     _populateYearDropdowns("kdak-sort-id-tahun-from", "kdak-sort-id-tahun-to");
     _populateYearDropdowns("kdak-sort-tgl-from", "kdak-sort-tgl-to");
+
+    // Sync panels and Terbaru/Terlama visibility for current field
+    const curField = document.getElementById("kdak-sort-field")?.value || "id_aset";
+    const curChecked = document.getElementById("kdak-sort-custom-spec")?.checked || false;
+    _syncSortPanels(curField, curChecked, "kdak-sort", "kdak-sort-all-data-label", "kdak-sort-custom-panels");
+
+    // Paint active direction button
+    document.querySelectorAll(".kdak-sort-dir-btn").forEach((b) => {
+      const active = b.dataset.kdakDir === _kdakSortDir;
+      b.classList.toggle("border-purple-500", active);
+      b.classList.toggle("bg-purple-100", active);
+      b.classList.toggle("dark:bg-purple-900/20", active);
+      b.classList.toggle("text-purple-600", active);
+      b.classList.toggle("dark:text-purple-300", active);
+      b.classList.toggle("border-gray-200", !active);
+      b.classList.toggle("dark:border-gray-600", !active);
+      b.classList.toggle("bg-white", !active);
+      b.classList.toggle("dark:bg-gray-700", !active);
+      b.classList.toggle("text-gray-500", !active);
+    });
+
     // Populate alat dropdowns
     ["kdak-sort-id-alat", "kdak-sort-alat-filter"].forEach((id) => {
       const sel = document.getElementById(id);

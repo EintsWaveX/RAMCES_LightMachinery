@@ -2262,7 +2262,7 @@
                         <option value="id_aset">Kode ID</option>
                         <option value="kode_alat_name">Nama/Kode Alat</option>
                         <option value="sumber_pengadaan">Pengadaan</option>
-                        <option value="tanggal_pembelian">Tanggal Beli</option>
+                        <option value="tanggal_pembelian">Tahun Beli</option>
                         <option value="unit_peruntukan">Peruntukan</option>
                         <option value="id_lokasi">Nama/Kode Lokasi</option>
                     </select>
@@ -2294,66 +2294,6 @@
                                 <input type="number" id="sort-id-to" min="1" placeholder="999"
                                     class="w-full p-2 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition" />
                             </div>
-                        </div>
-                        <div>
-                            <label class="block text-xs font-semibold mb-1 text-gray-500">Kode Alat</label>
-                            <select id="sort-id-alat"
-                                class="w-full p-2 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition">
-                                <option value="">— Semua Alat —</option>
-                            </select>
-                        </div>
-                        <div>
-                            <label class="block text-xs font-semibold mb-1 text-gray-500">Pengadaan</label>
-                            <div class="flex gap-4 text-sm">
-                                <label class="flex items-center gap-2 cursor-pointer"><input type="radio"
-                                        name="sort-id-pengadaan" value="" class="accent-kai-blue"
-                                        checked /><span>Semua</span></label>
-                                <label class="flex items-center gap-2 cursor-pointer"><input type="radio"
-                                        name="sort-id-pengadaan" value="PUSAT"
-                                        class="accent-kai-blue" /><span>PUSAT</span></label>
-                                <label class="flex items-center gap-2 cursor-pointer"><input type="radio"
-                                        name="sort-id-pengadaan" value="DAOP/DIVRE"
-                                        class="accent-kai-blue" /><span>DAOP/DIVRE</span></label>
-                            </div>
-                        </div>
-                        <div class="grid grid-cols-2 gap-3">
-                            <div>
-                                <label class="block text-xs font-semibold mb-1 text-gray-500">Tahun Beli: dari</label>
-                                <select id="sort-id-tahun-from"
-                                    class="w-full p-2 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition"></select>
-                            </div>
-                            <div>
-                                <label class="block text-xs font-semibold mb-1 text-gray-500">sampai</label>
-                                <select id="sort-id-tahun-to"
-                                    class="w-full p-2 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition"></select>
-                            </div>
-                        </div>
-                        <div>
-                            <label class="block text-xs font-semibold mb-1 text-gray-500">Peruntukan</label>
-                            <div class="flex flex-wrap gap-3 text-sm">
-                                <label class="flex items-center gap-2 cursor-pointer"><input type="radio"
-                                        name="sort-id-peruntukan" value="" class="accent-kai-blue"
-                                        checked /><span>Semua</span></label>
-                                <label class="flex items-center gap-2 cursor-pointer"><input type="radio"
-                                        name="sort-id-peruntukan" value="A" class="accent-kai-blue" /><span>Jalan
-                                        Rel</span></label>
-                                <label class="flex items-center gap-2 cursor-pointer"><input type="radio"
-                                        name="sort-id-peruntukan" value="B"
-                                        class="accent-kai-blue" /><span>Jembatan</span></label>
-                                <label class="flex items-center gap-2 cursor-pointer"><input type="radio"
-                                        name="sort-id-peruntukan" value="C"
-                                        class="accent-kai-blue" /><span>Mekanik</span></label>
-                                <label class="flex items-center gap-2 cursor-pointer"><input type="radio"
-                                        name="sort-id-peruntukan" value="D"
-                                        class="accent-kai-blue" /><span>Balaiyasa</span></label>
-                            </div>
-                        </div>
-                        <div>
-                            <label class="block text-xs font-semibold mb-1 text-gray-500">Kode Lokasi</label>
-                            <select id="sort-id-lokasi"
-                                class="w-full p-2 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition">
-                                <option value="">— Semua Lokasi —</option>
-                            </select>
                         </div>
                     </div>
                     <!-- Panel: Nama/Kode Alat -->
@@ -2434,22 +2374,23 @@
                     </div>
                 </div>
                 <hr class="border-gray-200 dark:border-gray-700" />
-                <!-- Sort direction (always visible after separator) -->
+                <!-- Sort direction -->
                 <div>
                     <label class="block text-xs font-semibold mb-2 text-gray-500">Arah Urutan</label>
                     <div class="grid grid-cols-2 gap-2">
+                        <!-- Terbaru/Terlama — only shown when Kode ID is selected -->
+                        <button data-dir="date-desc" id="sort-dir-date-desc"
+                            class="sort-dir-btn py-2.5 rounded-lg border-2 border-gray-200 dark:border-gray-600 text-gray-500 bg-white dark:bg-gray-700 text-sm font-semibold transition">Terbaru ↓</button>
+                        <button data-dir="date-asc" id="sort-dir-date-asc"
+                            class="sort-dir-btn py-2.5 rounded-lg border-2 border-gray-200 dark:border-gray-600 text-gray-500 bg-white dark:bg-gray-700 text-sm font-semibold transition">Terlama ↑</button>
                         <button data-dir="count-desc"
-                            class="sort-dir-btn py-2.5 rounded-lg border-2 border-kai-blue bg-sky-100 dark:bg-sky-900/20 text-kai-blue dark:text-sky-300 text-sm font-semibold transition">Terbanyak
-                            ↓</button>
+                            class="sort-dir-btn py-2.5 rounded-lg border-2 border-kai-blue bg-sky-100 dark:bg-sky-900/20 text-kai-blue dark:text-sky-300 text-sm font-semibold transition">Terbanyak ↓</button>
                         <button data-dir="count-asc"
-                            class="sort-dir-btn py-2.5 rounded-lg border-2 border-gray-200 dark:border-gray-600 text-gray-500 bg-white dark:bg-gray-700 text-sm font-semibold transition">Tersedikit
-                            ↑</button>
+                            class="sort-dir-btn py-2.5 rounded-lg border-2 border-gray-200 dark:border-gray-600 text-gray-500 bg-white dark:bg-gray-700 text-sm font-semibold transition">Tersedikit ↑</button>
                         <button data-dir="asc"
-                            class="sort-dir-btn py-2.5 rounded-lg border-2 border-gray-200 dark:border-gray-600 text-gray-500 bg-white dark:bg-gray-700 text-sm font-semibold transition">A
-                            → Z</button>
+                            class="sort-dir-btn py-2.5 rounded-lg border-2 border-gray-200 dark:border-gray-600 text-gray-500 bg-white dark:bg-gray-700 text-sm font-semibold transition">A → Z</button>
                         <button data-dir="desc"
-                            class="sort-dir-btn py-2.5 rounded-lg border-2 border-gray-200 dark:border-gray-600 text-gray-500 bg-white dark:bg-gray-700 text-sm font-semibold transition">Z
-                            → A</button>
+                            class="sort-dir-btn py-2.5 rounded-lg border-2 border-gray-200 dark:border-gray-600 text-gray-500 bg-white dark:bg-gray-700 text-sm font-semibold transition">Z → A</button>
                     </div>
                 </div>
                 <button id="btn-apply-sort"
@@ -2477,18 +2418,18 @@
                 <div>
                     <label class="block text-xs font-semibold mb-1.5 text-gray-500">Urutkan data berdasarkan:</label>
                     <select id="hist-sort-field"
-                        class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition">
+                        class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-orange transition">
                         <option value="">— Pilih kriteria urutan —</option>
                         <option value="id_aset">Kode ID</option>
-                        <option value="kode_alat">Nama/Kode Alat</option>
+                        <option value="kode_alat_name">Nama/Kode Alat</option>
                         <option value="sumber_pengadaan">Pengadaan</option>
-                        <option value="tanggal_pembelian">Tanggal Beli</option>
+                        <option value="tanggal_pembelian">Tahun Beli</option>
                         <option value="unit_peruntukan">Peruntukan</option>
                         <option value="id_lokasi">Nama/Kode Lokasi</option>
                     </select>
                 </div>
                 <div class="flex items-center gap-2">
-                    <input type="checkbox" id="hist-sort-custom-spec" class="w-4 h-4 accent-kai-blue cursor-pointer" />
+                    <input type="checkbox" id="hist-sort-custom-spec" class="w-4 h-4 accent-kai-orange cursor-pointer" />
                     <label for="hist-sort-custom-spec"
                         class="text-xs font-semibold text-gray-600 dark:text-gray-300 cursor-pointer">Spesifikasi Kustom
                         (filter tambahan)</label>
@@ -2497,38 +2438,95 @@
                 <div id="hist-sort-all-data-label" class="text-center text-xs text-gray-400 py-2 italic">
                     Tampilkan seluruh data tanpa terkecuali.
                 </div>
-                <div id="hist-sort-custom-panels" class="hidden space-y-3">
-                    <div>
-                        <label class="block text-xs font-semibold mb-1 text-gray-500">Kode Alat</label>
-                        <select id="hist-sort-alat"
-                            class="w-full p-2 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition">
+                <div id="hist-sort-custom-panels" class="hidden space-y-4">
+                    <!-- Panel: Kode ID -->
+                    <div id="hist-sort-panel-id_aset" class="hidden space-y-3">
+                        <div class="grid grid-cols-2 gap-3">
+                            <div>
+                                <label class="block text-xs font-semibold mb-1 text-gray-500">Penomoran: dari no.</label>
+                                <input type="number" id="hist-sort-id-from" min="1" placeholder="1"
+                                    class="w-full p-2 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-orange transition" />
+                            </div>
+                            <div>
+                                <label class="block text-xs font-semibold mb-1 text-gray-500">sampai no.</label>
+                                <input type="number" id="hist-sort-id-to" min="1" placeholder="999"
+                                    class="w-full p-2 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-orange transition" />
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Panel: Nama/Kode Alat -->
+                    <div id="hist-sort-panel-kode_alat_name" class="hidden">
+                        <label class="block text-xs font-semibold mb-1 text-gray-500">Pilih Alat Kerja</label>
+                        <select id="hist-sort-alat-filter"
+                            class="w-full p-2 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-orange transition">
                             <option value="">— Semua Alat —</option>
                         </select>
                     </div>
-                    <div>
+                    <!-- Panel: Pengadaan -->
+                    <div id="hist-sort-panel-sumber_pengadaan" class="hidden">
                         <label class="block text-xs font-semibold mb-1 text-gray-500">Pengadaan</label>
                         <div class="flex gap-4 text-sm">
                             <label class="flex items-center gap-2 cursor-pointer"><input type="radio"
-                                    name="hist-sort-pengadaan" value="" class="accent-kai-blue"
+                                    name="hist-sort-pengadaan-filter" value="" class="accent-kai-orange"
                                     checked /><span>Semua</span></label>
                             <label class="flex items-center gap-2 cursor-pointer"><input type="radio"
-                                    name="hist-sort-pengadaan" value="PUSAT"
-                                    class="accent-kai-blue" /><span>PUSAT</span></label>
+                                    name="hist-sort-pengadaan-filter" value="PUSAT"
+                                    class="accent-kai-orange" /><span>PUSAT</span></label>
                             <label class="flex items-center gap-2 cursor-pointer"><input type="radio"
-                                    name="hist-sort-pengadaan" value="DAOP/DIVRE"
-                                    class="accent-kai-blue" /><span>DAOP/DIVRE</span></label>
+                                    name="hist-sort-pengadaan-filter" value="DAOP/DIVRE"
+                                    class="accent-kai-orange" /><span>DAOP/DIVRE</span></label>
                         </div>
                     </div>
-                    <div class="grid grid-cols-2 gap-3">
+                    <!-- Panel: Tanggal Beli -->
+                    <div id="hist-sort-panel-tanggal_pembelian" class="hidden">
+                        <div class="grid grid-cols-2 gap-3">
+                            <div>
+                                <label class="block text-xs font-semibold mb-1 text-gray-500">Dari Tahun</label>
+                                <select id="hist-sort-tgl-from"
+                                    class="w-full p-2 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-orange transition"></select>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-semibold mb-1 text-gray-500">Sampai Tahun</label>
+                                <select id="hist-sort-tgl-to"
+                                    class="w-full p-2 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-orange transition"></select>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Panel: Peruntukan -->
+                    <div id="hist-sort-panel-unit_peruntukan" class="hidden">
+                        <label class="block text-xs font-semibold mb-1 text-gray-500">Peruntukan</label>
+                        <div class="flex flex-wrap gap-3 text-sm">
+                            <label class="flex items-center gap-2 cursor-pointer"><input type="radio"
+                                    name="hist-sort-peruntukan-filter" value="" class="accent-kai-orange"
+                                    checked /><span>Semua</span></label>
+                            <label class="flex items-center gap-2 cursor-pointer"><input type="radio"
+                                    name="hist-sort-peruntukan-filter" value="A" class="accent-kai-orange" /><span>Jalan Rel</span></label>
+                            <label class="flex items-center gap-2 cursor-pointer"><input type="radio"
+                                    name="hist-sort-peruntukan-filter" value="B"
+                                    class="accent-kai-orange" /><span>Jembatan</span></label>
+                            <label class="flex items-center gap-2 cursor-pointer"><input type="radio"
+                                    name="hist-sort-peruntukan-filter" value="C"
+                                    class="accent-kai-orange" /><span>Mekanik</span></label>
+                            <label class="flex items-center gap-2 cursor-pointer"><input type="radio"
+                                    name="hist-sort-peruntukan-filter" value="D"
+                                    class="accent-kai-orange" /><span>Balaiyasa</span></label>
+                        </div>
+                    </div>
+                    <!-- Panel: Lokasi -->
+                    <div id="hist-sort-panel-id_lokasi" class="hidden space-y-3">
                         <div>
-                            <label class="block text-xs font-semibold mb-1 text-gray-500">Dari Tahun</label>
-                            <select id="hist-sort-tahun-from"
-                                class="w-full p-2 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition"></select>
+                            <label class="block text-xs font-semibold mb-1 text-gray-500">Nama Lokasi</label>
+                            <select id="hist-sort-lok-lokasi"
+                                class="w-full p-2 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-orange transition">
+                                <option value="">Tampilkan untuk Semua Lokasi</option>
+                            </select>
                         </div>
                         <div>
-                            <label class="block text-xs font-semibold mb-1 text-gray-500">Sampai Tahun</label>
-                            <select id="hist-sort-tahun-to"
-                                class="w-full p-2 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition"></select>
+                            <label class="block text-xs font-semibold mb-1 text-gray-500">Nama UPT</label>
+                            <select id="hist-sort-lok-upt"
+                                class="w-full p-2 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-orange transition">
+                                <option value="">Tampilkan untuk Semua UPT</option>
+                            </select>
                         </div>
                     </div>
                 </div>
@@ -2536,18 +2534,19 @@
                 <div>
                     <label class="block text-xs font-semibold mb-2 text-gray-500">Arah Urutan</label>
                     <div class="grid grid-cols-2 gap-2">
+                        <!-- Terbaru/Terlama — only shown when Kode ID is selected -->
+                        <button data-hist-dir="date-desc" id="hist-sort-dir-date-desc"
+                            class="hist-sort-dir-btn py-2.5 rounded-lg border-2 border-gray-200 dark:border-gray-600 text-gray-500 bg-white dark:bg-gray-700 text-sm font-semibold transition">Terbaru ↓</button>
+                        <button data-hist-dir="date-asc" id="hist-sort-dir-date-asc"
+                            class="hist-sort-dir-btn py-2.5 rounded-lg border-2 border-gray-200 dark:border-gray-600 text-gray-500 bg-white dark:bg-gray-700 text-sm font-semibold transition">Terlama ↑</button>
                         <button data-hist-dir="count-desc"
-                            class="hist-sort-dir-btn py-2.5 rounded-lg border-2 border-kai-orange bg-orange-50 dark:bg-orange-900/20 text-kai-orange dark:text-orange-300 text-xs font-semibold transition">Terbanyak
-                            ↓</button>
+                            class="hist-sort-dir-btn py-2.5 rounded-lg border-2 border-kai-orange bg-orange-50 dark:bg-orange-900/20 text-kai-orange dark:text-orange-300 text-sm font-semibold transition">Terbanyak ↓</button>
                         <button data-hist-dir="count-asc"
-                            class="hist-sort-dir-btn py-2.5 rounded-lg border-2 border-gray-200 dark:border-gray-600 text-gray-500 bg-white dark:bg-gray-700 text-xs font-semibold transition">Tersedikit
-                            ↑</button>
+                            class="hist-sort-dir-btn py-2.5 rounded-lg border-2 border-gray-200 dark:border-gray-600 text-gray-500 bg-white dark:bg-gray-700 text-sm font-semibold transition">Tersedikit ↑</button>
                         <button data-hist-dir="asc"
-                            class="hist-sort-dir-btn py-2.5 rounded-lg border-2 border-gray-200 dark:border-gray-600 text-gray-500 bg-white dark:bg-gray-700 text-xs font-semibold transition">A
-                            → Z</button>
+                            class="hist-sort-dir-btn py-2.5 rounded-lg border-2 border-gray-200 dark:border-gray-600 text-gray-500 bg-white dark:bg-gray-700 text-sm font-semibold transition">A → Z</button>
                         <button data-hist-dir="desc"
-                            class="hist-sort-dir-btn py-2.5 rounded-lg border-2 border-gray-200 dark:border-gray-600 text-gray-500 bg-white dark:bg-gray-700 text-xs font-semibold transition">Z
-                            → A</button>
+                            class="hist-sort-dir-btn py-2.5 rounded-lg border-2 border-gray-200 dark:border-gray-600 text-gray-500 bg-white dark:bg-gray-700 text-sm font-semibold transition">Z → A</button>
                     </div>
                 </div>
                 <button id="btn-apply-hist-sort"
@@ -3024,7 +3023,7 @@
                         <option value="id_aset">Kode ID</option>
                         <option value="kode_alat_name">Nama/Kode Alat</option>
                         <option value="sumber_pengadaan">Pengadaan</option>
-                        <option value="tanggal_pembelian">Tanggal Beli</option>
+                        <option value="tanggal_pembelian">Tahun Beli</option>
                         <option value="unit_peruntukan">Peruntukan</option>
                         <option value="id_lokasi">Nama/Kode Lokasi</option>
                     </select>
@@ -3056,66 +3055,6 @@
                                 <input type="number" id="kdak-sort-id-to" min="1" placeholder="999"
                                     class="w-full p-2 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-purple-500 transition" />
                             </div>
-                        </div>
-                        <div>
-                            <label class="block text-xs font-semibold mb-1 text-gray-500">Kode Alat</label>
-                            <select id="kdak-sort-id-alat"
-                                class="w-full p-2 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-purple-500 transition">
-                                <option value="">— Semua Alat —</option>
-                            </select>
-                        </div>
-                        <div>
-                            <label class="block text-xs font-semibold mb-1 text-gray-500">Pengadaan</label>
-                            <div class="flex gap-4 text-sm">
-                                <label class="flex items-center gap-2 cursor-pointer"><input type="radio"
-                                        name="kdak-sort-id-pengadaan" value="" class="accent-purple-500"
-                                        checked /><span>Semua</span></label>
-                                <label class="flex items-center gap-2 cursor-pointer"><input type="radio"
-                                        name="kdak-sort-id-pengadaan" value="PUSAT"
-                                        class="accent-purple-500" /><span>PUSAT</span></label>
-                                <label class="flex items-center gap-2 cursor-pointer"><input type="radio"
-                                        name="kdak-sort-id-pengadaan" value="DAOP/DIVRE"
-                                        class="accent-purple-500" /><span>DAOP/DIVRE</span></label>
-                            </div>
-                        </div>
-                        <div class="grid grid-cols-2 gap-3">
-                            <div>
-                                <label class="block text-xs font-semibold mb-1 text-gray-500">Tahun Beli: dari</label>
-                                <select id="kdak-sort-id-tahun-from"
-                                    class="w-full p-2 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-purple-500 transition"></select>
-                            </div>
-                            <div>
-                                <label class="block text-xs font-semibold mb-1 text-gray-500">sampai</label>
-                                <select id="kdak-sort-id-tahun-to"
-                                    class="w-full p-2 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-purple-500 transition"></select>
-                            </div>
-                        </div>
-                        <div>
-                            <label class="block text-xs font-semibold mb-1 text-gray-500">Peruntukan</label>
-                            <div class="flex flex-wrap gap-3 text-sm">
-                                <label class="flex items-center gap-2 cursor-pointer"><input type="radio"
-                                        name="kdak-sort-id-peruntukan" value="" class="accent-purple-500"
-                                        checked /><span>Semua</span></label>
-                                <label class="flex items-center gap-2 cursor-pointer"><input type="radio"
-                                        name="kdak-sort-id-peruntukan" value="A" class="accent-purple-500" /><span>Jalan
-                                        Rel</span></label>
-                                <label class="flex items-center gap-2 cursor-pointer"><input type="radio"
-                                        name="kdak-sort-id-peruntukan" value="B"
-                                        class="accent-purple-500" /><span>Jembatan</span></label>
-                                <label class="flex items-center gap-2 cursor-pointer"><input type="radio"
-                                        name="kdak-sort-id-peruntukan" value="C"
-                                        class="accent-purple-500" /><span>Mekanik</span></label>
-                                <label class="flex items-center gap-2 cursor-pointer"><input type="radio"
-                                        name="kdak-sort-id-peruntukan" value="D"
-                                        class="accent-purple-500" /><span>Balaiyasa</span></label>
-                            </div>
-                        </div>
-                        <div>
-                            <label class="block text-xs font-semibold mb-1 text-gray-500">Kode Lokasi</label>
-                            <select id="kdak-sort-id-lokasi"
-                                class="w-full p-2 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-purple-500 transition">
-                                <option value="">— Semua Lokasi —</option>
-                            </select>
                         </div>
                     </div>
                     <!-- Panel: Nama/Kode Alat -->
@@ -3200,18 +3139,19 @@
                 <div>
                     <label class="block text-xs font-semibold mb-2 text-gray-500">Arah Urutan</label>
                     <div class="grid grid-cols-2 gap-2">
+                        <!-- Terbaru/Terlama — only shown when Kode ID is selected -->
+                        <button data-kdak-dir="date-desc" id="kdak-sort-dir-date-desc"
+                            class="kdak-sort-dir-btn py-2.5 rounded-lg border-2 border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-500 text-sm font-semibold transition">Terbaru ↓</button>
+                        <button data-kdak-dir="date-asc" id="kdak-sort-dir-date-asc"
+                            class="kdak-sort-dir-btn py-2.5 rounded-lg border-2 border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-500 text-sm font-semibold transition">Terlama ↑</button>
                         <button data-kdak-dir="count-desc"
-                            class="kdak-sort-dir-btn py-2.5 rounded-lg border-2 border-purple-500 bg-purple-100 dark:bg-purple-900/20 text-purple-600 dark:text-purple-300 text-sm font-semibold transition">Terbanyak
-                            ↓</button>
+                            class="kdak-sort-dir-btn py-2.5 rounded-lg border-2 border-purple-500 bg-purple-100 dark:bg-purple-900/20 text-purple-600 dark:text-purple-300 text-sm font-semibold transition">Terbanyak ↓</button>
                         <button data-kdak-dir="count-asc"
-                            class="kdak-sort-dir-btn py-2.5 rounded-lg border-2 border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-500 text-sm font-semibold transition">Tersedikit
-                            ↑</button>
+                            class="kdak-sort-dir-btn py-2.5 rounded-lg border-2 border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-500 text-sm font-semibold transition">Tersedikit ↑</button>
                         <button data-kdak-dir="asc"
-                            class="kdak-sort-dir-btn py-2.5 rounded-lg border-2 border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-500 text-sm font-semibold transition">A
-                            → Z</button>
+                            class="kdak-sort-dir-btn py-2.5 rounded-lg border-2 border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-500 text-sm font-semibold transition">A → Z</button>
                         <button data-kdak-dir="desc"
-                            class="kdak-sort-dir-btn py-2.5 rounded-lg border-2 border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-500 text-sm font-semibold transition">Z
-                            → A</button>
+                            class="kdak-sort-dir-btn py-2.5 rounded-lg border-2 border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-500 text-sm font-semibold transition">Z → A</button>
                     </div>
                 </div>
                 <button id="kdak-btn-apply-sort"
