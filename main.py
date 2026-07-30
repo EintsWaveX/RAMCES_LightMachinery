@@ -95,14 +95,14 @@ class AsetCreate(BaseModel):
     tanggal_pembelian: date
     sumber_pengadaan: str
     parent_lokasi: str
-    unit: str
+    peruntukan: str
 
 
 class PerbaikanCreate(BaseModel):
     id_aset: str
     kondisi: str
     keterangan: Optional[str] = "-"
-    id_lokasi: Optional[str] = None  # Wajib ditambahkan
+    peruntukan: Optional[str] = None
 
 
 class MutasiCreate(BaseModel):
@@ -529,7 +529,15 @@ async def create_aset(
     # 3. Rakit Final ID Aset
     # Format: nomor_urut.kode_alat.id_pengadaan.tahun.unit.parent_lokasi
     # Contoh: 6.RGM.1.24.A.D1
-    generated_id_aset = f"{nomor_urut}.{aset_in.kode_alat}.{id_pengadaan}.{year_str}.{aset_in.unit}.{aset_in.parent_lokasi}"
+    peruntukan_map = {
+        "jalan rel": "A",
+        "jembatan": "B",
+        "mekanik": "C",
+        "balaiyasa": "D",
+    }
+    kode_peruntukan = peruntukan_map.get(aset_in.peruntukan.lower(), "X")
+
+    generated_id_aset = f"{nomor_urut}.{aset_in.kode_alat}.{id_pengadaan}.{year_str}.{kode_peruntukan}.{aset_in.parent_lokasi}"
 
     # Pastikan tidak ada duplikasi akibat bentrok (meskipun sangat kecil kemungkinannya)
     if db.query(models.Aset).filter_by(id_aset=generated_id_aset).first():
@@ -545,6 +553,7 @@ async def create_aset(
         tanggal_pembelian=aset_in.tanggal_pembelian,
         sumber_pengadaan=aset_in.sumber_pengadaan,
         status_terakhir="SO",
+        peruntukan=aset_in.peruntukan.lower(),
     )
     db.add(db_aset)
 
@@ -582,9 +591,7 @@ def get_all_aset(
             "kode_alat_name": a.kategori.nama_alat if a.kategori else a.kode_alat,
             "id_lokasi": a.id_lokasi,
             "lokasi_name": a.lokasi_ref.nama_lokasi if a.lokasi_ref else a.id_lokasi,
-            "unit_peruntukan": a.lokasi_ref.unit_peruntukan
-            if hasattr(a.lokasi_ref, "unit_peruntukan") and a.lokasi_ref.unit_peruntukan
-            else "—",
+            "peruntukan": a.peruntukan,
             "status_terakhir": a.status_terakhir,
             "sumber_pengadaan": a.sumber_pengadaan,
             "tanggal_pembelian": str(a.tanggal_pembelian)
@@ -667,16 +674,30 @@ async def catat_perbaikan(
     if not aset:
         raise HTTPException(status_code=404, detail="Aset tidak ditemukan.")
 
+    # NORMALISASI INPUT PERUNTUKAN DI SINI
+    if laporan.peruntukan:
+        p_val = laporan.peruntukan.strip().lower()
+        # Pemetaan ketat jika frontend mengirimkan A, B, C, D alih-alih teks penuh
+        peruntukan_map = {
+            "a": "jalan rel",
+            "b": "jembatan",
+            "c": "mekanik",
+            "d": "balaiyasa",
+        }
+        # Gunakan mapping, atau gunakan nilai aslinya jika sudah berupa teks penuh
+        aset.peruntukan = peruntukan_map.get(p_val, p_val)
+
     db.add(
         models.RiwayatKondisi(
             id_aset=laporan.id_aset,
             id_pengguna=current_user.id_pengguna,
             kondisi=laporan.kondisi,
             keterangan=laporan.keterangan,
-            id_lokasi=laporan.id_lokasi,
         )
     )
     aset.status_terakhir = laporan.kondisi
+    # lokasi terakhir
+    # aset.id_lokasi = laporan.id_lokasi
     db.commit()
     await manager.broadcast("REFRESH_ASSET_LIST")
     return {"message": "Laporan kondisi berhasil dicatat."}
@@ -701,8 +722,8 @@ async def submit_mutasi(
     if not aset:
         raise HTTPException(status_code=404, detail="Aset tidak ditemukan.")
 
-    # if aset.id_lokasi == mutasi.id_lokasi_tujuan:
-    #     raise HTTPException(status_code=400, detail="Lokasi tujuan sama dengan asal.")
+    if aset.id_lokasi == mutasi.id_lokasi_tujuan:
+        raise HTTPException(status_code=400, detail="Lokasi tujuan sama dengan asal.")
 
     if (
         current_user.role == "ADMIN_WILAYAH"
@@ -721,7 +742,11 @@ async def submit_mutasi(
             alasan_mutasi=mutasi.alasan_mutasi,
         )
     )
-    aset.id_lokasi = mutasi.id_lokasi_tujuan
+
+    db.query(models.Aset).filter(models.Aset.id_aset == mutasi.id_aset).update(
+        {"id_lokasi": mutasi.id_lokasi_tujuan}, synchronize_session=False
+    )
+
     db.commit()
     await manager.broadcast("REFRESH_ASSET_LIST")
     return {"message": "Aset berhasil dimutasi."}
@@ -753,7 +778,7 @@ def get_riwayat_aset(
             "id_pengguna": r.pengguna_ref.username if r.pengguna_ref else r.id_pengguna,
             "kondisi": r.kondisi,
             "keterangan": r.keterangan or "—",
-            "id_lokasi": r.id_lokasi,
+            # "id_lokasi": r.id_lokasi,
         }
         for i, r in enumerate(riwayat, start=1)
     ]
@@ -849,6 +874,7 @@ def get_history_summary(
             models.RiwayatKondisi.keterangan,
             models.RiwayatKondisi.waktu_lapor,
             models.RiwayatKondisi.id_pengguna,
+            # models.RiwayatKondisi.id_lokasi,
             func.row_number()
             .over(
                 partition_by=models.RiwayatKondisi.id_aset,
@@ -907,6 +933,7 @@ def get_history_summary(
                 "id_aset": a.id_aset,
                 "kode_alat": a.kategori.nama_alat if a.kategori else a.kode_alat,
                 "id_lokasi": a.id_lokasi,
+                "peruntukan": a.peruntukan,
                 "id_lokasi_name": a.lokasi_ref.nama_lokasi
                 if a.lokasi_ref
                 else a.id_lokasi,
@@ -928,6 +955,9 @@ def get_history_summary(
                     ).username
                     if latest_repair and latest_repair.id_pengguna in pengguna_map
                     else (str(latest_repair.id_pengguna) if latest_repair else None),
+                    # "latest_id_lokasi": latest_repair.id_lokasi
+                    # if latest_repair
+                    # else a.id_lokasi,  # <--- WAJIB DITAMBAHKAN
                 },
                 "mutasi": {
                     # PERBAIKAN: Gunakan all_mutasi_for_a, bukan all_mutasi
