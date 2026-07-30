@@ -688,20 +688,13 @@ function _renderMatrixPanel() {
 
   // Map aset berdasarkan UPT spesifik dan berdasarkan Region Induk
   const assetsByLokasi = {};
-  const assetsByParent = {};
 
   filtered.forEach((a) => {
     const uptCode = a.id_lokasi_raw || a.id_lokasi;
     if (!uptCode) return;
 
-    // Grouping untuk merender kolom sel UPT
     if (!assetsByLokasi[uptCode]) assetsByLokasi[uptCode] = [];
     assetsByLokasi[uptCode].push(a);
-
-    // Grouping untuk menghitung Grand Total Region yang lebih akurat
-    const parentCode = getParentLokasiCode(uptCode) || uptCode;
-    if (!assetsByParent[parentCode]) assetsByParent[parentCode] = [];
-    assetsByParent[parentCode].push(a);
   });
 
   // Header Table
@@ -726,14 +719,16 @@ function _renderMatrixPanel() {
     .map((region) => {
       const upts = uptByParent[region.code] || [];
 
-      // FIX 4: Hitung SO/TSO dari SELURUH aset di region tersebut
-      const regionAssets = assetsByParent[region.code] || [];
-      const regionSo = regionAssets.filter(
-        (a) => a.status_terakhir === "SO",
-      ).length;
-      const regionTso = regionAssets.filter(
-        (a) => a.status_terakhir === "TSO",
-      ).length;
+      // Hitung SO dan TSO secara ketat hanya dari UPT yang divisualisasikan
+      let regionSo = 0;
+      let regionTso = 0;
+
+      upts.forEach(upt => {
+        const assets = assetsByLokasi[upt.upt] || [];
+        regionSo += assets.filter(a => a.status_terakhir === "SO").length;
+        regionTso += assets.filter(a => a.status_terakhir === "TSO").length;
+      });
+
       const total = regionSo + regionTso;
 
       const cells = Array.from({ length: maxUpt }, (_, i) => {
