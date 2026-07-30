@@ -670,11 +670,11 @@ function _renderMatrixPanel() {
   // sebagai "UPT" pertama untuk menampung aset yang ada di kantor pusat/region
   regions.forEach((r) => {
     uptByParent[r.code] = [];
-    uptByParent[r.code].push({
-      upt: r.code,
-      nama: `Kantor ${r.tipe || "Wilayah"}`,
-      lokasi: r.code,
-    });
+    // uptByParent[r.code].push({
+    //   upt: r.code,
+    //   nama: `Kantor ${r.tipe || "Wilayah"}`,
+    //   lokasi: r.code,
+    // });
   });
 
   // Masukkan UPT ke region induk masing-masing
@@ -971,10 +971,11 @@ function _renderTrendPanel() {
 
 function updateDashboardStats() {
   const filtered = _dashFilteredDb();
-  const total = filtered.length;
 
   const so = filtered.filter((i) => i.status_terakhir === "SO").length;
   const tso = filtered.filter((i) => i.status_terakhir === "TSO").length;
+
+  const total = so + tso;
 
   const avail = total > 0 ? Math.round((so / total) * 100) : null;
   const delta = avail !== null ? avail - _benchmarkPct : null;
