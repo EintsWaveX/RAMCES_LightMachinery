@@ -663,7 +663,7 @@ function _renderMatrixPanel() {
   const filtered = _dashFilteredDb();
 
   // FIX 3: Jangan membuang BALAIYASA. Gunakan seluruh lokasiData.
-  let regions = lokasiData;
+  let regions = lokasiData.filter(r => (r.tipe || "").toUpperCase() !== "BALAIYASA");
   let uptByParent = {};
 
   // Pastikan setiap region memiliki array UPT, dan tambahkan dirinya sendiri
