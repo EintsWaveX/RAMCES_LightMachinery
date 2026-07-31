@@ -8,7 +8,9 @@ from sqlalchemy import (
     Boolean,
     text,
     Text,
+    CheckConstraint,
 )
+from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from datetime import datetime, timezone
 from database import Base
@@ -94,3 +96,30 @@ class RiwayatMutasi(Base):
     lokasi_asal = relationship("Lokasi", foreign_keys=[id_lokasi_asal])
     lokasi_tujuan = relationship("Lokasi", foreign_keys=[id_lokasi_tujuan])
     pengguna_ref = relationship("Pengguna")
+
+
+class RiwayatKalibrasi(Base):
+    __tablename__ = "riwayat_kalibrasi"
+
+    id_kalibrasi = Column(Integer, primary_key=True, index=True)
+    id_aset = Column(
+        String(50),
+        ForeignKey("aset.id_aset", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    id_pengguna = Column(Integer, ForeignKey("pengguna.id_pengguna"), nullable=False)
+    tanggal_kalibrasi = Column(Date, nullable=False)
+    tanggal_berlaku = Column(Date, nullable=False)
+    status = Column(String(20), nullable=False, index=True)  # LULUS, GAGAL, BERSYARAT
+    pelaksana_kalibrasi = Column(String(100))
+    nomor_sertifikat = Column(String(100))
+    keterangan = Column(Text)
+    waktu_input = Column(DateTime, default=func.now())
+
+    __table_args__ = (
+        CheckConstraint(
+            status.in_(["LULUS", "GAGAL", "BERSYARAT"]),
+            name="riwayat_kalibrasi_status_check",
+        ),
+    )

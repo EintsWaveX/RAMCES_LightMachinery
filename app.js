@@ -748,12 +748,14 @@ function _renderMatrixPanel() {
 
         if (assets.length === 1) {
           const isSo = soCount > 0;
-          return `<td class="text-center px-2 rounded ${
+          return `<td class="text-center px-2 rounded font-bold ${
             isSo
-              ? "bg-green-100 dark:bg-green-900/40 text-green-700"
-              : "bg-red-100 dark:bg-red-900/40 text-red-700"
-          }" title="${upt.upt}: ${isSo ? "SO" : "TSO"}">${isSo ? "✅" : "❌"}</td>`;
+              ? "bg-green-100 dark:bg-green-900/40 "
+              : "bg-red-100 dark:bg-red-900/40 "
+          }" title="${upt.upt}: ${isSo ? "SO" : "TSO"}">${soCount}/${tsoCount}</td>`;
         }
+
+         // }" title="${upt.upt}: ${isSo ? "SO" : "TSO"}">1</td>`;
 
         const allSo = tsoCount === 0;
         const allTso = soCount === 0;
@@ -763,7 +765,7 @@ function _renderMatrixPanel() {
             ? "bg-red-100 dark:bg-red-900/40 text-red-700"
             : "matrix-cell-mixed";
 
-        return `<td class="text-center px-2 rounded ${cellClass} font-bold" title="${upt.upt}: ${soCount} SO / ${tsoCount} TSO">${soCount}/${assets.length}</td>`;
+        return `<td class="text-center px-2 rounded ${cellClass} font-bold" title="${upt.upt}: ${soCount} SO / ${tsoCount} TSO">${soCount}/${tsoCount}</td>`;
       }).join("");
 
       const avail = total > 0 ? Math.round((regionSo / total) * 100) : null;
@@ -2643,7 +2645,7 @@ function renderDbCards() {
       const uptEntry = uptDatabase.find((u) => u.upt === rawUptCode);
       const uptDisplay = uptEntry
         ? `${uptEntry.nama}`
-        : item.lokasi_name || rawUptCode || "—";
+        : "—";
       // --- AKHIR REVISI LOGIKA LOKASI MURNI ---
 
       const tahunFull = dec.tahun
@@ -2923,7 +2925,7 @@ function renderHistoryCards() {
 
                         const uptLabel = uptEntry
                           ? `${uptEntry.nama}`
-                          : rawLokasiCode || "—";
+                          :  "—";
                         const lokasiLabel = uptEntry
                           ? lokasiData.find((l) => l.code === uptEntry.lokasi)
                               ?.name || uptEntry.lokasi
@@ -3396,6 +3398,9 @@ async function loadMasterLokasi() {
                                 ? "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300"
                                 : "bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300"
                         }">
+                        <!--  
+                        ${l.tipe == "BALAIYASA" ? "KANTOR PUSAT" : l.tipe}
+                        -->
                         ${l.tipe}
                     </span>
                 </td>
