@@ -102,7 +102,6 @@ class PerbaikanCreate(BaseModel):
     id_aset: str
     kondisi: str
     keterangan: Optional[str] = "-"
-    id_lokasi: Optional[str] = None  # Wajib ditambahkan
     peruntukan: Optional[str] = None
 
 
@@ -698,6 +697,8 @@ async def catat_perbaikan(
         )
     )
     aset.status_terakhir = laporan.kondisi
+    # lokasi terakhir
+    # aset.id_lokasi = laporan.id_lokasi
     db.commit()
     await manager.broadcast("REFRESH_ASSET_LIST")
     return {"message": "Laporan kondisi berhasil dicatat."}
@@ -722,8 +723,8 @@ async def submit_mutasi(
     if not aset:
         raise HTTPException(status_code=404, detail="Aset tidak ditemukan.")
 
-    # if aset.id_lokasi == mutasi.id_lokasi_tujuan:
-    #     raise HTTPException(status_code=400, detail="Lokasi tujuan sama dengan asal.")
+    if aset.id_lokasi == mutasi.id_lokasi_tujuan:
+        raise HTTPException(status_code=400, detail="Lokasi tujuan sama dengan asal.")
 
     if (
         current_user.role == "ADMIN_WILAYAH"
@@ -742,7 +743,11 @@ async def submit_mutasi(
             alasan_mutasi=mutasi.alasan_mutasi,
         )
     )
-    aset.id_lokasi = mutasi.id_lokasi_tujuan
+
+    db.query(models.Aset).filter(models.Aset.id_aset == mutasi.id_aset).update(
+        {"id_lokasi": mutasi.id_lokasi_tujuan}, synchronize_session=False
+    )
+
     db.commit()
     await manager.broadcast("REFRESH_ASSET_LIST")
     return {"message": "Aset berhasil dimutasi."}
@@ -774,7 +779,7 @@ def get_riwayat_aset(
             "id_pengguna": r.pengguna_ref.username if r.pengguna_ref else r.id_pengguna,
             "kondisi": r.kondisi,
             "keterangan": r.keterangan or "—",
-            "id_lokasi": r.id_lokasi,
+            # "id_lokasi": r.id_lokasi,
         }
         for i, r in enumerate(riwayat, start=1)
     ]
@@ -870,7 +875,7 @@ def get_history_summary(
             models.RiwayatKondisi.keterangan,
             models.RiwayatKondisi.waktu_lapor,
             models.RiwayatKondisi.id_pengguna,
-            models.RiwayatKondisi.id_lokasi,
+            # models.RiwayatKondisi.id_lokasi,
             func.row_number()
             .over(
                 partition_by=models.RiwayatKondisi.id_aset,
@@ -951,9 +956,9 @@ def get_history_summary(
                     ).username
                     if latest_repair and latest_repair.id_pengguna in pengguna_map
                     else (str(latest_repair.id_pengguna) if latest_repair else None),
-                    "latest_id_lokasi": latest_repair.id_lokasi
-                    if latest_repair
-                    else a.id_lokasi,  # <--- WAJIB DITAMBAHKAN
+                    # "latest_id_lokasi": latest_repair.id_lokasi
+                    # if latest_repair
+                    # else a.id_lokasi,  # <--- WAJIB DITAMBAHKAN
                 },
                 "mutasi": {
                     # PERBAIKAN: Gunakan all_mutasi_for_a, bukan all_mutasi

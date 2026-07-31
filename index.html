@@ -56,499 +56,7 @@
       })();
     </script>
 
-    <style>
-      /* ── Custom scrollbar ── */
-      ::-webkit-scrollbar {
-        width: 5px;
-        height: 5px;
-      }
-
-      ::-webkit-scrollbar-track {
-        background: transparent;
-      }
-
-      ::-webkit-scrollbar-thumb {
-        background: #cbd5e1;
-        border-radius: 4px;
-      }
-
-      .dark ::-webkit-scrollbar-thumb {
-        background: #475569;
-      }
-
-      /* ── Sidebar layout ── */
-      #sidebar {
-        position: fixed;
-        top: 0;
-        left: 0;
-        height: 100%;
-        width: 17rem;
-        z-index: 50;
-        transform: translateX(-100%);
-        transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1);
-      }
-
-      #sidebar.open {
-        transform: translateX(0);
-      }
-
-      #sidebar-toggle-btn {
-        width: 3.6rem;
-        height: 2.45rem;
-        border-radius: 9999px;
-        right: -1.2rem;
-        transform: translateX(0);
-        transition:
-          width 0.24s ease,
-          height 0.24s ease,
-          border-radius 0.24s ease,
-          transform 0.24s ease,
-          right 0.24s ease;
-        will-change: width, height, border-radius, right;
-      }
-
-      #sidebar-toggle-btn.is-open {
-        width: 2.7rem;
-        height: 2.7rem;
-        border-radius: 9999px;
-        right: -1.35rem;
-      }
-
-      /* Desktop: push content */
-      @media (min-width: 1024px) {
-        #main-content-area {
-          margin-left: 0;
-          transition: margin-left 0.28s cubic-bezier(0.4, 0, 0.2, 1);
-        }
-
-        #main-content-area.sidebar-open {
-          margin-left: 16rem;
-        }
-
-        #sidebar-overlay {
-          display: none !important;
-        }
-      }
-
-      /* Mobile: overlay */
-      @media (max-width: 1023px) {
-        #sidebar-overlay {
-          display: none;
-          position: fixed;
-          inset: 0;
-          z-index: 40;
-          background: rgba(0, 0, 0, 0.45);
-          -webkit-backdrop-filter: blur(2px);
-          backdrop-filter: blur(2px);
-        }
-
-        #sidebar-overlay.active {
-          display: block;
-        }
-      }
-
-      /* ── Nav active state ── */
-      .nav-btn {
-        position: relative;
-      }
-
-      .nav-btn.is-active {
-        background-color: rgba(255, 255, 255, 0.12) !important;
-        color: white !important;
-        font-weight: 600;
-      }
-
-      .nav-btn.is-active::before {
-        content: "";
-        position: absolute;
-        left: 0;
-        top: 20%;
-        bottom: 20%;
-        width: 3px;
-        border-radius: 0 3px 3px 0;
-        background: #f3861b;
-      }
-
-      /* ── Sidebar styling stays consistent across themes ── */
-      #sidebar {
-        background: linear-gradient(
-          180deg,
-          #0a1f44 0%,
-          #164c81 100%
-        ) !important;
-        color: #ffffff !important;
-      }
-
-      #sidebar nav p {
-        color: rgba(255, 255, 255, 0.58) !important;
-      }
-
-      .nav-btn {
-        color: rgba(255, 255, 255, 0.9) !important;
-        background-color: transparent !important;
-      }
-
-      .nav-btn:hover,
-      .nav-btn:focus-visible {
-        background-color: rgba(243, 134, 27, 0.25) !important;
-        color: #ffffff !important;
-      }
-
-      .nav-btn.is-active {
-        background-color: #f3861b !important;
-        color: #ffffff !important;
-        font-weight: 700 !important;
-        box-shadow: 0 2px 8px rgba(243, 134, 27, 0.35) !important;
-      }
-
-      .nav-btn.is-active::before {
-        display: none; /* orange fill replaces the left bar */
-      }
-
-      .nav-btn .fas,
-      .nav-btn .far,
-      .nav-btn .fab,
-      .nav-btn span {
-        color: inherit !important;
-      }
-
-      .hover\:bg-white\/8:hover {
-        background-color: rgba(10, 31, 68, 0.38) !important;
-      }
-
-      /* ── Light mode: topbar text forced dark ── */
-      :root:not(.dark) #topbar-page-title {
-        color: #111827 !important;
-        font-weight: 700 !important;
-      }
-
-      :root:not(.dark) #topbar-page-subtitle {
-        color: #374151 !important;
-        font-weight: 600 !important;
-      }
-
-      :root:not(.dark) #topbar-username {
-        color: #111827 !important;
-        font-weight: 700 !important;
-      }
-
-      :root:not(.dark) #topbar-role {
-        color: #374151 !important;
-        font-weight: 600 !important;
-      }
-
-      :root:not(.dark) #topbar-clock {
-        color: #111827 !important;
-        font-weight: 700 !important;
-      }
-
-      :root:not(.dark) #topbar-date {
-        color: #374151 !important;
-        font-weight: 600 !important;
-      }
-
-      /* ── SO / TSO toggle buttons ── */
-      .status-btn {
-        transition: all 0.15s;
-        border-width: 2px;
-      }
-
-      .status-btn.is-so {
-        background: #dcfce7 !important;
-        color: #15803d !important;
-        border-color: #22c55e !important;
-      }
-
-      .status-btn.is-tso {
-        background: #fee2e2 !important;
-        color: #b91c1c !important;
-        border-color: #ef4444 !important;
-      }
-
-      .status-btn.is-idle {
-        background: #f3f4f6 !important;
-        color: #9ca3af !important;
-        border-color: #e5e7eb !important;
-      }
-
-      .dark .status-btn.is-idle {
-        background: #374151 !important;
-        color: #6b7280 !important;
-        border-color: #4b5563 !important;
-      }
-
-      /* ── Toast container ── */
-      #toast-container {
-        position: fixed;
-        z-index: 9999;
-        display: flex;
-        flex-direction: column;
-        gap: 0.6rem;
-        /* mobile: bottom-center */
-        bottom: 1.25rem;
-        left: 50%;
-        transform: translateX(-50%);
-        width: max-content;
-        max-width: calc(100vw - 2rem);
-      }
-
-      @media (min-width: 640px) {
-        #toast-container {
-          bottom: auto;
-          top: 1.25rem;
-          right: 1.25rem;
-          left: auto;
-          transform: none;
-          align-items: flex-end;
-        }
-      }
-
-      /* ── Print: QR only ── */
-      @media print {
-        body > *:not(#qr-print-area) {
-          display: none !important;
-        }
-
-        #qr-print-area {
-          display: flex !important;
-          position: fixed;
-          inset: 0;
-          align-items: center;
-          justify-content: center;
-          background: white;
-        }
-      }
-
-      /* ── Misc helpers ── */
-      .view-section {
-        display: none;
-      }
-
-      .view-section.is-visible {
-        display: block;
-      }
-
-      .view-section.is-flex {
-        display: flex;
-        flex-direction: column;
-      }
-
-      /* History-detail & database need flex column */
-      #view-database,
-      #view-history {
-        display: none;
-      }
-
-      #view-database.is-visible,
-      #view-history.is-visible {
-        display: flex;
-        flex-direction: column;
-      }
-
-      /* Master edit modal field label helper */
-      .field-label {
-        display: block;
-        font-size: 0.75rem;
-        font-weight: 600;
-        margin-bottom: 0.375rem;
-        color: #6b7280;
-      }
-
-      .dark .field-label {
-        color: #9ca3af;
-      }
-
-      .field-input {
-        width: 100%;
-        padding: 0.625rem;
-        background-color: #f9fafb;
-        border: 1px solid #e5e7eb;
-        border-radius: 0.5rem;
-        font-size: 0.875rem;
-        outline: none;
-        transition: border-color 0.15s;
-      }
-
-      .dark .field-input {
-        background-color: #374151;
-        border-color: #4b5563;
-      }
-
-      .field-input:focus {
-        border-color: #164c81;
-      }
-
-      .dark .field-input:focus {
-        border-color: #f3861b;
-      }
-
-      /* ── Light mode contrast boost ── */
-      :root:not(.dark) body {
-        background-color: #e8edf3;
-      }
-
-      :root:not(.dark) .bg-white {
-        box-shadow:
-          0 1px 3px rgba(0, 0, 0, 0.08),
-          0 0 0 1px rgba(0, 0, 0, 0.06);
-      }
-
-      :root:not(.dark) .border-gray-100 {
-        border-color: #cbd5e1 !important;
-      }
-
-      :root:not(.dark) .border-gray-200 {
-        border-color: #94a3b8 !important;
-      }
-
-      :root:not(.dark) input:not([type="radio"]):not([type="checkbox"]),
-      :root:not(.dark) select,
-      :root:not(.dark) textarea {
-        border-color: #94a3b8 !important;
-        background-color: #ffffff !important;
-      }
-
-      :root:not(.dark) input:focus,
-      :root:not(.dark) select:focus,
-      :root:not(.dark) textarea:focus {
-        border-color: #164c81 !important;
-        box-shadow: 0 0 0 3px rgba(22, 76, 129, 0.12) !important;
-      }
-
-      :root:not(.dark) table thead tr {
-        background-color: #f1f5f9;
-      }
-
-      :root:not(.dark) table tbody tr:hover {
-        background-color: #f0f4f8 !important;
-      }
-
-      :root:not(.dark) .divide-gray-100 > * + * {
-        border-color: #cbd5e1 !important;
-      }
-
-      :root:not(.dark) .hover\:bg-white\/8:hover,
-      :root:not(.dark) .hover\:bg-gray-50:hover {
-        background-color: #f8fafc !important;
-      }
-
-      /* Tab active states */
-      :root:not(.dark) .hist-tab.is-active,
-      :root:not(.dark) button.is-active {
-        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-      }
-
-      /* Card hover borders */
-      :root:not(.dark) .rounded-xl:hover {
-        border-color: #94a3b8;
-      }
-
-      /* Topbar border */
-      :root:not(.dark) header {
-        border-bottom-color: #cbd5e1 !important;
-        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
-      }
-
-      /* Breadcrumb area */
-      :root:not(.dark) .bg-gray-50 {
-        background-color: #f1f5f9 !important;
-      }
-
-      /* Modal backdrop stronger in light */
-      :root:not(.dark) .bg-gray-900\/40 {
-        background-color: rgba(15, 23, 42, 0.55) !important;
-      }
-
-      /* ── Dashboard matrix cell gradient ── */
-      .matrix-cell-mixed {
-        background: linear-gradient(135deg, #dcfce7 50%, #fee2e2 50%);
-      }
-      .dark .matrix-cell-mixed {
-        background: linear-gradient(
-          135deg,
-          rgba(21, 128, 61, 0.35) 50%,
-          rgba(185, 28, 28, 0.35) 50%
-        );
-      }
-
-      /* ── Dashboard tab panel ── */
-      .dash-tab-btn {
-        white-space: nowrap;
-        transition: all 0.15s;
-      }
-      .dash-tab-btn.is-active {
-        background-color: #164c81;
-        color: #ffffff;
-        font-weight: 700;
-        box-shadow: 0 2px 8px rgba(22, 76, 129, 0.25);
-      }
-      .dark .dash-tab-btn.is-active {
-        background-color: #1e5fa3;
-      }
-      .dash-tab-btn:not(.is-active) {
-        color: #6b7280;
-      }
-      .dash-tab-btn:not(.is-active):hover {
-        background-color: rgba(22, 76, 129, 0.1);
-        color: #164c81;
-      }
-      .dark .dash-tab-btn:not(.is-active):hover {
-        background-color: rgba(255, 255, 255, 0.08);
-        color: #93c5fd;
-      }
-
-      /* ── Dashboard dot indicators ── */
-      .dash-dot {
-        width: 7px;
-        height: 7px;
-        border-radius: 9999px;
-        background: #cbd5e1;
-        transition:
-          background 0.2s,
-          transform 0.2s;
-        cursor: pointer;
-      }
-      .dash-dot.is-active {
-        background: #164c81;
-        transform: scale(1.4);
-      }
-      .dark .dash-dot.is-active {
-        background: #60a5fa;
-      }
-
-      /* ── Matrix table ── */
-      #dash-matrix-table th,
-      #dash-matrix-table td {
-        min-width: 2.6rem;
-        text-align: center;
-        font-size: 0.7rem;
-        padding: 0.3rem 0.2rem;
-      }
-      #dash-matrix-table th {
-        font-weight: 700;
-      }
-
-      /* ── Matrix table fluid sizing ── */
-      #dash-matrix-table th,
-      #dash-matrix-table td {
-        padding: 0.35rem 0.5rem;
-        font-size: clamp(9px, 1vw, 12px);
-        white-space: nowrap;
-      }
-
-      #dash-matrix-table th {
-        font-weight: 600;
-      }
-
-      /* Wilayah column: values left, header center */
-      #dash-matrix-table td:first-child {
-        text-align: left !important;
-      }
-
-      #dash-matrix-table th:first-child {
-        text-align: center !important;
-      }
-    </style>
+    <link rel="stylesheet" href="./style.css" />
   </head>
 
   <body
@@ -802,11 +310,45 @@
         </button>
 
         <!-- Brand -->
-        <div class="px-5 pt-6 pb-4 flex items-center gap-3 shrink-0">
-          <i class="fas fa-cogs text-kai-orange text-xl"></i>
-          <div class="leading-none">
-            <p class="text-lg font-bold tracking-wide">RAMCES</p>
-            <p class="text-sm text-white/40 tracking-widest mt-0.5">SIMA-KAI</p>
+        <div class="px-5 pt-6 flex items-center gap-3 shrink-0">
+          <!-- <i class="fas fa-cogs text-kai-orange text-xl"></i> -->
+          <div class="leading-none flex flex-col justify-center">
+            <!-- Inline SVG RAMCES -->
+            <svg
+              class="h-32 w-auto"
+              viewBox="0 0 1031 690"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <!-- Aksesori Oranye -->
+              <g fill="#F08201">
+                <path
+                  d="M7.91326 230.962L80.3716 237.403C84.6238 237.781 88.2849 234.431 88.2849 230.162L88.2849 223.27C88.2849 219.255 91.5396 216 95.5545 216L117.73 216C121.745 216 125 219.255 125 223.27L125 273.73C125 277.745 121.745 281 117.73 281L95.5545 281C91.5396 281 88.2849 277.745 88.2849 273.73L88.2849 266.772C88.2849 262.527 84.6627 259.185 80.4313 259.526L7.85354 265.375C3.62213 265.717 -2.0271e-06 262.375 -1.84154e-06 258.129L-9.70519e-07 238.203C-7.83918e-07 233.934 3.66107 230.584 7.91326 230.962Z"
+                />
+                <path d="M78 237.826L91 230V266L78 259.739V237.826Z" />
+                <path
+                  d="M31.6378 286.833C25.8105 275.374 17.246 259.13 15.9912 259.13H52.9072C54.868 259.13 56.7456 259.922 58.1139 261.327L122.972 327.891C124.294 329.249 125.035 331.069 125.035 332.965V342.73C125.035 346.745 121.78 350 117.765 350H95.1934C91.4892 350 88.3774 347.215 87.9683 343.533L87.3062 337.574C87.0339 335.123 85.5377 332.978 83.3322 331.875L65.4445 322.931C62.9817 321.7 60.0345 321.965 57.8317 323.617L51.9308 328.043C49.0366 330.214 44.9868 329.926 42.4287 327.368L25.1205 310.06C22.1469 307.086 22.309 302.217 25.4738 299.448L29.9383 295.542C32.4279 293.363 33.1373 289.782 31.6378 286.833Z"
+                />
+                <path
+                  d="M969.708 311.282C963.291 311.282 957.023 310.48 950.903 308.876C944.783 307.272 939.198 304.865 934.148 301.657C929.097 298.448 924.938 294.438 921.67 289.625C918.462 284.812 916.531 279.168 915.877 272.691H942.525C943.417 276.613 945.11 279.91 947.605 282.584C950.16 285.258 953.428 287.308 957.409 288.734C961.45 290.16 966.054 290.873 971.224 290.873C975.323 290.873 979.215 290.279 982.899 289.09C986.583 287.902 989.583 286.09 991.901 283.654C994.218 281.218 995.376 278.158 995.376 274.474C995.376 270.077 993.772 266.779 990.564 264.581C987.355 262.323 982.988 260.541 977.462 259.233L953.309 253.975C946.477 252.549 940.505 250.351 935.395 247.38C930.345 244.35 926.453 240.428 923.72 235.615C920.987 230.743 919.62 224.831 919.62 217.879C919.62 209.858 921.819 202.936 926.215 197.113C930.672 191.29 936.703 186.834 944.308 183.745C951.973 180.595 960.558 179.021 970.065 179.021C980.819 179.021 989.88 180.774 997.248 184.279C1004.68 187.725 1010.35 192.419 1014.27 198.361C1018.19 204.243 1020.18 210.809 1020.24 218.058H994.218C993.743 213.601 992.376 210.036 990.118 207.363C987.86 204.629 984.949 202.669 981.384 201.48C977.878 200.233 973.868 199.609 969.352 199.609C961.568 199.609 955.894 201.183 952.329 204.332C948.764 207.481 946.982 211.136 946.982 215.295C946.982 219.216 948.318 222.395 950.992 224.831C953.725 227.208 958.093 229.02 964.094 230.268L986.464 235.08C994.782 236.685 1001.53 239.24 1006.7 242.745C1011.86 246.191 1015.64 250.38 1018.01 255.312C1020.39 260.243 1021.58 265.769 1021.58 271.889C1021.58 279.673 1019.35 286.535 1014.89 292.477C1010.5 298.359 1004.41 302.964 996.624 306.291C988.841 309.619 979.869 311.282 969.708 311.282Z"
+                />
+              </g>
+              <!-- Teks Utama (Diubah ke Putih agar kelihatan di Sidebar Biru) -->
+              <g fill="#FFFFFF">
+                <path
+                  d="M104.226 199.974H43.2122C41.5341 199.974 39.9077 199.393 38.6089 198.331L26.843 188.704C23.5143 185.981 23.2649 180.978 26.306 177.937L41.7568 162.487C44.2511 159.992 48.1781 159.644 51.0418 161.703C56.2133 165.423 61.9499 169.707 62.5055 170.688C63.9463 169.666 74.2936 165.078 82.0753 161.706C84.5252 160.644 86.2027 158.334 86.4445 155.675L87.2684 146.611C87.6088 142.867 90.7483 140 94.5081 140H120.582C124.597 140 127.852 143.255 127.852 147.269V156.816C127.852 159.824 129.705 162.521 132.512 163.601L147.646 169.422C150.024 170.336 152.708 169.939 154.719 168.375L162.59 162.253C165.56 159.943 169.801 160.281 172.368 163.031L188.795 180.632C191.341 183.359 191.409 187.571 188.952 190.379L183.57 196.53C181.728 198.635 181.257 201.61 182.359 204.18L189.572 221.011C190.718 223.684 193.346 225.417 196.254 225.417H204.182C208.197 225.417 211.452 228.672 211.452 232.687V256.313C211.452 260.328 208.197 263.583 204.182 263.583H197.908C195.083 263.583 192.515 265.218 191.32 267.778L182.866 285.895C181.498 288.826 182.232 292.309 184.666 294.44L189.434 298.611C192.529 301.319 192.763 306.053 189.95 309.054L173.08 327.048C170.23 330.089 165.412 330.115 162.528 327.106L132.953 296.245C129.537 292.681 130.63 286.819 134.852 284.26C179.327 257.313 154.493 221.163 144.209 210.878C135.485 202.155 113.919 199.974 104.226 199.974Z"
+                />
+                <path
+                  d="M325.021 181.538C340.047 180.855 370.918 186.046 374.197 212.273C377.475 238.501 361.903 251.887 353.707 255.303L376.247 310.627H349.609L329.119 261.45H302.482V310.627H275.844V230.224L308.02 228L313.517 233.497V238.853C313.517 241.116 315.352 242.952 317.615 242.952H333.216C335.48 242.952 337.315 241.117 337.315 238.853V201.971C337.315 199.708 335.48 197.874 333.216 197.874H317.615C315.352 197.874 313.517 199.708 313.517 201.971V207.076L306.375 212.79L275.844 211.016V181.538H325.021Z"
+                />
+                <path
+                  d="M391.393 309.5L437.471 180.625H465.01L511.088 309.5H485.153L474.636 279.643H428.202L417.507 309.5H391.393ZM434.084 256.916H468.308L451.285 205.669L434.084 256.916Z"
+                />
+                <path
+                  d="M526.696 309.5V180.625H564.485L593.985 272.513L623.753 180.625H661.453V309.5H635.161V210.928L604.146 309.5H583.736L552.899 211.373V309.5H526.696ZM739.075 311.282C727.073 311.282 716.705 308.49 707.971 302.905C699.236 297.319 692.493 289.476 687.739 279.376C683.045 269.275 680.698 257.481 680.698 243.993C680.698 230.446 683.045 218.83 687.739 209.145C692.433 199.401 699.147 191.914 707.882 186.686C716.616 181.457 727.014 178.843 739.075 178.843C748.76 178.843 757.376 180.803 764.922 184.725C772.527 188.587 778.647 193.875 783.281 200.589C787.975 207.303 790.738 214.879 791.57 223.316H764.298C763.466 218.86 761.951 214.909 759.752 211.462C757.554 207.957 754.672 205.224 751.107 203.263C747.542 201.243 743.264 200.233 738.273 200.233C732.272 200.233 727.103 201.688 722.765 204.6C718.428 207.511 715.101 212.205 712.783 218.681C710.466 225.158 709.308 233.714 709.308 244.35C709.308 260.392 711.862 272.008 716.972 279.197C722.142 286.327 729.242 289.892 738.273 289.892C743.264 289.892 747.542 288.763 751.107 286.506C754.672 284.188 757.554 281.158 759.752 277.415C761.951 273.612 763.466 269.453 764.298 264.937H791.57C790.797 271.057 789.312 276.91 787.114 282.495C784.915 288.021 781.796 292.952 777.756 297.29C773.715 301.627 768.516 305.044 762.159 307.539C755.801 310.035 748.107 311.282 739.075 311.282ZM810.781 309.5V180.625H899.282L899.193 202.55H836.894V233.833H890.993V255.312H836.716V287.308L900.173 287.397V309.5H810.781Z"
+                />
+              </g>
+            </svg>
           </div>
         </div>
 
@@ -835,8 +377,8 @@
             id="nav-input"
             class="nav-btn w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors text-sm"
           >
-            <i class="fas fa-plus-square w-4 text-center text-xs"></i>
-            <span>Tambah Alat Kerja</span>
+            <i class="fas fa-layer-group w-4 text-center text-xs"></i>
+            <span>Kelola Data Alat Kerja</span>
           </button>
           <button
             data-view="database"
@@ -1309,168 +851,380 @@
           </section>
 
           <!-- ─────────────────────────────────────────────
-                 VIEW: INPUT (Tambah Aset)
+                    VIEW: INPUT → Kelola Aset Alat Kerja (KDAK)
                 ───────────────────────────────────────────── -->
-          <section
-            id="view-input"
-            class="view-section max-w-3xl mx-auto w-full"
-          >
-            <form
-              id="form-input-baru"
-              class="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm p-6 md:p-8 space-y-6"
-            >
-              <div class="border-b border-gray-100 dark:border-gray-700 pb-4">
-                <h2 class="text-base font-bold text-gray-800 dark:text-white">
-                  Formulir Alat Kerja Baru
-                </h2>
-                <p class="text-xs text-gray-400 mt-0.5">
-                  Mohon untuk melengkapi seluruh teks masukan untuk meregistrasi
-                  aset baru.
+          <section id="view-input" class="view-section space-y-5">
+            <!-- ── Stat Cards Row 1: 3 summary cards ── -->
+            <div class="grid grid-cols-3 gap-3">
+              <!-- Total Aset -->
+              <div
+                class="bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm relative overflow-hidden group hover:border-kai-blue transition-colors"
+              >
+                <p
+                  class="text-[9px] font-bold tracking-widest text-gray-400 uppercase mb-1"
+                >
+                  Total Aset
                 </p>
+                <h3
+                  class="text-2xl font-bold text-gray-800 dark:text-white"
+                  id="kdak-stat-total"
+                >
+                  —
+                </h3>
+                <p class="text-[10px] text-gray-400 mt-0.5">Semua terdaftar</p>
+                <i
+                  class="fas fa-boxes absolute -bottom-3 -right-1 text-5xl text-slate-100 dark:text-slate-700/50 group-hover:scale-125 transition-transform"
+                ></i>
+              </div>
+              <!-- Siap Operasi -->
+              <div
+                class="bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm relative overflow-hidden group hover:border-green-400 transition-colors"
+              >
+                <p
+                  class="text-[9px] font-bold tracking-widest text-gray-400 uppercase mb-1"
+                >
+                  Siap Operasi
+                </p>
+                <h3 class="text-2xl font-bold text-green-500" id="kdak-stat-so">
+                  —
+                </h3>
+                <p class="text-[10px] text-gray-400 mt-0.5">Status SO</p>
+                <i
+                  class="fas fa-check-circle absolute -bottom-3 -right-1 text-5xl text-green-100 dark:text-green-900/30 group-hover:scale-125 transition-transform"
+                ></i>
+              </div>
+              <!-- Tidak Siap Operasi -->
+              <div
+                class="bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm relative overflow-hidden group hover:border-red-400 transition-colors"
+              >
+                <p
+                  class="text-[9px] font-bold tracking-widest text-gray-400 uppercase mb-1"
+                >
+                  Tdk Siap Operasi
+                </p>
+                <h3 class="text-2xl font-bold text-red-500" id="kdak-stat-tso">
+                  —
+                </h3>
+                <p class="text-[10px] text-gray-400 mt-0.5">Status TSO</p>
+                <i
+                  class="fas fa-times-circle absolute -bottom-3 -right-1 text-5xl text-red-100 dark:text-red-900/30 group-hover:scale-125 transition-transform"
+                ></i>
+              </div>
+            </div>
+
+            <!-- ── Stat Cards Row 2: 5 clickable cards ── -->
+            <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+              <!-- Jenis Alat — clickable -->
+              <div
+                id="kdak-card-jenis"
+                class="bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm relative overflow-hidden group hover:border-purple-400 hover:shadow-md transition-all cursor-pointer select-none"
+              >
+                <p
+                  class="text-[9px] font-bold tracking-widest text-gray-400 uppercase mb-1"
+                >
+                  Jenis Alat
+                </p>
+                <h3
+                  class="text-2xl font-bold text-purple-500"
+                  id="kdak-stat-jenis"
+                >
+                  —
+                </h3>
+                <p class="text-[10px] text-purple-400 mt-0.5 font-medium">
+                  Klik untuk lihat →
+                </p>
+                <i
+                  class="fas fa-tools absolute -bottom-3 -right-1 text-5xl text-purple-100 dark:text-purple-900/30 group-hover:scale-125 transition-transform"
+                ></i>
+              </div>
+              <!-- Sebaran Lokasi — clickable -->
+              <div
+                id="kdak-card-lokasi-info"
+                class="bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm relative overflow-hidden group hover:border-teal-400 hover:shadow-md transition-all cursor-pointer select-none"
+              >
+                <p
+                  class="text-[9px] font-bold tracking-widest text-gray-400 uppercase mb-1"
+                >
+                  Sebaran Lokasi
+                </p>
+                <h3
+                  class="text-2xl font-bold text-teal-500"
+                  id="kdak-stat-lokasi"
+                >
+                  —
+                </h3>
+                <p class="text-[10px] text-teal-500 mt-0.5 font-medium">
+                  Klik untuk lihat →
+                </p>
+                <i
+                  class="fas fa-map-marker-alt absolute -bottom-3 -right-1 text-5xl text-teal-100 dark:text-teal-900/30 group-hover:scale-125 transition-transform"
+                ></i>
+              </div>
+              <!-- Ketersediaan — clickable -->
+              <div
+                id="kdak-card-ketersediaan"
+                class="bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm relative overflow-hidden group hover:border-kai-blue hover:shadow-md transition-all cursor-pointer select-none"
+              >
+                <p
+                  class="text-[9px] font-bold tracking-widest text-gray-400 uppercase mb-1"
+                >
+                  Ketersediaan
+                </p>
+                <h3
+                  class="text-2xl font-bold text-kai-blue dark:text-blue-400"
+                  id="kdak-stat-avail"
+                >
+                  —
+                </h3>
+                <p class="text-[10px] text-kai-blue mt-0.5 font-medium">
+                  Klik untuk lihat →
+                </p>
+                <i
+                  class="fas fa-gauge-high absolute -bottom-3 -right-1 text-5xl text-blue-100 dark:text-blue-900/30 group-hover:scale-125 transition-transform"
+                ></i>
+              </div>
+              <!-- Benchmark — clickable -->
+              <div
+                id="kdak-card-benchmark"
+                class="bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm relative overflow-hidden group hover:border-slate-400 hover:shadow-md transition-all cursor-pointer select-none"
+              >
+                <p
+                  class="text-[9px] font-bold tracking-widest text-gray-400 uppercase mb-1"
+                >
+                  Benchmark
+                </p>
+                <div class="flex items-end gap-1">
+                  <h3
+                    class="text-2xl font-bold text-slate-500 dark:text-slate-400"
+                    id="kdak-stat-benchmark"
+                  >
+                    —%
+                  </h3>
+                  <span
+                    id="kdak-stat-benchmark-delta"
+                    class="text-xs font-bold mb-0.5"
+                  ></span>
+                </div>
+                <p class="text-[10px] text-slate-400 mt-0.5 font-medium">
+                  Klik untuk lihat →
+                </p>
+                <i
+                  class="fas fa-flag-checkered absolute -bottom-3 -right-1 text-5xl text-slate-100 dark:text-slate-700/50 group-hover:scale-125 transition-transform"
+                ></i>
+              </div>
+              <!-- Aset Terbaru — clickable -->
+              <div
+                id="kdak-card-terbaru"
+                class="bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm relative overflow-hidden group hover:border-kai-orange hover:shadow-md transition-all cursor-pointer select-none col-span-2 sm:col-span-1"
+              >
+                <p
+                  class="text-[9px] font-bold tracking-widest text-gray-400 uppercase mb-1"
+                >
+                  Aset Terbaru
+                </p>
+                <h3
+                  class="text-2xl font-bold text-kai-orange"
+                  id="kdak-stat-terbaru"
+                >
+                  —
+                </h3>
+                <p class="text-[10px] text-kai-orange mt-0.5 font-medium">
+                  Klik untuk lihat →
+                </p>
+                <i
+                  class="fas fa-calendar-plus absolute -bottom-3 -right-1 text-5xl text-orange-100 dark:text-orange-900/30 group-hover:scale-125 transition-transform"
+                ></i>
+              </div>
+            </div>
+
+            <!-- ── Stat Cards Row 2: 2 clickable cards ── -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <!-- Per Alat Kerja -->
+              <div
+                id="kdak-card-per-alat"
+                class="bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm flex items-center justify-between gap-4 hover:border-kai-blue hover:shadow-md transition-all cursor-pointer select-none group"
+              >
+                <div>
+                  <p
+                    class="text-[9px] font-bold tracking-widest text-gray-400 uppercase mb-1"
+                  >
+                    Daftar per Alat Kerja
+                  </p>
+                  <p
+                    class="text-sm font-semibold text-gray-700 dark:text-gray-200"
+                  >
+                    Lihat sebaran aset berdasarkan jenis alat kerja
+                  </p>
+                  <p
+                    class="text-[10px] text-kai-blue dark:text-blue-400 mt-1 font-medium"
+                  >
+                    Klik untuk buka daftar →
+                  </p>
+                </div>
+                <div
+                  class="w-12 h-12 rounded-xl bg-kai-blue/10 dark:bg-blue-900/30 flex items-center justify-center shrink-0 group-hover:bg-kai-blue/20 transition-colors"
+                >
+                  <i class="fas fa-wrench text-kai-blue text-lg"></i>
+                </div>
               </div>
 
-              <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
-                <div class="md:col-span-2">
-                  <label
-                    class="block text-xs font-semibold mb-2 text-gray-600 dark:text-gray-400"
-                    >1. Alat Kerja</label
-                  >
-                  <select
-                    id="in-alat"
-                    required
-                    class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition"
-                  ></select>
-                </div>
-
+              <!-- Per Lokasi -->
+              <div
+                id="kdak-card-per-lokasi"
+                class="bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm flex items-center justify-between gap-4 hover:border-teal-500 hover:shadow-md transition-all cursor-pointer select-none group"
+              >
                 <div>
-                  <label
-                    class="block text-xs font-semibold mb-2 text-gray-600 dark:text-gray-400"
-                    >2. Sumber Pengadaan</label
+                  <p
+                    class="text-[9px] font-bold tracking-widest text-gray-400 uppercase mb-1"
                   >
-                  <div class="space-y-2 text-sm">
-                    <label class="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="radio"
-                        name="in-pengadaan"
-                        value="PUSAT"
-                        required
-                        class="accent-kai-orange w-4 h-4"
-                      />
-                      <span>PUSAT</span>
-                    </label>
-                    <label class="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="radio"
-                        name="in-pengadaan"
-                        value="DAOP/DIVRE"
-                        class="accent-kai-orange w-4 h-4"
-                      />
-                      <span>DAOP / DIVRE</span>
-                    </label>
-                  </div>
+                    Daftar per Lokasi
+                  </p>
+                  <p
+                    class="text-sm font-semibold text-gray-700 dark:text-gray-200"
+                  >
+                    Lihat sebaran aset berdasarkan lokasi penempatan
+                  </p>
+                  <p
+                    class="text-[10px] text-teal-600 dark:text-teal-400 mt-1 font-medium"
+                  >
+                    Klik untuk buka daftar →
+                  </p>
                 </div>
+                <div
+                  class="w-12 h-12 rounded-xl bg-teal-500/10 dark:bg-teal-900/30 flex items-center justify-center shrink-0 group-hover:bg-teal-500/20 transition-colors"
+                >
+                  <i class="fas fa-map-pin text-teal-500 text-lg"></i>
+                </div>
+              </div>
+            </div>
 
-                <div>
-                  <label
-                    class="block text-xs font-semibold mb-2 text-gray-600 dark:text-gray-400"
-                    >3. Tanggal Pembelian</label
+            <!-- ── Toolbar ── -->
+            <div class="flex flex-wrap items-center gap-2">
+              <button
+                id="kdak-btn-tambah"
+                class="flex items-center gap-2 px-4 py-2.5 bg-kai-blue hover:bg-blue-800 active:bg-blue-900 text-white font-semibold rounded-lg transition text-sm shadow-sm"
+              >
+                <i class="fas fa-plus"></i> Tambah Aset
+              </button>
+
+              <!-- Bulk Upload dropdown -->
+              <div class="relative">
+                <button
+                  id="kdak-btn-bulk-toggle"
+                  class="flex items-center gap-2 px-4 py-2.5 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-200 font-semibold rounded-lg transition text-sm shadow-sm"
+                >
+                  <i class="fas fa-file-import"></i> Impor Massal
+                  <i class="fas fa-chevron-down text-xs ml-1"></i>
+                </button>
+                <div
+                  id="kdak-bulk-dropdown"
+                  class="hidden absolute left-0 top-full mt-1 w-48 bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-xl shadow-lg z-30 overflow-hidden"
+                >
+                  <button
+                    id="kdak-btn-sample-excel"
+                    class="w-full flex items-center gap-3 px-4 py-3 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 transition"
                   >
+                    <i class="fas fa-file-excel text-emerald-500"></i> Sample
+                    Excel
+                  </button>
+                  <button
+                    id="kdak-btn-import-excel"
+                    class="w-full flex items-center gap-3 px-4 py-3 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 transition border-t border-gray-100 dark:border-gray-700"
+                  >
+                    <i class="fas fa-upload text-kai-blue"></i> Import Excel
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- ── Aset Table ── -->
+            <div
+              class="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm overflow-hidden"
+            >
+              <!-- Table toolbar: search + sort -->
+              <div
+                class="flex items-center gap-2 px-4 py-3 border-b border-gray-100 dark:border-gray-700"
+              >
+                <div class="relative flex-1">
+                  <i
+                    class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs"
+                  ></i>
                   <input
-                    type="date"
-                    id="in-tanggal"
-                    required
-                    class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition"
+                    type="text"
+                    id="kdak-search"
+                    placeholder="Cari ID Aset, Nama Alat, atau Lokasi..."
+                    class="w-full pl-8 pr-3 py-2 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition"
                   />
                 </div>
-
-                <div class="md:col-span-2">
-                  <label
-                    class="block text-xs font-semibold mb-2 text-gray-600 dark:text-gray-400"
-                    >4. Unit Peruntukan</label
-                  >
-                  <div
-                    class="flex flex-wrap justify-between gap-4 bg-gray-50 dark:bg-gray-700/50 p-4 rounded-lg border border-gray-100 dark:border-gray-600 text-sm"
-                  >
-                    <label class="flex items-center gap-2 cursor-pointer"
-                      ><input
-                        type="radio"
-                        name="in-unit"
-                        value="A"
-                        required
-                        class="accent-kai-orange w-4 h-4"
-                      />
-                      <span>JALAN REL</span></label
-                    >
-                    <label class="flex items-center gap-2 cursor-pointer"
-                      ><input
-                        type="radio"
-                        name="in-unit"
-                        value="B"
-                        class="accent-kai-orange w-4 h-4"
-                      />
-                      <span>JEMBATAN</span></label
-                    >
-                    <label class="flex items-center gap-2 cursor-pointer"
-                      ><input
-                        type="radio"
-                        name="in-unit"
-                        value="C"
-                        class="accent-kai-orange w-4 h-4"
-                      />
-                      <span>MEKANIK</span></label
-                    >
-                    <label class="flex items-center gap-2 cursor-pointer"
-                      ><input
-                        type="radio"
-                        name="in-unit"
-                        value="D"
-                        class="accent-kai-orange w-4 h-4"
-                      />
-                      <span>BALAIYASA</span></label
-                    >
-                  </div>
-                </div>
-
-                <div class="md:col-span-2">
-                  <label
-                    class="block text-xs font-semibold mb-2 text-gray-600 dark:text-gray-400"
-                    >5. Lokasi Penempatan</label
-                  >
-                  <select
-                    id="in-lokasi"
-                    required
-                    class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition"
-                  >
-                    <option value="">— Pilih Lokasi/Wilayah —</option>
-                  </select>
-                </div>
-
-                <div class="md:col-span-2">
-                  <label
-                    class="block text-xs font-semibold mb-2 text-gray-600 dark:text-gray-400"
-                    >6. UPT / Sub-Lokasi</label
-                  >
-                  <select
-                    id="in-upt"
-                    disabled
-                    class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    <option value="">
-                      — Pilih Lokasi terlebih dahulu... —
-                    </option>
-                  </select>
-                </div>
-              </div>
-
-              <div class="pt-2">
                 <button
-                  type="submit"
-                  class="px-8 py-2.5 bg-kai-orange hover:bg-orange-600 active:bg-orange-700 text-white font-semibold rounded-lg transition-colors text-sm shadow-sm flex items-center gap-2"
+                  id="kdak-btn-sort"
+                  class="w-9 h-9 flex items-center justify-center bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-gray-500 hover:text-purple-400 transition shrink-0"
                 >
-                  <i class="fas fa-pencil"></i> Simpan Data Aset
+                  <i class="fas fa-sort-amount-down text-sm"></i>
                 </button>
+                <span
+                  class="text-xs text-gray-400 shrink-0"
+                  id="kdak-table-count"
+                ></span>
               </div>
-            </form>
+              <!-- Table -->
+              <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                  <thead>
+                    <tr
+                      class="border-b border-gray-100 dark:border-gray-700 bg-gray-50/60 dark:bg-gray-700/40"
+                    >
+                      <th
+                        class="px-4 py-3 text-left text-[10px] font-bold tracking-widest text-gray-400 uppercase"
+                      >
+                        ID Aset
+                      </th>
+                      <th
+                        class="px-4 py-3 text-left text-[10px] font-bold tracking-widest text-gray-400 uppercase"
+                      >
+                        Nama Alat
+                      </th>
+                      <th
+                        class="px-4 py-3 text-left text-[10px] font-bold tracking-widest text-gray-400 uppercase"
+                      >
+                        Lokasi/Wilayah
+                      </th>
+                      <th
+                        class="px-4 py-3 text-left text-[10px] font-bold tracking-widest text-gray-400 uppercase"
+                      >
+                        Resor (UPT)
+                      </th>
+                      <th
+                        class="px-4 py-3 text-left text-[10px] font-bold tracking-widest text-gray-400 uppercase"
+                      >
+                        Pengadaan
+                      </th>
+                      <th
+                        class="px-4 py-3 text-left text-[10px] font-bold tracking-widest text-gray-400 uppercase"
+                      >
+                        Tanggal Pembelian
+                      </th>
+                      <th
+                        class="px-4 py-3 text-left text-[10px] font-bold tracking-widest text-gray-400 uppercase"
+                      >
+                        Status
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody id="kdak-table-body">
+                    <tr>
+                      <td
+                        colspan="7"
+                        class="text-center py-10 text-sm text-gray-400"
+                      >
+                        <i class="fas fa-spinner fa-spin mr-2"></i> Memuat
+                        data...
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </section>
 
           <!-- ─────────────────────────────────────────────
@@ -1504,7 +1258,7 @@
                   </select>
                   <button
                     id="btn-sort-db"
-                    class="w-10 h-10 flex items-center justify-center bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-gray-500 hover:text-kai-blue transition"
+                    class="w-10 h-10 flex items-center justify-center bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-gray-500 hover:text-sky-400 transition shrink-0"
                   >
                     <i class="fas fa-sort-amount-down text-sm"></i>
                   </button>
@@ -1515,7 +1269,7 @@
                 class="flex flex-col md:flex-row flex-wrap md:flex-nowrap gap-2 items-start md:items-center"
               >
                 <p
-                  class="text-sm font-mono font-bold text-kai-blue dark:text-blue-400 w-full md:w-auto"
+                  class="text-sm font-bold text-kai-blue dark:text-blue-400 w-full md:w-auto"
                   id="save-aset-info"
                 >
                   Simpan data aset kerja dalam kedua format berikut:
@@ -1527,15 +1281,13 @@
                     id="btn-db-download-xlsx"
                     class="flex items-center gap-2 px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-semibold rounded-lg transition text-sm shadow-sm flex-1 md:flex-none"
                   >
-                    <i class="fas fa-file-excel"></i>
-                    <span>Unduh Excel (.xlsx)</span>
+                    <i class="fas fa-file-excel"></i> Unduh Excel (.xlsx)
                   </button>
                   <button
                     id="btn-db-download-pdf"
                     class="flex items-center gap-2 px-6 py-2.5 bg-red-600 hover:bg-red-700 active:bg-red-800 text-white font-semibold rounded-lg transition text-sm shadow-sm flex-1 md:flex-none"
                   >
-                    <i class="fas fa-file-pdf"></i>
-                    <span>Unduh PDF</span>
+                    <i class="fas fa-file-pdf"></i> Unduh PDF
                   </button>
                 </div>
               </div>
@@ -1548,186 +1300,416 @@
           </section>
 
           <!-- ─────────────────────────────────────────────
-                 VIEW: EDIT (Update Kondisi)
+                    VIEW: EDIT (Update Kondisi / Kalibrasi)
                 ───────────────────────────────────────────── -->
-          <section id="view-edit" class="view-section max-w-3xl mx-auto w-full">
-            <form
-              id="form-edit"
-              class="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm p-6 md:p-8 space-y-6"
+          <section id="view-edit" class="view-section w-full">
+            <input type="hidden" id="edit-uid" />
+
+            <!-- ── Asset Summary Card ── -->
+            <div
+              id="edit-asset-card"
+              class="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm p-5 mb-4 flex flex-col sm:flex-row sm:items-center gap-4"
             >
-              <div class="border-b border-gray-100 dark:border-gray-700 pb-4">
-                <h2 class="text-base font-bold text-gray-800 dark:text-white">
-                  Pembaruan Kondisi Aset
-                </h2>
+              <div class="flex-1 min-w-0">
+                <div class="flex flex-wrap items-center gap-2 mb-1">
+                  <span
+                    id="edit-card-id"
+                    class="text-base font-bold font-mono text-kai-blue dark:text-blue-400"
+                    >—</span
+                  >
+                  <span
+                    id="edit-card-status"
+                    class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-gray-100 text-gray-500"
+                    >—</span
+                  >
+                </div>
                 <p
-                  class="text-xs font-mono text-kai-blue dark:text-blue-400 mt-1"
-                  id="edit-subtitle"
+                  id="edit-card-nama"
+                  class="text-sm font-semibold text-gray-700 dark:text-gray-200"
                 >
-                  ID: —
+                  —
                 </p>
               </div>
-
-              <input type="hidden" id="edit-uid" />
-
-              <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+              <div
+                class="grid grid-cols-2 sm:grid-cols-4 gap-x-6 gap-y-1 text-xs shrink-0"
+              >
                 <div>
-                  <label
-                    class="block text-xs font-semibold mb-2 text-gray-600 dark:text-gray-400"
-                    >Tanggal Perbaikan</label
+                  <p class="text-gray-400 font-medium">Lokasi</p>
+                  <p
+                    id="edit-card-lokasi"
+                    class="font-semibold text-gray-700 dark:text-gray-200"
                   >
-                  <input
-                    type="date"
-                    id="edit-tanggal"
-                    required
-                    class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition"
-                  />
+                    —
+                  </p>
                 </div>
                 <div>
-                  <label
-                    class="block text-xs font-semibold mb-2 text-gray-600 dark:text-gray-400"
-                    >Teknisi Bertugas</label
+                  <p class="text-gray-400 font-medium">UPT</p>
+                  <p
+                    id="edit-card-upt"
+                    class="font-semibold text-gray-700 dark:text-gray-200"
                   >
-                  <input
-                    type="text"
-                    id="edit-teknisi"
-                    required
-                    placeholder="Nama Lengkap"
-                    class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition"
-                  />
+                    —
+                  </p>
                 </div>
                 <div>
-                  <label
-                    id="edit-lokasi-label"
-                    class="block text-xs font-semibold mb-2 text-gray-600 dark:text-gray-400"
-                    >Lokasi Perbaikan</label
+                  <p class="text-gray-400 font-medium">Tanggal Beli</p>
+                  <p
+                    id="edit-card-tgl"
+                    class="font-semibold text-gray-700 dark:text-gray-200"
                   >
-                  <select
-                    id="edit-lokasi"
-                    required
-                    class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition"
-                  >
-                    <option value="" disabled selected>Pilih lokasi...</option>
-                  </select>
+                    —
+                  </p>
                 </div>
                 <div>
-                  <label
-                    id="edit-upt-label"
-                    class="block text-xs font-semibold mb-2 text-gray-600 dark:text-gray-400"
-                    >UPT Pengirim</label
+                  <p class="text-gray-400 font-medium">Peruntukan</p>
+                  <p
+                    id="edit-card-peruntukan"
+                    class="font-semibold text-gray-700 dark:text-gray-200"
                   >
-                  <select
-                    id="edit-upt"
-                    required
-                    class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition"
-                  >
-                    <option value="">Pilih lokasi dahulu...</option>
-                  </select>
+                    —
+                  </p>
                 </div>
               </div>
+            </div>
 
-              <div class="md:col-span-2">
-                <label
-                  class="block text-xs font-semibold mb-2 text-gray-600 dark:text-gray-400"
-                  >Unit Peruntukan</label
-                >
-                <div
-                  class="flex flex-wrap justify-between gap-4 bg-gray-50 dark:bg-gray-700/50 p-4 rounded-lg border border-gray-100 dark:border-gray-600 text-sm"
-                >
-                  <label class="flex items-center gap-2 cursor-pointer"
-                    ><input
-                      type="radio"
-                      name="edit-unit"
-                      value="A"
-                      class="accent-kai-orange w-4 h-4"
-                    />
-                    <span>JALAN REL</span></label
+            <!-- ── Tab Switcher ── -->
+            <div
+              class="flex bg-gray-100 dark:bg-gray-700/60 rounded-xl p-1 mb-4 w-fit"
+            >
+              <button
+                id="edit-tab-perbaikan"
+                class="edit-form-tab px-5 py-2.5 text-sm font-semibold rounded-lg bg-kai-blue text-white shadow-sm transition flex items-center gap-2"
+              >
+                <i class="fas fa-wrench text-sm"></i> Kondisi Perbaikan
+              </button>
+              <button
+                id="edit-tab-kalibrasi"
+                class="edit-form-tab px-5 py-2.5 text-sm font-medium rounded-lg text-gray-500 dark:text-gray-400 hover:bg-kai-blue/15 hover:text-kai-blue transition flex items-center gap-2"
+              >
+                <i class="fas fa-ruler-combined text-sm"></i> Pelaporan
+                Kalibrasi
+              </button>
+            </div>
+
+            <!-- ── Panel: Kondisi Perbaikan ── -->
+            <div id="panel-perbaikan">
+              <form
+                id="form-edit"
+                class="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm p-6 md:p-8 space-y-6"
+              >
+                <div class="border-b border-gray-100 dark:border-gray-700 pb-4">
+                  <h2 class="text-base font-bold text-gray-800 dark:text-white">
+                    Pembaruan Kondisi Aset
+                  </h2>
+                  <p
+                    class="text-xs font-mono text-kai-blue dark:text-blue-400 mt-1"
+                    id="edit-subtitle"
                   >
-                  <label class="flex items-center gap-2 cursor-pointer"
-                    ><input
-                      type="radio"
-                      name="edit-unit"
-                      value="B"
-                      class="accent-kai-orange w-4 h-4"
-                    />
-                    <span>JEMBATAN</span></label
-                  >
-                  <label class="flex items-center gap-2 cursor-pointer"
-                    ><input
-                      type="radio"
-                      name="edit-unit"
-                      value="C"
-                      class="accent-kai-orange w-4 h-4"
-                    />
-                    <span>MEKANIK</span></label
-                  >
-                  <label class="flex items-center gap-2 cursor-pointer"
-                    ><input
-                      type="radio"
-                      name="edit-unit"
-                      value="D"
-                      class="accent-kai-orange w-4 h-4"
-                    />
-                    <span>BALAIYASA</span></label
-                  >
+                    ID: —
+                  </p>
                 </div>
-              </div>
-
-              <div>
-                <label
-                  class="block text-xs font-semibold mb-2 text-gray-600 dark:text-gray-400"
-                  >Status Kondisi Terkini</label
-                >
-                <div class="flex gap-3">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+                  <div>
+                    <label
+                      class="block text-xs font-semibold mb-2 text-gray-600 dark:text-gray-400"
+                      >Tanggal Perbaikan</label
+                    >
+                    <input
+                      type="date"
+                      id="edit-tanggal"
+                      required
+                      class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition"
+                    />
+                  </div>
+                  <div>
+                    <label
+                      class="block text-xs font-semibold mb-2 text-gray-600 dark:text-gray-400"
+                      >Teknisi Bertugas</label
+                    >
+                    <input
+                      type="text"
+                      id="edit-teknisi"
+                      required
+                      placeholder="Nama Lengkap"
+                      class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition"
+                    />
+                  </div>
+                  <div>
+                    <label
+                      id="edit-lokasi-label"
+                      class="block text-xs font-semibold mb-2 text-gray-600 dark:text-gray-400"
+                      >Lokasi Perbaikan</label
+                    >
+                    <select
+                      id="edit-lokasi"
+                      required
+                      class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition"
+                    >
+                      <option value="" disabled selected>
+                        Pilih lokasi...
+                      </option>
+                    </select>
+                  </div>
+                  <div>
+                    <label
+                      id="edit-upt-label"
+                      class="block text-xs font-semibold mb-2 text-gray-600 dark:text-gray-400"
+                      >UPT Pengirim</label
+                    >
+                    <select
+                      id="edit-upt"
+                      required
+                      class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition"
+                    >
+                      <option value="">Pilih lokasi dahulu...</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="md:col-span-2">
+                  <label
+                    class="block text-xs font-semibold mb-2 text-gray-600 dark:text-gray-400"
+                    >Unit Peruntukan</label
+                  >
+                  <div
+                    class="flex flex-wrap justify-between gap-4 bg-gray-50 dark:bg-gray-700/50 p-4 rounded-lg border border-gray-100 dark:border-gray-600 text-sm"
+                  >
+                    <label class="flex items-center gap-2 cursor-pointer"
+                      ><input
+                        type="radio"
+                        name="edit-unit"
+                        value="A"
+                        class="accent-kai-orange w-4 h-4"
+                      /><span>JALAN REL</span></label
+                    >
+                    <label class="flex items-center gap-2 cursor-pointer"
+                      ><input
+                        type="radio"
+                        name="edit-unit"
+                        value="B"
+                        class="accent-kai-orange w-4 h-4"
+                      /><span>JEMBATAN</span></label
+                    >
+                    <label class="flex items-center gap-2 cursor-pointer"
+                      ><input
+                        type="radio"
+                        name="edit-unit"
+                        value="C"
+                        class="accent-kai-orange w-4 h-4"
+                      /><span>MEKANIK</span></label
+                    >
+                    <label class="flex items-center gap-2 cursor-pointer"
+                      ><input
+                        type="radio"
+                        name="edit-unit"
+                        value="D"
+                        class="accent-kai-orange w-4 h-4"
+                      /><span>BALAIYASA</span></label
+                    >
+                  </div>
+                </div>
+                <div>
+                  <label
+                    class="block text-xs font-semibold mb-2 text-gray-600 dark:text-gray-400"
+                    >Status Kondisi Terkini</label
+                  >
+                  <div class="flex gap-3">
+                    <button
+                      type="button"
+                      id="btn-so"
+                      data-status="SO"
+                      class="status-btn is-idle flex-1 py-3 rounded-lg font-bold text-sm border-2 transition flex items-center justify-center gap-2"
+                    >
+                      <i class="fas fa-check-circle text-xl"></i> SO — Siap
+                      Operasi
+                    </button>
+                    <button
+                      type="button"
+                      id="btn-tso"
+                      data-status="TSO"
+                      class="status-btn is-idle flex-1 py-3 rounded-lg font-bold text-sm border-2 transition flex items-center justify-center gap-2"
+                    >
+                      <i class="fas fa-times-circle text-xl"></i> TSO — Tidak
+                      Siap
+                    </button>
+                  </div>
+                  <input type="hidden" id="edit-kondisi" />
+                </div>
+                <div>
+                  <label
+                    class="block text-xs font-semibold mb-2 text-gray-600 dark:text-gray-400"
+                    >Catatan Teknisi (Perbaikan)</label
+                  >
+                  <textarea
+                    id="edit-keterangan"
+                    rows="3"
+                    placeholder="Tindakan yang dilakukan..."
+                    class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition resize-none min-h-[80px]"
+                  ></textarea>
+                </div>
+                <div class="pt-2 flex gap-3">
                   <button
                     type="button"
-                    id="btn-so"
-                    data-status="SO"
-                    class="status-btn is-idle flex-1 py-3 rounded-lg font-bold text-sm border-2 transition flex items-center justify-center gap-2"
+                    id="close-edit-btn"
+                    class="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 font-semibold text-sm transition"
                   >
-                    <i class="fas fa-check-circle text-xl"></i> SO — Siap
-                    Operasi
+                    <i class="fas fa-arrow-left"></i> Kembali
                   </button>
                   <button
-                    type="button"
-                    id="btn-tso"
-                    data-status="TSO"
-                    class="status-btn is-idle flex-1 py-3 rounded-lg font-bold text-sm border-2 transition flex items-center justify-center gap-2"
+                    type="submit"
+                    class="flex-1 flex items-center justify-center gap-2 px-5 py-2.5 bg-kai-blue hover:bg-blue-800 active:bg-blue-900 text-white font-semibold rounded-lg transition text-sm shadow-sm"
                   >
-                    <i class="fas fa-times-circle text-xl"></i> TSO — Tidak Siap
+                    <i class="fas fa-save"></i> Simpan Pembaruan
                   </button>
                 </div>
-                <input type="hidden" id="edit-kondisi" />
-              </div>
+              </form>
+            </div>
 
-              <div>
-                <label
-                  class="block text-xs font-semibold mb-2 text-gray-600 dark:text-gray-400"
-                  >Catatan Teknisi</label
-                >
-                <textarea
-                  id="edit-keterangan"
-                  rows="3"
-                  placeholder="Tindakan yang dilakukan..."
-                  class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition resize-none"
-                ></textarea>
-              </div>
-
-              <div class="pt-2 flex gap-3">
-                <button
-                  type="button"
-                  id="close-edit-btn"
-                  class="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 font-semibold text-sm transition"
-                >
-                  <i class="fas fa-arrow-left"></i> Kembali
-                </button>
-                <button
-                  type="submit"
-                  class="flex-1 flex items-center justify-center gap-2 px-5 py-2.5 bg-kai-blue hover:bg-blue-800 active:bg-blue-900 text-white font-semibold rounded-lg transition text-sm shadow-sm"
-                >
-                  <i class="fas fa-save"></i> Simpan Pembaruan
-                </button>
-              </div>
-            </form>
+            <!-- ── Panel: Pelaporan Kalibrasi ── -->
+            <div id="panel-kalibrasi" class="hidden">
+              <form
+                id="form-kalib"
+                class="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm p-6 md:p-8 space-y-6"
+              >
+                <div class="border-b border-gray-100 dark:border-gray-700 pb-4">
+                  <h2 class="text-base font-bold text-gray-800 dark:text-white">
+                    Pelaporan Kalibrasi Aset
+                  </h2>
+                  <p
+                    class="text-xs font-mono text-teal-600 dark:text-teal-400 mt-1"
+                    id="kalib-subtitle"
+                  >
+                    ID: —
+                  </p>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+                  <div>
+                    <label
+                      class="block text-xs font-semibold mb-2 text-gray-600 dark:text-gray-400"
+                      >Tanggal Kalibrasi</label
+                    >
+                    <input
+                      type="date"
+                      id="kalib-tanggal"
+                      required
+                      class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition"
+                    />
+                  </div>
+                  <div>
+                    <label
+                      class="block text-xs font-semibold mb-2 text-gray-600 dark:text-gray-400"
+                      >Teknisi Bertugas</label
+                    >
+                    <input
+                      type="text"
+                      id="kalib-teknisi"
+                      required
+                      placeholder="Nama Lengkap"
+                      class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition"
+                    />
+                  </div>
+                  <div>
+                    <label
+                      id="kalib-lokasi-label"
+                      class="block text-xs font-semibold mb-2 text-gray-600 dark:text-gray-400"
+                      >Lokasi Kalibrasi</label
+                    >
+                    <select
+                      id="kalib-lokasi"
+                      required
+                      class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition"
+                    >
+                      <option value="" disabled selected>
+                        Pilih lokasi...
+                      </option>
+                    </select>
+                  </div>
+                  <div>
+                    <label
+                      id="kalib-upt-label"
+                      class="block text-xs font-semibold mb-2 text-gray-600 dark:text-gray-400"
+                      >UPT Pengirim</label
+                    >
+                    <select
+                      id="kalib-upt"
+                      required
+                      class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition"
+                    >
+                      <option value="">Pilih lokasi dahulu...</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="md:col-span-2">
+                  <label
+                    class="block text-xs font-semibold mb-2 text-gray-600 dark:text-gray-400"
+                    >Unit Peruntukan</label
+                  >
+                  <div
+                    class="flex flex-wrap justify-between gap-4 bg-gray-50 dark:bg-gray-700/50 p-4 rounded-lg border border-gray-100 dark:border-gray-600 text-sm"
+                  >
+                    <label class="flex items-center gap-2 cursor-pointer"
+                      ><input
+                        type="radio"
+                        name="kalib-unit"
+                        value="A"
+                        class="accent-teal-600 w-4 h-4"
+                      /><span>JALAN REL</span></label
+                    >
+                    <label class="flex items-center gap-2 cursor-pointer"
+                      ><input
+                        type="radio"
+                        name="kalib-unit"
+                        value="B"
+                        class="accent-teal-600 w-4 h-4"
+                      /><span>JEMBATAN</span></label
+                    >
+                    <label class="flex items-center gap-2 cursor-pointer"
+                      ><input
+                        type="radio"
+                        name="kalib-unit"
+                        value="C"
+                        class="accent-teal-600 w-4 h-4"
+                      /><span>MEKANIK</span></label
+                    >
+                    <label class="flex items-center gap-2 cursor-pointer"
+                      ><input
+                        type="radio"
+                        name="kalib-unit"
+                        value="D"
+                        class="accent-teal-600 w-4 h-4"
+                      /><span>BALAIYASA</span></label
+                    >
+                  </div>
+                </div>
+                <div>
+                  <label
+                    class="block text-xs font-semibold mb-2 text-gray-600 dark:text-gray-400"
+                    >Catatan Teknisi (Kalibrasi)</label
+                  >
+                  <textarea
+                    id="kalib-keterangan"
+                    rows="3"
+                    placeholder="Hasil / catatan kalibrasi..."
+                    class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition resize-none min-h-[80px]"
+                  ></textarea>
+                </div>
+                <div class="pt-2 flex gap-3">
+                  <button
+                    type="button"
+                    id="close-kalib-btn"
+                    class="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 font-semibold text-sm transition"
+                  >
+                    <i class="fas fa-arrow-left"></i> Kembali
+                  </button>
+                  <button
+                    type="submit"
+                    class="flex-1 flex items-center justify-center gap-2 px-5 py-2.5 bg-teal-600 hover:bg-teal-700 active:bg-teal-800 text-white font-semibold rounded-lg transition text-sm shadow-sm"
+                  >
+                    <i class="fas fa-ruler-combined"></i> Simpan Laporan
+                    Kalibrasi
+                  </button>
+                </div>
+              </form>
+            </div>
           </section>
 
           <!-- ─────────────────────────────────────────────
@@ -1750,25 +1732,41 @@
                 />
               </div>
               <div
-                class="flex bg-gray-100 dark:bg-gray-700 rounded-lg p-1 shrink-0"
+                class="flex bg-gray-100 dark:bg-gray-700 rounded-lg p-1 shrink-0 min-w-0 overflow-x-auto"
               >
                 <button
                   id="hist-tab-repair"
-                  class="hist-tab px-5 py-2.5 text-sm font-semibold rounded-md bg-kai-orange text-white shadow-sm transition flex items-center gap-2"
+                  class="hist-tab px-3 sm:px-5 py-2 text-xs sm:text-sm font-semibold rounded-md bg-kai-orange text-white shadow-sm transition flex items-center gap-1.5 whitespace-nowrap"
                 >
                   <i class="fas fa-inbox"></i> Perbaikan
                 </button>
                 <button
+                  id="hist-tab-kalibrasi"
+                  class="hist-tab px-3 sm:px-5 py-2 text-xs sm:text-sm font-medium rounded-md text-gray-500 dark:text-gray-400 hover:bg-kai-orange/20 hover:text-kai-orange transition flex items-center gap-1.5 whitespace-nowrap"
+                >
+                  <i class="fas fa-ruler-combined"></i> Kalibrasi
+                </button>
+                <button
                   id="hist-tab-mutasi"
-                  class="hist-tab px-5 py-2.5 text-sm font-medium rounded-md text-gray-500 dark:text-gray-400 hover:bg-kai-orange/20 hover:text-kai-orange transition flex items-center gap-2"
+                  class="hist-tab px-3 sm:px-5 py-2 text-xs sm:text-sm font-medium rounded-md text-gray-500 dark:text-gray-400 hover:bg-kai-orange/20 hover:text-kai-orange transition flex items-center gap-1.5 whitespace-nowrap"
                 >
                   <i class="fas fa-exchange-alt"></i> Mutasi
                 </button>
               </div>
+              <button
+                id="btn-sort-history"
+                class="w-10 h-10 flex items-center justify-center bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-gray-500 hover:text-kai-orange transition shrink-0"
+              >
+                <i class="fas fa-sort-amount-down text-sm"></i>
+              </button>
             </div>
             <div
               id="history-repair-container"
               class="grid grid-cols-1 lg:grid-cols-2 gap-4 flex-1"
+            ></div>
+            <div
+              id="history-kalibrasi-container"
+              class="grid grid-cols-1 lg:grid-cols-2 gap-4 flex-1 hidden"
             ></div>
             <div
               id="history-mutasi-container"
@@ -1836,7 +1834,7 @@
                       <tr>
                         <th class="p-4 font-semibold w-10">No.</th>
                         <th class="p-4 font-semibold">Tanggal</th>
-                        <th class="p-4 font-semibold">Lokasi Pengirim</th>
+                        <th class="p-4 font-semibold">DAOP Pengirim</th>
                         <th class="p-4 font-semibold">UPT Pengirim</th>
                         <th class="p-4 font-semibold">Petugas</th>
                         <th class="p-4 font-semibold text-center">Kondisi</th>
@@ -2515,6 +2513,7 @@
               id="mutasi-upt-tuju"
               disabled
               class="w-full p-2.5 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-orange transition disabled:opacity-50 disabled:cursor-not-allowed"
+              required
             >
               <option value="">Pilih Lokasi Tujuan dahulu...</option>
             </select>
@@ -2730,19 +2729,19 @@
       </div>
     </div>
 
-    <!-- ── Sort Modal ── -->
+    <!-- ── Sort Modal (Kelola Data Aset) ── -->
     <div
       id="sort-modal"
       class="hidden fixed inset-0 z-[100] bg-gray-900/40 backdrop-blur-sm flex items-center justify-center p-4"
     >
       <div
-        class="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-xs w-full border border-gray-100 dark:border-gray-700 overflow-hidden"
+        class="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-sm w-full border border-gray-100 dark:border-gray-700 overflow-hidden max-h-[90vh] flex flex-col"
       >
         <div
-          class="flex justify-between items-center px-4 py-3.5 border-b border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800"
+          class="flex justify-between items-center px-4 py-3.5 border-b border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800 shrink-0"
         >
           <h3 class="text-sm font-bold text-gray-800 dark:text-white">
-            Pengurutan Data
+            Pengurutan Data Aset
           </h3>
           <button
             id="close-sort-modal"
@@ -2751,39 +2750,545 @@
             <i class="fas fa-times text-xl"></i>
           </button>
         </div>
-        <div class="p-5 space-y-4">
+        <div class="p-5 space-y-4 overflow-y-auto flex-1">
+          <!-- Main sort field dropdown -->
           <div>
             <label class="block text-xs font-semibold mb-1.5 text-gray-500"
-              >Urutkan Berdasarkan</label
+              >Urutkan data berdasarkan:</label
             >
             <select
               id="sort-field"
               class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition"
             >
-              <option value="kode_id">Kode ID</option>
-              <option value="alat">Nama Alat</option>
-              <option value="lokasi">Lokasi</option>
+              <option value="">— Pilih kriteria urutan —</option>
+              <option value="id_aset">Kode ID</option>
+              <option value="kode_alat_name">Nama/Kode Alat</option>
+              <option value="sumber_pengadaan">Pengadaan</option>
+              <option value="tanggal_pembelian">Tanggal Beli</option>
+              <option value="unit_peruntukan">Peruntukan</option>
+              <option value="id_lokasi">Nama/Kode Lokasi</option>
             </select>
           </div>
-          <div class="flex gap-2">
-            <button
-              data-dir="asc"
-              class="sort-dir-btn flex-1 py-2.5 rounded-lg border-2 border-kai-blue bg-blue-50 dark:bg-blue-900/20 text-kai-blue dark:text-blue-300 text-xs font-semibold transition"
+          <!-- Custom spec checkbox -->
+          <div class="flex items-center gap-2">
+            <input
+              type="checkbox"
+              id="sort-custom-spec"
+              class="w-4 h-4 accent-kai-blue cursor-pointer"
+            />
+            <label
+              for="sort-custom-spec"
+              class="text-xs font-semibold text-gray-600 dark:text-gray-300 cursor-pointer"
+              >Spesifikasi Kustom (filter tambahan)</label
             >
-              A → Z
-            </button>
-            <button
-              data-dir="desc"
-              class="sort-dir-btn flex-1 py-2.5 rounded-lg border-2 border-gray-200 dark:border-gray-600 text-gray-500 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 text-xs font-semibold transition"
+          </div>
+          <hr class="border-gray-200 dark:border-gray-700" />
+          <!-- No-filter label (shown when checkbox unchecked) -->
+          <div
+            id="sort-all-data-label"
+            class="text-center text-xs text-gray-400 py-2 italic"
+          >
+            Tampilkan seluruh data tanpa terkecuali.
+          </div>
+          <!-- Custom filter panels (hidden by default) -->
+          <div id="sort-custom-panels" class="hidden space-y-4">
+            <!-- Panel: Kode ID -->
+            <div id="sort-panel-id_aset" class="hidden space-y-3">
+              <div class="grid grid-cols-2 gap-3">
+                <div>
+                  <label class="block text-xs font-semibold mb-1 text-gray-500"
+                    >Penomoran: dari no.</label
+                  >
+                  <input
+                    type="number"
+                    id="sort-id-from"
+                    min="1"
+                    placeholder="1"
+                    class="w-full p-2 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition"
+                  />
+                </div>
+                <div>
+                  <label class="block text-xs font-semibold mb-1 text-gray-500"
+                    >sampai no.</label
+                  >
+                  <input
+                    type="number"
+                    id="sort-id-to"
+                    min="1"
+                    placeholder="999"
+                    class="w-full p-2 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition"
+                  />
+                </div>
+              </div>
+              <div>
+                <label class="block text-xs font-semibold mb-1 text-gray-500"
+                  >Kode Alat</label
+                >
+                <select
+                  id="sort-id-alat"
+                  class="w-full p-2 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition"
+                >
+                  <option value="">— Semua Alat —</option>
+                </select>
+              </div>
+              <div>
+                <label class="block text-xs font-semibold mb-1 text-gray-500"
+                  >Pengadaan</label
+                >
+                <div class="flex gap-4 text-sm">
+                  <label class="flex items-center gap-2 cursor-pointer"
+                    ><input
+                      type="radio"
+                      name="sort-id-pengadaan"
+                      value=""
+                      class="accent-kai-blue"
+                      checked
+                    /><span>Semua</span></label
+                  >
+                  <label class="flex items-center gap-2 cursor-pointer"
+                    ><input
+                      type="radio"
+                      name="sort-id-pengadaan"
+                      value="PUSAT"
+                      class="accent-kai-blue"
+                    /><span>PUSAT</span></label
+                  >
+                  <label class="flex items-center gap-2 cursor-pointer"
+                    ><input
+                      type="radio"
+                      name="sort-id-pengadaan"
+                      value="DAOP/DIVRE"
+                      class="accent-kai-blue"
+                    /><span>DAOP/DIVRE</span></label
+                  >
+                </div>
+              </div>
+              <div class="grid grid-cols-2 gap-3">
+                <div>
+                  <label class="block text-xs font-semibold mb-1 text-gray-500"
+                    >Tahun Beli: dari</label
+                  >
+                  <select
+                    id="sort-id-tahun-from"
+                    class="w-full p-2 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition"
+                  ></select>
+                </div>
+                <div>
+                  <label class="block text-xs font-semibold mb-1 text-gray-500"
+                    >sampai</label
+                  >
+                  <select
+                    id="sort-id-tahun-to"
+                    class="w-full p-2 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition"
+                  ></select>
+                </div>
+              </div>
+              <div>
+                <label class="block text-xs font-semibold mb-1 text-gray-500"
+                  >Peruntukan</label
+                >
+                <div class="flex flex-wrap gap-3 text-sm">
+                  <label class="flex items-center gap-2 cursor-pointer"
+                    ><input
+                      type="radio"
+                      name="sort-id-peruntukan"
+                      value=""
+                      class="accent-kai-blue"
+                      checked
+                    /><span>Semua</span></label
+                  >
+                  <label class="flex items-center gap-2 cursor-pointer"
+                    ><input
+                      type="radio"
+                      name="sort-id-peruntukan"
+                      value="A"
+                      class="accent-kai-blue"
+                    /><span>Jalan Rel</span></label
+                  >
+                  <label class="flex items-center gap-2 cursor-pointer"
+                    ><input
+                      type="radio"
+                      name="sort-id-peruntukan"
+                      value="B"
+                      class="accent-kai-blue"
+                    /><span>Jembatan</span></label
+                  >
+                  <label class="flex items-center gap-2 cursor-pointer"
+                    ><input
+                      type="radio"
+                      name="sort-id-peruntukan"
+                      value="C"
+                      class="accent-kai-blue"
+                    /><span>Mekanik</span></label
+                  >
+                  <label class="flex items-center gap-2 cursor-pointer"
+                    ><input
+                      type="radio"
+                      name="sort-id-peruntukan"
+                      value="D"
+                      class="accent-kai-blue"
+                    /><span>Balaiyasa</span></label
+                  >
+                </div>
+              </div>
+              <div>
+                <label class="block text-xs font-semibold mb-1 text-gray-500"
+                  >Kode Lokasi</label
+                >
+                <select
+                  id="sort-id-lokasi"
+                  class="w-full p-2 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition"
+                >
+                  <option value="">— Semua Lokasi —</option>
+                </select>
+              </div>
+            </div>
+            <!-- Panel: Nama/Kode Alat -->
+            <div id="sort-panel-kode_alat_name" class="hidden">
+              <label class="block text-xs font-semibold mb-1 text-gray-500"
+                >Pilih Alat Kerja</label
+              >
+              <select
+                id="sort-alat-filter"
+                class="w-full p-2 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition"
+              >
+                <option value="">— Semua Alat —</option>
+              </select>
+            </div>
+            <!-- Panel: Pengadaan -->
+            <div id="sort-panel-sumber_pengadaan" class="hidden">
+              <label class="block text-xs font-semibold mb-1 text-gray-500"
+                >Pengadaan</label
+              >
+              <div class="flex gap-4 text-sm">
+                <label class="flex items-center gap-2 cursor-pointer"
+                  ><input
+                    type="radio"
+                    name="sort-pengadaan-filter"
+                    value=""
+                    class="accent-kai-blue"
+                    checked
+                  /><span>Semua</span></label
+                >
+                <label class="flex items-center gap-2 cursor-pointer"
+                  ><input
+                    type="radio"
+                    name="sort-pengadaan-filter"
+                    value="PUSAT"
+                    class="accent-kai-blue"
+                  /><span>PUSAT</span></label
+                >
+                <label class="flex items-center gap-2 cursor-pointer"
+                  ><input
+                    type="radio"
+                    name="sort-pengadaan-filter"
+                    value="DAOP/DIVRE"
+                    class="accent-kai-blue"
+                  /><span>DAOP/DIVRE</span></label
+                >
+              </div>
+            </div>
+            <!-- Panel: Tanggal Beli -->
+            <div id="sort-panel-tanggal_pembelian" class="hidden">
+              <div class="grid grid-cols-2 gap-3">
+                <div>
+                  <label class="block text-xs font-semibold mb-1 text-gray-500"
+                    >Dari Tahun</label
+                  >
+                  <select
+                    id="sort-tgl-from"
+                    class="w-full p-2 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition"
+                  ></select>
+                </div>
+                <div>
+                  <label class="block text-xs font-semibold mb-1 text-gray-500"
+                    >Sampai Tahun</label
+                  >
+                  <select
+                    id="sort-tgl-to"
+                    class="w-full p-2 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition"
+                  ></select>
+                </div>
+              </div>
+            </div>
+            <!-- Panel: Peruntukan -->
+            <div id="sort-panel-unit_peruntukan" class="hidden">
+              <label class="block text-xs font-semibold mb-1 text-gray-500"
+                >Peruntukan</label
+              >
+              <div class="flex flex-wrap gap-3 text-sm">
+                <label class="flex items-center gap-2 cursor-pointer"
+                  ><input
+                    type="radio"
+                    name="sort-peruntukan-filter"
+                    value=""
+                    class="accent-kai-blue"
+                    checked
+                  /><span>Semua</span></label
+                >
+                <label class="flex items-center gap-2 cursor-pointer"
+                  ><input
+                    type="radio"
+                    name="sort-peruntukan-filter"
+                    value="A"
+                    class="accent-kai-blue"
+                  /><span>Jalan Rel</span></label
+                >
+                <label class="flex items-center gap-2 cursor-pointer"
+                  ><input
+                    type="radio"
+                    name="sort-peruntukan-filter"
+                    value="B"
+                    class="accent-kai-blue"
+                  /><span>Jembatan</span></label
+                >
+                <label class="flex items-center gap-2 cursor-pointer"
+                  ><input
+                    type="radio"
+                    name="sort-peruntukan-filter"
+                    value="C"
+                    class="accent-kai-blue"
+                  /><span>Mekanik</span></label
+                >
+                <label class="flex items-center gap-2 cursor-pointer"
+                  ><input
+                    type="radio"
+                    name="sort-peruntukan-filter"
+                    value="D"
+                    class="accent-kai-blue"
+                  /><span>Balaiyasa</span></label
+                >
+              </div>
+            </div>
+            <!-- Panel: Lokasi -->
+            <div id="sort-panel-id_lokasi" class="hidden space-y-3">
+              <div>
+                <label class="block text-xs font-semibold mb-1 text-gray-500"
+                  >Nama Lokasi</label
+                >
+                <select
+                  id="sort-lok-lokasi"
+                  class="w-full p-2 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition"
+                >
+                  <option value="">Tampilkan untuk Semua Lokasi</option>
+                </select>
+              </div>
+              <div>
+                <label class="block text-xs font-semibold mb-1 text-gray-500"
+                  >Nama UPT</label
+                >
+                <select
+                  id="sort-lok-upt"
+                  class="w-full p-2 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition"
+                >
+                  <option value="">Tampilkan untuk Semua UPT</option>
+                </select>
+              </div>
+            </div>
+          </div>
+          <hr class="border-gray-200 dark:border-gray-700" />
+          <!-- Sort direction (always visible after separator) -->
+          <div>
+            <label class="block text-xs font-semibold mb-2 text-gray-500"
+              >Arah Urutan</label
             >
-              Z → A
-            </button>
+            <div class="grid grid-cols-2 gap-2">
+              <button
+                data-dir="count-desc"
+                class="sort-dir-btn py-2.5 rounded-lg border-2 border-kai-blue bg-sky-100 dark:bg-sky-900/20 text-kai-blue dark:text-sky-300 text-sm font-semibold transition"
+              >
+                Terbanyak ↓
+              </button>
+              <button
+                data-dir="count-asc"
+                class="sort-dir-btn py-2.5 rounded-lg border-2 border-gray-200 dark:border-gray-600 text-gray-500 bg-white dark:bg-gray-700 text-sm font-semibold transition"
+              >
+                Tersedikit ↑
+              </button>
+              <button
+                data-dir="asc"
+                class="sort-dir-btn py-2.5 rounded-lg border-2 border-gray-200 dark:border-gray-600 text-gray-500 bg-white dark:bg-gray-700 text-sm font-semibold transition"
+              >
+                A → Z
+              </button>
+              <button
+                data-dir="desc"
+                class="sort-dir-btn py-2.5 rounded-lg border-2 border-gray-200 dark:border-gray-600 text-gray-500 bg-white dark:bg-gray-700 text-sm font-semibold transition"
+              >
+                Z → A
+              </button>
+            </div>
           </div>
           <button
             id="btn-apply-sort"
-            class="w-full bg-gray-800 hover:bg-gray-900 dark:bg-kai-blue dark:hover:bg-blue-700 text-white py-2.5 rounded-lg text-sm font-semibold transition"
+            class="w-full bg-kai-blue hover:bg-blue-700 text-white py-2.5 rounded-lg text-sm font-semibold transition"
           >
-            Terapkan
+            Terapkan Pengurutan
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Sort Modal (Pantau Riwayat Aset) ── -->
+    <div
+      id="sort-history-modal"
+      class="hidden fixed inset-0 z-[100] bg-gray-900/40 backdrop-blur-sm flex items-center justify-center p-4"
+    >
+      <div
+        class="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-sm w-full border border-gray-100 dark:border-gray-700 overflow-hidden max-h-[90vh] flex flex-col"
+      >
+        <div
+          class="flex justify-between items-center px-4 py-3.5 border-b border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800 shrink-0"
+        >
+          <h3 class="text-sm font-bold text-gray-800 dark:text-white">
+            Pengurutan Riwayat
+          </h3>
+          <button
+            id="close-sort-history-modal"
+            class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition w-7 h-7 flex items-center justify-center rounded-full hover:bg-gray-100 dark:hover:bg-gray-700"
+          >
+            <i class="fas fa-times text-xl"></i>
+          </button>
+        </div>
+        <div class="p-5 space-y-4 overflow-y-auto flex-1">
+          <div>
+            <label class="block text-xs font-semibold mb-1.5 text-gray-500"
+              >Urutkan data berdasarkan:</label
+            >
+            <select
+              id="hist-sort-field"
+              class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition"
+            >
+              <option value="">— Pilih kriteria urutan —</option>
+              <option value="id_aset">Kode ID</option>
+              <option value="kode_alat">Nama/Kode Alat</option>
+              <option value="sumber_pengadaan">Pengadaan</option>
+              <option value="tanggal_pembelian">Tanggal Beli</option>
+              <option value="unit_peruntukan">Peruntukan</option>
+              <option value="id_lokasi">Nama/Kode Lokasi</option>
+            </select>
+          </div>
+          <div class="flex items-center gap-2">
+            <input
+              type="checkbox"
+              id="hist-sort-custom-spec"
+              class="w-4 h-4 accent-kai-blue cursor-pointer"
+            />
+            <label
+              for="hist-sort-custom-spec"
+              class="text-xs font-semibold text-gray-600 dark:text-gray-300 cursor-pointer"
+              >Spesifikasi Kustom (filter tambahan)</label
+            >
+          </div>
+          <hr class="border-gray-200 dark:border-gray-700" />
+          <div
+            id="hist-sort-all-data-label"
+            class="text-center text-xs text-gray-400 py-2 italic"
+          >
+            Tampilkan seluruh data tanpa terkecuali.
+          </div>
+          <div id="hist-sort-custom-panels" class="hidden space-y-3">
+            <div>
+              <label class="block text-xs font-semibold mb-1 text-gray-500"
+                >Kode Alat</label
+              >
+              <select
+                id="hist-sort-alat"
+                class="w-full p-2 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition"
+              >
+                <option value="">— Semua Alat —</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-xs font-semibold mb-1 text-gray-500"
+                >Pengadaan</label
+              >
+              <div class="flex gap-4 text-sm">
+                <label class="flex items-center gap-2 cursor-pointer"
+                  ><input
+                    type="radio"
+                    name="hist-sort-pengadaan"
+                    value=""
+                    class="accent-kai-blue"
+                    checked
+                  /><span>Semua</span></label
+                >
+                <label class="flex items-center gap-2 cursor-pointer"
+                  ><input
+                    type="radio"
+                    name="hist-sort-pengadaan"
+                    value="PUSAT"
+                    class="accent-kai-blue"
+                  /><span>PUSAT</span></label
+                >
+                <label class="flex items-center gap-2 cursor-pointer"
+                  ><input
+                    type="radio"
+                    name="hist-sort-pengadaan"
+                    value="DAOP/DIVRE"
+                    class="accent-kai-blue"
+                  /><span>DAOP/DIVRE</span></label
+                >
+              </div>
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="block text-xs font-semibold mb-1 text-gray-500"
+                  >Dari Tahun</label
+                >
+                <select
+                  id="hist-sort-tahun-from"
+                  class="w-full p-2 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition"
+                ></select>
+              </div>
+              <div>
+                <label class="block text-xs font-semibold mb-1 text-gray-500"
+                  >Sampai Tahun</label
+                >
+                <select
+                  id="hist-sort-tahun-to"
+                  class="w-full p-2 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition"
+                ></select>
+              </div>
+            </div>
+          </div>
+          <hr class="border-gray-200 dark:border-gray-700" />
+          <div>
+            <label class="block text-xs font-semibold mb-2 text-gray-500"
+              >Arah Urutan</label
+            >
+            <div class="grid grid-cols-2 gap-2">
+              <button
+                data-hist-dir="count-desc"
+                class="hist-sort-dir-btn py-2.5 rounded-lg border-2 border-kai-orange bg-orange-50 dark:bg-orange-900/20 text-kai-orange dark:text-orange-300 text-xs font-semibold transition"
+              >
+                Terbanyak ↓
+              </button>
+              <button
+                data-hist-dir="count-asc"
+                class="hist-sort-dir-btn py-2.5 rounded-lg border-2 border-gray-200 dark:border-gray-600 text-gray-500 bg-white dark:bg-gray-700 text-xs font-semibold transition"
+              >
+                Tersedikit ↑
+              </button>
+              <button
+                data-hist-dir="asc"
+                class="hist-sort-dir-btn py-2.5 rounded-lg border-2 border-gray-200 dark:border-gray-600 text-gray-500 bg-white dark:bg-gray-700 text-xs font-semibold transition"
+              >
+                A → Z
+              </button>
+              <button
+                data-hist-dir="desc"
+                class="hist-sort-dir-btn py-2.5 rounded-lg border-2 border-gray-200 dark:border-gray-600 text-gray-500 bg-white dark:bg-gray-700 text-xs font-semibold transition"
+              >
+                Z → A
+              </button>
+            </div>
+          </div>
+          <button
+            id="btn-apply-hist-sort"
+            class="w-full bg-kai-orange hover:bg-orange-600 text-white py-2.5 rounded-lg text-sm font-semibold transition"
+          >
+            Terapkan Pengurutan
           </button>
         </div>
       </div>
@@ -2980,6 +3485,1165 @@
           >
             <i class="fas fa-trash-alt mr-1"></i> Hapus Permanen dari Sistem
           </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── KDAK: Tambah Aset Modal ── -->
+    <div
+      id="kdak-tambah-modal"
+      class="hidden fixed inset-0 z-[100] bg-gray-900/40 backdrop-blur-sm flex items-center justify-center p-4"
+    >
+      <div
+        class="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-lg border border-gray-100 dark:border-gray-700 overflow-hidden max-h-[90vh] flex flex-col"
+      >
+        <div
+          class="flex justify-between items-center px-5 py-4 border-b border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800 shrink-0"
+        >
+          <div>
+            <h3 class="text-sm font-bold text-gray-800 dark:text-white">
+              Tambah Aset Alat Kerja
+            </h3>
+            <p class="text-xs text-gray-400 mt-0.5">
+              Lengkapi seluruh kolom untuk meregistrasi aset baru.
+            </p>
+          </div>
+          <button
+            id="close-kdak-tambah-modal"
+            class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition w-7 h-7 flex items-center justify-center rounded-full hover:bg-gray-100 dark:hover:bg-gray-700"
+          >
+            <i class="fas fa-times text-xl"></i>
+          </button>
+        </div>
+        <div class="p-5 overflow-y-auto">
+          <form id="form-input-baru" class="space-y-5">
+            <div class="md:col-span-2">
+              <label
+                class="block text-xs font-semibold mb-2 text-gray-600 dark:text-gray-400"
+                >1. Alat Kerja</label
+              >
+              <select
+                id="in-alat"
+                required
+                class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition"
+              ></select>
+            </div>
+
+            <div class="grid grid-cols-2 gap-4">
+              <div>
+                <label
+                  class="block text-xs font-semibold mb-2 text-gray-600 dark:text-gray-400"
+                  >2. Sumber Pengadaan</label
+                >
+                <div class="space-y-2 text-sm">
+                  <label class="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="in-pengadaan"
+                      value="PUSAT"
+                      required
+                      class="accent-kai-orange w-4 h-4"
+                    />
+                    <span>PUSAT</span>
+                  </label>
+                  <label class="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="in-pengadaan"
+                      value="DAOP/DIVRE"
+                      class="accent-kai-orange w-4 h-4"
+                    />
+                    <span>DAOP / DIVRE</span>
+                  </label>
+                </div>
+              </div>
+              <div>
+                <label
+                  class="block text-xs font-semibold mb-2 text-gray-600 dark:text-gray-400"
+                  >3. Tanggal Pembelian</label
+                >
+                <input
+                  type="date"
+                  id="in-tanggal"
+                  required
+                  class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label
+                class="block text-xs font-semibold mb-2 text-gray-600 dark:text-gray-400"
+                >4. Unit Peruntukan</label
+              >
+              <div
+                class="flex flex-wrap gap-3 bg-gray-50 dark:bg-gray-700/50 p-3 rounded-lg border border-gray-100 dark:border-gray-600 text-sm"
+              >
+                <label class="flex items-center gap-2 cursor-pointer"
+                  ><input
+                    type="radio"
+                    name="in-unit"
+                    value="A"
+                    required
+                    class="accent-kai-orange w-4 h-4"
+                  /><span>JALAN REL</span></label
+                >
+                <label class="flex items-center gap-2 cursor-pointer"
+                  ><input
+                    type="radio"
+                    name="in-unit"
+                    value="B"
+                    class="accent-kai-orange w-4 h-4"
+                  /><span>JEMBATAN</span></label
+                >
+                <label class="flex items-center gap-2 cursor-pointer"
+                  ><input
+                    type="radio"
+                    name="in-unit"
+                    value="C"
+                    class="accent-kai-orange w-4 h-4"
+                  /><span>MEKANIK</span></label
+                >
+                <label class="flex items-center gap-2 cursor-pointer"
+                  ><input
+                    type="radio"
+                    name="in-unit"
+                    value="D"
+                    class="accent-kai-orange w-4 h-4"
+                  /><span>BALAIYASA</span></label
+                >
+              </div>
+            </div>
+
+            <div>
+              <label
+                class="block text-xs font-semibold mb-2 text-gray-600 dark:text-gray-400"
+                >5. Lokasi Penempatan</label
+              >
+              <select
+                id="in-lokasi"
+                required
+                class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition"
+              >
+                <option value="">— Pilih Lokasi/Wilayah —</option>
+              </select>
+            </div>
+
+            <div>
+              <label
+                class="block text-xs font-semibold mb-2 text-gray-600 dark:text-gray-400"
+                >6. UPT / Sub-Lokasi</label
+              >
+              <select
+                id="in-upt"
+                disabled
+                class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <option value="">— Pilih Lokasi terlebih dahulu... —</option>
+              </select>
+            </div>
+
+            <div class="flex gap-3 pt-1">
+              <button
+                type="button"
+                id="kdak-tambah-cancel"
+                class="flex-1 py-2.5 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 rounded-lg text-sm font-semibold transition"
+              >
+                Batal
+              </button>
+              <button
+                type="submit"
+                class="flex-1 py-2.5 bg-kai-orange hover:bg-orange-600 active:bg-orange-700 text-white font-semibold rounded-lg transition text-sm flex items-center justify-center gap-2"
+              >
+                <i class="fas fa-pencil"></i> Simpan Aset
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── KDAK: Bulk Import Modal ── -->
+    <div
+      id="kdak-bulk-modal"
+      class="hidden fixed inset-0 z-[100] bg-gray-900/40 backdrop-blur-sm flex items-center justify-center p-4"
+    >
+      <div
+        class="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-sm border border-gray-100 dark:border-gray-700 overflow-hidden"
+      >
+        <div
+          class="flex justify-between items-center px-5 py-4 border-b border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800"
+        >
+          <div>
+            <h3 class="text-sm font-bold text-gray-800 dark:text-white">
+              Bulk Import Aset
+            </h3>
+            <p class="text-xs text-gray-400 mt-0.5">
+              Unduh template atau impor file Excel.
+            </p>
+          </div>
+          <button
+            id="close-kdak-bulk-modal"
+            class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition w-7 h-7 flex items-center justify-center rounded-full hover:bg-gray-100 dark:hover:bg-gray-700"
+          >
+            <i class="fas fa-times text-xl"></i>
+          </button>
+        </div>
+        <div class="p-5 space-y-3">
+          <div>
+            <label class="block text-xs font-semibold mb-2 text-gray-500"
+              >Pilih Tindakan</label
+            >
+            <select
+              id="kdak-bulk-action"
+              class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition"
+            >
+              <option value="">— Pilih opsi —</option>
+              <option value="sample">📥 Sample Excel</option>
+              <option value="import">📤 Import Excel</option>
+            </select>
+          </div>
+          <!-- Import file area (shown only when import selected) -->
+          <div id="kdak-bulk-file-area" class="hidden">
+            <div
+              class="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-xl p-5 text-center"
+            >
+              <i
+                class="fas fa-file-excel text-3xl text-emerald-500 mb-2 block"
+              ></i>
+              <p class="text-xs text-gray-500 dark:text-gray-400 mb-3">
+                Pilih file Excel (.xlsx) sesuai format template
+              </p>
+              <input
+                type="file"
+                id="kdak-bulk-file-input"
+                accept=".xlsx"
+                class="hidden"
+              />
+              <button
+                type="button"
+                onclick="
+                  document.getElementById('kdak-bulk-file-input').click()
+                "
+                class="px-4 py-2 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 rounded-lg text-xs font-semibold transition"
+              >
+                Pilih File
+              </button>
+              <p id="kdak-bulk-filename" class="text-xs text-gray-400 mt-2">
+                Belum ada file dipilih
+              </p>
+            </div>
+          </div>
+          <div class="flex gap-3 pt-1">
+            <button
+              id="kdak-bulk-cancel"
+              class="flex-1 py-2.5 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 rounded-lg text-sm font-semibold transition"
+            >
+              Batal
+            </button>
+            <button
+              id="kdak-bulk-confirm"
+              class="flex-1 py-2.5 bg-kai-blue hover:bg-blue-800 text-white rounded-lg text-sm font-semibold transition"
+            >
+              Lanjutkan
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── KDAK: Map View Modal ── -->
+    <div
+      id="kdak-map-modal"
+      class="hidden fixed inset-0 z-[100] bg-gray-900/40 backdrop-blur-sm flex items-center justify-center p-4"
+    >
+      <div
+        class="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-3xl border border-gray-100 dark:border-gray-700 overflow-hidden"
+      >
+        <div
+          class="flex justify-between items-center px-5 py-4 border-b border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800"
+        >
+          <div>
+            <h3 class="text-sm font-bold text-gray-800 dark:text-white">
+              Map View — Sebaran Aset
+            </h3>
+            <p class="text-xs text-gray-400 mt-0.5">
+              Peta lokasi terkini perangkat Anda.
+            </p>
+          </div>
+          <button
+            id="close-kdak-map-modal"
+            class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition w-7 h-7 flex items-center justify-center rounded-full hover:bg-gray-100 dark:hover:bg-gray-700"
+          >
+            <i class="fas fa-times text-xl"></i>
+          </button>
+        </div>
+        <div class="relative" style="height: 420px">
+          <iframe
+            id="kdak-map-iframe"
+            src=""
+            class="w-full h-full border-0"
+            allowfullscreen
+            loading="lazy"
+            referrerpolicy="no-referrer-when-downgrade"
+          ></iframe>
+          <div
+            id="kdak-map-loading"
+            class="absolute inset-0 flex flex-col items-center justify-center bg-gray-50 dark:bg-gray-800 gap-3"
+          >
+            <i
+              class="fas fa-map-marked-alt text-4xl text-gray-300 dark:text-gray-600"
+            ></i>
+            <p class="text-sm text-gray-400">Memuat peta...</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── KDAK: Daftar per Alat Kerja Modal ── -->
+    <div
+      id="kdak-alat-modal"
+      class="hidden fixed inset-0 z-[100] bg-gray-900/40 backdrop-blur-sm flex items-center justify-center p-4"
+    >
+      <div
+        class="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-lg border border-gray-100 dark:border-gray-700 overflow-hidden max-h-[85vh] flex flex-col"
+      >
+        <div
+          class="flex justify-between items-center px-5 py-4 border-b border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800 shrink-0"
+        >
+          <div>
+            <h3 class="text-sm font-bold text-gray-800 dark:text-white">
+              Daftar per Alat Kerja
+            </h3>
+            <p class="text-xs text-gray-400 mt-0.5">
+              Sebaran aset berdasarkan jenis alat kerja.
+            </p>
+          </div>
+          <button
+            id="close-kdak-alat-modal"
+            class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition w-7 h-7 flex items-center justify-center rounded-full hover:bg-gray-100 dark:hover:bg-gray-700"
+          >
+            <i class="fas fa-times text-xl"></i>
+          </button>
+        </div>
+        <div class="px-5 pt-4 shrink-0">
+          <div class="flex gap-2">
+            <select
+              id="kdak-alat-filter"
+              class="flex-1 py-2 px-3 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none cursor-pointer focus:border-kai-blue transition"
+            >
+              <option value="">— Semua Alat Kerja —</option>
+            </select>
+            <select
+              id="kdak-alat-sort"
+              class="py-2 px-3 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-xs outline-none cursor-pointer focus:border-kai-blue transition"
+            >
+              <option value="count-desc">Terbanyak ↓</option>
+              <option value="count-asc">Tersedikit ↑</option>
+              <option value="name-asc">Nama A–Z</option>
+              <option value="name-desc">Nama Z–A</option>
+            </select>
+          </div>
+        </div>
+        <div
+          id="kdak-alat-list"
+          class="p-5 overflow-y-auto space-y-2 flex-1"
+        ></div>
+      </div>
+    </div>
+
+    <!-- ── KDAK: Daftar per Lokasi Modal ── -->
+    <div
+      id="kdak-lokasi-modal"
+      class="hidden fixed inset-0 z-[100] bg-gray-900/40 backdrop-blur-sm flex items-center justify-center p-4"
+    >
+      <div
+        class="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-lg border border-gray-100 dark:border-gray-700 overflow-hidden max-h-[85vh] flex flex-col"
+      >
+        <div
+          class="flex justify-between items-center px-5 py-4 border-b border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800 shrink-0"
+        >
+          <div>
+            <h3 class="text-sm font-bold text-gray-800 dark:text-white">
+              Daftar per Lokasi
+            </h3>
+            <p class="text-xs text-gray-400 mt-0.5">
+              Sebaran aset berdasarkan lokasi penempatan.
+            </p>
+          </div>
+          <button
+            id="close-kdak-lokasi-modal"
+            class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition w-7 h-7 flex items-center justify-center rounded-full hover:bg-gray-100 dark:hover:bg-gray-700"
+          >
+            <i class="fas fa-times text-xl"></i>
+          </button>
+        </div>
+        <div class="px-5 pt-4 shrink-0 space-y-2">
+          <div class="flex gap-2">
+            <select
+              id="kdak-lokasi-filter"
+              class="flex-1 py-2 px-3 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none cursor-pointer focus:border-kai-blue transition"
+            >
+              <option value="">— Semua Lokasi —</option>
+            </select>
+            <select
+              id="kdak-lokasi-sort"
+              class="py-2 px-3 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-xs outline-none cursor-pointer focus:border-kai-blue transition"
+            >
+              <option value="count-desc">Terbanyak ↓</option>
+              <option value="count-asc">Tersedikit ↑</option>
+              <option value="name-asc">Nama A–Z</option>
+              <option value="name-desc">Nama Z–A</option>
+            </select>
+          </div>
+          <select
+            id="kdak-upt-filter"
+            class="w-full py-2 px-3 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none cursor-pointer focus:border-kai-blue transition"
+          >
+            <option value="">— Semua UPT untuk Lokasi ini —</option>
+          </select>
+        </div>
+        <div
+          id="kdak-lokasi-list"
+          class="p-5 overflow-y-auto space-y-2 flex-1"
+        ></div>
+      </div>
+    </div>
+
+    <!-- ── KDAK: Aset Terbaru Modal ── -->
+    <div
+      id="kdak-terbaru-modal"
+      class="hidden fixed inset-0 z-[100] bg-gray-900/40 backdrop-blur-sm flex items-center justify-center p-4"
+    >
+      <div
+        class="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-lg border border-gray-100 dark:border-gray-700 overflow-hidden max-h-[85vh] flex flex-col"
+      >
+        <div
+          class="flex justify-between items-center px-5 py-4 border-b border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800 shrink-0"
+        >
+          <div>
+            <h3 class="text-sm font-bold text-gray-800 dark:text-white">
+              Aset Terbaru
+            </h3>
+            <p class="text-xs text-gray-400 mt-0.5">
+              Filter berdasarkan rentang tanggal pembelian.
+            </p>
+          </div>
+          <button
+            id="close-kdak-terbaru-modal"
+            class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition w-7 h-7 flex items-center justify-center rounded-full hover:bg-gray-100 dark:hover:bg-gray-700"
+          >
+            <i class="fas fa-times text-xl"></i>
+          </button>
+        </div>
+        <div class="px-5 pt-4 shrink-0 space-y-3">
+          <!-- Quick range presets -->
+          <div class="flex flex-wrap gap-2">
+            <button
+              class="kdak-terbaru-preset px-3 py-1.5 rounded-lg text-xs font-semibold border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:border-kai-orange hover:text-kai-orange transition"
+              data-preset="week"
+            >
+              Minggu Ini
+            </button>
+            <button
+              class="kdak-terbaru-preset px-3 py-1.5 rounded-lg text-xs font-semibold border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:border-kai-orange hover:text-kai-orange transition"
+              data-preset="month"
+            >
+              Bulan Ini
+            </button>
+            <button
+              class="kdak-terbaru-preset px-3 py-1.5 rounded-lg text-xs font-semibold border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:border-kai-orange hover:text-kai-orange transition"
+              data-preset="year"
+            >
+              Tahun Ini
+            </button>
+          </div>
+          <!-- Custom date range -->
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block text-xs font-semibold mb-1 text-gray-500"
+                >Dari Tanggal</label
+              >
+              <input
+                type="date"
+                id="kdak-terbaru-from"
+                class="w-full p-2 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-orange transition"
+              />
+            </div>
+            <div>
+              <label class="block text-xs font-semibold mb-1 text-gray-500"
+                >Sampai Tanggal</label
+              >
+              <input
+                type="date"
+                id="kdak-terbaru-to"
+                class="w-full p-2 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-orange transition"
+              />
+            </div>
+          </div>
+          <p class="text-xs text-gray-400" id="kdak-terbaru-count-label"></p>
+        </div>
+        <div
+          id="kdak-terbaru-list"
+          class="p-5 overflow-y-auto space-y-2 flex-1"
+        ></div>
+      </div>
+    </div>
+
+    <!-- ── KDAK: Sort Modal ── -->
+    <div
+      id="kdak-sort-modal"
+      class="hidden fixed inset-0 z-[100] bg-gray-900/40 backdrop-blur-sm flex items-center justify-center p-4"
+    >
+      <div
+        class="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-sm w-full border border-gray-100 dark:border-gray-700 overflow-hidden max-h-[90vh] flex flex-col"
+      >
+        <div
+          class="flex justify-between items-center px-4 py-3.5 border-b border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800 shrink-0"
+        >
+          <h3 class="text-sm font-bold text-gray-800 dark:text-white">
+            Pengurutan Data Aset
+          </h3>
+          <button
+            id="close-kdak-sort-modal"
+            class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition w-7 h-7 flex items-center justify-center rounded-full hover:bg-gray-100 dark:hover:bg-gray-700"
+          >
+            <i class="fas fa-times text-xl"></i>
+          </button>
+        </div>
+        <div class="p-5 space-y-4 overflow-y-auto flex-1">
+          <!-- Main sort field dropdown -->
+          <div>
+            <label class="block text-xs font-semibold mb-1.5 text-gray-500"
+              >Urutkan data berdasarkan:</label
+            >
+            <select
+              id="kdak-sort-field"
+              class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-purple-500 transition"
+            >
+              <option value="">— Pilih kriteria urutan —</option>
+              <option value="id_aset">Kode ID</option>
+              <option value="kode_alat_name">Nama/Kode Alat</option>
+              <option value="sumber_pengadaan">Pengadaan</option>
+              <option value="tanggal_pembelian">Tanggal Beli</option>
+              <option value="unit_peruntukan">Peruntukan</option>
+              <option value="id_lokasi">Nama/Kode Lokasi</option>
+            </select>
+          </div>
+          <!-- Custom spec checkbox -->
+          <div class="flex items-center gap-2">
+            <input
+              type="checkbox"
+              id="kdak-sort-custom-spec"
+              class="w-4 h-4 accent-purple-500 cursor-pointer"
+            />
+            <label
+              for="kdak-sort-custom-spec"
+              class="text-xs font-semibold text-gray-600 dark:text-gray-300 cursor-pointer"
+              >Spesifikasi Kustom (filter tambahan)</label
+            >
+          </div>
+          <hr class="border-gray-200 dark:border-gray-700" />
+          <!-- No-filter label -->
+          <div
+            id="kdak-sort-all-data-label"
+            class="text-center text-xs text-gray-400 py-2 italic"
+          >
+            Tampilkan seluruh data tanpa terkecuali.
+          </div>
+          <!-- Custom filter panels -->
+          <div id="kdak-sort-custom-panels" class="hidden space-y-4">
+            <!-- Panel: Kode ID -->
+            <div id="kdak-sort-panel-id_aset" class="hidden space-y-3">
+              <div class="grid grid-cols-2 gap-3">
+                <div>
+                  <label class="block text-xs font-semibold mb-1 text-gray-500"
+                    >Penomoran: dari no.</label
+                  >
+                  <input
+                    type="number"
+                    id="kdak-sort-id-from"
+                    min="1"
+                    placeholder="1"
+                    class="w-full p-2 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-purple-500 transition"
+                  />
+                </div>
+                <div>
+                  <label class="block text-xs font-semibold mb-1 text-gray-500"
+                    >sampai no.</label
+                  >
+                  <input
+                    type="number"
+                    id="kdak-sort-id-to"
+                    min="1"
+                    placeholder="999"
+                    class="w-full p-2 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-purple-500 transition"
+                  />
+                </div>
+              </div>
+              <div>
+                <label class="block text-xs font-semibold mb-1 text-gray-500"
+                  >Kode Alat</label
+                >
+                <select
+                  id="kdak-sort-id-alat"
+                  class="w-full p-2 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-purple-500 transition"
+                >
+                  <option value="">— Semua Alat —</option>
+                </select>
+              </div>
+              <div>
+                <label class="block text-xs font-semibold mb-1 text-gray-500"
+                  >Pengadaan</label
+                >
+                <div class="flex gap-4 text-sm">
+                  <label class="flex items-center gap-2 cursor-pointer"
+                    ><input
+                      type="radio"
+                      name="kdak-sort-id-pengadaan"
+                      value=""
+                      class="accent-purple-500"
+                      checked
+                    /><span>Semua</span></label
+                  >
+                  <label class="flex items-center gap-2 cursor-pointer"
+                    ><input
+                      type="radio"
+                      name="kdak-sort-id-pengadaan"
+                      value="PUSAT"
+                      class="accent-purple-500"
+                    /><span>PUSAT</span></label
+                  >
+                  <label class="flex items-center gap-2 cursor-pointer"
+                    ><input
+                      type="radio"
+                      name="kdak-sort-id-pengadaan"
+                      value="DAOP/DIVRE"
+                      class="accent-purple-500"
+                    /><span>DAOP/DIVRE</span></label
+                  >
+                </div>
+              </div>
+              <div class="grid grid-cols-2 gap-3">
+                <div>
+                  <label class="block text-xs font-semibold mb-1 text-gray-500"
+                    >Tahun Beli: dari</label
+                  >
+                  <select
+                    id="kdak-sort-id-tahun-from"
+                    class="w-full p-2 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-purple-500 transition"
+                  ></select>
+                </div>
+                <div>
+                  <label class="block text-xs font-semibold mb-1 text-gray-500"
+                    >sampai</label
+                  >
+                  <select
+                    id="kdak-sort-id-tahun-to"
+                    class="w-full p-2 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-purple-500 transition"
+                  ></select>
+                </div>
+              </div>
+              <div>
+                <label class="block text-xs font-semibold mb-1 text-gray-500"
+                  >Peruntukan</label
+                >
+                <div class="flex flex-wrap gap-3 text-sm">
+                  <label class="flex items-center gap-2 cursor-pointer"
+                    ><input
+                      type="radio"
+                      name="kdak-sort-id-peruntukan"
+                      value=""
+                      class="accent-purple-500"
+                      checked
+                    /><span>Semua</span></label
+                  >
+                  <label class="flex items-center gap-2 cursor-pointer"
+                    ><input
+                      type="radio"
+                      name="kdak-sort-id-peruntukan"
+                      value="A"
+                      class="accent-purple-500"
+                    /><span>Jalan Rel</span></label
+                  >
+                  <label class="flex items-center gap-2 cursor-pointer"
+                    ><input
+                      type="radio"
+                      name="kdak-sort-id-peruntukan"
+                      value="B"
+                      class="accent-purple-500"
+                    /><span>Jembatan</span></label
+                  >
+                  <label class="flex items-center gap-2 cursor-pointer"
+                    ><input
+                      type="radio"
+                      name="kdak-sort-id-peruntukan"
+                      value="C"
+                      class="accent-purple-500"
+                    /><span>Mekanik</span></label
+                  >
+                  <label class="flex items-center gap-2 cursor-pointer"
+                    ><input
+                      type="radio"
+                      name="kdak-sort-id-peruntukan"
+                      value="D"
+                      class="accent-purple-500"
+                    /><span>Balaiyasa</span></label
+                  >
+                </div>
+              </div>
+              <div>
+                <label class="block text-xs font-semibold mb-1 text-gray-500"
+                  >Kode Lokasi</label
+                >
+                <select
+                  id="kdak-sort-id-lokasi"
+                  class="w-full p-2 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-purple-500 transition"
+                >
+                  <option value="">— Semua Lokasi —</option>
+                </select>
+              </div>
+            </div>
+            <!-- Panel: Nama/Kode Alat -->
+            <div id="kdak-sort-panel-kode_alat_name" class="hidden">
+              <label class="block text-xs font-semibold mb-1 text-gray-500"
+                >Pilih Alat Kerja</label
+              >
+              <select
+                id="kdak-sort-alat-filter"
+                class="w-full p-2 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-purple-500 transition"
+              >
+                <option value="">— Semua Alat —</option>
+              </select>
+            </div>
+            <!-- Panel: Pengadaan -->
+            <div id="kdak-sort-panel-sumber_pengadaan" class="hidden">
+              <label class="block text-xs font-semibold mb-1 text-gray-500"
+                >Pengadaan</label
+              >
+              <div class="flex gap-4 text-sm">
+                <label class="flex items-center gap-2 cursor-pointer"
+                  ><input
+                    type="radio"
+                    name="kdak-sort-pengadaan-filter"
+                    value=""
+                    class="accent-purple-500"
+                    checked
+                  /><span>Semua</span></label
+                >
+                <label class="flex items-center gap-2 cursor-pointer"
+                  ><input
+                    type="radio"
+                    name="kdak-sort-pengadaan-filter"
+                    value="PUSAT"
+                    class="accent-purple-500"
+                  /><span>PUSAT</span></label
+                >
+                <label class="flex items-center gap-2 cursor-pointer"
+                  ><input
+                    type="radio"
+                    name="kdak-sort-pengadaan-filter"
+                    value="DAOP/DIVRE"
+                    class="accent-purple-500"
+                  /><span>DAOP/DIVRE</span></label
+                >
+              </div>
+            </div>
+            <!-- Panel: Tanggal Beli -->
+            <div id="kdak-sort-panel-tanggal_pembelian" class="hidden">
+              <div class="grid grid-cols-2 gap-3">
+                <div>
+                  <label class="block text-xs font-semibold mb-1 text-gray-500"
+                    >Dari Tahun</label
+                  >
+                  <select
+                    id="kdak-sort-tgl-from"
+                    class="w-full p-2 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-purple-500 transition"
+                  ></select>
+                </div>
+                <div>
+                  <label class="block text-xs font-semibold mb-1 text-gray-500"
+                    >Sampai Tahun</label
+                  >
+                  <select
+                    id="kdak-sort-tgl-to"
+                    class="w-full p-2 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-purple-500 transition"
+                  ></select>
+                </div>
+              </div>
+            </div>
+            <!-- Panel: Peruntukan -->
+            <div id="kdak-sort-panel-unit_peruntukan" class="hidden">
+              <label class="block text-xs font-semibold mb-1 text-gray-500"
+                >Peruntukan</label
+              >
+              <div class="flex flex-wrap gap-3 text-sm">
+                <label class="flex items-center gap-2 cursor-pointer"
+                  ><input
+                    type="radio"
+                    name="kdak-sort-peruntukan-filter"
+                    value=""
+                    class="accent-purple-500"
+                    checked
+                  /><span>Semua</span></label
+                >
+                <label class="flex items-center gap-2 cursor-pointer"
+                  ><input
+                    type="radio"
+                    name="kdak-sort-peruntukan-filter"
+                    value="A"
+                    class="accent-purple-500"
+                  /><span>Jalan Rel</span></label
+                >
+                <label class="flex items-center gap-2 cursor-pointer"
+                  ><input
+                    type="radio"
+                    name="kdak-sort-peruntukan-filter"
+                    value="B"
+                    class="accent-purple-500"
+                  /><span>Jembatan</span></label
+                >
+                <label class="flex items-center gap-2 cursor-pointer"
+                  ><input
+                    type="radio"
+                    name="kdak-sort-peruntukan-filter"
+                    value="C"
+                    class="accent-purple-500"
+                  /><span>Mekanik</span></label
+                >
+                <label class="flex items-center gap-2 cursor-pointer"
+                  ><input
+                    type="radio"
+                    name="kdak-sort-peruntukan-filter"
+                    value="D"
+                    class="accent-purple-500"
+                  /><span>Balaiyasa</span></label
+                >
+              </div>
+            </div>
+            <!-- Panel: Lokasi -->
+            <div id="kdak-sort-panel-id_lokasi" class="hidden space-y-3">
+              <div>
+                <label class="block text-xs font-semibold mb-1 text-gray-500"
+                  >Nama Lokasi</label
+                >
+                <select
+                  id="kdak-sort-lok-lokasi"
+                  class="w-full p-2 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-purple-500 transition"
+                >
+                  <option value="">Tampilkan untuk Semua Lokasi</option>
+                </select>
+              </div>
+              <div>
+                <label class="block text-xs font-semibold mb-1 text-gray-500"
+                  >Nama UPT</label
+                >
+                <select
+                  id="kdak-sort-lok-upt"
+                  class="w-full p-2 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-purple-500 transition"
+                >
+                  <option value="">Tampilkan untuk Semua UPT</option>
+                </select>
+              </div>
+            </div>
+          </div>
+          <hr class="border-gray-200 dark:border-gray-700" />
+          <!-- Sort direction -->
+          <div>
+            <label class="block text-xs font-semibold mb-2 text-gray-500"
+              >Arah Urutan</label
+            >
+            <div class="grid grid-cols-2 gap-2">
+              <button
+                data-kdak-dir="count-desc"
+                class="kdak-sort-dir-btn py-2.5 rounded-lg border-2 border-purple-500 bg-purple-100 dark:bg-purple-900/20 text-purple-600 dark:text-purple-300 text-sm font-semibold transition"
+              >
+                Terbanyak ↓
+              </button>
+              <button
+                data-kdak-dir="count-asc"
+                class="kdak-sort-dir-btn py-2.5 rounded-lg border-2 border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-500 text-sm font-semibold transition"
+              >
+                Tersedikit ↑
+              </button>
+              <button
+                data-kdak-dir="asc"
+                class="kdak-sort-dir-btn py-2.5 rounded-lg border-2 border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-500 text-sm font-semibold transition"
+              >
+                A → Z
+              </button>
+              <button
+                data-kdak-dir="desc"
+                class="kdak-sort-dir-btn py-2.5 rounded-lg border-2 border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-500 text-sm font-semibold transition"
+              >
+                Z → A
+              </button>
+            </div>
+          </div>
+          <button
+            id="kdak-btn-apply-sort"
+            class="w-full bg-purple-600 hover:bg-purple-700 text-white py-2.5 rounded-lg text-sm font-semibold transition"
+          >
+            Terapkan Pengurutan
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── KDAK: Jenis Alat Info Modal ── -->
+    <div
+      id="kdak-jenis-modal"
+      class="hidden fixed inset-0 z-[100] bg-gray-900/40 backdrop-blur-sm flex items-center justify-center p-4"
+    >
+      <div
+        class="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-lg border border-gray-100 dark:border-gray-700 overflow-hidden max-h-[85vh] flex flex-col"
+      >
+        <div
+          class="flex justify-between items-center px-5 py-4 border-b border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800 shrink-0"
+        >
+          <div>
+            <h3 class="text-sm font-bold text-gray-800 dark:text-white">
+              Daftar Jenis Alat Kerja
+            </h3>
+            <p class="text-xs text-gray-400 mt-0.5">
+              Semua alat kerja yang terdaftar di sistem.
+            </p>
+          </div>
+          <button
+            id="close-kdak-jenis-modal"
+            class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition w-7 h-7 flex items-center justify-center rounded-full hover:bg-gray-100 dark:hover:bg-gray-700"
+          >
+            <i class="fas fa-times text-xl"></i>
+          </button>
+        </div>
+        <div class="overflow-y-auto flex-1">
+          <table class="w-full text-sm">
+            <thead class="sticky top-0 bg-gray-50 dark:bg-gray-700/80">
+              <tr class="border-b border-gray-100 dark:border-gray-700">
+                <th
+                  class="px-4 py-3 text-left text-[10px] font-bold tracking-widest text-gray-400 uppercase"
+                >
+                  Kode
+                </th>
+                <th
+                  class="px-4 py-3 text-left text-[10px] font-bold tracking-widest text-gray-400 uppercase"
+                >
+                  Nama Alat Kerja
+                </th>
+                <th
+                  class="px-4 py-3 text-center text-[10px] font-bold tracking-widest text-gray-400 uppercase"
+                >
+                  Jml Aset
+                </th>
+              </tr>
+            </thead>
+            <tbody id="kdak-jenis-table-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── KDAK: Sebaran Lokasi Info Modal ── -->
+    <div
+      id="kdak-lokasi-info-modal"
+      class="hidden fixed inset-0 z-[100] bg-gray-900/40 backdrop-blur-sm flex items-center justify-center p-4"
+    >
+      <div
+        class="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-lg border border-gray-100 dark:border-gray-700 overflow-hidden max-h-[85vh] flex flex-col"
+      >
+        <div
+          class="flex justify-between items-center px-5 py-4 border-b border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800 shrink-0"
+        >
+          <div>
+            <h3 class="text-sm font-bold text-gray-800 dark:text-white">
+              Sebaran Lokasi
+            </h3>
+            <p class="text-xs text-gray-400 mt-0.5">
+              Tabel Lokasi dan UPT terdaftar dalam sistem.
+            </p>
+          </div>
+          <button
+            id="close-kdak-lokasi-info-modal"
+            class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition w-7 h-7 flex items-center justify-center rounded-full hover:bg-gray-100 dark:hover:bg-gray-700"
+          >
+            <i class="fas fa-times text-xl"></i>
+          </button>
+        </div>
+        <!-- Tabs -->
+        <div
+          class="flex border-b border-gray-100 dark:border-gray-700 shrink-0"
+        >
+          <button
+            id="kdak-lokasi-info-tab-lokasi"
+            class="kdak-lokasi-info-tab flex-1 py-3 text-sm font-bold tracking-widest uppercase text-kai-blue border-b-2 border-kai-blue transition"
+          >
+            Lokasi / Wilayah
+          </button>
+          <button
+            id="kdak-lokasi-info-tab-upt"
+            class="kdak-lokasi-info-tab flex-1 py-3 text-sm font-bold tracking-widest uppercase text-gray-400 border-b-2 border-transparent hover:text-gray-600 transition"
+          >
+            UPT
+          </button>
+        </div>
+        <div class="overflow-y-auto flex-1">
+          <!-- Lokasi table -->
+          <table id="kdak-lokasi-info-panel-lokasi" class="w-full text-sm">
+            <thead class="sticky top-0 bg-gray-50 dark:bg-gray-700/80">
+              <tr class="border-b border-gray-100 dark:border-gray-700">
+                <th
+                  class="px-4 py-3 text-left text-[10px] font-bold tracking-widest text-gray-400 uppercase"
+                >
+                  Kode
+                </th>
+                <th
+                  class="px-4 py-3 text-left text-[10px] font-bold tracking-widest text-gray-400 uppercase"
+                >
+                  Nama Lokasi
+                </th>
+                <th
+                  class="px-4 py-3 text-center text-[10px] font-bold tracking-widest text-gray-400 uppercase"
+                >
+                  Tipe
+                </th>
+              </tr>
+            </thead>
+            <tbody id="kdak-lokasi-info-body-lokasi"></tbody>
+          </table>
+          <!-- UPT table -->
+          <table id="kdak-lokasi-info-panel-upt" class="w-full text-sm hidden">
+            <thead class="sticky top-0 bg-gray-50 dark:bg-gray-700/80">
+              <tr class="border-b border-gray-100 dark:border-gray-700">
+                <th
+                  class="px-4 py-3 text-left text-[10px] font-bold tracking-widest text-gray-400 uppercase"
+                >
+                  Kode UPT
+                </th>
+                <th
+                  class="px-4 py-3 text-left text-[10px] font-bold tracking-widest text-gray-400 uppercase"
+                >
+                  Nama UPT
+                </th>
+                <th
+                  class="px-4 py-3 text-left text-[10px] font-bold tracking-widest text-gray-400 uppercase"
+                >
+                  Kode Lokasi
+                </th>
+                <th
+                  class="px-4 py-3 text-left text-[10px] font-bold tracking-widest text-gray-400 uppercase"
+                >
+                  Nama Lokasi
+                </th>
+              </tr>
+            </thead>
+            <tbody id="kdak-lokasi-info-body-upt"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── KDAK: Ketersediaan Modal ── -->
+    <div
+      id="kdak-ketersediaan-modal"
+      class="hidden fixed inset-0 z-[100] bg-gray-900/40 backdrop-blur-sm flex items-center justify-center p-4"
+    >
+      <div
+        class="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-2xl border border-gray-100 dark:border-gray-700 overflow-hidden max-h-[85vh] flex flex-col"
+      >
+        <div
+          class="flex justify-between items-center px-5 py-4 border-b border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800 shrink-0"
+        >
+          <div>
+            <h3 class="text-sm font-bold text-gray-800 dark:text-white">
+              Ketersediaan per Wilayah
+            </h3>
+            <p class="text-xs text-gray-400 mt-0.5">
+              Kolom Total dan Ada% dari matriks ketersediaan.
+            </p>
+          </div>
+          <button
+            id="close-kdak-ketersediaan-modal"
+            class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition w-7 h-7 flex items-center justify-center rounded-full hover:bg-gray-100 dark:hover:bg-gray-700"
+          >
+            <i class="fas fa-times text-xl"></i>
+          </button>
+        </div>
+        <div class="overflow-y-auto flex-1">
+          <table class="w-full text-sm">
+            <thead class="sticky top-0 bg-gray-50 dark:bg-gray-700/80">
+              <tr class="border-b border-gray-100 dark:border-gray-700">
+                <th
+                  class="px-4 py-3 text-left text-[10px] font-bold tracking-widest text-gray-400 uppercase"
+                >
+                  Wilayah
+                </th>
+                <th
+                  class="px-4 py-3 text-center text-[10px] font-bold tracking-widest text-gray-400 uppercase"
+                >
+                  Total
+                </th>
+                <th
+                  class="px-4 py-3 text-center text-[10px] font-bold tracking-widest text-kai-blue uppercase"
+                >
+                  Ada%
+                </th>
+              </tr>
+            </thead>
+            <tbody id="kdak-ketersediaan-table-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── KDAK: Benchmark Modal ── -->
+    <div
+      id="kdak-benchmark-modal"
+      class="hidden fixed inset-0 z-[100] bg-gray-900/40 backdrop-blur-sm flex items-center justify-center p-4"
+    >
+      <div
+        class="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-2xl border border-gray-100 dark:border-gray-700 overflow-hidden max-h-[85vh] flex flex-col"
+      >
+        <div
+          class="flex justify-between items-center px-5 py-4 border-b border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800 shrink-0"
+        >
+          <div>
+            <h3 class="text-sm font-bold text-gray-800 dark:text-white">
+              Benchmark per Wilayah
+            </h3>
+            <p class="text-xs text-gray-400 mt-0.5">
+              Kolom Total dan Δ dari matriks ketersediaan.
+            </p>
+          </div>
+          <button
+            id="close-kdak-benchmark-modal"
+            class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition w-7 h-7 flex items-center justify-center rounded-full hover:bg-gray-100 dark:hover:bg-gray-700"
+          >
+            <i class="fas fa-times text-xl"></i>
+          </button>
+        </div>
+        <div class="overflow-y-auto flex-1">
+          <table class="w-full text-sm">
+            <thead class="sticky top-0 bg-gray-50 dark:bg-gray-700/80">
+              <tr class="border-b border-gray-100 dark:border-gray-700">
+                <th
+                  class="px-4 py-3 text-left text-[10px] font-bold tracking-widest text-gray-400 uppercase"
+                >
+                  Wilayah
+                </th>
+                <th
+                  class="px-4 py-3 text-center text-[10px] font-bold tracking-widest text-gray-400 uppercase"
+                >
+                  Total
+                </th>
+                <th
+                  class="px-4 py-3 text-center text-[10px] font-bold tracking-widest text-slate-400 uppercase"
+                >
+                  Δ
+                </th>
+              </tr>
+            </thead>
+            <tbody id="kdak-benchmark-table-body"></tbody>
+          </table>
         </div>
       </div>
     </div>
