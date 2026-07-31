@@ -693,6 +693,7 @@ async def catat_perbaikan(
             id_pengguna=current_user.id_pengguna,
             kondisi=laporan.kondisi,
             keterangan=laporan.keterangan,
+            id_lokasi=laporan.id_lokasi,
         )
     )
     aset.status_terakhir = laporan.kondisi

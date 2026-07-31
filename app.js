@@ -1728,6 +1728,7 @@ function setupEventListeners() {
         document.getElementById("edit-keterangan").value || "-";
       const uptVal = document.getElementById("edit-upt")?.value || "";
       const lokasiVal = document.getElementById("edit-lokasi")?.value || "";
+
       const peruntukan =
         document.querySelector('input[name="edit-unit"]:checked')?.value || "";
 
@@ -2623,11 +2624,7 @@ function renderDbCards() {
       const dec = decodeAsetId(item.id_aset);
 
       // Peruntukan: Prioritas 1 dari database, Prioritas 2 ekstrak dari ID aset
-      const kodePeruntukan = dec.peruntukan;
-      const peruntukanName =
-        item.unit_peruntukan && item.unit_peruntukan !== "—"
-          ? item.unit_peruntukan
-          : PERUNTUKAN_MAP[kodePeruntukan] || kodePeruntukan || "—";
+      const peruntukanName = item.peruntukan ? item.peruntukan : "—";
 
       // --- REVISI LOGIKA LOKASI MURNI ---
       const rawUptCode = item.id_lokasi_raw || item.id_lokasi || "";
@@ -2714,7 +2711,7 @@ function renderDbCards() {
                 </div>
                 <p class="text-sm text-gray-700 dark:text-gray-300 font-semibold">${item.kode_alat_name || item.kode_alat}</p>
 
-                <div class="mt-3 space-y-1 border-t border-gray-100 dark:border-gray-700 pt-3">
+                <div class="mt-3 space-y-1 border-t border-gray-100 dark:border-gray-700 pt-3 capitalize">
                     ${row("Pengadaan", PENGADAAN_MAP[item.sumber_pengadaan] || item.sumber_pengadaan || "—")}
                     ${row("Tanggal Beli", tanggalBeli)}
                     ${row("Peruntukan", peruntukanName)}
@@ -3012,6 +3009,7 @@ function renderKalibrasiCards() {
     const card = document.createElement("div");
     card.className =
       "bg-white dark:bg-gray-800 p-5 rounded-xl shadow border border-gray-200 dark:border-gray-700 flex flex-col justify-between";
+
     card.innerHTML = `
             <div class="flex flex-col gap-3">
                 <div class="flex justify-between items-start border-b dark:border-gray-700 pb-3">
@@ -3206,7 +3204,6 @@ function renderMutasiCards() {
 
   container.appendChild(fragment);
 }
-
 // ── MASTER DATA UI ─────────────────────────────────────────────────────────
 
 // Tab switching
@@ -4679,8 +4676,8 @@ window.openMutasiModal = (uid) => {
   const uptAsalLabel = uptAsalEntry
     ? `${uptAsalEntry.nama}`
     : uptAsalCode || "—";
-
   // Lokasi Kini — resolve full name from lokasiData or id_lokasi_name
+
   const lokasiKiniCode = item.id_lokasi_raw || item.id_lokasi;
   const lokasiKiniEntry = lokasiData.find((l) => l.code === lokasiKiniCode);
   const lokasiKiniName =
