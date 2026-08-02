@@ -111,6 +111,16 @@ class MutasiCreate(BaseModel):
     alasan_mutasi: Optional[str] = None
 
 
+class KalibrasiCreate(BaseModel):
+    id_aset: str
+    tanggal_kalibrasi: date
+    tanggal_berlaku: Optional[date] = None
+    status: str = "LULUS"
+    pelaksana_kalibrasi: Optional[str] = None
+    nomor_sertifikat: Optional[str] = None
+    keterangan: Optional[str] = None
+
+
 # ==================================================================
 # ── DATABASE SESSION & WEBSOCKET ──────────────────────────────────
 # ==================================================================
@@ -530,12 +540,12 @@ async def create_aset(
     # Format: nomor_urut.kode_alat.id_pengadaan.tahun.unit.parent_lokasi
     # Contoh: 6.RGM.1.24.A.D1
     peruntukan_map = {
-        "jalan rel": "A",
-        "jembatan": "B",
-        "mekanik": "C",
-        "balaiyasa": "D",
+        "JALAN REL": "A",
+        "JEMBATAN": "B",
+        "MEKANIK": "C",
+        "BALAIYASA": "D",
     }
-    kode_peruntukan = peruntukan_map.get(aset_in.peruntukan.lower(), "X")
+    kode_peruntukan = peruntukan_map.get(aset_in.peruntukan.upper(), "X")
 
     generated_id_aset = f"{nomor_urut}.{aset_in.kode_alat}.{id_pengadaan}.{year_str}.{kode_peruntukan}.{aset_in.parent_lokasi}"
 
@@ -553,7 +563,7 @@ async def create_aset(
         tanggal_pembelian=aset_in.tanggal_pembelian,
         sumber_pengadaan=aset_in.sumber_pengadaan,
         status_terakhir="SO",
-        peruntukan=aset_in.peruntukan.lower(),
+        peruntukan=aset_in.peruntukan.upper(),
     )
     db.add(db_aset)
 
@@ -607,7 +617,7 @@ def get_afkir_aset(db: Session = Depends(get_db)):
     asets = (
         db.query(models.Aset)
         .options(joinedload(models.Aset.kategori), joinedload(models.Aset.lokasi_ref))
-        .filter(func.upper(models.Aset.status_terakhir) != "AFKIR")
+        .filter(func.upper(models.Aset.status_terakhir) == "AFKIR")
         .all()
     )
     return [
@@ -676,13 +686,13 @@ async def catat_perbaikan(
 
     # NORMALISASI INPUT PERUNTUKAN DI SINI
     if laporan.peruntukan:
-        p_val = laporan.peruntukan.strip().lower()
+        p_val = laporan.peruntukan.strip().upper()
         # Pemetaan ketat jika frontend mengirimkan A, B, C, D alih-alih teks penuh
         peruntukan_map = {
-            "a": "jalan rel",
-            "b": "jembatan",
-            "c": "mekanik",
-            "d": "balaiyasa",
+            "a": "JALAN REL",
+            "b": "JEMBATAN",
+            "c": "MEKANIK",
+            "d": "BALAIYASA",
         }
         # Gunakan mapping, atau gunakan nilai aslinya jika sudah berupa teks penuh
         aset.peruntukan = peruntukan_map.get(p_val, p_val)
@@ -693,7 +703,6 @@ async def catat_perbaikan(
             id_pengguna=current_user.id_pengguna,
             kondisi=laporan.kondisi,
             keterangan=laporan.keterangan,
-            id_lokasi=laporan.id_lokasi,
         )
     )
     aset.status_terakhir = laporan.kondisi
@@ -766,10 +775,14 @@ def get_riwayat_aset(
 ):
     riwayat = (
         db.query(models.RiwayatKondisi)
-        .filter_by(id_aset=id_aset)
+        .filter(
+            models.RiwayatKondisi.id_aset == id_aset,
+            models.RiwayatKondisi.kondisi != "KALIBRASI",
+        )
         .order_by(models.RiwayatKondisi.waktu_lapor.asc())
         .all()
     )
+    
     return [
         {
             "no": i,
@@ -780,6 +793,74 @@ def get_riwayat_aset(
             "kondisi": r.kondisi,
             "keterangan": r.keterangan or "—",
             # "id_lokasi": r.id_lokasi,
+        }
+        for i, r in enumerate(riwayat, start=1)
+    ]
+
+
+@app.post("/api/kalibrasi")
+async def create_kalibrasi(
+    data: KalibrasiCreate,
+    db: Session = Depends(get_db),
+    current_user: models.Pengguna = Depends(get_current_user),
+):
+    aset = db.query(models.Aset).filter_by(id_aset=data.id_aset).first()
+    if not aset:
+        raise HTTPException(status_code=404, detail="Aset tidak ditemukan.")
+
+    if data.status not in {"LULUS", "GAGAL", "BERSYARAT"}:
+        raise HTTPException(status_code=400, detail="Status kalibrasi tidak valid.")
+
+    tanggal_berlaku = data.tanggal_berlaku or data.tanggal_kalibrasi
+
+    record = models.RiwayatKalibrasi(
+        id_aset=data.id_aset,
+        id_pengguna=current_user.id_pengguna,
+        tanggal_kalibrasi=data.tanggal_kalibrasi,
+        tanggal_berlaku=tanggal_berlaku,
+        status=data.status,
+        pelaksana_kalibrasi=data.pelaksana_kalibrasi,
+        nomor_sertifikat=data.nomor_sertifikat,
+        keterangan=data.keterangan,
+    )
+    db.add(record)
+    db.commit()
+    db.refresh(record)
+    await manager.broadcast("REFRESH_ASSET_LIST")
+    return {"message": "Laporan kalibrasi berhasil disimpan.", "id_kalibrasi": record.id_kalibrasi}
+
+
+@app.get("/api/kalibrasi/{id_aset}")
+def get_kalibrasi_by_aset(
+    id_aset: str,
+    db: Session = Depends(get_db),
+    current_user: models.Pengguna = Depends(get_current_user),
+):
+    riwayat = (
+        db.query(models.RiwayatKalibrasi)
+        .filter(models.RiwayatKalibrasi.id_aset == id_aset)
+        .order_by(models.RiwayatKalibrasi.tanggal_kalibrasi.asc(), models.RiwayatKalibrasi.waktu_input.asc())
+        .all()
+    )
+
+    pengguna_ids = {r.id_pengguna for r in riwayat if r.id_pengguna}
+    pengguna_map = {
+        p.id_pengguna: p.username
+        for p in db.query(models.Pengguna).filter(models.Pengguna.id_pengguna.in_(pengguna_ids)).all()
+    }
+
+    return [
+        {
+            "no": i,
+            "id_kalibrasi": r.id_kalibrasi,
+            "tanggal_kalibrasi": str(r.tanggal_kalibrasi) if r.tanggal_kalibrasi else None,
+            "tanggal_berlaku": str(r.tanggal_berlaku) if r.tanggal_berlaku else None,
+            "status": r.status,
+            "pelaksana_kalibrasi": r.pelaksana_kalibrasi or "—",
+            "nomor_sertifikat": r.nomor_sertifikat or "—",
+            "keterangan": r.keterangan or "—",
+            "waktu_input": r.waktu_input.strftime("%Y-%m-%d %H:%M:%S") if r.waktu_input else None,
+            "id_pengguna": pengguna_map.get(r.id_pengguna, str(r.id_pengguna) if r.id_pengguna else "—"),
         }
         for i, r in enumerate(riwayat, start=1)
     ]
@@ -831,13 +912,16 @@ def get_mutasi_by_aset(
                 "alasan_mutasi": m.alasan_mutasi or "—",
             }
         )
-
+        
+    original_lokasi_obj = (
+        db.query(models.Lokasi).filter_by(id_lokasi=original_lokasi).first()
+        if original_lokasi and original_lokasi != "—"
+        else None
+    )
     return {
         "mutasi": results,
         "original_lokasi": original_lokasi,
-        "original_lokasi_name": aset.lokasi_ref.nama_lokasi
-        if aset and aset.lokasi_ref
-        else original_lokasi,
+        "original_lokasi_name": original_lokasi_obj.nama_lokasi if original_lokasi_obj else original_lokasi,
         "sudah_kembali": aset.id_lokasi == original_lokasi if aset else False,
         "lokasi_sekarang": aset.id_lokasi if aset else "—",
         "lokasi_sekarang_name": aset.lokasi_ref.nama_lokasi
@@ -923,11 +1007,17 @@ def get_history_summary(
         )
         pengguna_map = {p.id_pengguna: p for p in penggunas}
 
+    kalibrasi_map = {}
+    for kal in db.query(models.RiwayatKalibrasi).all():
+        kalibrasi_map.setdefault(kal.id_aset, []).append(kal)
+
     results = []
     for a in asets:
         latest_repair = repair_map.get(a.id_aset)
         all_mutasi_for_a = mutasi_map.get(a.id_aset, [])
         latest_mutasi = all_mutasi_for_a[-1] if all_mutasi_for_a else None
+        all_kalibrasi_for_a = kalibrasi_map.get(a.id_aset, [])
+        latest_kalibrasi = all_kalibrasi_for_a[-1] if all_kalibrasi_for_a else None
 
         results.append(
             {
@@ -956,12 +1046,32 @@ def get_history_summary(
                     ).username
                     if latest_repair and latest_repair.id_pengguna in pengguna_map
                     else (str(latest_repair.id_pengguna) if latest_repair else None),
-                    # "latest_id_lokasi": latest_repair.id_lokasi
-                    # if latest_repair
-                    # else a.id_lokasi,  # <--- WAJIB DITAMBAHKAN
                 },
+                "has_kalibrasi": bool(all_kalibrasi_for_a),
+                "kalibrasi": {
+                    "latest_date": latest_kalibrasi.tanggal_kalibrasi.strftime(
+                        "%Y-%m-%d"
+                    )
+                    if latest_kalibrasi and latest_kalibrasi.tanggal_kalibrasi
+                    else None,
+                    "latest_status": latest_kalibrasi.status if latest_kalibrasi else None,
+                    "latest_pelaksana": latest_kalibrasi.pelaksana_kalibrasi
+                    if latest_kalibrasi and latest_kalibrasi.pelaksana_kalibrasi
+                    else (
+                        pengguna_map.get(latest_kalibrasi.id_pengguna).username
+                        if latest_kalibrasi and latest_kalibrasi.id_pengguna in pengguna_map
+                        else None
+                    ),
+                    "latest_nomor_sertifikat": latest_kalibrasi.nomor_sertifikat
+                    if latest_kalibrasi
+                    else None,
+                    "latest_keterangan": latest_kalibrasi.keterangan
+                    if latest_kalibrasi
+                    else None,
+                }
+                if latest_kalibrasi
+                else None,
                 "mutasi": {
-                    # PERBAIKAN: Gunakan all_mutasi_for_a, bukan all_mutasi
                     "count": len(all_mutasi_for_a),
                     "latest_date": latest_mutasi.waktu_mutasi.strftime(
                         "%Y-%m-%d %H:%M:%S"
@@ -983,11 +1093,16 @@ def get_history_summary(
                         if all_mutasi_for_a
                         else a.id_lokasi
                     ),
-                    "original_lokasi": all_mutasi_for_a[0].lokasi_asal.nama_lokasi
-                    if all_mutasi_for_a and all_mutasi_for_a[0].lokasi_asal
+                    "original_lokasi_code": all_mutasi_for_a[0].id_lokasi_asal
+                    if all_mutasi_for_a and all_mutasi_for_a[0].id_lokasi_asal
                     else a.id_lokasi,
+                    "original_lokasi_name": all_mutasi_for_a[0].lokasi_asal.nama_lokasi
+                    if all_mutasi_for_a and all_mutasi_for_a[0].lokasi_asal
+                    else (
+                        a.lokasi_ref.nama_lokasi if a.lokasi_ref else a.id_lokasi
+                    ),
                 }
-                if all_mutasi_for_a  # PERBAIKAN: Evaluasi berdasarkan mutasi aset ini saja
+                if all_mutasi_for_a
                 else None,
             }
         )
@@ -1189,7 +1304,7 @@ async def serve_html(file_name: str):
 
 
 @app.get("/{file_name}.js")
-async def serve_html(file_name: str):
+async def serve_js(file_name: str):
     # Sanitize: only allow alphanumeric, hyphen, underscore
     if not re.match(r"^[a-zA-Z0-9_-]+$", file_name):
         raise HTTPException(status_code=400, detail="Invalid filename.")
@@ -1207,7 +1322,7 @@ async def serve_html(file_name: str):
 
 
 @app.get("/{file_name}.css")
-async def serve_html(file_name: str):
+async def serve_css(file_name: str):
     # Sanitize: only allow alphanumeric, hyphen, underscore
     if not re.match(r"^[a-zA-Z0-9_-]+$", file_name):
         raise HTTPException(status_code=400, detail="Invalid filename.")

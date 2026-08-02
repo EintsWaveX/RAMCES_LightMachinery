@@ -3,8 +3,8 @@ from sqlalchemy.orm import sessionmaker, declarative_base
 
 # Replace with your actual PostgreSQL credentials
 # Format: postgresql://<username>:<password>@<host>:<port>/<database_name>
-# SQLALCHEMY_DATABASE_URL = "postgresql://postgres:Nue23072005*@localhost:5000/warehouse_monitoring"
-SQLALCHEMY_DATABASE_URL = "postgresql://postgres:123@localhost:5432/sistem_aset_kai"
+SQLALCHEMY_DATABASE_URL = "postgresql://postgres:Nue23072005*@localhost:5000/warehouse_monitoring"
+# SQLALCHEMY_DATABASE_URL = "postgresql://postgres:123@localhost:5432/sistem_aset_kai"
 
 # The engine is the core interface to the database
 engine = create_engine(SQLALCHEMY_DATABASE_URL)

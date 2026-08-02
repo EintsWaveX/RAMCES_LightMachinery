@@ -23,6 +23,32 @@ let authToken = sessionStorage.getItem("authToken");
 // Track the QR currently shown in the modal (for export)
 let _qrActiveItem = null;
 
+function applyUptSelect(locCode, uptSelectEl) {
+  if (!uptSelectEl) return;
+  const loc = lokasiData.find((l) => l.code === locCode);
+  const isBalaiyasa = loc?.tipe?.toUpperCase() === "BALAIYASA";
+
+  if (isBalaiyasa) {
+    uptSelectEl.innerHTML = `<option value="">Belum ada UPT untuk lokasi Balaiyasa</option>`;
+    uptSelectEl.disabled = true;
+    return;
+  }
+
+  uptSelectEl.disabled = false;
+  const matches = uptDatabase.filter((u) => u.lokasi === locCode);
+  if (matches.length > 0) {
+    uptSelectEl.innerHTML =
+      '<option value="">Pilih UPT...</option>' +
+      matches.map((m) => `<option value="${m.upt}">${m.nama || m.upt}</option>`).join("");
+  } else {
+    uptSelectEl.innerHTML = `<option value="">Tidak ada UPT untuk lokasi ini...</option>`;
+    uptSelectEl.disabled = true;
+  }
+  uptSelectEl.value = "";
+}
+
+window.applyUptSelect = applyUptSelect;
+
 (function () {
   const saved = localStorage.getItem("theme");
   const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
@@ -483,23 +509,15 @@ async function fetchAsetFromServer() {
 
     updateDashboardStats();
     updateKdakStats();
-    if (
-      document.getElementById("view-input").classList.contains("is-visible")
-    ) {
+    if (document.getElementById("view-input").classList.contains("is-visible")) {
       renderKdakTable();
     }
     // Always refresh summary so badges are up to date everywhere
     loadHistorySummary().then(() => {
-      if (
-        document
-          .getElementById("view-database")
-          .classList.contains("is-visible")
-      ) {
+      if (document.getElementById("view-database").classList.contains("is-visible")) {
         renderDbCards();
       }
-      if (
-        document.getElementById("view-history").classList.contains("is-visible")
-      ) {
+      if (document.getElementById("view-history").classList.contains("is-visible")) {
         if (_historyMode === "repair") renderHistoryCards();
         else if (_historyMode === "mutasi") renderMutasiCards();
         else if (_historyMode === "kalibrasi") renderKalibrasiCards();
@@ -882,18 +900,18 @@ function _renderTrendPanel() {
 
   const selectedYear = _dashFilter.tahun || String(new Date().getFullYear());
   const months = [
-    "Jan",
-    "Feb",
-    "Mar",
-    "Apr",
+    "Januari",
+    "Februari",
+    "Maret",
+    "April",
     "Mei",
-    "Jun",
-    "Jul",
-    "Agu",
-    "Sep",
-    "Okt",
-    "Nov",
-    "Des",
+    "Juni",
+    "Juli",
+    "Agustus",
+    "Septemebr",
+    "Oktober",
+    "November",
+    "Desember",
   ];
 
   // Count perbaikan per month from db riwayat — we derive from latest_date in history summary
@@ -1043,13 +1061,7 @@ function populateSelects(preserveValues = false) {
     }
   }
 
-  if (inAlat)
-    repopulateSelect(
-      inAlat,
-      alatHTML,
-      `<option value="">— Pilih Alat Kerja —</option>`,
-      preserveValues,
-    );
+  if (inAlat) repopulateSelect(inAlat, alatHTML, `<option value="">— Pilih Alat Kerja —</option>`, preserveValues);
 
   // Lokasi: regions only, blank default
   if (inLokasi)
@@ -1480,7 +1492,7 @@ function setupEventListeners() {
           }
 
           const firstRow = dataRows[0].map((c) =>
-            String(c).toLowerCase().trim(),
+            String(c).toUpperCase().trim(),
           );
           if (firstRow.some((c) => c.includes("kode") || c.includes("nama"))) {
             dataRows = dataRows.slice(1);
@@ -1569,33 +1581,6 @@ function setupEventListeners() {
     switchView("history");
   });
 
-  // Apply UPT Select function helper
-  function applyUptSelect(locCode, uptSelectEl) {
-    if (!uptSelectEl) return;
-    const loc = lokasiData.find((l) => l.code === locCode);
-    const isBalaiyasa = loc?.tipe?.toUpperCase() === "BALAIYASA";
-
-    if (isBalaiyasa) {
-      uptSelectEl.innerHTML = `<option value="">Belum ada UPT untuk lokasi Balaiyasa</option>`;
-      uptSelectEl.disabled = true;
-      return;
-    }
-
-    uptSelectEl.disabled = false;
-    const matches = uptDatabase.filter((u) => u.lokasi === locCode);
-    if (matches.length > 0) {
-      uptSelectEl.innerHTML =
-        '<option value="">Pilih UPT...</option>' +
-        matches
-          .map((m) => `<option value="${m.upt}">${m.nama || m.upt}</option>`)
-          .join("");
-    } else {
-      uptSelectEl.innerHTML = `<option value="">Tidak ada UPT untuk lokasi ini...</option>`;
-      uptSelectEl.disabled = true;
-    }
-    uptSelectEl.value = "";
-  }
-
   // Dynamic UPT Select
   document.getElementById("edit-lokasi")?.addEventListener("change", (e) => {
     applyUptSelect(e.target.value, document.getElementById("edit-upt"));
@@ -1623,14 +1608,10 @@ function setupEventListeners() {
   });
 
   // ── Edit form tab switcher ──────────────────────────────────────────────
-  document
-    .getElementById("edit-tab-perbaikan")
-    ?.addEventListener("click", () => {
+  document.getElementById("edit-tab-perbaikan")?.addEventListener("click", () => {
       _switchEditFormTab("perbaikan");
     });
-  document
-    .getElementById("edit-tab-kalibrasi")
-    ?.addEventListener("click", () => {
+  document.getElementById("edit-tab-kalibrasi")?.addEventListener("click", () => {
       _switchEditFormTab("kalibrasi");
     });
 
@@ -1659,12 +1640,12 @@ function setupEventListeners() {
         'input[name="in-unit"]:checked',
       ).value;
       const peruntukanMap = {
-        A: "jalan rel",
-        B: "jembatan",
-        C: "mekanik",
-        D: "balaiyasa",
+        A: "JALAN REL",
+        B: "JEMBATAN",
+        C: "MEKANIK",
+        D: "BALAIYASA",
       };
-      const peruntukanVal = peruntukanMap[unitRaw] || "jalan rel";
+      const peruntukanVal = peruntukanMap[unitRaw] || "JALAN REL";
       const lokasi = document.getElementById("in-lokasi").value; // Parent (misal: D1)
       const uptName = document.getElementById("in-upt")?.value || ""; // UPT (misal: JR1.1)
 
@@ -1766,23 +1747,25 @@ function setupEventListeners() {
       e.preventDefault();
 
       const uid = document.getElementById("edit-uid").value;
-      const keterangan =
-        document.getElementById("kalib-keterangan").value || "-";
-      const uptVal = document.getElementById("kalib-upt")?.value || "";
-      const lokasiVal = document.getElementById("kalib-lokasi")?.value || "";
-      const peruntukan =
-        document.querySelector('input[name="kalib-unit"]:checked')?.value || "";
+      const tanggalKalibrasi = document.getElementById("kalib-tanggal")?.value || "";
+      const tanggalBerlaku   = document.getElementById("kalib-berlaku")?.value || tanggalKalibrasi;
+      const statusKalibrasi  = document.getElementById("kalib-status")?.value || "LULUS";
+      const pelaksana        = document.getElementById("kalib-teknisi")?.value?.trim() || null;
+      const nomorSertifikat  = document.getElementById("kalib-nomor")?.value?.trim() || null;
+      const keterangan       = document.getElementById("kalib-keterangan")?.value?.trim() || null;
 
       const payload = {
         id_aset: uid,
-        kondisi: "KALIBRASI",
-        keterangan: keterangan, // Keterangan bersih tanpa prefix tag
-        id_lokasi: uptVal, // Dikirim langsung melalui field terpisah
-        peruntukan: peruntukan,
+        tanggal_kalibrasi: tanggalKalibrasi,
+        tanggal_berlaku: tanggalBerlaku || tanggalKalibrasi,
+        status: statusKalibrasi,
+        pelaksana_kalibrasi: pelaksana,
+        nomor_sertifikat: nomorSertifikat,
+        keterangan: keterangan,
       };
 
       try {
-        const response = await apiFetch("/riwayat-kondisi", {
+        const response = await apiFetch("/kalibrasi", {
           method: "POST",
           body: JSON.stringify(payload),
         });
@@ -1791,7 +1774,6 @@ function setupEventListeners() {
         showToast("Laporan kalibrasi berhasil disimpan", "success");
         switchView("database");
         fetchAsetFromServer();
-        await loadHistorySummary();
       } catch (error) {
         if (error.message !== "Unauthorized") showToast(error.message, "error");
       }
@@ -1843,9 +1825,7 @@ function setupEventListeners() {
     renderHistoryCards();
   });
 
-  document
-    .getElementById("hist-tab-kalibrasi")
-    ?.addEventListener("click", () => {
+  document.getElementById("hist-tab-kalibrasi")?.addEventListener("click", () => {
       _historyMode = "kalibrasi";
       _setHistoryTab("kalibrasi");
       renderKalibrasiCards();
@@ -1858,45 +1838,42 @@ function setupEventListeners() {
   });
 
   function _setHistoryTab(active) {
-    const ACTIVE_CLS = [
-      "bg-kai-orange",
-      "text-white",
-      "font-semibold",
-      "shadow-sm",
-    ];
-    const INACTIVE_CLS = [
-      "text-gray-500",
-      "dark:text-gray-400",
-      "font-medium",
-      "hover:bg-kai-orange/20",
-      "hover:text-kai-orange",
-    ];
-    const tabs = ["repair", "kalibrasi", "mutasi"];
+    const ACTIVE_REPAIR   = ["bg-kai-blue", "text-white", "font-semibold", "shadow-sm"];
+    const INACTIVE_REPAIR = ["text-gray-500", "dark:text-gray-400", "font-medium", "hover:bg-blue-100", "hover:text-kai-blue", "dark:hover:bg-blue-900/20", "dark:hover:text-blue-300"];
+    const ACTIVE_KALIB    = ["bg-cyan-600", "text-white", "font-semibold", "shadow-sm"];
+    const INACTIVE_KALIB  = ["text-gray-500", "dark:text-gray-400", "font-medium", "hover:bg-cyan-100", "hover:text-cyan-700", "dark:hover:bg-cyan-900/20", "dark:hover:text-cyan-300"];
+    const ACTIVE_MUTASI   = ["bg-kai-orange", "text-white", "font-semibold", "shadow-sm"];
+    const INACTIVE_MUTASI = ["text-gray-500", "dark:text-gray-400", "font-medium", "hover:bg-orange-100", "hover:text-kai-orange", "dark:hover:bg-orange-900/20", "dark:hover:text-orange-300"];
 
-    tabs.forEach((t) => {
+    const ALL = [...ACTIVE_REPAIR, ...INACTIVE_REPAIR, ...ACTIVE_KALIB, ...INACTIVE_KALIB, ...ACTIVE_MUTASI, ...INACTIVE_MUTASI];
+
+    const tabCfg = {
+      repair:    { active: ACTIVE_REPAIR,  inactive: INACTIVE_REPAIR  },
+      kalibrasi: { active: ACTIVE_KALIB,   inactive: INACTIVE_KALIB   },
+      mutasi:    { active: ACTIVE_MUTASI,  inactive: INACTIVE_MUTASI  },
+    };
+
+    ["repair", "kalibrasi", "mutasi"].forEach((t) => {
       const btn = document.getElementById(`hist-tab-${t}`);
       if (!btn) return;
-      [...ACTIVE_CLS, ...INACTIVE_CLS].forEach((c) => btn.classList.remove(c));
-      (t === active ? ACTIVE_CLS : INACTIVE_CLS).forEach((c) =>
-        btn.classList.add(c),
-      );
+      ALL.forEach((c) => btn.classList.remove(c));
+      (t === active ? tabCfg[t].active : tabCfg[t].inactive).forEach((c) => btn.classList.add(c));
     });
 
-    document
-      .getElementById("history-repair-container")
-      ?.classList.toggle("hidden", active !== "repair");
-    document
-      .getElementById("history-kalibrasi-container")
-      ?.classList.toggle("hidden", active !== "kalibrasi");
-    document
-      .getElementById("history-mutasi-container")
-      ?.classList.toggle("hidden", active !== "mutasi");
+    document.getElementById("history-repair-container")?.classList.toggle("hidden", active !== "repair");
+    document.getElementById("history-kalibrasi-container")?.classList.toggle("hidden", active !== "kalibrasi");
+    document.getElementById("history-mutasi-container")?.classList.toggle("hidden", active !== "mutasi");
   }
 
   document
     .getElementById("detail-tab-repair")
     ?.addEventListener("click", () => {
       switchDetailTab("repair", activeHistoryUid);
+    });
+  document
+    .getElementById("detail-tab-kalibrasi")
+    ?.addEventListener("click", () => {
+      switchDetailTab("kalibrasi", activeHistoryUid);
     });
   document
     .getElementById("detail-tab-mutasi")
@@ -1926,13 +1903,8 @@ function setupEventListeners() {
       if (!lokasiTuju)
         return showToast("Pilih lokasi tujuan terlebih dahulu.", "warning");
 
-      const currentLok = db.find((x) => x.id_aset === uid)?.id_lokasi;
-      const isSameLok = lokasiTuju === currentLok;
-      if (!isSameLok && !uptTuju)
-        return showToast(
-          "Pilih UPT tujuan untuk mutasi ke wilayah berbeda.",
-          "warning",
-        );
+      if (!uptTuju)
+        return showToast("Pilih UPT tujuan terlebih dahulu.", "warning");
 
       const btn = document.getElementById("btn-submit-mutasi");
       const orig = btn.innerHTML;
@@ -2133,6 +2105,11 @@ window.openEdit = (uid) => {
   if (_v("kalib-teknisi")) _v("kalib-teknisi").value = currentUser;
   if (_v("edit-kondisi")) _v("edit-kondisi").value = "";
 
+  // Pre-select peruntukan radio matching asset's stored value
+  document.querySelectorAll('input[name="edit-unit"]').forEach((r) => {
+    r.checked = r.value === item.peruntukan;
+  });
+
   // ── Populate summary card ──
   const uptCodeForCard = item.id_lokasi || "";
   const uptEntryForCard = uptDatabase.find((u) => u.upt === uptCodeForCard);
@@ -2180,20 +2157,17 @@ window.openEdit = (uid) => {
   if (uptLabelEl)
     uptLabelEl.textContent = `UPT Pengirim (sebelumnya di: ${lastUpt})`;
 
-  // ── Re-lock UPT dropdowns ──
-  const editLokasi = document.getElementById("edit-lokasi");
+  // ── Populate UPT dropdowns based on the asset's parent location ──
   const editUpt = document.getElementById("edit-upt");
-  if (editLokasi) editLokasi.value = "";
+  const initialParentLoc = getParentLokasiCode(item.id_lokasi_raw || item.id_lokasi) || item.id_lokasi || "";
   if (editUpt) {
-    editUpt.innerHTML = `<option value="">— Pilih Lokasi terlebih dahulu —</option>`;
-    editUpt.disabled = true;
+    applyUptSelect(initialParentLoc, editUpt);
   }
   const kalibLokasi = document.getElementById("kalib-lokasi");
   const kalibUpt = document.getElementById("kalib-upt");
   if (kalibLokasi) kalibLokasi.value = "";
   if (kalibUpt) {
-    kalibUpt.innerHTML = `<option value="">— Pilih Lokasi terlebih dahulu —</option>`;
-    kalibUpt.disabled = true;
+    applyUptSelect(initialParentLoc, kalibUpt);
   }
 
   // ── Reset SO/TSO buttons & switch to default tab ──
@@ -2207,26 +2181,52 @@ window.openEdit = (uid) => {
 };
 
 function _switchEditFormTab(tab) {
-  const ACTIVE = ["bg-kai-blue", "text-white", "font-semibold", "shadow-sm"];
-  const INACTIVE = [
+  const ACTIVE_REPAIR = [
+    "bg-kai-orange",
+    "text-white",
+    "font-semibold",
+    "shadow-sm"
+  ];
+  const INACTIVE_REPAIR = [
     "text-gray-500",
     "dark:text-gray-400",
     "font-medium",
-    "hover:bg-kai-blue/15",
-    "hover:text-kai-blue",
+    "hover:bg-orange-100",
+    "hover:text-kai-orange",
+    "dark:hover:bg-orange-900/20",
+    "dark:hover:text-orange-300",
   ];
-  ["perbaikan", "kalibrasi"].forEach((t) => {
-    const btn = document.getElementById(`edit-tab-${t}`);
-    if (!btn) return;
-    [...ACTIVE, ...INACTIVE].forEach((c) => btn.classList.remove(c));
-    (t === tab ? ACTIVE : INACTIVE).forEach((c) => btn.classList.add(c));
-  });
-  document
-    .getElementById("panel-perbaikan")
-    ?.classList.toggle("hidden", tab !== "perbaikan");
-  document
-    .getElementById("panel-kalibrasi")
-    ?.classList.toggle("hidden", tab !== "kalibrasi");
+  const ACTIVE_KALIB = [
+    "bg-cyan-600",
+    "text-white",
+    "font-semibold",
+    "shadow-sm"
+  ];
+  const INACTIVE_KALIB = [
+    "text-gray-500",
+    "dark:text-gray-400",
+    "font-medium",
+    "hover:bg-cyan-100",
+    "hover:text-cyan-700",
+    "dark:hover:bg-cyan-900/20",
+    "dark:hover:text-cyan-300",
+  ];
+
+  const repairBtn = document.getElementById("edit-tab-perbaikan");
+  const kalibBtn = document.getElementById("edit-tab-kalibrasi");
+
+  if (repairBtn) {
+    [...ACTIVE_REPAIR, ...INACTIVE_REPAIR, ...ACTIVE_KALIB, ...INACTIVE_KALIB].forEach((c) => repairBtn.classList.remove(c));
+    (tab === "perbaikan" ? ACTIVE_REPAIR : INACTIVE_REPAIR).forEach((c) => repairBtn.classList.add(c));
+  }
+
+  if (kalibBtn) {
+    [...ACTIVE_REPAIR, ...INACTIVE_REPAIR, ...ACTIVE_KALIB, ...INACTIVE_KALIB].forEach((c) => kalibBtn.classList.remove(c));
+    (tab === "kalibrasi" ? ACTIVE_KALIB : INACTIVE_KALIB).forEach((c) => kalibBtn.classList.add(c));
+  }
+  
+  document.getElementById("panel-perbaikan")?.classList.toggle("hidden", tab !== "perbaikan");
+  document.getElementById("panel-kalibrasi")?.classList.toggle("hidden", tab !== "kalibrasi");
 }
 
 window.openHistoryDetail = async (uid, tab = "repair") => {
@@ -2305,30 +2305,34 @@ window.deleteAset = async (uid) => {
 };
 
 function switchDetailTab(tab, uid) {
-  const ACTIVE = ["bg-kai-orange", "text-white", "font-semibold", "shadow-sm"];
-  const INACTIVE = [
-    "text-gray-500",
-    "dark:text-gray-400",
-    "font-medium",
-    "hover:bg-kai-orange/20",
-    "hover:text-kai-orange",
-  ];
+  const ACTIVE_REPAIR   = ["bg-kai-blue", "text-white", "font-semibold", "shadow-sm"];
+  const INACTIVE_REPAIR = ["text-gray-500", "dark:text-gray-400", "font-medium", "hover:bg-blue-100", "hover:text-kai-blue", "dark:hover:bg-blue-900/20", "dark:hover:text-blue-300"];
+  const ACTIVE_KALIB    = ["bg-cyan-600", "text-white", "font-semibold", "shadow-sm"];
+  const INACTIVE_KALIB  = ["text-gray-500", "dark:text-gray-400", "font-medium", "hover:bg-cyan-100", "hover:text-cyan-700", "dark:hover:bg-cyan-900/20", "dark:hover:text-cyan-300"];
+  const ACTIVE_MUTASI   = ["bg-kai-orange", "text-white", "font-semibold", "shadow-sm"];
+  const INACTIVE_MUTASI = ["text-gray-500", "dark:text-gray-400", "font-medium", "hover:bg-orange-100", "hover:text-kai-orange", "dark:hover:bg-orange-900/20", "dark:hover:text-orange-300"];
 
-  ["repair", "mutasi"].forEach((t) => {
+  const ALL = [...ACTIVE_REPAIR, ...INACTIVE_REPAIR, ...ACTIVE_KALIB, ...INACTIVE_KALIB, ...ACTIVE_MUTASI, ...INACTIVE_MUTASI];
+
+  const tabCfg = {
+    repair:    { active: ACTIVE_REPAIR,  inactive: INACTIVE_REPAIR  },
+    kalibrasi: { active: ACTIVE_KALIB,   inactive: INACTIVE_KALIB   },
+    mutasi:    { active: ACTIVE_MUTASI,  inactive: INACTIVE_MUTASI  },
+  };
+
+  ["repair", "kalibrasi", "mutasi"].forEach((t) => {
     const btn = document.getElementById(`detail-tab-${t}`);
     if (!btn) return;
-    [...ACTIVE, ...INACTIVE].forEach((c) => btn.classList.remove(c));
-    (t === tab ? ACTIVE : INACTIVE).forEach((c) => btn.classList.add(c));
+    ALL.forEach((c) => btn.classList.remove(c));
+    (t === tab ? tabCfg[t].active : tabCfg[t].inactive).forEach((c) => btn.classList.add(c));
   });
 
-  document
-    .getElementById("detail-panel-repair")
-    .classList.toggle("hidden", tab !== "repair");
-  document
-    .getElementById("detail-panel-mutasi")
-    .classList.toggle("hidden", tab !== "mutasi");
+  document.getElementById("detail-panel-repair")?.classList.toggle("hidden", tab !== "repair");
+  document.getElementById("detail-panel-kalibrasi")?.classList.toggle("hidden", tab !== "kalibrasi");
+  document.getElementById("detail-panel-mutasi")?.classList.toggle("hidden", tab !== "mutasi");
 
   if (tab === "repair") loadDetailRepair(uid);
+  if (tab === "kalibrasi") loadDetailKalibrasi(uid);
   if (tab === "mutasi") loadDetailMutasi(uid);
 }
 
@@ -2340,17 +2344,22 @@ async function loadDetailRepair(uid) {
     if (!res.ok) throw new Error("Gagal mengambil riwayat.");
     const history = await res.json();
     if (!history.length) {
-      tbody.innerHTML = `<tr><td colspan="6" class="p-4 text-center text-gray-500">Belum ada riwayat perbaikan.</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="8" class="p-4 text-center text-gray-500">Belum ada riwayat perbaikan.</td></tr>`;
       return;
     }
 
-    // 1. Ambil data aset dari memori global berdasarkan uid sebelum looping
-    const asetTerkait = db.find((x) => x.id_aset === uid);
-    // 2. Ekstrak peruntukannya
-    const peruntukanName =
-      asetTerkait && asetTerkait.peruntukan ? asetTerkait.peruntukan : "—";
+    // Filter out KALIBRASI entries — they belong to the Kalibrasi tab only
+    const repairEntries = history.filter((h) => h.kondisi !== "KALIBRASI");
 
-    tbody.innerHTML = history
+    if (!repairEntries.length) {
+      tbody.innerHTML = `<tr><td colspan="8" class="p-4 text-center text-gray-500">Belum ada riwayat perbaikan (SO/TSO).</td></tr>`;
+      return;
+    }
+
+    const asetTerkait = db.find((x) => x.id_aset === uid);
+    const peruntukanName = asetTerkait && asetTerkait.peruntukan ? asetTerkait.peruntukan : "—";
+
+    tbody.innerHTML = repairEntries
       .map((h, i) => {
         // Ambil langsung id_lokasi dari payload backend
         // const rawLokasiCode = h.id_lokasi || "—";
@@ -2403,9 +2412,49 @@ async function loadDetailRepair(uid) {
       .join("");
   } catch (e) {
     if (e.message !== "Unauthorized")
+      tbody.innerHTML = `<tr><td colspan="8" class="p-4 text-center text-red-500">${e.message}</td></tr>`;
+  }
+}
+
+async function loadDetailKalibrasi(uid) {
+  const tbody = document.getElementById("hist-kalibrasi-tbody");
+  if (!tbody) return;
+  tbody.innerHTML = `<tr><td colspan="6" class="p-4 text-center text-gray-500"><i class="fas fa-spinner fa-spin mr-2"></i>Mengambil data...</td></tr>`;
+  try {
+    const res = await apiFetch(`/kalibrasi/${uid}`);
+    if (!res.ok) throw new Error("Gagal mengambil riwayat kalibrasi.");
+    const history = await res.json();
+    if (!history.length) {
+      tbody.innerHTML = `<tr><td colspan="6" class="p-4 text-center text-gray-500">Belum ada riwayat kalibrasi.</td></tr>`;
+      return;
+    }
+    tbody.innerHTML = history
+      .map((h) => {
+        const statusClass =
+          h.status === "LULUS"
+            ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+            : h.status === "GAGAL"
+              ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
+              : "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400";
+        return `
+          <tr class="border-b dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50">
+            <td class="p-3 text-center text-gray-400">${h.no}</td>
+            <td class="p-3 font-mono text-xs">${h.tanggal_kalibrasi || "—"}</td>
+            <td class="p-3 text-sm text-center">
+              <span class="text-xs font-bold px-2 py-0.5 rounded ${statusClass}">${h.status || "—"}</span>
+            </td>
+            <td class="p-3 text-sm">${h.pelaksana_kalibrasi || "—"}</td>
+            <td class="p-3 text-sm">${h.nomor_sertifikat || "—"}</td>
+            <td class="p-3 text-xs text-gray-500 whitespace-pre-wrap">${h.keterangan || "—"}</td>
+          </tr>`;
+      })
+      .join("");
+  } catch (e) {
+    if (e.message !== "Unauthorized")
       tbody.innerHTML = `<tr><td colspan="6" class="p-4 text-center text-red-500">${e.message}</td></tr>`;
   }
 }
+
 async function loadDetailMutasi(uid) {
   const timeline = document.getElementById("mutasi-timeline");
   const originBar = document.getElementById("mutasi-origin-bar");
@@ -2421,51 +2470,19 @@ async function loadDetailMutasi(uid) {
       ? `<span class="bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 px-3 py-1 rounded-full text-xs font-bold">✓ Sudah Kembali ke Lokasi Awal</span>`
       : `<span class="bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 px-3 py-1 rounded-full text-xs font-bold">⟳ Belum Kembali ke Asal</span>`;
 
-    // Helper untuk meresolve kode lokasi menjadi Nama Induk (DAOP/DIVRE) dan UPT
-    const resolveLokasi = (kode) => {
-      if (!kode || kode === "—")
-        return { parentName: "—", uptName: "—", uptCode: "" };
-
-      // 1. Cek apakah ini level UPT (contoh: JR1.1)
-      const uptEntry = uptDatabase.find((u) => u.upt === kode);
-      if (uptEntry) {
-        const parentCode = getParentLokasiCode(kode) || uptEntry.lokasi;
-        const parentEntry = lokasiData.find((l) => l.code === parentCode);
-        return {
-          parentName: parentEntry ? parentEntry.name : parentCode,
-          uptName: uptEntry.nama,
-          uptCode: uptEntry.upt,
-        };
-      }
-
-      // 2. Cek apakah ini level Induk / Parent (contoh: D1)
-      const parentEntry = lokasiData.find((l) => l.code === kode);
-      if (parentEntry) {
-        return {
-          parentName: parentEntry.name,
-          uptName: "—", // Karena tidak ada UPT spesifik
-          uptCode: "",
-        };
-      }
-
-      // Fallback
-      return { parentName: kode, uptName: "—", uptCode: "" };
-    };
-
-    // Resolve Lokasi Asal dan Kini untuk Origin Bar
     const asal = resolveLokasi(data.original_lokasi);
     const kini = resolveLokasi(data.lokasi_sekarang);
 
     originBar.innerHTML = `
         <div class="flex-1 min-w-0">
-            <p class="text-xs text-gray-400">Lokasi Asal</p>
-            <p class="font-bold text-gray-700 dark:text-gray-200">${asal.parentName}</p>
-            <p class="text-[11px] text-gray-400 mt-0.5">${asal.uptName !== "—" ? `${asal.uptName} (${asal.uptCode})` : "—"}</p>
+            <p class="font-bold text-xs text-gray-400">Lokasi Asal</p>
+            <p class="font-bold text-base text-gray-700 dark:text-gray-200">${asal.parentName}</p>
+            <p class="font-bold text-sm text-gray-700 dark:text-gray-200 mt-0.5">${asal.uptName !== "—" ? `${asal.uptName} (${asal.uptCode})` : "—"}</p>
         </div>
         <div class="flex-1 min-w-0">
-            <p class="text-xs text-gray-400">Lokasi Sekarang</p>
-            <p class="font-bold text-gray-700 dark:text-gray-200">${kini.parentName}</p>
-            <p class="text-[11px] text-gray-400 mt-0.5">${kini.uptName !== "—" ? `${kini.uptName} (${kini.uptCode})` : "—"}</p>
+            <p class="font-bold text-xs text-gray-400">Lokasi Sekarang</p>
+            <p class="font-bold text-base text-gray-700 dark:text-gray-200">${kini.parentName}</p>
+            <p class="font-bold text-sm text-gray-700 dark:text-gray-200 mt-0.5">${kini.uptName !== "—" ? `${kini.uptName} (${kini.uptCode})` : "—"}</p>
         </div>
         ${returnedBadge}
     `;
@@ -2503,23 +2520,21 @@ async function loadDetailMutasi(uid) {
             <div class="bg-gray-50 dark:bg-gray-700/50 rounded-xl p-4 flex-1 mb-2 space-y-1.5 text-sm">
                 <div>
                     <span class="font-bold text-orange-600 dark:text-orange-400">
-                        ${mutAsal.parentName}
-                        →
-                        ${mutTuju.parentName}
+                        ${mutAsal.parentName} (${mutAsal.uptName !== "—" ? `${mutAsal.uptName}` : "—"})
+                    </span>
+                    <i class="fas fa-arrow-right text-base"></i>
+                    <span class="font-bold text-orange-600 dark:text-orange-400">
+                        ${mutTuju.parentName} (${mutTuju.uptName !== "—" ? `${mutTuju.uptName}` : "—"})
                     </span>
                 </div>
-                <div class="text-[11px] text-gray-500 mb-1">
-                    <span class="block">Dari UPT: ${mutAsal.uptName !== "—" ? `${mutAsal.uptName} (${mutAsal.uptCode})` : "—"}</span>
-                    <span class="block">Ke UPT: ${mutTuju.uptName !== "—" ? `${mutTuju.uptName} (${mutTuju.uptCode})` : "—"}</span>
-                </div>
-                <p class="text-xs text-gray-500 font-mono">${formatUtcToLocal(m.waktu_mutasi)}</p>
+                <p class="text-xs text-gray-500 text-sm">Waktu Mutasi: <span class="font-semibold">${formatUtcToLocal(m.waktu_mutasi)}</span></p>
                 ${
                   durasi
                     ? `<p class="text-xs text-gray-500">Durasi di lokasi ini: <span class="font-semibold">${durasi}</span></p>`
-                    : `<p class="text-xs text-gray-400 italic">Masih dalam proses mutasi...</p>`
+                    : `<p class="text-xs text-gray-500">Durasi di lokasi ini: <span class="font-semibold italic">Masih dalam proses mutasi...</span></p>`
                 }
-                <p class="text-xs text-gray-600 dark:text-gray-400"><span class="font-semibold">Oleh:</span> ${m.id_pengguna}</p>
-                <p class="text-xs text-gray-600 dark:text-gray-400 italic">${m.alasan_mutasi || "—"}</p>
+                <p class="text-xs text-gray-600 dark:text-gray-400">Oleh: <span class="font-semibold">${m.id_pengguna}</span></p>
+                <p class="text-xs text-gray-600 dark:text-gray-400">Alasan Mutasi: <span class="font-bold">${m.alasan_mutasi || "—"}</span></p>
             </div>
         </div>`;
       })
@@ -2541,44 +2556,53 @@ function renderDbCards() {
   const isTeknisi = _currentRole === "TEKNISI";
   if (modeSelect) modeSelect.style.display = isTeknisi ? "none" : "";
 
-  const searchQ = (searchInput?.value || "").toLowerCase();
+  const searchQ = (searchInput?.value || "").toUpperCase();
   const mode = isTeknisi ? "public" : modeSelect ? modeSelect.value : "public";
   const isAdmin =
     _currentRole === "SUPER_ADMIN" || _currentRole === "ADMIN_WILAYAH";
 
   const filteredItems = db.filter((item) => {
+    const searchQ_upper = searchQ;
     const matchSearch =
-      (item.id_aset || "").toLowerCase().includes(searchQ) ||
-      (item.kode_alat || "").toLowerCase().includes(searchQ) ||
-      (item.id_lokasi || "").toLowerCase().includes(searchQ);
+      (item.id_aset || "").toUpperCase().includes(searchQ_upper) ||
+      (item.kode_alat || "").toUpperCase().includes(searchQ_upper) ||
+      (item.kode_alat_name || "").toUpperCase().includes(searchQ_upper) ||
+      (item.id_lokasi || "").toUpperCase().includes(searchQ_upper) ||
+      (item.id_lokasi_display || "").toUpperCase().includes(searchQ_upper) ||
+      (item.sumber_pengadaan || "").toUpperCase().includes(searchQ_upper) ||
+      (item.status_terakhir || "").toUpperCase().includes(searchQ_upper) ||
+      (item.peruntukan || "").toUpperCase().includes(searchQ_upper) ||
+      (item.tanggal_pembelian || "").toUpperCase().includes(searchQ_upper);
     if (!matchSearch) return false;
 
     // Apply custom sort filters
     const f = _sortFilters;
-    if (f.alat && item.kode_alat !== f.alat) return false;
+    if (f.alat && item.kode_alat !== f.alat)
+        return false;
     if (f.pengadaan && !(item.sumber_pengadaan || "").includes(f.pengadaan))
       return false;
     if (f.peruntukan) {
       const dec = decodeAsetId(item.id_aset);
-      if (dec.peruntukan !== f.peruntukan) return false;
+      if (dec.peruntukan !== f.peruntukan)
+        return false;
     }
-    if (
-      f.lokasi &&
-      item.id_lokasi_raw !== f.lokasi &&
-      item.id_lokasi !== f.lokasi
-    )
-      return false;
+    if (f.lokasi && item.id_lokasi_raw !== f.lokasi && item.id_lokasi !== f.lokasi)
+        return false;
     if (f.upt && item.id_lokasi_raw !== f.upt && item.id_lokasi !== f.upt)
-      return false;
+        return false;
     if (f.tahunFrom || f.tahunTo) {
       const yr = parseInt((item.tanggal_pembelian || "").slice(0, 4));
-      if (f.tahunFrom && yr < parseInt(f.tahunFrom)) return false;
-      if (f.tahunTo && yr > parseInt(f.tahunTo)) return false;
+      if (f.tahunFrom && yr < parseInt(f.tahunFrom))
+        return false;
+      if (f.tahunTo && yr > parseInt(f.tahunTo))
+        return false;
     }
     if (f.idFrom || f.idTo) {
       const num = parseInt((item.id_aset || "").split(".")[0]) || 0;
-      if (f.idFrom && num < f.idFrom) return false;
-      if (f.idTo && num > f.idTo) return false;
+      if (f.idFrom && num < f.idFrom)
+        return false;
+      if (f.idTo && num > f.idTo)
+        return false;
     }
     return true;
   });
@@ -2592,33 +2616,32 @@ function renderDbCards() {
 
   filteredItems
     .sort((a, b) => {
+      if (_sortDir === "date-desc") {
+        return new Date(b.tanggal_pembelian || 0) - new Date(a.tanggal_pembelian || 0);
+      }
+      if (_sortDir === "date-asc") {
+        return new Date(a.tanggal_pembelian || 0) - new Date(b.tanggal_pembelian || 0);
+      }
       if (_sortDir === "count-desc") {
-        // Count-based: sort by status SO first (most "ready")
-        const aScore = _historySummary.filter(
-          (s) => s.id_aset === a.id_aset,
-        ).length;
-        const bScore = _historySummary.filter(
-          (s) => s.id_aset === b.id_aset,
-        ).length;
+        const aScore = _historySummary.filter(s => s.id_aset === a.id_aset).length;
+        const bScore = _historySummary.filter(s => s.id_aset === b.id_aset).length;
         return bScore - aScore;
       }
       if (_sortDir === "count-asc") {
-        const aScore = _historySummary.filter(
-          (s) => s.id_aset === a.id_aset,
-        ).length;
-        const bScore = _historySummary.filter(
-          (s) => s.id_aset === b.id_aset,
-        ).length;
+        const aScore = _historySummary.filter(s => s.id_aset === a.id_aset).length;
+        const bScore = _historySummary.filter(s => s.id_aset === b.id_aset).length;
         return aScore - bScore;
       }
-      const av = (a[_sortField] || "").toString().toLowerCase();
-      const bv = (b[_sortField] || "").toString().toLowerCase();
+      const av = (a[_sortField] || "").toString().toUpperCase();
+      const bv = (b[_sortField] || "").toString().toUpperCase();
       return _sortDir === "asc" ? av.localeCompare(bv) : bv.localeCompare(av);
     })
     .forEach((item) => {
       const isSuperAdmin = _currentRole === "SUPER_ADMIN";
       const isAdminWilayah = _currentRole === "ADMIN_WILAYAH";
       const canDelete = isSuperAdmin || isAdminWilayah;
+
+      const summaryItem = _historySummary.find((x) => x.id_aset === item.id_aset);
 
       // Decode original data dari id_aset menggunakan fungsi yang baru
       const dec = decodeAsetId(item.id_aset);
@@ -2627,13 +2650,15 @@ function renderDbCards() {
       const peruntukanName = item.peruntukan ? item.peruntukan : "—";
 
       // --- REVISI LOGIKA LOKASI MURNI ---
-      const rawUptCode = item.id_lokasi_raw || item.id_lokasi || "";
+      const rawUptCode =
+        summaryItem?.mutasi?.original_lokasi_code || item.id_lokasi_raw || item.id_lokasi || "";
       const parentCode = getParentLokasiCode(rawUptCode) || rawUptCode;
 
       // Lokasi Induk (DAOP/DIVRE)
       const lokasiName =
         lokasiData.find((l) => l.code === parentCode)?.name ||
-        item.lokasi_name || // Ambil dari response main.py
+        summaryItem?.mutasi?.original_lokasi_name ||
+        item.lokasi_name ||
         item.id_lokasi_name ||
         parentCode ||
         "—";
@@ -2642,8 +2667,7 @@ function renderDbCards() {
       const uptEntry = uptDatabase.find((u) => u.upt === rawUptCode);
       const uptDisplay = uptEntry
         ? `${uptEntry.nama}`
-        : "—";
-      // --- AKHIR REVISI LOGIKA LOKASI MURNI ---
+        : summaryItem?.mutasi?.original_lokasi_name || item.lokasi_name || rawUptCode || "—";
 
       const tahunFull = dec.tahun
         ? dec.tahun.length === 2
@@ -2661,27 +2685,13 @@ function renderDbCards() {
           })
         : tahunFull;
 
-      // Mutasi & Kalibrasi badges from history summary
-      const summaryItem = _historySummary.find(
-        (x) => x.id_aset === item.id_aset,
-      );
+      // Mutasi badge from history summary
       const mutasiInfo = summaryItem?.mutasi;
-      const mutasiBadge = mutasiInfo
+      const mutasiBadge = (mutasiInfo && mutasiInfo.count > 0)
         ? mutasiInfo.sudah_kembali
           ? `<span class="text-[10px] px-2 py-0.5 rounded-full font-bold bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">✓ Di Lokasi Asal</span>`
           : `<span class="text-[10px] px-2 py-0.5 rounded-full font-bold bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400">⟳ Sedang Dimutasi</span>`
-        : "";
-
-      // Kalibrasi badge: show if any riwayat_kondisi has kondisi=KALIBRASI
-      const hasKalibrasi = _historySummary.some(
-        (x) =>
-          x.id_aset === item.id_aset &&
-          x.repair &&
-          x.repair.latest_kondisi === "KALIBRASI",
-      );
-      const kalibrasiBadge = hasKalibrasi
-        ? `<span class="text-[10px] px-2 py-0.5 rounded-full font-bold bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400"><i class="fas fa-ruler-combined mr-0.5 text-[7px]"></i>KALIBRASI</span>`
-        : "";
+        : `<span class="text-[10px] px-2 py-0.5 rounded-full font-bold bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">✓ Di Lokasi Asal</span>`;
 
       const statusBadgeCls =
         item.status_terakhir === "SO"
@@ -2705,18 +2715,17 @@ function renderDbCards() {
                         <span class="text-[10px] font-bold px-2 py-0.5 rounded-full ${statusBadgeCls}">
                             <i class="fas fa-circle text-[7px] mr-0.5"></i>${item.status_terakhir}
                         </span>
-                        ${kalibrasiBadge}
                         ${mutasiBadge}
                     </div>
                 </div>
                 <p class="text-sm text-gray-700 dark:text-gray-300 font-semibold">${item.kode_alat_name || item.kode_alat}</p>
 
-                <div class="mt-3 space-y-1 border-t border-gray-100 dark:border-gray-700 pt-3 capitalize">
+                <div class="mt-3 space-y-1 border-t border-gray-100 dark:border-gray-700 pt-3">
                     ${row("Pengadaan", PENGADAAN_MAP[item.sumber_pengadaan] || item.sumber_pengadaan || "—")}
                     ${row("Tanggal Beli", tanggalBeli)}
-                    ${row("Peruntukan", peruntukanName)}
                     ${row("Lokasi", lokasiName)}
                     ${row("UPT", uptDisplay)}
+                    ${row("Peruntukan", peruntukanName)}
                 </div>
             </div>
             <div class="mt-4 space-y-2">
@@ -2772,10 +2781,10 @@ async function loadHistorySummary() {
 // ── Asset ID decoder ───────────────────────────────────────────────────────
 
 const PERUNTUKAN_MAP = {
-  A: "Jalan Rel",
-  B: "Jembatan",
-  C: "Mekanik",
-  D: "Balaiyasa",
+  A: "JALAN REL",
+  B: "JEMBATAN",
+  C: "MEKANIK",
+  D: "BALAIYASA",
 };
 const PENGADAAN_MAP = { 1: "PUSAT", 2: "DAOP / DIVRE" };
 
@@ -2811,32 +2820,46 @@ function decodeAsetId(id) {
   };
 }
 
-/** Find UPT display name(s) for a given lokasi code from uptDatabase */
-function uptNamesForLokasi(lokasiCode) {
-  return uptDatabase.filter((u) => u.lokasi === lokasiCode).map((u) => u.upt);
-}
+function resolveLokasi(val) {
+  if (!val || val === "—") return { parentName: "—", uptName: "—", uptCode: "" };
 
-// ── Context tag parsers ────────────────────────────────────────────────────
+  // 1. PRIORITY 1: Exact match on UPT code (strictest)
+  const uptEntry = uptDatabase.find((u) => u.upt === val);
+  if (uptEntry) {
+    const parentCode = getParentLokasiCode(uptEntry.upt) || uptEntry.lokasi;
+    const parentEntry = lokasiData.find((l) => l.code === parentCode);
+    return {
+      parentName: parentEntry ? parentEntry.name : parentCode,
+      uptName: uptEntry.nama,
+      uptCode: uptEntry.upt,
+    };
+  }
 
-/**
- * Extract [TAG: value] prefixes from a keterangan/alasan string.
- * Returns { tags: { Peruntukan, Lokasi, UPT, 'UPT Tujuan' }, clean: string }
- */
-function parseCtxTags(text) {
-  if (!text) return { tags: {}, clean: "" };
-  const tags = {};
-  const clean = text
-    .replace(/\[([^\]]+?):\s*([^\]]+?)\]/g, (_, key, val) => {
-      tags[key.trim()] = val.trim();
-      return "";
-    })
-    .trim();
-  return { tags, clean };
-}
+  // 2. PRIORITY 2: Exact match on Parent code
+  const parentEntry = lokasiData.find((l) => l.code === val);
+  if (parentEntry) {
+    return { parentName: parentEntry.name, uptName: "—", uptCode: "" };
+  }
 
-function ctxUptBadge(uptName, label = "UPT") {
-  if (!uptName) return "";
-  return `<span class="text-[10px] text-gray-400"><i class="fas fa-map-marker-alt mr-1 text-[9px]"></i>${label}: <span class="font-medium text-gray-600 dark:text-gray-300">${uptName}</span></span>`;
+  // 3. PRIORITY 3: Fallback to fuzzy/name matches (UPT name, then Parent name)
+  const uptByName = uptDatabase.find((u) => u.nama === val);
+  if (uptByName) {
+    const parentCode = getParentLokasiCode(uptByName.upt) || uptByName.lokasi;
+    const parentEntry = lokasiData.find((l) => l.code === parentCode);
+    return {
+      parentName: parentEntry ? parentEntry.name : parentCode,
+      uptName: uptByName.nama,
+      uptCode: uptByName.upt,
+    };
+  }
+
+  const parentByName = lokasiData.find((l) => l.name === val);
+  if (parentByName) {
+    return { parentName: parentByName.name, uptName: "—", uptCode: "" };
+  }
+
+  // 4. Complete fallback
+  return { parentName: val, uptName: "—", uptCode: "" };
 }
 
 function renderHistoryCards() {
@@ -2846,29 +2869,59 @@ function renderHistoryCards() {
 
   container.innerHTML = "";
 
-  const searchQ = (searchInput?.value || "").toLowerCase();
+  const searchQ = (searchInput?.value || "").toUpperCase();
 
   let filtered = _historySummary.filter((item) => {
-    if (!(item.id_aset || "").toLowerCase().includes(searchQ)) return false;
+    const q = searchQ;
+    const matchSearch =
+      (item.id_aset || "").toUpperCase().includes(q) ||
+      (item.kode_alat || "").toUpperCase().includes(q) ||
+      (item.kode_alat_name || "").toUpperCase().includes(q) ||
+      (item.id_lokasi || "").toUpperCase().includes(q) ||
+      (item.id_lokasi_name || "").toUpperCase().includes(q) ||
+      (item.status_terakhir || "").toUpperCase().includes(q) ||
+      (item.peruntukan || "").toUpperCase().includes(q) ||
+      ((item.repair?.latest_teknisi) || "").toUpperCase().includes(q) ||
+      ((item.repair?.latest_keterangan) || "").toUpperCase().includes(q);
+    if (!matchSearch) return false;
+    if (!(item.id_aset || "").toUpperCase().includes(searchQ))
+      return false;
     const f = _histSortFilters;
-    if (f.alat && item.kode_alat !== f.alat) return false;
+    if (f.alat && item.kode_alat !== f.alat)
+      return false;
     if (f.pengadaan && !(item.sumber_pengadaan || "").includes(f.pengadaan))
       return false;
     if (f.tahunFrom || f.tahunTo) {
       const yr = parseInt((item.tanggal_pembelian || "").slice(0, 4));
-      if (f.tahunFrom && yr < parseInt(f.tahunFrom)) return false;
-      if (f.tahunTo && yr > parseInt(f.tahunTo)) return false;
+      if (f.tahunFrom && yr < parseInt(f.tahunFrom))
+        return false;
+      if (f.tahunTo && yr > parseInt(f.tahunTo))
+        return false;
+    }
+    if (f.lokasi) {
+      const parentCode = getParentLokasiCode(item.id_lokasi) || item.id_lokasi;
+      if (parentCode !== f.lokasi)
+        return false;
+    }
+    if (f.upt && item.id_lokasi !== f.upt)
+        return false;
+    if (f.idFrom || f.idTo) {
+      const num = parseInt((item.id_aset || "").split(".")[0]) || 0;
+      if (f.idFrom && num < f.idFrom)
+        return false;
+      if (f.idTo && num > f.idTo)
+        return false;
     }
     return true;
   });
 
   filtered = filtered.sort((a, b) => {
-    if (_histSortDir === "count-desc")
-      return (b.repair ? 1 : 0) - (a.repair ? 1 : 0);
-    if (_histSortDir === "count-asc")
-      return (a.repair ? 1 : 0) - (b.repair ? 1 : 0);
-    const av = (a[_histSortField] || "").toString().toLowerCase();
-    const bv = (b[_histSortField] || "").toString().toLowerCase();
+    if (_histSortDir === "date-desc") return new Date(b.tanggal_pembelian || 0) - new Date(a.tanggal_pembelian || 0);
+    if (_histSortDir === "date-asc") return new Date(a.tanggal_pembelian || 0) - new Date(b.tanggal_pembelian || 0);
+    if (_histSortDir === "count-desc") return (b.repair ? 1 : 0) - (a.repair ? 1 : 0);
+    if (_histSortDir === "count-asc") return (a.repair ? 1 : 0) - (b.repair ? 1 : 0);
+    const av = (a[_histSortField] || "").toString().toUpperCase();
+    const bv = (b[_histSortField] || "").toString().toUpperCase();
     return _histSortDir === "asc" ? av.localeCompare(bv) : bv.localeCompare(av);
   });
 
@@ -2896,13 +2949,13 @@ function renderHistoryCards() {
 
     const card = document.createElement("div");
     card.className =
-      "bg-white dark:bg-gray-800 p-5 rounded-xl shadow border border-gray-200 dark:border-gray-700 flex flex-col justify-between";
+      "bg-white dark:bg-gray-800 p-5 rounded-xl shadow-sm border border-blue-200 dark:border-blue-900/30 flex flex-col justify-between hover:border-blue-500 transition-colors";
     card.innerHTML = `
             <div class="flex flex-col gap-3">
                 <div class="flex justify-between items-start border-b dark:border-gray-700 pb-3">
                     <div>
                         <h3 class="text-base font-bold font-mono text-kai-blue dark:text-blue-400">${item.id_aset}</h3>
-                        <p class="text-xs text-gray-500 dark:text-gray-200 mt-0.5">${item.kode_alat_name || item.kode_alat} — ${item.id_lokasi_name || item.id_lokasi}</p>
+                        <p class="text-xs text-gray-500 dark:text-gray-200 mt-0.5">${item.kode_alat} — ${item.id_lokasi_name || item.id_lokasi}</p>
                     </div>
                     <span class="text-sm font-bold ${statusColor} shrink-0"><i class="fas fa-circle text-xs mr-1"></i>${item.status_terakhir}</span>
                 </div>
@@ -2910,8 +2963,6 @@ function renderHistoryCards() {
                   r.latest_date
                     ? (() => {
                         // Ambil lokasi langsung dari data repair terbaru
-                        <!-- const rawLokasiCode = -->
-                          <!-- r.latest_id_lokasi || item.id_lokasi; -->
                         const rawLokasiCode = item.id_lokasi_raw || item.id_lokasi;
                         const uptEntry = uptDatabase.find(
                           (u) => u.upt === rawLokasiCode,
@@ -2935,11 +2986,11 @@ function renderHistoryCards() {
                           : "—";
 
                         return `
-                        <div class="space-y-1 text-xs text-gray-600 dark:text-gray-400">
-                        <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">Perbaruan Terakhir</span><span class="font-mono">${formatUtcToLocal(r.latest_date)}</span></div>
+                    <div class="space-y-1 text-xs text-gray-600 dark:text-gray-400">
+                        <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">Perbaruan Terakhir</span>${formatUtcToLocal(r.latest_date)}</div>
+                        <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">Lokasi Pengirim</span><span class="font-bold">${lokasiLabel}</span></div>
+                        <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">UPT Pengirim</span><span class="font-bold">${uptLabel}</span></div>
                         <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">Peruntukan</span><span class="capitalize">${peruntukanLabel}</span></div>
-                        <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">Lokasi Pengirim</span><span>${lokasiLabel}</span></div>
-                        <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">UPT Pengirim</span><span>${uptLabel}</span></div>
                         <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">Petugas</span><span>${r.latest_teknisi || "—"}</span></div>
                         <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">Keterangan</span><span class="italic">${r.latest_keterangan || "—"}</span></div>
                         </div>`;
@@ -2974,25 +3025,36 @@ function renderKalibrasiCards() {
 
   container.innerHTML = "";
 
-  const searchQ = (searchInput?.value || "").toLowerCase();
+  const searchQ = (searchInput?.value || "").toUpperCase();
 
-  // Show only assets that have at least one KALIBRASI riwayat_kondisi entry
-  // We use repair summary: if latest_kondisi is KALIBRASI, or use a separate API call.
-  // For now, filter from summary where repair.latest_kondisi === "KALIBRASI"
   let filtered = _historySummary.filter((item) => {
-    if (!(item.id_aset || "").toLowerCase().includes(searchQ)) return false;
-    if (!item.repair || item.repair.latest_kondisi !== "KALIBRASI")
-      return false;
+    if (!(item.id_aset || "").toUpperCase().includes(searchQ)) return false;
+    if (!item.has_kalibrasi) return false;
     const f = _histSortFilters;
-    if (f.alat && item.kode_alat !== f.alat) return false;
+    if (f.alat && item.kode_alat !== f.alat)
+      return false;
     if (f.pengadaan && !(item.sumber_pengadaan || "").includes(f.pengadaan))
       return false;
+    if (f.tahunFrom || f.tahunTo) {
+      const yr = parseInt((item.tanggal_pembelian || "").slice(0, 4));
+      if (f.tahunFrom && yr < parseInt(f.tahunFrom))
+        return false;
+      if (f.tahunTo && yr > parseInt(f.tahunTo))
+        return false;
+    }
+    if (f.lokasi) {
+      const parentCode = getParentLokasiCode(item.id_lokasi) || item.id_lokasi;
+      if (parentCode !== f.lokasi)
+        return false;
+    }
+    if (f.upt && item.id_lokasi !== f.upt)
+        return false;
     return true;
   });
 
   filtered = filtered.sort((a, b) => {
-    const av = (a[_histSortField] || "").toString().toLowerCase();
-    const bv = (b[_histSortField] || "").toString().toLowerCase();
+    const av = (a[_histSortField] || "").toString().toUpperCase();
+    const bv = (b[_histSortField] || "").toString().toUpperCase();
     return _histSortDir === "asc" ? av.localeCompare(bv) : bv.localeCompare(av);
   });
 
@@ -3004,67 +3066,37 @@ function renderKalibrasiCards() {
   const fragment = document.createDocumentFragment();
 
   filtered.forEach((item) => {
-    const r = item.repair || {};
+    const r = item.kalibrasi || {};
+    const statusClass =
+      r.latest_status === "LULUS"
+        ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+        : r.latest_status === "GAGAL"
+          ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
+          : "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400";
 
     const card = document.createElement("div");
     card.className =
-      "bg-white dark:bg-gray-800 p-5 rounded-xl shadow border border-gray-200 dark:border-gray-700 flex flex-col justify-between";
+      "bg-white dark:bg-gray-800 p-5 rounded-xl shadow-sm border border-cyan-200 dark:border-cyan-900/30 flex flex-col justify-between hover:border-cyan-500 transition-colors";
 
     card.innerHTML = `
             <div class="flex flex-col gap-3">
                 <div class="flex justify-between items-start border-b dark:border-gray-700 pb-3">
                     <div>
-                        <h3 class="text-base font-bold font-mono text-teal-600 dark:text-teal-400">${item.id_aset}</h3>
-                        <p class="text-xs text-gray-500 dark:text-gray-200 mt-0.5">${item.kode_alat_name || item.kode_alat} — ${item.id_lokasi_name || item.id_lokasi}</p>
+                        <h3 class="text-base font-bold font-mono text-cyan-700 dark:text-cyan-400">${item.id_aset}</h3>
+                        <p class="text-xs text-gray-500 dark:text-gray-200 mt-0.5">${item.kode_alat} — ${item.id_lokasi_name || item.id_lokasi}</p>
                     </div>
-                    <span class="text-xs font-bold px-2 py-0.5 rounded-full bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400"><i class="fas fa-ruler-combined mr-1 text-[9px]"></i>KALIBRASI</span>
+                    <span class="text-xs font-bold px-2 py-0.5 rounded-full bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-400"><i class="fas fa-ruler-combined mr-1 text-[9px]"></i>KALIBRASI</span>
                 </div>
-                ${
-                  r.latest_date
-                    ? (() => {
-                        const ctx = parseCtxTags(r.latest_keterangan || "");
-                        const lokasiCode = ctx.tags["Lokasi"] || "";
-                        const lokasiEntry = lokasiData.find(
-                          (l) => l.code === lokasiCode,
-                        );
-                        const lokasiLabel = lokasiEntry
-                          ? lokasiEntry.name
-                          : lokasiCode || "—";
-                        const uptCode = ctx.tags["UPT"] || "";
-                        const uptEntry = uptDatabase.find(
-                          (u) => u.upt === uptCode,
-                        );
-                        const uptLabel = uptEntry
-                          ? `${uptEntry.nama} (${uptEntry.upt})`
-                          : uptCode || "—";
-                        const peruntukanCode = ctx.tags["Peruntukan"] || "";
-                        const peruntukanLabel =
-                          PERUNTUKAN_MAP[peruntukanCode] ||
-                          peruntukanCode ||
-                          "—";
-                        return `
                 <div class="space-y-1 text-xs text-gray-600 dark:text-gray-400">
-                    <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">Kalibrasi Terakhir</span><span class="font-mono">${formatUtcToLocal(r.latest_date)}</span></div>
-                    <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">Peruntukan</span><span>${peruntukanLabel}</span></div>
-                    <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">Lokasi Pengirim</span><span>${lokasiLabel}</span></div>
-                    <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">UPT Pengirim</span><span>${uptLabel}</span></div>
-                    <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">Petugas</span><span>${r.latest_teknisi || "—"}</span></div>
-                    <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">Catatan</span><span class="italic">${ctx.clean || "—"}</span></div>
-                </div>`;
-                      })()
-                    : `
-                <div class="space-y-1 text-xs text-gray-600 dark:text-gray-400">
-                    <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">Kalibrasi Terakhir</span><span>—</span></div>
-                    <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">Peruntukan</span><span>—</span></div>
-                    <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">Lokasi Pengirim</span><span>—</span></div>
-                    <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">UPT Pengirim</span><span>—</span></div>
-                    <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">Petugas</span><span>—</span></div>
-                    <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">Catatan</span><span>—</span></div>
-                </div>`
-                }
+                    <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">Terakhir</span><span class="font-mono">${r.latest_date || "—"}</span></div>
+                    <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">Status</span><span class="font-semibold ${statusClass}">${r.latest_status || "—"}</span></div>
+                    <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">Pelaksana</span><span>${r.latest_pelaksana || "—"}</span></div>
+                    <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">No. Sertifikat</span><span>${r.latest_nomor_sertifikat || "—"}</span></div>
+                    <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">Catatan</span><span class="italic">${r.latest_keterangan || "—"}</span></div>
+                </div>
             </div>
-            <button onclick="showToast('Fitur detail riwayat kalibrasi belum tersedia — akan diimplementasikan berikutnya.', 'info')"
-                class="mt-4 w-full flex items-center justify-center gap-2 px-3 py-2.5 bg-teal-600 hover:bg-teal-700 active:bg-teal-800 text-white font-semibold rounded-lg transition text-sm shadow-sm">
+            <button onclick="window.openHistoryDetail('${item.id_aset}', 'kalibrasi')"
+                class="mt-4 w-full flex items-center justify-center gap-2 px-3 py-2.5 bg-cyan-600 hover:bg-cyan-700 active:bg-cyan-800 text-white font-semibold rounded-lg transition text-sm shadow-sm">
                 <i class="fas fa-list text-sm"></i> Lihat Riwayat Lengkap
             </button>
         `;
@@ -3081,26 +3113,39 @@ function renderMutasiCards() {
 
   container.innerHTML = "";
 
-  const searchQ = (searchInput?.value || "").toLowerCase();
+  const searchQ = (searchInput?.value || "").toUpperCase();
 
   // Only show assets that have at least one mutation
   let filtered = _historySummary.filter((item) => {
-    if (!item.mutasi) return false;
-    if (!(item.id_aset || "").toLowerCase().includes(searchQ)) return false;
+    if (!item.mutasi)
+      return false;
+    if (!(item.id_aset || "").toUpperCase().includes(searchQ))
+      return false;
     const f = _histSortFilters;
-    if (f.alat && item.kode_alat !== f.alat) return false;
+    if (f.alat && item.kode_alat !== f.alat)
+      return false;
     if (f.pengadaan && !(item.sumber_pengadaan || "").includes(f.pengadaan))
       return false;
+    if (f.tahunFrom || f.tahunTo) {
+      const yr = parseInt((item.tanggal_pembelian || "").slice(0, 4));
+      if (f.tahunFrom && yr < parseInt(f.tahunFrom)) return false;
+      if (f.tahunTo && yr > parseInt(f.tahunTo)) return false;
+    }
+    if (f.lokasi) {
+      const parentCode = getParentLokasiCode(item.id_lokasi) || item.id_lokasi;
+      if (parentCode !== f.lokasi) return false;
+    }
+    if (f.upt && item.id_lokasi !== f.upt) return false;
     return true;
   });
 
   filtered = filtered.sort((a, b) => {
-    if (_histSortDir === "count-desc")
-      return (b.mutasi?.count || 0) - (a.mutasi?.count || 0);
-    if (_histSortDir === "count-asc")
-      return (a.mutasi?.count || 0) - (b.mutasi?.count || 0);
-    const av = (a[_histSortField] || "").toString().toLowerCase();
-    const bv = (b[_histSortField] || "").toString().toLowerCase();
+    if (_histSortDir === "date-desc") return new Date(b.tanggal_pembelian || 0) - new Date(a.tanggal_pembelian || 0);
+    if (_histSortDir === "date-asc") return new Date(a.tanggal_pembelian || 0) - new Date(b.tanggal_pembelian || 0);
+    if (_histSortDir === "count-desc") return (b.mutasi?.count || 0) - (a.mutasi?.count || 0);
+    if (_histSortDir === "count-asc") return (a.mutasi?.count || 0) - (b.mutasi?.count || 0);
+    const av = (a[_histSortField] || "").toString().toUpperCase();
+    const bv = (b[_histSortField] || "").toString().toUpperCase();
     return _histSortDir === "asc" ? av.localeCompare(bv) : bv.localeCompare(av);
   });
 
@@ -3119,53 +3164,19 @@ function renderMutasiCards() {
 
     const card = document.createElement("div");
     card.className =
-      "bg-white dark:bg-gray-800 p-5 rounded-xl shadow border border-gray-200 dark:border-gray-700 flex flex-col justify-between";
+      "bg-white dark:bg-gray-800 p-5 rounded-xl shadow-sm border border-orange-200 dark:border-orange-900/30 flex flex-col justify-between hover:border-orange-500 transition-colors";
     card.innerHTML = `
             <div class="flex flex-col gap-3">
                 <div class="flex justify-between items-start border-b dark:border-gray-700 pb-3">
                     <div>
                         <h3 class="text-base font-bold font-mono text-kai-orange dark:text-orange-400">${item.id_aset}</h3>
-                        <p class="text-xs text-gray-500 dark:text-gray-200 mt-0.5">${item.kode_alat} — ${item.id_lokasi}</p>
+                        <p class="text-xs text-gray-500 dark:text-gray-200 mt-0.5">${item.kode_alat} — ${item.id_lokasi_name || item.id_lokasi}</p>
                     </div>
                     ${returnedBadge}
                 </div>
                 ${(() => {
-                  // Helper untuk meresolve lokasi (menerima code atau nama)
-                  const resolveLokasi = (val) => {
-                    if (!val || val === "—")
-                      return { parentName: "—", uptLabel: "—" };
-
-                    // Cek data UPT
-                    const uptEntry = uptDatabase.find(
-                      (u) => u.upt === val || u.nama === val,
-                    );
-                    if (uptEntry) {
-                      const parentCode =
-                        getParentLokasiCode(uptEntry.upt) || uptEntry.lokasi;
-                      const parentEntry = lokasiData.find(
-                        (l) => l.code === parentCode,
-                      );
-                      return {
-                        parentName: parentEntry ? parentEntry.name : parentCode,
-                        uptLabel: `${uptEntry.nama}`,
-                      };
-                    }
-
-                    // Cek data Parent
-                    const parentEntry = lokasiData.find(
-                      (l) => l.code === val || l.name === val,
-                    );
-                    if (parentEntry) {
-                      return { parentName: parentEntry.name, uptLabel: "—" };
-                    }
-
-                    // Fallback
-                    return { parentName: val, uptLabel: "—" };
-                  };
-
-                  // Resolve nama Induk & UPT
-                  const asal = resolveLokasi(m.original_lokasi);
-                  const kini = resolveLokasi(item.id_lokasi);
+                  const asal = resolveLokasi(m.original_lokasi_code || item.id_lokasi);
+                  const kini = resolveLokasi(item.id_lokasi_raw || item.id_lokasi);
 
                   // Lama proses: dihitung dari mutasi terakhir hingga waktu sekarang
                   let lamaProses = "—";
@@ -3182,14 +3193,14 @@ function renderMutasiCards() {
 
                   return `
                 <div class="space-y-1 text-xs text-gray-600 dark:text-gray-400">
-                    <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">Lokasi Asal</span><span class="font-semibold text-gray-700 dark:text-gray-200">${asal.parentName}</span></div>
-                    <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">UPT Asal</span><span class="text-gray-500 dark:text-gray-700">${asal.uptLabel}</span></div>
-                    <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">Lokasi Kini</span><span class="font-semibold text-gray-700 dark:text-gray-200">${kini.parentName}</span></div>
-                    <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">UPT Kini</span><span class="text-gray-500 dark:text-gray-700">${kini.uptLabel}</span></div>
-                    <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">Tanggal Mutasi</span><span class="font-mono">${m.latest_date ? formatUtcToLocal(m.latest_date) : "—"}</span></div>
+                    <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">Lokasi Asal</span><span class="font-bold text-gray-700 dark:text-gray-200">${asal.parentName}</span></div>
+                    <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">UPT Asal</span><span class="font-bold text-gray-500 dark:text-gray-700">${asal.uptName !== "—" ? asal.uptName : "—"}</span></div>
+                    <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">Lokasi Kini</span><span class="font-bold text-gray-700 dark:text-gray-200">${kini.parentName}</span></div>
+                    <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">UPT Kini</span><span class="font-bold text-gray-500 dark:text-gray-700">${kini.uptName !== "—" ? kini.uptName : "—"}</span></div>
+                    <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">Tanggal Mutasi</span>${m.latest_date ? formatUtcToLocal(m.latest_date) : "—"}</div>
                     <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">Lama Proses</span><span class="font-bold">${lamaProses}</span></div>
-                    <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">Alasan</span><span class="italic">${m.latest_alasan || "—"}</span></div>
-                    <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">Total Mutasi</span><span class="font-bold">${m.count}</span></div>
+                    <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">Alasan Mutasi</span><span class="italic">${m.latest_alasan || "—"}</span></div>
+                    <div class="flex gap-2"><span class="text-gray-400 w-32 shrink-0">Total Mutasi</span><span class="font-bold">${m.count} kali</span></div>
                 </div>`;
                 })()}
             </div>
@@ -3204,6 +3215,7 @@ function renderMutasiCards() {
 
   container.appendChild(fragment);
 }
+
 // ── MASTER DATA UI ─────────────────────────────────────────────────────────
 
 // Tab switching
@@ -3458,14 +3470,31 @@ async function loadMasterUpt() {
 
     tbody.innerHTML = data
       .map((u) => {
-        const parentName = getParentLokasiName(u.id_lokasi);
+        // Try regex-based derivation first, then fall back to lokasiData lookup via uptDatabase
+        let parentCode = getParentLokasiCode(u.id_lokasi) || "";
+        let parentName = "";
+        if (parentCode) {
+          const parentEntry = lokasiData.find((l) => l.code === parentCode);
+          parentName = parentEntry ? parentEntry.name : parentCode;
+        } else {
+          // Fallback: check if uptDatabase already has this UPT mapped to a parent
+          const uptEntry = uptDatabase.find((u2) => u2.upt === u.id_lokasi);
+          if (uptEntry) {
+            parentCode = uptEntry.lokasi || "—";
+            const parentEntry = lokasiData.find((l) => l.code === parentCode);
+            parentName = parentEntry ? parentEntry.name : parentCode;
+          } else {
+            parentCode = "—";
+            parentName = "—";
+          }
+        }
         return `
                 <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50">
-                    <td class="px-4 py-3 text-gray-400 text-xs font-mono">${u.id_lokasi}</td>
+                    <td class="px-4 py-3 text-gray-600 dark:text-gray-300 font-mono font-bold">${u.id_lokasi}</td>
                     <td class="px-4 py-3 font-semibold">${u.nama_lokasi}</td>
-                    <td class="px-4 py-3 text-sm text-gray-600 dark:text-gray-300 font-mono font-medium">${parentName}</td>
+                    <td class="px-4 py-3 text-sm text-gray-600 dark:text-gray-300 font-mono font-medium">${parentName} <span class="text-gray-400">(${parentCode})</span></td>
                     <td class="px-4 py-3 text-right">
-                        <button onclick="window.openMasterEdit('upt', '${u.id_lokasi}', '${u.nama_lokasi}', '${getParentLokasiCode(u.id_lokasi) ?? ""}')"
+                        <button onclick="window.openMasterEdit('upt', '${u.id_lokasi}', '${u.nama_lokasi}', '${parentCode}')"
                             class="text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 px-3 py-1 rounded-lg font-bold hover:bg-blue-200 transition">
                             <i class="fas fa-edit mr-1"></i> Edit
                         </button>
@@ -3481,11 +3510,11 @@ async function loadMasterUpt() {
 // ── SORT MODAL ────────────────────────────────────────────────────
 
 let _sortField = "id_aset";
-let _sortDir = "asc";
+let _sortDir = "date-desc";
 let _sortFilters = {}; // custom filter values for db sort
 
 let _histSortField = "id_aset";
-let _histSortDir = "asc";
+let _histSortDir = "date-desc";
 let _histSortFilters = {};
 
 // ── Helper: populate year dropdowns ──
@@ -3505,10 +3534,8 @@ function _populateYearDropdowns(fromId, toId) {
 
 // ── Helper: populate alat+lokasi dropdowns in sort modal ──
 function _populateSortDropdowns(prefix) {
-  // Alat
-  const alatSel =
-    document.getElementById(`${prefix}-alat`) ||
-    document.getElementById(`${prefix}-id-alat`);
+  // Alat (id_aset panel)
+  const alatSel = document.getElementById(`${prefix}-id-alat`);
   if (alatSel && alatSel.options.length <= 1) {
     alatKerjaData.forEach((a) => {
       const o = document.createElement("option");
@@ -3517,10 +3544,19 @@ function _populateSortDropdowns(prefix) {
       alatSel.appendChild(o);
     });
   }
-  // Lokasi
-  const lokSel =
-    document.getElementById(`${prefix}-lok-lokasi`) ||
-    document.getElementById(`${prefix}-lokasi`);
+  // Alat filter (kode_alat_name panel)
+  const alatFilterSel = document.getElementById(`${prefix}-alat-filter`) || document.getElementById(`${prefix}-alat`);
+  if (alatFilterSel && alatFilterSel !== alatSel && alatFilterSel.options.length <= 1) {
+    alatKerjaData.forEach((a) => {
+      const o = document.createElement("option");
+      o.value = a.code;
+      o.textContent = `${a.code} — ${a.name}`;
+      alatFilterSel.appendChild(o);
+    });
+  }
+  // Lokasi dropdowns (id_aset panel + id_lokasi panel)
+  [`${prefix}-id-lokasi`, `${prefix}-lok-lokasi`].forEach((id) => {
+    const lokSel = document.getElementById(id);
   if (lokSel && lokSel.options.length <= 1) {
     lokasiData.forEach((l) => {
       const o = document.createElement("option");
@@ -3529,26 +3565,54 @@ function _populateSortDropdowns(prefix) {
       lokSel.appendChild(o);
     });
   }
-  // UPT (for id_lokasi panel)
+  });
+  // UPT: repopulate based on current Lokasi value (preserves prior selection)
+  const lokMain = document.getElementById(`${prefix}-lok-lokasi`);
   const uptSel = document.getElementById(`${prefix}-lok-upt`);
-  if (uptSel && uptSel.options.length <= 1) {
-    uptDatabase.forEach((u) => {
+  if (uptSel) {
+    const currentLok = lokMain ? lokMain.value : "";
+    const currentUpt = uptSel.value; // save current selection
+    uptSel.innerHTML = `<option value="">— ${currentLok ? "Semua UPT" : "Pilih Lokasi dahulu"} —</option>`;
+    const uptList = currentLok
+      ? uptDatabase.filter((u) => u.lokasi === currentLok)
+      : uptDatabase;
+    uptList.forEach((u) => {
       const o = document.createElement("option");
       o.value = u.upt;
       o.textContent = `${u.nama || u.upt} (${u.upt})`;
       uptSel.appendChild(o);
     });
+    if (currentUpt) uptSel.value = currentUpt; // restore prior selection
+  }
+  // Wire Lokasi → UPT cascade (only once per prefix)
+  if (lokMain && !lokMain.dataset.cascadeWired) {
+    lokMain.dataset.cascadeWired = "1";
+    lokMain.addEventListener("change", () => {
+      _filterUptByLokasi(`${prefix}-lok-lokasi`, `${prefix}-lok-upt`);
+    });
   }
 }
 
+// ── Helper: filter UPT dropdown based on selected Lokasi ──
+function _filterUptByLokasi(lokSelId, uptSelId) {
+  const lokSel = document.getElementById(lokSelId);
+  const uptSel = document.getElementById(uptSelId);
+  if (!lokSel || !uptSel) return;
+  const chosenLok = lokSel.value;
+  uptSel.innerHTML = `<option value="">— Semua UPT —</option>`;
+  const filtered = chosenLok
+    ? uptDatabase.filter((u) => u.lokasi === chosenLok)
+    : uptDatabase;
+  filtered.forEach((u) => {
+    const o = document.createElement("option");
+    o.value = u.upt;
+    o.textContent = `${u.nama || u.upt} (${u.upt})`;
+    uptSel.appendChild(o);
+  });
+}
+
 // ── Helper: show/hide sort custom panels ──
-function _syncSortPanels(
-  fieldVal,
-  customChecked,
-  panelPrefix,
-  allLabelId,
-  customPanelsId,
-) {
+function _syncSortPanels(fieldVal, customChecked, panelPrefix, allLabelId, customPanelsId) {
   const allLabel = document.getElementById(allLabelId);
   const customPanels = document.getElementById(customPanelsId);
   if (!allLabel || !customPanels) return;
@@ -3556,23 +3620,21 @@ function _syncSortPanels(
   if (!customChecked || !fieldVal) {
     allLabel.classList.remove("hidden");
     customPanels.classList.add("hidden");
-    return;
-  }
-  allLabel.classList.add("hidden");
-  customPanels.classList.remove("hidden");
+  } else {
+    allLabel.classList.add("hidden");
+    customPanels.classList.remove("hidden");
 
-  // Hide all sub-panels first (covers all three prefix families)
-  customPanels
-    .querySelectorAll(
-      "[id^='sort-panel-'], [id^='hist-sort-panel-'], [id^='kdak-sort-panel-']",
-    )
-    .forEach((p) => p.classList.add("hidden"));
-  // Show the one matching the active prefix + field
-  const panel =
-    document.getElementById(`${panelPrefix}-panel-${fieldVal}`) ||
-    document.getElementById(`sort-panel-${fieldVal}`) ||
-    document.getElementById(`hist-sort-panel-${fieldVal}`);
-  if (panel) panel.classList.remove("hidden");
+    // Hide all sub-panels first (covers all three prefix families)
+    customPanels
+        .querySelectorAll("[id^='sort-panel-'], [id^='hist-sort-panel-'], [id^='kdak-sort-panel-']")
+      .forEach((p) => p.classList.add("hidden"));
+    // Show the one matching the active prefix + field
+    const panel =
+      document.getElementById(`${panelPrefix}-panel-${fieldVal}`) ||
+      document.getElementById(`sort-panel-${fieldVal}`) ||
+      document.getElementById(`hist-sort-panel-${fieldVal}`);
+    if (panel) panel.classList.remove("hidden");
+  }
 }
 
 // ── DB Sort Modal ──
@@ -3580,7 +3642,39 @@ document.getElementById("btn-sort-db")?.addEventListener("click", () => {
   _populateYearDropdowns("sort-id-tahun-from", "sort-id-tahun-to");
   _populateYearDropdowns("sort-tgl-from", "sort-tgl-to");
   _populateSortDropdowns("sort");
-  // Also populate sort-id-alat and sort-id-lokasi specifically
+
+  // Also populate sort-alat-filter (the kode_alat_name panel dropdown)
+  const alatFilterSel = document.getElementById("sort-alat-filter");
+  if (alatFilterSel && alatFilterSel.options.length <= 1) {
+    alatKerjaData.forEach((a) => {
+      const o = document.createElement("option");
+      o.value = a.code;
+      o.textContent = `${a.code} — ${a.name}`;
+      alatFilterSel.appendChild(o);
+    });
+  }
+
+  // Sync panels and Terbaru/Terlama visibility for current field
+  const curField = document.getElementById("sort-field")?.value || "id_aset";
+  const curChecked = document.getElementById("sort-custom-spec")?.checked || false;
+  _syncSortPanels(curField, curChecked, "sort", "sort-all-data-label", "sort-custom-panels");
+
+  // Paint active direction button
+  document.querySelectorAll(".sort-dir-btn").forEach((b) => {
+    const active = b.dataset.dir === _sortDir;
+    b.classList.toggle("border-kai-blue", active);
+    b.classList.toggle("bg-sky-100", active);
+    b.classList.toggle("dark:bg-sky-900/20", active);
+    b.classList.toggle("text-kai-blue", active);
+    b.classList.toggle("dark:text-sky-300", active);
+    b.classList.toggle("border-gray-200", !active);
+    b.classList.toggle("dark:border-gray-600", !active);
+    b.classList.toggle("bg-white", !active);
+    b.classList.toggle("dark:bg-gray-700", !active);
+    b.classList.toggle("text-gray-500", !active);
+  });
+
+  // Populate id-panel alat and lokasi
   const idAlatSel = document.getElementById("sort-id-alat");
   if (idAlatSel && idAlatSel.options.length <= 1) {
     alatKerjaData.forEach((a) => {
@@ -3599,22 +3693,12 @@ document.getElementById("btn-sort-db")?.addEventListener("click", () => {
       idLokSel.appendChild(o);
     });
   }
-  const lokLokSel = document.getElementById("sort-lok-lokasi");
-  if (lokLokSel && lokLokSel.options.length <= 1) {
-    lokasiData.forEach((l) => {
-      const o = document.createElement("option");
-      o.value = l.code;
-      o.textContent = `${l.name} (${l.code})`;
-      lokLokSel.appendChild(o);
-    });
-  }
-  const lokUptSel = document.getElementById("sort-lok-upt");
-  if (lokUptSel && lokUptSel.options.length <= 1) {
-    uptDatabase.forEach((u) => {
-      const o = document.createElement("option");
-      o.value = u.upt;
-      o.textContent = `${u.nama || u.upt} (${u.upt})`;
-      lokUptSel.appendChild(o);
+  // Lokasi → UPT cascade wiring (if not yet done)
+  const sortLokSel = document.getElementById("sort-lok-lokasi");
+  if (sortLokSel && !sortLokSel.dataset.cascadeWired) {
+    sortLokSel.dataset.cascadeWired = "1";
+    sortLokSel.addEventListener("change", () => {
+      _filterUptByLokasi("sort-lok-lokasi", "sort-lok-upt");
     });
   }
   document.getElementById("sort-modal").classList.remove("hidden");
@@ -3627,24 +3711,12 @@ document.getElementById("close-sort-modal")?.addEventListener("click", () => {
 // DB Sort: sync panels on field change
 document.getElementById("sort-field")?.addEventListener("change", (e) => {
   const checked = document.getElementById("sort-custom-spec")?.checked;
-  _syncSortPanels(
-    e.target.value,
-    checked,
-    "sort",
-    "sort-all-data-label",
-    "sort-custom-panels",
-  );
+  _syncSortPanels(e.target.value, checked, "sort", "sort-all-data-label", "sort-custom-panels");
 });
 
 document.getElementById("sort-custom-spec")?.addEventListener("change", (e) => {
   const field = document.getElementById("sort-field")?.value;
-  _syncSortPanels(
-    field,
-    e.target.checked,
-    "sort",
-    "sort-all-data-label",
-    "sort-custom-panels",
-  );
+  _syncSortPanels(field, e.target.checked, "sort", "sort-all-data-label", "sort-custom-panels");
 });
 
 // DB sort direction buttons
@@ -3676,42 +3748,25 @@ document.getElementById("btn-apply-sort")?.addEventListener("click", () => {
   _sortFilters = {};
   if (customChecked && fieldVal) {
     if (fieldVal === "id_aset") {
-      _sortFilters.idFrom =
-        parseInt(document.getElementById("sort-id-from")?.value) || null;
-      _sortFilters.idTo =
-        parseInt(document.getElementById("sort-id-to")?.value) || null;
+      _sortFilters.idFrom = parseInt(document.getElementById("sort-id-from")?.value) || null;
+      _sortFilters.idTo = parseInt(document.getElementById("sort-id-to")?.value) || null;
       _sortFilters.alat = document.getElementById("sort-id-alat")?.value || "";
-      _sortFilters.pengadaan =
-        document.querySelector('input[name="sort-id-pengadaan"]:checked')
-          ?.value || "";
-      _sortFilters.tahunFrom =
-        document.getElementById("sort-id-tahun-from")?.value || "";
-      _sortFilters.tahunTo =
-        document.getElementById("sort-id-tahun-to")?.value || "";
-      _sortFilters.peruntukan =
-        document.querySelector('input[name="sort-id-peruntukan"]:checked')
-          ?.value || "";
-      _sortFilters.lokasi =
-        document.getElementById("sort-id-lokasi")?.value || "";
+      _sortFilters.pengadaan = document.querySelector('input[name="sort-id-pengadaan"]:checked')?.value || "";
+      _sortFilters.tahunFrom = document.getElementById("sort-id-tahun-from")?.value || "";
+      _sortFilters.tahunTo = document.getElementById("sort-id-tahun-to")?.value || "";
+      _sortFilters.peruntukan = document.querySelector('input[name="sort-id-peruntukan"]:checked')?.value || "";
+      _sortFilters.lokasi = document.getElementById("sort-id-lokasi")?.value || "";
     } else if (fieldVal === "kode_alat_name") {
-      _sortFilters.alat =
-        document.getElementById("sort-alat-filter")?.value || "";
+      _sortFilters.alat = document.getElementById("sort-alat-filter")?.value || "";
     } else if (fieldVal === "sumber_pengadaan") {
-      _sortFilters.pengadaan =
-        document.querySelector('input[name="sort-pengadaan-filter"]:checked')
-          ?.value || "";
+      _sortFilters.pengadaan = document.querySelector('input[name="sort-pengadaan-filter"]:checked')?.value || "";
     } else if (fieldVal === "tanggal_pembelian") {
-      _sortFilters.tahunFrom =
-        document.getElementById("sort-tgl-from")?.value || "";
-      _sortFilters.tahunTo =
-        document.getElementById("sort-tgl-to")?.value || "";
+      _sortFilters.tahunFrom = document.getElementById("sort-tgl-from")?.value || "";
+      _sortFilters.tahunTo = document.getElementById("sort-tgl-to")?.value || "";
     } else if (fieldVal === "unit_peruntukan") {
-      _sortFilters.peruntukan =
-        document.querySelector('input[name="sort-peruntukan-filter"]:checked')
-          ?.value || "";
+      _sortFilters.peruntukan = document.querySelector('input[name="sort-peruntukan-filter"]:checked')?.value || "";
     } else if (fieldVal === "id_lokasi") {
-      _sortFilters.lokasi =
-        document.getElementById("sort-lok-lokasi")?.value || "";
+      _sortFilters.lokasi = document.getElementById("sort-lok-lokasi")?.value || "";
       _sortFilters.upt = document.getElementById("sort-lok-upt")?.value || "";
     }
   }
@@ -3720,49 +3775,127 @@ document.getElementById("btn-apply-sort")?.addEventListener("click", () => {
   renderDbCards();
 });
 
+// KDA sort reset
+// REPLACE existing btn-reset-sort handler
+document.getElementById("btn-reset-sort")?.addEventListener("click", () => {
+  _sortField = "id_aset";
+  _sortDir = "date-desc";
+  _sortFilters = {};
+
+  const sortField = document.getElementById("sort-field");
+  if (sortField) sortField.value = "";
+  const sortSpec = document.getElementById("sort-custom-spec");
+  if (sortSpec) sortSpec.checked = false;
+
+  // Clear all sub-filter inputs
+  document.querySelectorAll("#sort-custom-panels input[type='text'], #sort-custom-panels input[type='number'], #sort-custom-panels select").forEach(el => { el.value = ""; });
+  document.querySelectorAll("#sort-custom-panels input[type='radio']").forEach(el => { el.checked = false; });
+
+  _syncSortPanels("", false, "sort", "sort-all-data-label", "sort-custom-panels");
+  document.querySelectorAll(".sort-dir-btn").forEach((b) => {
+    b.classList.remove("border-kai-blue", "bg-sky-100", "dark:bg-sky-900/20", "text-kai-blue", "dark:text-sky-300");
+    b.classList.add("border-gray-200", "dark:border-gray-600", "bg-white", "dark:bg-gray-700", "text-gray-500");
+  });
+  showToast("Nilai sort pada menu ini telah direset.", "info");
+  renderDbCards();
+});
+
 // ── History Sort Modal ──
 document.getElementById("btn-sort-history")?.addEventListener("click", () => {
-  _populateYearDropdowns("hist-sort-tahun-from", "hist-sort-tahun-to");
-  const histAlatSel = document.getElementById("hist-sort-alat");
-  if (histAlatSel && histAlatSel.options.length <= 1) {
+  _populateYearDropdowns("hist-sort-tgl-from", "hist-sort-tgl-to");
+
+  // Sync panels and Terbaru/Terlama visibility for current field
+  const curField = document.getElementById("hist-sort-field")?.value || "id_aset";
+  const curChecked = document.getElementById("hist-sort-custom-spec")?.checked || false;
+  _syncSortPanels(curField, curChecked, "hist-sort", "hist-sort-all-data-label", "hist-sort-custom-panels");
+
+  // Paint active direction button
+  document.querySelectorAll(".hist-sort-dir-btn").forEach((b) => {
+    const active = b.dataset.histDir === _histSortDir;
+    b.classList.toggle("border-kai-orange", active);
+    b.classList.toggle("bg-orange-50", active);
+    b.classList.toggle("dark:bg-orange-900/20", active);
+    b.classList.toggle("text-kai-orange", active);
+    b.classList.toggle("dark:text-orange-300", active);
+    b.classList.toggle("border-gray-200", !active);
+    b.classList.toggle("dark:border-gray-600", !active);
+    b.classList.toggle("bg-white", !active);
+    b.classList.toggle("dark:bg-gray-700", !active);
+    b.classList.toggle("text-gray-500", !active);
+  });
+
+  ["hist-sort-alat-filter"].forEach((id) => {
+    const sel = document.getElementById(id);
+    if (sel && sel.options.length <= 1) {
     alatKerjaData.forEach((a) => {
       const o = document.createElement("option");
       o.value = a.code;
       o.textContent = `${a.code} — ${a.name}`;
-      histAlatSel.appendChild(o);
+        sel.appendChild(o);
+      });
+    }
+  });
+
+  ["hist-sort-lok-lokasi"].forEach((id) => {
+    const sel = document.getElementById(id);
+    if (sel && sel.options.length <= 1) {
+      lokasiData.forEach((l) => {
+        const o = document.createElement("option");
+        o.value = l.code;
+        o.textContent = `${l.name} (${l.code})`;
+        sel.appendChild(o);
+      });
+    }
+  });
+
+  // Wire cascade if not yet done
+  // Populate lokasi dropdown (only once)
+  const histLokSel = document.getElementById("hist-sort-lok-lokasi");
+  if (histLokSel && histLokSel.options.length <= 1) {
+    lokasiData.forEach((l) => {
+      const o = document.createElement("option");
+      o.value = l.code;
+      o.textContent = `${l.name} (${l.code})`;
+      histLokSel.appendChild(o);
+    });
+  }
+  // Repopulate UPT based on current Lokasi selection (preserves choice on reopen)
+  const histUptSel = document.getElementById("hist-sort-lok-upt");
+  if (histUptSel) {
+    const currentLok = histLokSel ? histLokSel.value : "";
+    const currentUpt = histUptSel.value;
+    histUptSel.innerHTML = `<option value="">— ${currentLok ? "Semua UPT" : "Pilih Lokasi dahulu"} —</option>`;
+    const uptList = currentLok ? uptDatabase.filter((u) => u.lokasi === currentLok) : uptDatabase;
+    uptList.forEach((u) => {
+      const o = document.createElement("option");
+      o.value = u.upt;
+      o.textContent = `${u.nama || u.upt} (${u.upt})`;
+      histUptSel.appendChild(o);
+    });
+    if (currentUpt) histUptSel.value = currentUpt;
+  }
+  // Wire cascade (only once)
+  if (histLokSel && !histLokSel.dataset.cascadeWired) {
+    histLokSel.dataset.cascadeWired = "1";
+    histLokSel.addEventListener("change", () => {
+      _filterUptByLokasi("hist-sort-lok-lokasi", "hist-sort-lok-upt");
     });
   }
   document.getElementById("sort-history-modal").classList.remove("hidden");
 });
 
-document
-  .getElementById("close-sort-history-modal")
-  ?.addEventListener("click", () => {
+document.getElementById("close-sort-history-modal")?.addEventListener("click", () => {
     document.getElementById("sort-history-modal").classList.add("hidden");
   });
 
 document.getElementById("hist-sort-field")?.addEventListener("change", (e) => {
   const checked = document.getElementById("hist-sort-custom-spec")?.checked;
-  _syncSortPanels(
-    e.target.value,
-    checked,
-    "hist-sort",
-    "hist-sort-all-data-label",
-    "hist-sort-custom-panels",
-  );
+  _syncSortPanels(e.target.value, checked, "hist-sort", "hist-sort-all-data-label", "hist-sort-custom-panels");
 });
 
-document
-  .getElementById("hist-sort-custom-spec")
-  ?.addEventListener("change", (e) => {
+document.getElementById("hist-sort-custom-spec")?.addEventListener("change", (e) => {
     const field = document.getElementById("hist-sort-field")?.value;
-    _syncSortPanels(
-      field,
-      e.target.checked,
-      "hist-sort",
-      "hist-sort-all-data-label",
-      "hist-sort-custom-panels",
-    );
+  _syncSortPanels(field, e.target.checked, "hist-sort", "hist-sort-all-data-label", "hist-sort-custom-panels");
   });
 
 document.querySelectorAll(".hist-sort-dir-btn").forEach((btn) => {
@@ -3784,31 +3917,61 @@ document.querySelectorAll(".hist-sort-dir-btn").forEach((btn) => {
   });
 });
 
-document
-  .getElementById("btn-apply-hist-sort")
-  ?.addEventListener("click", () => {
-    _histSortField =
-      document.getElementById("hist-sort-field")?.value || "id_aset";
-    const customChecked = document.getElementById(
-      "hist-sort-custom-spec",
-    )?.checked;
+document.getElementById("btn-apply-hist-sort")?.addEventListener("click", () => {
+  const fieldVal = document.getElementById("hist-sort-field")?.value || "id_aset";
+  _histSortField = fieldVal;
+  const customChecked = document.getElementById("hist-sort-custom-spec")?.checked;
     _histSortFilters = {};
-    if (customChecked) {
-      _histSortFilters.alat =
-        document.getElementById("hist-sort-alat")?.value || "";
-      _histSortFilters.pengadaan =
-        document.querySelector('input[name="hist-sort-pengadaan"]:checked')
-          ?.value || "";
-      _histSortFilters.tahunFrom =
-        document.getElementById("hist-sort-tahun-from")?.value || "";
-      _histSortFilters.tahunTo =
-        document.getElementById("hist-sort-tahun-to")?.value || "";
+  if (customChecked && fieldVal) {
+    if (fieldVal === "id_aset") {
+      _histSortFilters.idFrom = parseInt(document.getElementById("hist-sort-id-from")?.value) || null;
+      _histSortFilters.idTo = parseInt(document.getElementById("hist-sort-id-to")?.value) || null;
+    } else if (fieldVal === "kode_alat_name") {
+      _histSortFilters.alat = document.getElementById("hist-sort-alat-filter")?.value || "";
+    } else if (fieldVal === "sumber_pengadaan") {
+      _histSortFilters.pengadaan = document.querySelector('input[name="hist-sort-pengadaan-filter"]:checked')?.value || "";
+    } else if (fieldVal === "tanggal_pembelian") {
+      _histSortFilters.tahunFrom = document.getElementById("hist-sort-tgl-from")?.value || "";
+      _histSortFilters.tahunTo = document.getElementById("hist-sort-tgl-to")?.value || "";
+    } else if (fieldVal === "unit_peruntukan") {
+      _histSortFilters.peruntukan = document.querySelector('input[name="hist-sort-peruntukan-filter"]:checked')?.value || "";
+    } else if (fieldVal === "id_lokasi") {
+      _histSortFilters.lokasi = document.getElementById("hist-sort-lok-lokasi")?.value || "";
+      _histSortFilters.upt = document.getElementById("hist-sort-lok-upt")?.value || "";
+    }
     }
     document.getElementById("sort-history-modal").classList.add("hidden");
     if (_historyMode === "repair") renderHistoryCards();
     else if (_historyMode === "kalibrasi") renderKalibrasiCards();
     else renderMutasiCards();
   });
+
+// PRA sort reset
+// REPLACE first btn-reset-hist-sort handler (line 3901)
+document.getElementById("btn-reset-hist-sort")?.addEventListener("click", () => {
+  _histSortField = "id_aset";
+  _histSortDir = "date-desc";
+  _histSortFilters = {};
+
+  const histField = document.getElementById("hist-sort-field");
+  if (histField) histField.value = "";
+  const histSpec = document.getElementById("hist-sort-custom-spec");
+  if (histSpec) histSpec.checked = false;
+
+  // Clear all sub-filter inputs
+  document.querySelectorAll("#hist-sort-custom-panels input[type='text'], #hist-sort-custom-panels input[type='number'], #hist-sort-custom-panels select").forEach(el => { el.value = ""; });
+  document.querySelectorAll("#hist-sort-custom-panels input[type='radio']").forEach(el => { el.checked = false; });
+
+  _syncSortPanels("", false, "hist-sort", "hist-sort-all-data-label", "hist-sort-custom-panels");
+  document.querySelectorAll(".hist-sort-dir-btn").forEach((b) => {
+    b.classList.remove("border-kai-orange", "bg-orange-50", "dark:bg-orange-900/20", "text-kai-orange", "dark:text-orange-300");
+    b.classList.add("border-gray-200", "dark:border-gray-600", "bg-white", "dark:bg-gray-700", "text-gray-500");
+  });
+  showToast("Nilai sort pada menu ini telah direset.", "info");
+  if (_historyMode === "repair") renderHistoryCards();
+  else if (_historyMode === "kalibrasi") renderKalibrasiCards();
+  else renderMutasiCards();
+});
 
 document.getElementById("btn-apply-sort")?.addEventListener("click", () => {
   _sortField = document.getElementById("sort-field").value;
@@ -3916,20 +4079,32 @@ document
   .getElementById("form-add-upt")
   ?.addEventListener("submit", async (e) => {
     e.preventDefault();
-    const nama_upt = document.getElementById("new-upt-nama").value.trim();
-    const kode_lokasi = document.getElementById("new-upt-lokasi").value;
-    if (!nama_upt || !kode_lokasi)
-      return showToast("Nama UPT dan Lokasi wajib diisi.", "warning");
+      const kode_upt = document.getElementById("new-upt-kode").value.trim().toUpperCase();
+      const nama_upt = document.getElementById("new-upt-nama").value.trim();
+      const kode_lokasi = document.getElementById("new-upt-lokasi").value;
+      if (!kode_upt || !nama_upt || !kode_lokasi)
+        return showToast("Kode UPT, Nama UPT, dan Lokasi wajib diisi.", "warning");
 
-    showToast(
-      "Fitur UPT belum tersedia pada backend saat ini. Lokasi yang ada dapat dikelola melalui tab Lokasi.",
-      "warning",
-    );
-    e.target.reset();
-  });
-
-document.getElementById("new-upt-lokasi")?.addEventListener("change", (e) => {
-  // Warn admin if they're trying to add UPT under Balaiyasa
+      try {
+        const res = await apiFetch("/master/lokasi", {
+          method: "POST",
+          body: JSON.stringify({
+            id_lokasi: kode_upt,
+            nama_lokasi: nama_upt,
+            tipe: "UPT",
+          }),
+        });
+        if (!res.ok) {
+          const err = await res.json();
+          throw new Error(err.detail || "Gagal menambahkan UPT.");
+        }
+        showToast("UPT berhasil ditambahkan.", "success");
+        e.target.reset();
+        await loadMasterUpt();
+        await fetchMasterData();
+      } catch (err) {
+        showToast(err.message, "error");
+      }
   const loc = lokasiData.find((l) => l.code === e.target.value);
   const isBalaiyasa =
     loc?.name?.toUpperCase().includes("BALAIYASA") ||
@@ -4626,33 +4801,6 @@ document
   });
 
 window.openMutasiModal = (uid) => {
-  // Apply UPT Select function helper
-  function applyUptSelect(locCode, uptSelectEl) {
-    if (!uptSelectEl) return;
-    const loc = lokasiData.find((l) => l.code === locCode);
-    const isBalaiyasa = loc?.tipe?.toUpperCase() === "BALAIYASA";
-
-    if (isBalaiyasa) {
-      uptSelectEl.innerHTML = `<option value="">Belum ada UPT untuk lokasi Balaiyasa</option>`;
-      uptSelectEl.disabled = true;
-      return;
-    }
-
-    uptSelectEl.disabled = false;
-    const matches = uptDatabase.filter((u) => u.lokasi === locCode);
-    if (matches.length > 0) {
-      uptSelectEl.innerHTML =
-        '<option value="">Pilih UPT...</option>' +
-        matches
-          .map((m) => `<option value="${m.upt}">${m.nama || m.upt}</option>`)
-          .join("");
-    } else {
-      uptSelectEl.innerHTML = `<option value="">Tidak ada UPT untuk lokasi ini...</option>`;
-      uptSelectEl.disabled = true;
-    }
-    uptSelectEl.value = "";
-  }
-
   const item = db.find((x) => x.id_aset === uid);
   if (!item) return;
 
@@ -4662,36 +4810,27 @@ window.openMutasiModal = (uid) => {
   // Lokasi Asal: use original lokasi from history summary (before any mutations)
   // item.id_lokasi is now UPT code, so get parent for region name
   const summaryItem = _historySummary.find((x) => x.id_aset === uid);
-  const parentCode = getParentLokasiCode(item.id_lokasi) || item.id_lokasi;
-  const originalLok =
-    summaryItem?.mutasi?.original_lokasi ||
-    lokasiData.find((l) => l.code === parentCode)?.name ||
-    item.id_lokasi_name ||
-    item.id_lokasi;
 
-  // UPT Asal: from last repair data, fallback to current id_lokasi
-  const uptAsalCode =
-    summaryItem?.repair?.latest_id_lokasi || item.id_lokasi || "";
-  const uptAsalEntry = uptDatabase.find((u) => u.upt === uptAsalCode);
-  const uptAsalLabel = uptAsalEntry
-    ? `${uptAsalEntry.nama}`
-    : uptAsalCode || "—";
-  // Lokasi Kini — resolve full name from lokasiData or id_lokasi_name
+  function formatLocationDisplay(code) {
+    if (!code) return "—";
+    const parentCode = getParentLokasiCode(code) || code;
+    const parentEntry = lokasiData.find((l) => l.code === parentCode);
+    const parentName = parentEntry?.name || parentCode || "—";
+    const uptEntry = uptDatabase.find((u) => u.upt === code);
+    const uptName = uptEntry?.nama || "—";
+    return uptName !== "—" ? `${parentName} (${uptName})` : parentName;
+  }
 
-  const lokasiKiniCode = item.id_lokasi_raw || item.id_lokasi;
-  const lokasiKiniEntry = lokasiData.find((l) => l.code === lokasiKiniCode);
-  const lokasiKiniName =
-    lokasiKiniEntry?.name || item.id_lokasi_name || lokasiKiniCode;
-
-  // UPT Kini
-  const uptKiniCode = lokasiKiniCode;
-  const uptKiniEntry = uptDatabase.find((u) => u.upt === uptKiniCode);
-  const uptKiniLabel = uptKiniEntry ? `${uptKiniEntry.nama}` : "—";
+  // ── Lokasi Asal (ORIGINAL — sebelum mutasi) ──
+  const rawOriginal = summaryItem?.mutasi?.original_lokasi_code || item.id_lokasi_raw || item.id_lokasi || "";
+  const rawKini = item.id_lokasi_raw || item.id_lokasi || "";
+  const originalDisplay = formatLocationDisplay(rawOriginal);
+  const kiniDisplay = formatLocationDisplay(rawKini);
 
   const asalEl = document.getElementById("mutasi-lokasi-asal");
   const kiniEl = document.getElementById("mutasi-lokasi-kini");
-  if (asalEl) asalEl.textContent = `${originalLok} (${uptAsalLabel})`;
-  if (kiniEl) kiniEl.textContent = `${lokasiKiniName} (${uptKiniLabel})`;
+  if (asalEl) asalEl.textContent = originalDisplay;
+  if (kiniEl) kiniEl.textContent = kiniDisplay;
 
   // Populate destination dropdown
   const tujuSel = document.getElementById("mutasi-lokasi-tuju");
@@ -4986,8 +5125,7 @@ function updateKdakStats() {
   const so = db.filter((a) => a.status_terakhir === "SO").length;
   const tso = db.filter((a) => a.status_terakhir === "TSO").length;
   const jenisUnik = new Set(db.map((a) => a.kode_alat)).size;
-  const lokasiUnik = new Set(db.map((a) => a.id_lokasi_raw || a.id_lokasi))
-    .size;
+  const lokasiUnik = new Set(db.map((a) => a.id_lokasi_raw || a.id_lokasi)).size;
   const avail = total > 0 ? Math.round((so / total) * 100) : null;
   const delta = avail !== null ? avail - _benchmarkPct : null;
 
@@ -4995,9 +5133,7 @@ function updateKdakStats() {
   const terbaru = db.filter((a) => {
     if (!a.tanggal_pembelian) return false;
     const d = new Date(a.tanggal_pembelian);
-    return (
-      d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth()
-    );
+    return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
   }).length;
 
   const _s = (id, val) => {
@@ -5023,7 +5159,7 @@ function updateKdakStats() {
 // ── Table ──
 let _kdakSearch = "";
 let _kdakSortField = "id_aset";
-let _kdakSortDir = "count-desc";
+let _kdakSortDir = "date-desc";
 let _kdakSortFilters = {};
 
 function renderKdakTable() {
@@ -5031,59 +5167,68 @@ function renderKdakTable() {
   const countEl = document.getElementById("kdak-table-count");
   if (!tbody) return;
 
-  const q = _kdakSearch.toLowerCase();
+  const q = _kdakSearch.toUpperCase();
   const f = _kdakSortFilters;
 
   let filtered = db.filter((a) => {
     // Search filter
     if (q) {
       const matchSearch =
-        (a.id_aset || "").toLowerCase().includes(q) ||
-        (a.kode_alat_name || a.kode_alat || "").toLowerCase().includes(q) ||
-        (a.id_lokasi_display || "").toLowerCase().includes(q);
-      if (!matchSearch) return false;
+        (a.id_aset || "").toUpperCase().includes(q) ||
+        (a.kode_alat || "").toUpperCase().includes(q) ||
+        (a.kode_alat_name || "").toUpperCase().includes(q) ||
+        (a.id_lokasi_display || "").toUpperCase().includes(q) ||
+        (a.id_lokasi || "").toUpperCase().includes(q) ||
+        (a.sumber_pengadaan || "").toUpperCase().includes(q) ||
+        (a.status_terakhir || "").toUpperCase().includes(q) ||
+        (a.peruntukan || "").toUpperCase().includes(q) ||
+        (a.tanggal_pembelian || "").toUpperCase().includes(q);
+      if (!matchSearch)
+        return false;
     }
     // Custom sort filters (same logic as renderDbCards)
-    if (f.alat && a.kode_alat !== f.alat) return false;
+    if (f.alat && a.kode_alat !== f.alat)
+      return false;
     if (f.pengadaan && !(a.sumber_pengadaan || "").includes(f.pengadaan))
       return false;
     if (f.peruntukan) {
       const dec = decodeAsetId(a.id_aset);
-      if (dec.peruntukan !== f.peruntukan) return false;
+      if (dec.peruntukan !== f.peruntukan)
+        return false;
     }
     if (f.lokasi && a.id_lokasi_raw !== f.lokasi && a.id_lokasi !== f.lokasi)
-      return false;
+        return false;
     if (f.upt && a.id_lokasi_raw !== f.upt && a.id_lokasi !== f.upt)
-      return false;
+        return false;
     if (f.tahunFrom || f.tahunTo) {
       const yr = parseInt((a.tanggal_pembelian || "").slice(0, 4));
-      if (f.tahunFrom && yr < parseInt(f.tahunFrom)) return false;
-      if (f.tahunTo && yr > parseInt(f.tahunTo)) return false;
+      if (f.tahunFrom && yr < parseInt(f.tahunFrom))
+        return false;
+      if (f.tahunTo && yr > parseInt(f.tahunTo))
+        return false;
     }
     if (f.idFrom || f.idTo) {
       const num = parseInt((a.id_aset || "").split(".")[0]) || 0;
-      if (f.idFrom && num < f.idFrom) return false;
-      if (f.idTo && num > f.idTo) return false;
+      if (f.idFrom && num < f.idFrom)
+        return false;
+      if (f.idTo && num > f.idTo)
+        return false;
     }
     return true;
   });
 
   // Sort — mirrors renderDbCards logic
   filtered = [...filtered].sort((a, b) => {
+    if (_kdakSortDir === "date-desc") return new Date(b.tanggal_pembelian || 0) - new Date(a.tanggal_pembelian || 0);
+    if (_kdakSortDir === "date-asc") return new Date(a.tanggal_pembelian || 0) - new Date(b.tanggal_pembelian || 0);
     if (_kdakSortDir === "count-desc") {
-      return (
-        (b.status_terakhir === "SO" ? 1 : 0) -
-        (a.status_terakhir === "SO" ? 1 : 0)
-      );
+      return (b.status_terakhir === "SO" ? 1 : 0) - (a.status_terakhir === "SO" ? 1 : 0);
     }
     if (_kdakSortDir === "count-asc") {
-      return (
-        (a.status_terakhir === "SO" ? 1 : 0) -
-        (b.status_terakhir === "SO" ? 1 : 0)
-      );
+      return (a.status_terakhir === "SO" ? 1 : 0) - (b.status_terakhir === "SO" ? 1 : 0);
     }
-    const av = (a[_kdakSortField] || "").toString().toLowerCase();
-    const bv = (b[_kdakSortField] || "").toString().toLowerCase();
+    const av = (a[_kdakSortField] || "").toString().toUpperCase();
+    const bv = (b[_kdakSortField] || "").toString().toUpperCase();
     return _kdakSortDir === "asc" ? av.localeCompare(bv) : bv.localeCompare(av);
   });
 
@@ -5104,8 +5249,7 @@ function renderKdakTable() {
       const uptName = a.id_lokasi_display || uptCode || "—";
       const uptEntry = uptDatabase.find((u) => u.upt === uptCode);
       const wilayahName = uptEntry
-        ? lokasiData.find((l) => l.code === uptEntry.lokasi)?.name ||
-          uptEntry.lokasi
+        ? lokasiData.find((l) => l.code === uptEntry.lokasi)?.name || uptEntry.lokasi
         : "—";
       return `<tr class="border-b border-gray-50 dark:border-gray-700/50 hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
         <td class="px-4 py-3 font-mono text-xs text-kai-blue dark:text-blue-400 font-semibold whitespace-nowrap">${a.id_aset || "—"}</td>
@@ -5134,8 +5278,7 @@ function _renderGroupList(containerId, groups, iconClass, colorClass) {
       const parentName = g.parentCode
         ? lokasiData.find((l) => l.code === g.parentCode)?.name || g.parentCode
         : null;
-      const subtitle =
-        parentName && parentName !== g.name
+      const subtitle = parentName && parentName !== g.name
           ? `<p class="text-[10px] text-gray-400 font-mono">${g.code}</p><p class="text-[10px] text-teal-500">${parentName}</p>`
           : `<p class="text-[10px] text-gray-400 font-mono">${g.code}</p>`;
       return `
@@ -5170,10 +5313,8 @@ function _buildAlatGroups(filterCode, sortVal) {
   if (filterCode) arr = arr.filter((g) => g.code === filterCode);
   if (sortVal === "count-desc") arr.sort((a, b) => b.count - a.count);
   else if (sortVal === "count-asc") arr.sort((a, b) => a.count - b.count);
-  else if (sortVal === "name-asc")
-    arr.sort((a, b) => a.name.localeCompare(b.name));
-  else if (sortVal === "name-desc")
-    arr.sort((a, b) => b.name.localeCompare(a.name));
+  else if (sortVal === "name-asc") arr.sort((a, b) => a.name.localeCompare(b.name));
+  else if (sortVal === "name-desc") arr.sort((a, b) => b.name.localeCompare(a.name));
   return arr;
 }
 
@@ -5190,17 +5331,14 @@ function _buildLokasiGroups(filterLokasi, filterUpt, sortVal) {
     // Apply UPT filter
     if (filterUpt && uptCode !== filterUpt) return;
 
-    if (!map[uptCode])
-      map[uptCode] = { code: uptCode, name: uptName, parentCode, count: 0 };
+    if (!map[uptCode]) map[uptCode] = { code: uptCode, name: uptName, parentCode, count: 0 };
     map[uptCode].count++;
   });
   let arr = Object.values(map);
   if (sortVal === "count-desc") arr.sort((a, b) => b.count - a.count);
   else if (sortVal === "count-asc") arr.sort((a, b) => a.count - b.count);
-  else if (sortVal === "name-asc")
-    arr.sort((a, b) => a.name.localeCompare(b.name));
-  else if (sortVal === "name-desc")
-    arr.sort((a, b) => b.name.localeCompare(a.name));
+  else if (sortVal === "name-asc") arr.sort((a, b) => a.name.localeCompare(b.name));
+  else if (sortVal === "name-desc") arr.sort((a, b) => b.name.localeCompare(a.name));
   return arr;
 }
 
@@ -5218,12 +5356,9 @@ function _renderTerbaruList(from, to) {
     return true;
   });
 
-  filtered.sort(
-    (a, b) => new Date(b.tanggal_pembelian) - new Date(a.tanggal_pembelian),
-  );
+  filtered.sort((a, b) => new Date(b.tanggal_pembelian) - new Date(a.tanggal_pembelian));
 
-  if (label)
-    label.textContent = `${filtered.length} aset ditemukan dalam rentang ini.`;
+  if (label) label.textContent = `${filtered.length} aset ditemukan dalam rentang ini.`;
 
   if (!filtered.length) {
     list.innerHTML = `<p class="text-sm text-gray-400 text-center py-6">Tidak ada aset dalam rentang tanggal ini.</p>`;
@@ -5242,7 +5377,7 @@ function _renderTerbaruList(from, to) {
           <p class="text-xs font-semibold text-gray-600 dark:text-gray-300">${a.tanggal_pembelian || "—"}</p>
           <span class="inline-flex mt-1 items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${a.status_terakhir === "SO" ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"}">${a.status_terakhir}</span>
         </div>
-      </div>`,
+      </div>`
     )
     .join("");
 }
@@ -5289,21 +5424,14 @@ function downloadKdakSampleExcel() {
     "Unit (A/B/C/D)",
   ];
   const sampleRows = [
-    ["RGM", "JR1.1", "2024-03-15", "PUSAT", "D1", "A"],
-    ["CWL", "JB2.1", "2023-11-01", "DAOP/DIVRE", "D2", "B"],
+    ["RGM", "JR1.1", "2026-12-31", "PUSAT", "D1", "A"],
+    ["BOR", "JR2.1", "2026-12-31", "DAOP / DIVRE", "D2", "B"],
   ];
   const wsData = [headers, ...sampleRows];
   const ws = XLSX.utils.aoa_to_sheet(wsData);
 
   // Style header row width hints
-  ws["!cols"] = [
-    { wch: 14 },
-    { wch: 14 },
-    { wch: 30 },
-    { wch: 32 },
-    { wch: 14 },
-    { wch: 18 },
-  ];
+  ws["!cols"] = [{ wch: 14 }, { wch: 14 }, { wch: 30 }, { wch: 32 }, { wch: 14 }, { wch: 18 }];
   XLSX.utils.book_append_sheet(wb, ws, "Data Aset");
 
   // Sheet 2: Instructions
@@ -5313,51 +5441,15 @@ function downloadKdakSampleExcel() {
     ["Kolom dengan tanda * wajib diisi."],
     [""],
     ["Nama Kolom", "Tipe Data", "Panjang", "Wajib", "Keterangan"],
-    [
-      "Kode Alat *",
-      "Alpanumerik",
-      "10 karakter",
-      "YA",
-      "Kode kategori alat kerja (misal: RGM, CWL)",
-    ],
-    [
-      "ID Lokasi *",
-      "Alpanumerik",
-      "10 karakter",
-      "YA",
-      "Kode UPT tujuan (misal: JR1.1, JB2.1)",
-    ],
-    [
-      "Tanggal Pembelian *",
-      "Tanggal",
-      "YYYY-MM-DD",
-      "YA",
-      "Format: 2024-03-15",
-    ],
+    ["Kode Alat *", "Alpanumerik", "10 karakter", "YA", "Kode kategori alat kerja (misal: RGM, CWL)"],
+    ["ID Lokasi *", "Alpanumerik", "10 karakter", "YA", "Kode UPT tujuan (misal: JR1.1, JB2.1)"],
+    ["Tanggal Pembelian *", "Tanggal", "YYYY-MM-DD", "YA", "Format: 2024-03-15"],
     ["Sumber Pengadaan *", "Teks", "—", "YA", "Hanya: PUSAT atau DAOP/DIVRE"],
-    [
-      "Parent Lokasi *",
-      "Alpanumerik",
-      "10 karakter",
-      "YA",
-      "Kode Wilayah/DAOP induk (misal: D1, D2)",
-    ],
-    [
-      "Unit *",
-      "Karakter",
-      "1 karakter",
-      "YA",
-      "A=Jalan Rel, B=Jembatan, C=Mekanik, D=Balaiyasa",
-    ],
+    ["Parent Lokasi *", "Alpanumerik", "10 karakter", "YA", "Kode Wilayah/DAOP induk (misal: D1, D2)"],
+    ["Unit *", "Karakter", "1 karakter", "YA", "A=Jalan Rel, B=Jembatan, C=Mekanik, D=Balaiyasa"],
   ];
   const wsInstr = XLSX.utils.aoa_to_sheet(instrData);
-  wsInstr["!cols"] = [
-    { wch: 22 },
-    { wch: 14 },
-    { wch: 14 },
-    { wch: 8 },
-    { wch: 50 },
-  ];
+  wsInstr["!cols"] = [{ wch: 22 }, { wch: 14 }, { wch: 14 }, { wch: 8 }, { wch: 50 }];
   XLSX.utils.book_append_sheet(wb, wsInstr, "Petunjuk");
 
   XLSX.writeFile(wb, "Template_Import_Aset_SIMAKAI.xlsx");
@@ -5408,7 +5500,7 @@ async function processKdakImportFile(file) {
 
         showToast(
           `Import selesai: ${success} berhasil${failed ? `, ${failed} gagal` : ""}.`,
-          success > 0 ? "success" : "error",
+          success > 0 ? "success" : "error"
         );
         fetchAsetFromServer();
         resolve(success);
@@ -5442,7 +5534,7 @@ function openKdakMapModal() {
   if (navigator.geolocation) {
     navigator.geolocation.getCurrentPosition(
       (pos) => loadMap(pos.coords.latitude, pos.coords.longitude),
-      () => loadMap(-2.5489, 118.0149), // Indonesia center fallback
+      () => loadMap(-2.5489, 118.0149) // Indonesia center fallback
     );
   } else {
     loadMap(-2.5489, 118.0149);
@@ -5456,21 +5548,15 @@ function setupKdakListeners() {
     document.getElementById("kdak-tambah-modal")?.classList.remove("hidden");
   });
 
-  document
-    .getElementById("close-kdak-tambah-modal")
-    ?.addEventListener("click", () => {
+  document.getElementById("close-kdak-tambah-modal")?.addEventListener("click", () => {
       document.getElementById("kdak-tambah-modal")?.classList.add("hidden");
     });
-  document
-    .getElementById("kdak-tambah-cancel")
-    ?.addEventListener("click", () => {
+  document.getElementById("kdak-tambah-cancel")?.addEventListener("click", () => {
       document.getElementById("kdak-tambah-modal")?.classList.add("hidden");
     });
 
   // Bulk dropdown toggle
-  document
-    .getElementById("kdak-btn-bulk-toggle")
-    ?.addEventListener("click", (e) => {
+  document.getElementById("kdak-btn-bulk-toggle")?.addEventListener("click", (e) => {
       e.stopPropagation();
       document.getElementById("kdak-bulk-dropdown")?.classList.toggle("hidden");
     });
@@ -5479,67 +5565,46 @@ function setupKdakListeners() {
   });
 
   // Bulk dropdown items → open modal
-  document
-    .getElementById("kdak-btn-sample-excel")
-    ?.addEventListener("click", () => {
+  document.getElementById("kdak-btn-sample-excel")?.addEventListener("click", () => {
       document.getElementById("kdak-bulk-dropdown")?.classList.add("hidden");
       const sel = document.getElementById("kdak-bulk-action");
       if (sel) sel.value = "sample";
       document.getElementById("kdak-bulk-file-area")?.classList.add("hidden");
       document.getElementById("kdak-bulk-modal")?.classList.remove("hidden");
     });
-  document
-    .getElementById("kdak-btn-import-excel")
-    ?.addEventListener("click", () => {
+  document.getElementById("kdak-btn-import-excel")?.addEventListener("click", () => {
       document.getElementById("kdak-bulk-dropdown")?.classList.add("hidden");
       const sel = document.getElementById("kdak-bulk-action");
       if (sel) sel.value = "import";
-      document
-        .getElementById("kdak-bulk-file-area")
-        ?.classList.remove("hidden");
+    document.getElementById("kdak-bulk-file-area")?.classList.remove("hidden");
       document.getElementById("kdak-bulk-modal")?.classList.remove("hidden");
     });
 
   // Bulk modal
-  document
-    .getElementById("kdak-bulk-action")
-    ?.addEventListener("change", (e) => {
+  document.getElementById("kdak-bulk-action")?.addEventListener("change", (e) => {
       const fileArea = document.getElementById("kdak-bulk-file-area");
-      if (fileArea)
-        fileArea.classList.toggle("hidden", e.target.value !== "import");
+    if (fileArea) fileArea.classList.toggle("hidden", e.target.value !== "import");
     });
-  document
-    .getElementById("kdak-bulk-file-input")
-    ?.addEventListener("change", (e) => {
+  document.getElementById("kdak-bulk-file-input")?.addEventListener("change", (e) => {
       const name = e.target.files[0]?.name || "Belum ada file dipilih";
       const el = document.getElementById("kdak-bulk-filename");
       if (el) el.textContent = name;
     });
-  document
-    .getElementById("close-kdak-bulk-modal")
-    ?.addEventListener("click", () => {
+  document.getElementById("close-kdak-bulk-modal")?.addEventListener("click", () => {
       document.getElementById("kdak-bulk-modal")?.classList.add("hidden");
     });
   document.getElementById("kdak-bulk-cancel")?.addEventListener("click", () => {
     document.getElementById("kdak-bulk-modal")?.classList.add("hidden");
   });
-  document
-    .getElementById("kdak-bulk-confirm")
-    ?.addEventListener("click", async () => {
+  document.getElementById("kdak-bulk-confirm")?.addEventListener("click", async () => {
       const action = document.getElementById("kdak-bulk-action")?.value;
-      if (!action) {
-        showToast("Pilih tindakan terlebih dahulu.", "warning");
-        return;
-      }
+    if (!action) { showToast("Pilih tindakan terlebih dahulu.", "warning"); return; }
       if (action === "sample") {
         downloadKdakSampleExcel();
         document.getElementById("kdak-bulk-modal")?.classList.add("hidden");
       } else if (action === "import") {
         const file = document.getElementById("kdak-bulk-file-input")?.files[0];
-        if (!file) {
-          showToast("Pilih file Excel terlebih dahulu.", "warning");
-          return;
-        }
+      if (!file) { showToast("Pilih file Excel terlebih dahulu.", "warning"); return; }
         document.getElementById("kdak-bulk-modal")?.classList.add("hidden");
         await processKdakImportFile(file);
       }
@@ -5555,6 +5620,27 @@ function setupKdakListeners() {
   document.getElementById("kdak-btn-sort")?.addEventListener("click", () => {
     _populateYearDropdowns("kdak-sort-id-tahun-from", "kdak-sort-id-tahun-to");
     _populateYearDropdowns("kdak-sort-tgl-from", "kdak-sort-tgl-to");
+
+    // Sync panels and Terbaru/Terlama visibility for current field
+    const curField = document.getElementById("kdak-sort-field")?.value || "id_aset";
+    const curChecked = document.getElementById("kdak-sort-custom-spec")?.checked || false;
+    _syncSortPanels(curField, curChecked, "kdak-sort", "kdak-sort-all-data-label", "kdak-sort-custom-panels");
+
+    // Paint active direction button
+    document.querySelectorAll(".kdak-sort-dir-btn").forEach((b) => {
+      const active = b.dataset.kdakDir === _kdakSortDir;
+      b.classList.toggle("border-purple-500", active);
+      b.classList.toggle("bg-purple-100", active);
+      b.classList.toggle("dark:bg-purple-900/20", active);
+      b.classList.toggle("text-purple-600", active);
+      b.classList.toggle("dark:text-purple-300", active);
+      b.classList.toggle("border-gray-200", !active);
+      b.classList.toggle("dark:border-gray-600", !active);
+      b.classList.toggle("bg-white", !active);
+      b.classList.toggle("dark:bg-gray-700", !active);
+      b.classList.toggle("text-gray-500", !active);
+    });
+
     // Populate alat dropdowns
     ["kdak-sort-id-alat", "kdak-sort-alat-filter"].forEach((id) => {
       const sel = document.getElementById(id);
@@ -5579,50 +5665,50 @@ function setupKdakListeners() {
         });
       }
     });
-    // Populate UPT dropdown
+    // UPT is cascade-driven by Lokasi — reset on modal open
     const uptSel = document.getElementById("kdak-sort-lok-upt");
-    if (uptSel && uptSel.options.length <= 1) {
-      uptDatabase.forEach((u) => {
+    if (uptSel) uptSel.innerHTML = `<option value="">— Pilih Lokasi dahulu —</option>`;
+    _filterUptByLokasi("kdak-sort-lok-lokasi", "kdak-sort-lok-upt");
+    // Wire cascade if not yet done
+    // Repopulate UPT based on current Lokasi selection (preserves choice on reopen)
+    const kdakLokSel = document.getElementById("kdak-sort-lok-lokasi");
+    const kdakUptSel = document.getElementById("kdak-sort-lok-upt");
+    if (kdakUptSel) {
+      const currentLok = kdakLokSel ? kdakLokSel.value : "";
+      const currentUpt = kdakUptSel.value;
+      kdakUptSel.innerHTML = `<option value="">— ${currentLok ? "Semua UPT" : "Pilih Lokasi dahulu"} —</option>`;
+      const uptList = currentLok ? uptDatabase.filter((u) => u.lokasi === currentLok) : uptDatabase;
+      uptList.forEach((u) => {
         const o = document.createElement("option");
         o.value = u.upt;
         o.textContent = `${u.nama || u.upt} (${u.upt})`;
-        uptSel.appendChild(o);
+        kdakUptSel.appendChild(o);
+      });
+      if (currentUpt) kdakUptSel.value = currentUpt;
+    }
+    // Wire cascade (only once)
+    if (kdakLokSel && !kdakLokSel.dataset.cascadeWired) {
+      kdakLokSel.dataset.cascadeWired = "1";
+      kdakLokSel.addEventListener("change", () => {
+        _filterUptByLokasi("kdak-sort-lok-lokasi", "kdak-sort-lok-upt");
       });
     }
     document.getElementById("kdak-sort-modal")?.classList.remove("hidden");
   });
 
-  document
-    .getElementById("close-kdak-sort-modal")
-    ?.addEventListener("click", () => {
+  document.getElementById("close-kdak-sort-modal")?.addEventListener("click", () => {
       document.getElementById("kdak-sort-modal")?.classList.add("hidden");
     });
 
   // Field change → sync panels
-  document
-    .getElementById("kdak-sort-field")
-    ?.addEventListener("change", (e) => {
+  document.getElementById("kdak-sort-field")?.addEventListener("change", (e) => {
       const checked = document.getElementById("kdak-sort-custom-spec")?.checked;
-      _syncSortPanels(
-        e.target.value,
-        checked,
-        "kdak-sort",
-        "kdak-sort-all-data-label",
-        "kdak-sort-custom-panels",
-      );
+    _syncSortPanels(e.target.value, checked, "kdak-sort", "kdak-sort-all-data-label", "kdak-sort-custom-panels");
     });
 
-  document
-    .getElementById("kdak-sort-custom-spec")
-    ?.addEventListener("change", (e) => {
+  document.getElementById("kdak-sort-custom-spec")?.addEventListener("change", (e) => {
       const field = document.getElementById("kdak-sort-field")?.value;
-      _syncSortPanels(
-        field,
-        e.target.checked,
-        "kdak-sort",
-        "kdak-sort-all-data-label",
-        "kdak-sort-custom-panels",
-      );
+    _syncSortPanels(field, e.target.checked, "kdak-sort", "kdak-sort-all-data-label", "kdak-sort-custom-panels");
     });
 
   // Sort direction buttons — purple theme
@@ -5646,62 +5732,34 @@ function setupKdakListeners() {
   });
 
   // Apply sort
-  document
-    .getElementById("kdak-btn-apply-sort")
-    ?.addEventListener("click", () => {
+  document.getElementById("kdak-btn-apply-sort")?.addEventListener("click", () => {
       const fieldVal = document.getElementById("kdak-sort-field")?.value;
       _kdakSortField = fieldVal || "id_aset";
-      const customChecked = document.getElementById(
-        "kdak-sort-custom-spec",
-      )?.checked;
+    const customChecked = document.getElementById("kdak-sort-custom-spec")?.checked;
 
       _kdakSortFilters = {};
       if (customChecked && fieldVal) {
         if (fieldVal === "id_aset") {
-          _kdakSortFilters.idFrom =
-            parseInt(document.getElementById("kdak-sort-id-from")?.value) ||
-            null;
-          _kdakSortFilters.idTo =
-            parseInt(document.getElementById("kdak-sort-id-to")?.value) || null;
-          _kdakSortFilters.alat =
-            document.getElementById("kdak-sort-id-alat")?.value || "";
-          _kdakSortFilters.pengadaan =
-            document.querySelector(
-              'input[name="kdak-sort-id-pengadaan"]:checked',
-            )?.value || "";
-          _kdakSortFilters.tahunFrom =
-            document.getElementById("kdak-sort-id-tahun-from")?.value || "";
-          _kdakSortFilters.tahunTo =
-            document.getElementById("kdak-sort-id-tahun-to")?.value || "";
-          _kdakSortFilters.peruntukan =
-            document.querySelector(
-              'input[name="kdak-sort-id-peruntukan"]:checked',
-            )?.value || "";
-          _kdakSortFilters.lokasi =
-            document.getElementById("kdak-sort-id-lokasi")?.value || "";
+        _kdakSortFilters.idFrom = parseInt(document.getElementById("kdak-sort-id-from")?.value) || null;
+        _kdakSortFilters.idTo = parseInt(document.getElementById("kdak-sort-id-to")?.value) || null;
+        _kdakSortFilters.alat = document.getElementById("kdak-sort-id-alat")?.value || "";
+        _kdakSortFilters.pengadaan = document.querySelector('input[name="kdak-sort-id-pengadaan"]:checked')?.value || "";
+        _kdakSortFilters.tahunFrom = document.getElementById("kdak-sort-id-tahun-from")?.value || "";
+        _kdakSortFilters.tahunTo = document.getElementById("kdak-sort-id-tahun-to")?.value || "";
+        _kdakSortFilters.peruntukan = document.querySelector('input[name="kdak-sort-id-peruntukan"]:checked')?.value || "";
+        _kdakSortFilters.lokasi = document.getElementById("kdak-sort-id-lokasi")?.value || "";
         } else if (fieldVal === "kode_alat_name") {
-          _kdakSortFilters.alat =
-            document.getElementById("kdak-sort-alat-filter")?.value || "";
+        _kdakSortFilters.alat = document.getElementById("kdak-sort-alat-filter")?.value || "";
         } else if (fieldVal === "sumber_pengadaan") {
-          _kdakSortFilters.pengadaan =
-            document.querySelector(
-              'input[name="kdak-sort-pengadaan-filter"]:checked',
-            )?.value || "";
+        _kdakSortFilters.pengadaan = document.querySelector('input[name="kdak-sort-pengadaan-filter"]:checked')?.value || "";
         } else if (fieldVal === "tanggal_pembelian") {
-          _kdakSortFilters.tahunFrom =
-            document.getElementById("kdak-sort-tgl-from")?.value || "";
-          _kdakSortFilters.tahunTo =
-            document.getElementById("kdak-sort-tgl-to")?.value || "";
+        _kdakSortFilters.tahunFrom = document.getElementById("kdak-sort-tgl-from")?.value || "";
+        _kdakSortFilters.tahunTo = document.getElementById("kdak-sort-tgl-to")?.value || "";
         } else if (fieldVal === "unit_peruntukan") {
-          _kdakSortFilters.peruntukan =
-            document.querySelector(
-              'input[name="kdak-sort-peruntukan-filter"]:checked',
-            )?.value || "";
+        _kdakSortFilters.peruntukan = document.querySelector('input[name="kdak-sort-peruntukan-filter"]:checked')?.value || "";
         } else if (fieldVal === "id_lokasi") {
-          _kdakSortFilters.lokasi =
-            document.getElementById("kdak-sort-lok-lokasi")?.value || "";
-          _kdakSortFilters.upt =
-            document.getElementById("kdak-sort-lok-upt")?.value || "";
+        _kdakSortFilters.lokasi = document.getElementById("kdak-sort-lok-lokasi")?.value || "";
+        _kdakSortFilters.upt = document.getElementById("kdak-sort-lok-upt")?.value || "";
         }
       }
 
@@ -5709,245 +5767,213 @@ function setupKdakListeners() {
       renderKdakTable();
     });
 
-  // ── Helper functions ──
-  const _refreshAlatList = () => {
-    const alatFilter = document.getElementById("kdak-alat-filter");
-    const alatSort = document.getElementById("kdak-alat-sort");
-    _renderGroupList(
-      "kdak-alat-list",
-      _buildAlatGroups(
-        alatFilter?.value || "",
-        alatSort?.value || "count-desc",
-      ),
-      "fas fa-wrench",
-      "bg-kai-blue/10 dark:bg-blue-900/30 text-kai-blue",
-    );
-  };
+// KDAK sort reset
+// REPLACE the duplicate btn-reset-hist-sort block at lines 5724-5741 with:
+document.getElementById("kdak-btn-reset-sort")?.addEventListener("click", () => {
+  _kdakSortField = "id_aset";
+  _kdakSortDir = "date-desc";
+  _kdakSortFilters = {};
 
-  const _refreshLokasiList = () => {
-    const lokasiFilter = document.getElementById("kdak-lokasi-filter");
-    const uptFilter = document.getElementById("kdak-upt-filter");
-    const lokasiSort = document.getElementById("kdak-lokasi-sort");
-    _renderGroupList(
-      "kdak-lokasi-list",
-      _buildLokasiGroups(
-        lokasiFilter?.value || "",
-        uptFilter?.value || "",
-        lokasiSort?.value || "count-desc",
-      ),
-      "fas fa-map-pin",
-      "bg-teal-500/10 dark:bg-teal-900/30 text-teal-500",
-    );
-  };
+  const kdakField = document.getElementById("kdak-sort-field");
+  if (kdakField) kdakField.value = "";
+  const kdakSpec = document.getElementById("kdak-sort-custom-spec");
+  if (kdakSpec) kdakSpec.checked = false;
 
-  const _refreshTerbaru = () => {
-    const from = document.getElementById("kdak-terbaru-from")?.value;
-    const to = document.getElementById("kdak-terbaru-to")?.value;
-    document.querySelectorAll(".kdak-terbaru-preset").forEach((b) => {
-      b.classList.remove("border-kai-orange", "text-kai-orange");
-    });
-    _renderTerbaruList(from, to);
-  };
+  // Clear all sub-filter inputs
+  document.querySelectorAll("#kdak-sort-custom-panels input[type='text'], #kdak-sort-custom-panels input[type='number'], #kdak-sort-custom-panels select").forEach(el => { el.value = ""; });
+  document.querySelectorAll("#kdak-sort-custom-panels input[type='radio']").forEach(el => { el.checked = false; });
 
-  // ── Daftar per Alat Kerja card ──
-  document
-    .getElementById("kdak-card-per-alat")
-    ?.addEventListener("click", () => {
-      const modal = document.getElementById("kdak-alat-modal");
-      if (modal) modal.classList.remove("hidden");
-
-      const alatFilter = document.getElementById("kdak-alat-filter");
-      if (alatFilter) {
-        const existing = new Set(db.map((a) => a.kode_alat));
-        alatFilter.innerHTML =
-          '<option value="">— Semua Alat Kerja —</option>' +
-          alatKerjaData
-            .filter((a) => existing.has(a.code))
-            .map((a) => `<option value="${a.code}">${a.name}</option>`)
-            .join("");
-        alatFilter.value = "";
-      }
-      _refreshAlatList();
-    });
-
-  document
-    .getElementById("close-kdak-alat-modal")
-    ?.addEventListener("click", () => {
-      document.getElementById("kdak-alat-modal")?.classList.add("hidden");
-    });
-
-  document
-    .getElementById("kdak-alat-filter")
-    ?.addEventListener("change", _refreshAlatList);
-  document
-    .getElementById("kdak-alat-sort")
-    ?.addEventListener("change", _refreshAlatList);
-
-  // ── Daftar per Lokasi card (SINGLE event listener - removed duplicate) ──
-  document
-    .getElementById("kdak-card-per-lokasi")
-    ?.addEventListener("click", () => {
-      const modal = document.getElementById("kdak-lokasi-modal");
-      if (modal) modal.classList.remove("hidden");
-
-      const lokasiFilter = document.getElementById("kdak-lokasi-filter");
-      if (lokasiFilter) {
-        const usedParents = new Set(
-          db.map((a) => {
-            const uptEntry = uptDatabase.find(
-              (u) => u.upt === (a.id_lokasi_raw || a.id_lokasi),
-            );
-            return uptEntry ? uptEntry.lokasi : a.id_lokasi_raw || a.id_lokasi;
-          }),
-        );
-        lokasiFilter.innerHTML =
-          '<option value="">— Semua Lokasi —</option>' +
-          lokasiData
-            .filter((l) => usedParents.has(l.code))
-            .map((l) => `<option value="${l.code}">${l.name}</option>`)
-            .join("");
-        lokasiFilter.value = "";
-      }
-
-      const uptFilter = document.getElementById("kdak-upt-filter");
-      if (uptFilter) {
-        uptFilter.innerHTML =
-          '<option value="">— Semua UPT untuk Lokasi ini —</option>';
-        uptFilter.disabled = true;
-      }
-      _refreshLokasiList();
-    });
-
-  document
-    .getElementById("close-kdak-lokasi-modal")
-    ?.addEventListener("click", () => {
-      document.getElementById("kdak-lokasi-modal")?.classList.add("hidden");
-    });
-
-  // Lokasi filter events
-  document
-    .getElementById("kdak-lokasi-filter")
-    ?.addEventListener("change", (e) => {
-      const selLokasi = e.target.value;
-      const uptFilter = document.getElementById("kdak-upt-filter");
-      if (uptFilter) {
-        if (!selLokasi) {
-          uptFilter.innerHTML =
-            '<option value="">— Semua UPT untuk Lokasi ini —</option>';
-          uptFilter.disabled = true;
-        } else {
-          const matches = uptDatabase.filter((u) => u.lokasi === selLokasi);
-          uptFilter.disabled = false;
-          uptFilter.innerHTML =
-            '<option value="">— Semua UPT untuk Lokasi ini —</option>' +
-            matches
-              .map(
-                (u) => `<option value="${u.upt}">${u.nama || u.upt}</option>`,
-              )
-              .join("");
-          uptFilter.value = "";
-        }
-      }
-      _refreshLokasiList();
-    });
-
-  document
-    .getElementById("kdak-upt-filter")
-    ?.addEventListener("change", _refreshLokasiList);
-  document
-    .getElementById("kdak-lokasi-sort")
-    ?.addEventListener("change", _refreshLokasiList);
-
-  // ── Aset Terbaru card ──
-  document
-    .getElementById("kdak-card-terbaru")
-    ?.addEventListener("click", () => {
-      const modal = document.getElementById("kdak-terbaru-modal");
-      if (modal) modal.classList.remove("hidden");
-      _setTerbaruPreset("month");
-    });
-
-  document
-    .getElementById("close-kdak-terbaru-modal")
-    ?.addEventListener("click", () => {
-      document.getElementById("kdak-terbaru-modal")?.classList.add("hidden");
-    });
-
-  document.querySelectorAll(".kdak-terbaru-preset").forEach((btn) => {
-    btn.addEventListener("click", () => _setTerbaruPreset(btn.dataset.preset));
+  _syncSortPanels("", false, "kdak-sort", "kdak-sort-all-data-label", "kdak-sort-custom-panels");
+  document.querySelectorAll(".kdak-sort-dir-btn").forEach((b) => {
+    b.classList.remove("border-purple-500", "bg-purple-100", "dark:bg-purple-900/20", "text-purple-600", "dark:text-purple-300");
+    b.classList.add("border-gray-200", "dark:border-gray-600", "bg-white", "dark:bg-gray-700", "text-gray-500");
   });
+  document.getElementById("kdak-sort-modal")?.classList.add("hidden");
+  renderKdakTable();
+});
 
-  document
-    .getElementById("kdak-terbaru-from")
-    ?.addEventListener("change", _refreshTerbaru);
-  document
-    .getElementById("kdak-terbaru-to")
-    ?.addEventListener("change", _refreshTerbaru);
+// ── Helper functions ──
+const _refreshAlatList = () => {
+  const alatFilter = document.getElementById("kdak-alat-filter");
+  const alatSort = document.getElementById("kdak-alat-sort");
+  _renderGroupList(
+    "kdak-alat-list",
+    _buildAlatGroups(alatFilter?.value || "", alatSort?.value || "count-desc"),
+    "fas fa-wrench",
+    "bg-kai-blue/10 dark:bg-blue-900/30 text-kai-blue"
+  );
+};
 
-  // ── Switch to KDAK view ──
-  document
-    .querySelector('[data-view="input"]')
-    ?.addEventListener("click", () => {
-      updateKdakStats();
-      renderKdakTable();
-    });
+const _refreshLokasiList = () => {
+  const lokasiFilter = document.getElementById("kdak-lokasi-filter");
+  const uptFilter = document.getElementById("kdak-upt-filter");
+  const lokasiSort = document.getElementById("kdak-lokasi-sort");
+  _renderGroupList(
+    "kdak-lokasi-list",
+    _buildLokasiGroups(
+      lokasiFilter?.value || "",
+      uptFilter?.value || "",
+      lokasiSort?.value || "count-desc"
+    ),
+    "fas fa-map-pin",
+    "bg-teal-500/10 dark:bg-teal-900/30 text-teal-500"
+  );
+};
 
-  // ── Jenis Alat card ──
-  document.getElementById("kdak-card-jenis")?.addEventListener("click", () => {
-    const modal = document.getElementById("kdak-jenis-modal");
+const _refreshTerbaru = () => {
+  const from = document.getElementById("kdak-terbaru-from")?.value;
+  const to = document.getElementById("kdak-terbaru-to")?.value;
+  document.querySelectorAll(".kdak-terbaru-preset").forEach((b) => {
+    b.classList.remove("border-kai-orange", "text-kai-orange");
+  });
+  _renderTerbaruList(from, to);
+};
+
+// ── Daftar per Alat Kerja card ──
+document.getElementById("kdak-card-per-alat")?.addEventListener("click", () => {
+    const modal = document.getElementById("kdak-alat-modal");
     if (modal) modal.classList.remove("hidden");
-    const tbody = document.getElementById("kdak-jenis-table-body");
-    if (!tbody) return;
-    const countByKode = {};
-    db.forEach((a) => {
-      countByKode[a.kode_alat] = (countByKode[a.kode_alat] || 0) + 1;
-    });
-    tbody.innerHTML = alatKerjaData
-      .map(
-        (a) => `
-      <tr class="border-b border-gray-50 dark:border-gray-700/50 hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
-        <td class="px-4 py-3 font-mono text-xs text-purple-500 font-bold">${a.code}</td>
-        <td class="px-4 py-3 text-sm text-gray-700 dark:text-gray-200">${a.name}</td>
-        <td class="px-4 py-3 text-center font-bold text-gray-700 dark:text-gray-300">${countByKode[a.code] ?? "—"}</td>
-      </tr>`,
-      )
-      .join("");
-  });
-  document
-    .getElementById("close-kdak-jenis-modal")
-    ?.addEventListener("click", () => {
-      document.getElementById("kdak-jenis-modal")?.classList.add("hidden");
-    });
 
-  // ── Sebaran Lokasi info card ──
-  document
-    .getElementById("kdak-card-lokasi-info")
-    ?.addEventListener("click", () => {
-      const modal = document.getElementById("kdak-lokasi-info-modal");
-      if (modal) modal.classList.remove("hidden");
-      // Lokasi table
-      const bodyLokasi = document.getElementById(
-        "kdak-lokasi-info-body-lokasi",
-      );
-      if (bodyLokasi) {
-        bodyLokasi.innerHTML = lokasiData
-          .map(
-            (l) => `
-        <tr class="border-b border-gray-50 dark:border-gray-700/50 hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
-          <td class="px-4 py-3 font-mono text-xs text-teal-500 font-bold">${l.code}</td>
-          <td class="px-4 py-3 text-sm text-gray-700 dark:text-gray-200">${l.name}</td>
-          <td class="px-4 py-3 text-center text-xs text-gray-500 dark:text-gray-400">${l.tipe || "—"}</td>
-        </tr>`,
-          )
+    const alatFilter = document.getElementById("kdak-alat-filter");
+    if (alatFilter) {
+      const existing = new Set(db.map((a) => a.kode_alat));
+      alatFilter.innerHTML =
+        '<option value="">— Semua Alat Kerja —</option>' +
+        alatKerjaData
+          .filter((a) => existing.has(a.code))
+          .map((a) => `<option value="${a.code}">${a.name}</option>`)
           .join("");
+      alatFilter.value = "";
+    }
+    _refreshAlatList();
+  });
+
+document.getElementById("close-kdak-alat-modal")?.addEventListener("click", () => {
+    document.getElementById("kdak-alat-modal")?.classList.add("hidden");
+  });
+
+document.getElementById("kdak-alat-filter")?.addEventListener("change", _refreshAlatList);
+document.getElementById("kdak-alat-sort")?.addEventListener("change", _refreshAlatList);
+
+// ── Daftar per Lokasi card (SINGLE event listener - removed duplicate) ──
+document.getElementById("kdak-card-per-lokasi")?.addEventListener("click", () => {
+    const modal = document.getElementById("kdak-lokasi-modal");
+    if (modal) modal.classList.remove("hidden");
+
+    const lokasiFilter = document.getElementById("kdak-lokasi-filter");
+    if (lokasiFilter) {
+      const usedParents = new Set(
+        db.map((a) => {
+        const uptEntry = uptDatabase.find((u) => u.upt === (a.id_lokasi_raw || a.id_lokasi));
+        return uptEntry ? uptEntry.lokasi : (a.id_lokasi_raw || a.id_lokasi);
+      })
+      );
+      lokasiFilter.innerHTML =
+        '<option value="">— Semua Lokasi —</option>' +
+        lokasiData
+          .filter((l) => usedParents.has(l.code))
+          .map((l) => `<option value="${l.code}">${l.name}</option>`)
+          .join("");
+      lokasiFilter.value = "";
+    }
+
+    const uptFilter = document.getElementById("kdak-upt-filter");
+    if (uptFilter) {
+    uptFilter.innerHTML = '<option value="">— Semua UPT untuk Lokasi ini —</option>';
+      uptFilter.disabled = true;
+    }
+    _refreshLokasiList();
+  });
+
+document.getElementById("close-kdak-lokasi-modal")?.addEventListener("click", () => {
+    document.getElementById("kdak-lokasi-modal")?.classList.add("hidden");
+  });
+
+// Lokasi filter events
+document.getElementById("kdak-lokasi-filter")?.addEventListener("change", (e) => {
+    const selLokasi = e.target.value;
+    const uptFilter = document.getElementById("kdak-upt-filter");
+    if (uptFilter) {
+      if (!selLokasi) {
+      uptFilter.innerHTML = '<option value="">— Semua UPT untuk Lokasi ini —</option>';
+        uptFilter.disabled = true;
+      } else {
+        const matches = uptDatabase.filter((u) => u.lokasi === selLokasi);
+        uptFilter.disabled = false;
+        uptFilter.innerHTML =
+          '<option value="">— Semua UPT untuk Lokasi ini —</option>' +
+        matches.map((u) => `<option value="${u.upt}">${u.nama || u.upt}</option>`).join("");
+        uptFilter.value = "";
       }
-      // UPT table
-      const bodyUpt = document.getElementById("kdak-lokasi-info-body-upt");
-      if (bodyUpt) {
-        bodyUpt.innerHTML = uptDatabase
-          .map((u) => {
-            const parentName =
-              lokasiData.find((l) => l.code === u.lokasi)?.name || u.lokasi;
+    }
+    _refreshLokasiList();
+  });
+
+document.getElementById("kdak-upt-filter")?.addEventListener("change", _refreshLokasiList);
+document.getElementById("kdak-lokasi-sort")?.addEventListener("change", _refreshLokasiList);
+
+// ── Aset Terbaru card ──
+document.getElementById("kdak-card-terbaru")?.addEventListener("click", () => {
+    const modal = document.getElementById("kdak-terbaru-modal");
+    if (modal) modal.classList.remove("hidden");
+    _setTerbaruPreset("month");
+  });
+
+document.getElementById("close-kdak-terbaru-modal")?.addEventListener("click", () => {
+    document.getElementById("kdak-terbaru-modal")?.classList.add("hidden");
+  });
+
+document.querySelectorAll(".kdak-terbaru-preset").forEach((btn) => {
+  btn.addEventListener("click", () => _setTerbaruPreset(btn.dataset.preset));
+});
+
+document.getElementById("kdak-terbaru-from")?.addEventListener("change", _refreshTerbaru);
+document.getElementById("kdak-terbaru-to")?.addEventListener("change", _refreshTerbaru);
+
+// ── Switch to KDAK view ──
+document.querySelector('[data-view="input"]')?.addEventListener("click", () => {
+    updateKdakStats();
+    renderKdakTable();
+  });
+
+// ── Jenis Alat card ──
+document.getElementById("kdak-card-jenis")?.addEventListener("click", () => {
+  const modal = document.getElementById("kdak-jenis-modal");
+  if (modal) modal.classList.remove("hidden");
+  const tbody = document.getElementById("kdak-jenis-table-body");
+  if (!tbody) return;
+  const countByKode = {};
+  db.forEach((a) => { countByKode[a.kode_alat] = (countByKode[a.kode_alat] || 0) + 1; });
+  tbody.innerHTML = alatKerjaData.map((a) => `
+    <tr class="border-b border-gray-50 dark:border-gray-700/50 hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
+      <td class="px-4 py-3 font-mono text-xs text-purple-500 font-bold">${a.code}</td>
+      <td class="px-4 py-3 text-sm text-gray-700 dark:text-gray-200">${a.name}</td>
+      <td class="px-4 py-3 text-center font-bold text-gray-700 dark:text-gray-300">${countByKode[a.code] ?? "—"}</td>
+    </tr>`).join("");
+});
+document.getElementById("close-kdak-jenis-modal")?.addEventListener("click", () => {
+    document.getElementById("kdak-jenis-modal")?.classList.add("hidden");
+  });
+
+// ── Sebaran Lokasi info card ──
+document.getElementById("kdak-card-lokasi-info")?.addEventListener("click", () => {
+    const modal = document.getElementById("kdak-lokasi-info-modal");
+    if (modal) modal.classList.remove("hidden");
+    // Lokasi table
+  const bodyLokasi = document.getElementById("kdak-lokasi-info-body-lokasi");
+    if (bodyLokasi) {
+    bodyLokasi.innerHTML = lokasiData.map((l) => `
+      <tr class="border-b border-gray-50 dark:border-gray-700/50 hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
+        <td class="px-4 py-3 font-mono text-xs text-teal-500 font-bold">${l.code}</td>
+        <td class="px-4 py-3 text-sm text-gray-700 dark:text-gray-200">${l.name}</td>
+        <td class="px-4 py-3 text-center text-xs text-gray-500 dark:text-gray-400">${l.tipe || "—"}</td>
+      </tr>`).join("");
+    }
+    // UPT table
+    const bodyUpt = document.getElementById("kdak-lokasi-info-body-upt");
+    if (bodyUpt) {
+      bodyUpt.innerHTML = uptDatabase.map((u) => {
+        const parentName = lokasiData.find((l) => l.code === u.lokasi)?.name || u.lokasi;
             return `
         <tr class="border-b border-gray-50 dark:border-gray-700/50 hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
           <td class="px-4 py-3 font-mono text-xs text-teal-500 font-bold">${u.upt}</td>
@@ -5955,86 +5981,48 @@ function setupKdakListeners() {
           <td class="px-4 py-3 font-mono text-xs text-gray-400">${u.lokasi}</td>
           <td class="px-4 py-3 text-xs text-gray-500 dark:text-gray-400">${parentName}</td>
         </tr>`;
-          })
-          .join("");
-      }
-    });
-  document
-    .getElementById("close-kdak-lokasi-info-modal")
-    ?.addEventListener("click", () => {
-      document
-        .getElementById("kdak-lokasi-info-modal")
-        ?.classList.add("hidden");
-    });
-  // Lokasi info tabs
-  document
-    .getElementById("kdak-lokasi-info-tab-lokasi")
-    ?.addEventListener("click", () => {
-      document
-        .getElementById("kdak-lokasi-info-panel-lokasi")
-        ?.classList.remove("hidden");
-      document
-        .getElementById("kdak-lokasi-info-panel-upt")
-        ?.classList.add("hidden");
-      document.getElementById("kdak-lokasi-info-tab-lokasi").className =
-        "kdak-lokasi-info-tab flex-1 py-3 text-xs font-bold tracking-widest uppercase text-kai-blue border-b-2 border-kai-blue transition";
-      document.getElementById("kdak-lokasi-info-tab-upt").className =
-        "kdak-lokasi-info-tab flex-1 py-3 text-xs font-bold tracking-widest uppercase text-gray-400 border-b-2 border-transparent hover:text-gray-600 transition";
-    });
-  document
-    .getElementById("kdak-lokasi-info-tab-upt")
-    ?.addEventListener("click", () => {
-      document
-        .getElementById("kdak-lokasi-info-panel-upt")
-        ?.classList.remove("hidden");
-      document
-        .getElementById("kdak-lokasi-info-panel-lokasi")
-        ?.classList.add("hidden");
-      document.getElementById("kdak-lokasi-info-tab-upt").className =
-        "kdak-lokasi-info-tab flex-1 py-3 text-xs font-bold tracking-widest uppercase text-kai-blue border-b-2 border-kai-blue transition";
-      document.getElementById("kdak-lokasi-info-tab-lokasi").className =
-        "kdak-lokasi-info-tab flex-1 py-3 text-xs font-bold tracking-widest uppercase text-gray-400 border-b-2 border-transparent hover:text-gray-600 transition";
-    });
+      }).join("");
+    }
+  });
+document.getElementById("close-kdak-lokasi-info-modal")?.addEventListener("click", () => {
+  document.getElementById("kdak-lokasi-info-modal")?.classList.add("hidden");
+  });
+// Lokasi info tabs
+document.getElementById("kdak-lokasi-info-tab-lokasi")?.addEventListener("click", () => {
+  document.getElementById("kdak-lokasi-info-panel-lokasi")?.classList.remove("hidden");
+  document.getElementById("kdak-lokasi-info-panel-upt")?.classList.add("hidden");
+  document.getElementById("kdak-lokasi-info-tab-lokasi").className = "kdak-lokasi-info-tab flex-1 py-3 text-xs font-bold tracking-widest UpperCase text-kai-blue border-b-2 border-kai-blue transition";
+  document.getElementById("kdak-lokasi-info-tab-upt").className = "kdak-lokasi-info-tab flex-1 py-3 text-xs font-bold tracking-widest UpperCase text-gray-400 border-b-2 border-transparent hover:text-gray-600 transition";
+  });
+document.getElementById("kdak-lokasi-info-tab-upt")?.addEventListener("click", () => {
+  document.getElementById("kdak-lokasi-info-panel-upt")?.classList.remove("hidden");
+  document.getElementById("kdak-lokasi-info-panel-lokasi")?.classList.add("hidden");
+  document.getElementById("kdak-lokasi-info-tab-upt").className = "kdak-lokasi-info-tab flex-1 py-3 text-xs font-bold tracking-widest UpperCase text-kai-blue border-b-2 border-kai-blue transition";
+  document.getElementById("kdak-lokasi-info-tab-lokasi").className = "kdak-lokasi-info-tab flex-1 py-3 text-xs font-bold tracking-widest UpperCase text-gray-400 border-b-2 border-transparent hover:text-gray-600 transition";
+  });
 
-  // ── Ketersediaan card ──
-  document
-    .getElementById("kdak-card-ketersediaan")
-    ?.addEventListener("click", () => {
-      document
-        .getElementById("kdak-ketersediaan-modal")
-        ?.classList.remove("hidden");
-      _renderKdakAvailBenchmarkTable("ketersediaan");
-    });
-  document
-    .getElementById("close-kdak-ketersediaan-modal")
-    ?.addEventListener("click", () => {
-      document
-        .getElementById("kdak-ketersediaan-modal")
-        ?.classList.add("hidden");
-    });
+// ── Ketersediaan card ──
+document.getElementById("kdak-card-ketersediaan")?.addEventListener("click", () => {
+  document.getElementById("kdak-ketersediaan-modal")?.classList.remove("hidden");
+    _renderKdakAvailBenchmarkTable("ketersediaan");
+  });
+document.getElementById("close-kdak-ketersediaan-modal")?.addEventListener("click", () => {
+  document.getElementById("kdak-ketersediaan-modal")?.classList.add("hidden");
+  });
 
-  // ── Benchmark card ──
-  document
-    .getElementById("kdak-card-benchmark")
-    ?.addEventListener("click", () => {
-      document
-        .getElementById("kdak-benchmark-modal")
-        ?.classList.remove("hidden");
-      _renderKdakAvailBenchmarkTable("benchmark");
-    });
-  document
-    .getElementById("close-kdak-benchmark-modal")
-    ?.addEventListener("click", () => {
-      document.getElementById("kdak-benchmark-modal")?.classList.add("hidden");
-    });
+// ── Benchmark card ──
+document.getElementById("kdak-card-benchmark")?.addEventListener("click", () => {
+  document.getElementById("kdak-benchmark-modal")?.classList.remove("hidden");
+    _renderKdakAvailBenchmarkTable("benchmark");
+  });
+document.getElementById("close-kdak-benchmark-modal")?.addEventListener("click", () => {
+    document.getElementById("kdak-benchmark-modal")?.classList.add("hidden");
+  });
 }
 
 // ── Shared helper: renders Ketersediaan or Benchmark table from matrix data ──
 function _renderKdakAvailBenchmarkTable(mode) {
-  const tbodyId =
-    mode === "ketersediaan"
-      ? "kdak-ketersediaan-table-body"
-      : "kdak-benchmark-table-body";
+  const tbodyId = mode === "ketersediaan" ? "kdak-ketersediaan-table-body" : "kdak-benchmark-table-body";
   const tbody = document.getElementById(tbodyId);
   if (!tbody) return;
 
@@ -6042,14 +6030,12 @@ function _renderKdakAvailBenchmarkTable(mode) {
   db.forEach((a) => {
     const uptCode = a.id_lokasi_raw || a.id_lokasi;
     if (!uptCode) return;
-    const parentCode =
-      uptDatabase.find((u) => u.upt === uptCode)?.lokasi || uptCode;
+    const parentCode = (uptDatabase.find((u) => u.upt === uptCode)?.lokasi) || uptCode;
     if (!assetsByParent[parentCode]) assetsByParent[parentCode] = [];
     assetsByParent[parentCode].push(a);
   });
 
-  tbody.innerHTML = lokasiData
-    .map((region) => {
+  tbody.innerHTML = lokasiData.map((region) => {
       const assets = assetsByParent[region.code] || [];
       const so = assets.filter((a) => a.status_terakhir === "SO").length;
       const total = assets.length;
@@ -6063,8 +6049,7 @@ function _renderKdakAvailBenchmarkTable(mode) {
         <td class="px-4 py-3 text-center font-bold text-kai-blue dark:text-blue-400">${avail !== null ? `${avail}%` : "—"}</td>
       </tr>`;
       } else {
-        const deltaStr =
-          delta !== null
+      const deltaStr = delta !== null
             ? `<span class="${delta >= 0 ? "text-green-500" : "text-red-500"}">${delta >= 0 ? "+" : ""}${delta}%</span>`
             : "—";
         return `<tr class="border-b border-gray-50 dark:border-gray-700/50 hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
@@ -6073,8 +6058,7 @@ function _renderKdakAvailBenchmarkTable(mode) {
         <td class="px-4 py-3 text-center font-bold">${deltaStr}</td>
       </tr>`;
       }
-    })
-    .join("");
+  }).join("");
 }
 
 // Init KDAK on DOMContentLoaded
@@ -6194,11 +6178,11 @@ function renderAfkirCards() {
   if (!container) return;
   const q = (
     document.getElementById("search-afkir")?.value || ""
-  ).toLowerCase();
+  ).toUpperCase();
   const filtered = _afkirDb.filter(
     (item) =>
-      (item.id_aset || "").toLowerCase().includes(q) ||
-      (item.kode_alat || "").toLowerCase().includes(q),
+      (item.id_aset || "").toUpperCase().includes(q) ||
+      (item.kode_alat || "").toUpperCase().includes(q),
   );
   if (!filtered.length) {
     container.innerHTML = `<div class="col-span-3 text-center text-gray-400 py-14">
