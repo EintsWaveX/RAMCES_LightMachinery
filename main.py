@@ -9,9 +9,12 @@ from fastapi import (
     WebSocket,
     WebSocketDisconnect,
     Query,
+    UploadFile,
+    File,
 )
+
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.security import OAuth2PasswordBearer
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session, joinedload
@@ -20,6 +23,9 @@ from typing import List, Optional
 from sqlalchemy import or_, func
 import bcrypt
 import jwt
+
+import pandas as pd
+from io import BytesIO
 
 # ── IMPORTS ────────────────────────────────────────────────────────
 import models
@@ -86,6 +92,7 @@ class LokasiCreate(BaseModel):
     id_lokasi: str
     nama_lokasi: str
     tipe: str
+    id_induk: Optional[str] = None
 
 
 class AsetCreate(BaseModel):
@@ -470,9 +477,14 @@ def create_master_lokasi(data: LokasiCreate, db: Session = Depends(get_db)):
         .first()
     ):
         raise HTTPException(status_code=400, detail="Nama lokasi sudah digunakan.")
+
+    # EKSEKUSI PENAMBAHAN id_induk DI SINI
     db.add(
         models.Lokasi(
-            id_lokasi=data.id_lokasi, nama_lokasi=data.nama_lokasi, tipe=data.tipe
+            id_lokasi=data.id_lokasi,
+            nama_lokasi=data.nama_lokasi,
+            tipe=data.tipe,
+            id_induk=data.id_induk,
         )
     )
     db.commit()
@@ -486,8 +498,11 @@ def update_master_lokasi(kode: str, data: LokasiCreate, db: Session = Depends(ge
     item = db.query(models.Lokasi).filter_by(id_lokasi=kode).first()
     if not item:
         raise HTTPException(status_code=404, detail="Lokasi tidak ditemukan.")
+
     item.nama_lokasi = data.nama_lokasi
     item.tipe = data.tipe
+    item.id_induk = data.id_induk  # Tambahkan baris ini
+
     db.commit()
     return {"message": "Lokasi diperbarui."}
 
@@ -580,6 +595,322 @@ async def create_aset(
     await manager.broadcast("REFRESH_ASSET_LIST")
 
     return {"message": "Aset berhasil ditambahkan", "id_aset": db_aset.id_aset}
+
+
+@app.post(
+    "/api/aset/import",
+    dependencies=[Depends(require_role(["SUPER_ADMIN", "ADMIN_WILAYAH"]))],
+)
+async def import_aset_massal(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: models.Pengguna = Depends(get_current_user),
+):
+    if not file.filename.endswith((".xlsx", ".xls")):
+        raise HTTPException(
+            status_code=400, detail="Format file harus berupa Excel (.xlsx / .xls)"
+        )
+
+    try:
+        content = await file.read()
+        # Baca ketiga sheet sekaligus dari satu file
+        df_kategori = pd.read_excel(BytesIO(content), sheet_name="Kategori Aset")
+        df_lokasi = pd.read_excel(BytesIO(content), sheet_name="Lokasi")
+        df_aset = pd.read_excel(BytesIO(content), sheet_name="Aset")
+    except Exception as e:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Gagal membaca file. Pastikan nama sheet tepat: 'Kategori Aset', 'Lokasi', dan 'Aset'. Error: {str(e)}",
+        )
+
+    # 1. TARIK STATE DATABASE EKSISTING KE MEMORI
+    db_kategori = {
+        k.kode_alat: k.nama_alat for k in db.query(models.KategoriAlat).all()
+    }
+    db_lokasi_records = db.query(models.Lokasi.id_lokasi, models.Lokasi.id_induk).all()
+    db_lokasi = {
+        r.id_lokasi: (r.id_induk if r.id_induk else r.id_lokasi)
+        for r in db_lokasi_records
+    }
+
+    errors = []
+
+    # Antrean Objek SQLAlchemy
+    kategori_to_insert = []
+    lokasi_to_insert = []
+    aset_to_insert = []
+    riwayat_to_insert = []
+
+    # ==========================================
+    # FASE 1: ORKESTRASI MASTER DATA (KATEGORI)
+    # ==========================================
+    for index, row in df_kategori.iterrows():
+        baris = index + 2
+        kode = str(row.get("Kode Aset", "")).strip().upper()
+        nama = str(row.get("Nama Alat", "")).strip().upper()
+
+        if not kode or kode == "NAN":
+            continue
+        if kode in db_kategori:
+            continue  # Abaikan jika sudah ada
+
+        if not nama or nama == "NAN":
+            errors.append(
+                {
+                    "baris": baris,
+                    "kolom": "Nama Alat",
+                    "pesan": f"Nama Alat untuk kode '{kode}' kosong di sheet Kategori.",
+                }
+            )
+            continue
+
+        # Daftarkan ke antrean insert & daftarkan ke memori lokal untuk validasi sheet Aset nanti
+        kategori_to_insert.append(models.KategoriAlat(kode_alat=kode, nama_alat=nama))
+        db_kategori[kode] = nama
+
+    # ==========================================
+    # FASE 2: ORKESTRASI MASTER DATA (LOKASI)
+    # ==========================================
+    for index, row in df_lokasi.iterrows():
+        baris = index + 2
+        id_lok = str(row.get("ID Lokasi", "")).strip().upper()
+        nama_lok = str(row.get("Nama", "")).strip().upper()
+        tipe_lok = str(row.get("Tipe Lokasi", "")).strip().upper()
+        id_induk = str(row.get("ID Induk", "")).strip().upper()
+
+        if not id_lok or id_lok == "NAN":
+            continue
+        if id_lok in db_lokasi:
+            continue
+
+        id_induk_final = (
+            None if (id_induk == "-" or id_induk == "NAN" or not id_induk) else id_induk
+        )
+
+        if id_induk_final and id_induk_final not in db_lokasi:
+            errors.append(
+                {
+                    "baris": baris,
+                    "kolom": "ID Induk",
+                    "pesan": f"Di sheet Lokasi, ID Induk '{id_induk_final}' tidak ditemukan. Pastikan Induk diketik di baris sebelum anak.",
+                }
+            )
+            continue
+
+        lokasi_to_insert.append(
+            models.Lokasi(
+                id_lokasi=id_lok,
+                nama_lokasi=nama_lok,
+                tipe=tipe_lok,
+                id_induk=id_induk_final,
+            )
+        )
+        db_lokasi[id_lok] = id_induk_final if id_induk_final else id_lok
+
+    # ==========================================
+    # FASE 3: PRE-VALIDATION TRANSAKSI ASET
+    # ==========================================
+    df_aset.columns = df_aset.columns.str.strip().str.title()
+    peruntukan_valid = {"jalan rel", "jembatan", "mekanik", "balaiyasa"}
+    peruntukan_map = {
+        "jalan rel": "A",
+        "jembatan": "B",
+        "mekanik": "C",
+        "balaiyasa": "D",
+    }
+    validated_aset_rows = []
+
+    for index, row in df_aset.iterrows():
+        baris_excel = index + 2
+
+        kode_alat = str(row.get("Kategori Aset", "")).strip().upper()
+        id_lokasi = str(row.get("Id Lokasi", "")).strip().upper()
+        sumber = str(row.get("Sumber Pengadaan", "")).strip().upper()
+        peruntukan = str(row.get("Peruntukan", "")).strip().lower()
+        keterangan_excel = str(row.get("Keterangan", "")).strip()
+
+        if (not kode_alat or kode_alat == "NAN") and (
+            not id_lokasi or id_lokasi == "NAN"
+        ):
+            continue
+
+        # Karena memori db_kategori & db_lokasi sudah diperbarui di Fase 1 & 2,
+        # validasi di bawah ini TIDAK AKAN error jika operator mengisinya di sheet master Excel yang sama.
+        if not kode_alat or kode_alat == "NAN":
+            errors.append(
+                {
+                    "baris": baris_excel,
+                    "kolom": "Kode Aset",
+                    "pesan": "Tidak boleh kosong.",
+                }
+            )
+        elif kode_alat not in db_kategori:
+            errors.append(
+                {
+                    "baris": baris_excel,
+                    "kolom": "Kode Aset",
+                    "pesan": f"Kode '{kode_alat}' tidak ada di sheet Kategori maupun Database.",
+                }
+            )
+
+        if not id_lokasi or id_lokasi == "NAN":
+            errors.append(
+                {
+                    "baris": baris_excel,
+                    "kolom": "ID Lokasi",
+                    "pesan": "Tidak boleh kosong.",
+                }
+            )
+        elif id_lokasi not in db_lokasi:
+            errors.append(
+                {
+                    "baris": baris_excel,
+                    "kolom": "ID Lokasi",
+                    "pesan": f"Lokasi '{id_lokasi}' tidak ada di sheet Lokasi maupun Database.",
+                }
+            )
+
+        if peruntukan not in peruntukan_valid:
+            errors.append(
+                {
+                    "baris": baris_excel,
+                    "kolom": "Peruntukan",
+                    "pesan": "Isi eksak: jalan rel, jembatan, mekanik, atau balaiyasa.",
+                }
+            )
+
+        tgl_beli_raw = row.get("Tanggal Pembelian")
+        tgl_beli_valid = None
+        if pd.isna(tgl_beli_raw):
+            errors.append(
+                {
+                    "baris": baris_excel,
+                    "kolom": "Tanggal Pembelian",
+                    "pesan": "Tidak boleh kosong.",
+                }
+            )
+        else:
+            try:
+                tgl_beli_valid = pd.to_datetime(tgl_beli_raw).date()
+            except:
+                errors.append(
+                    {
+                        "baris": baris_excel,
+                        "kolom": "Tanggal Pembelian",
+                        "pesan": "Format salah (Gunakan YYYY-MM-DD).",
+                    }
+                )
+
+        if not sumber or sumber == "NAN":
+            errors.append(
+                {
+                    "baris": baris_excel,
+                    "kolom": "Sumber Pengadaan",
+                    "pesan": "Tidak boleh kosong.",
+                }
+            )
+
+        if not errors:
+            validated_aset_rows.append(
+                {
+                    "kode_alat": kode_alat,
+                    "id_lokasi": id_lokasi,
+                    "parent_lokasi": db_lokasi[id_lokasi],
+                    "tanggal_pembelian": tgl_beli_valid,
+                    "sumber_pengadaan": "PUSAT" if "PUSAT" in sumber else "DAOP/DIVRE",
+                    "peruntukan": peruntukan,
+                    "kode_peruntukan": peruntukan_map[peruntukan],
+                    "keterangan": keterangan_excel
+                    if keterangan_excel and keterangan_excel != "nan"
+                    else "Pencatatan aset baru via Import Massal",
+                }
+            )
+
+    # ==========================================
+    # FASE 4: THE GATEKEEPER
+    # ==========================================
+    if errors:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "message": "Validasi gagal. Ditemukan kesalahan pada file Excel. Tidak ada data yang dimasukkan ke sistem.",
+                "total_error": len(errors),
+                "errors": errors,
+            },
+        )
+
+    # ==========================================
+    # FASE 5: ATOMIC EXECUTION UNTUK SELURUH SHEET
+    # ==========================================
+    try:
+        # Eksekusi Master Data terlebih dahulu agar Foreign Key Aset valid di tingkat database
+        if kategori_to_insert:
+            db.add_all(kategori_to_insert)
+        if lokasi_to_insert:
+            db.add_all(lokasi_to_insert)
+        db.flush()  # Sinkronisasi ID ke session tanpa commit
+
+        aset_counts_query = (
+            db.query(models.Aset.kode_alat, func.count(models.Aset.id_aset))
+            .group_by(models.Aset.kode_alat)
+            .all()
+        )
+        in_memory_counter = {kode: count for kode, count in aset_counts_query}
+
+        for data in validated_aset_rows:
+            ka = data["kode_alat"]
+            current_count = in_memory_counter.get(ka, 0)
+            nomor_urut = current_count + 1
+            in_memory_counter[ka] = nomor_urut
+
+            id_pengadaan = 1 if data["sumber_pengadaan"] == "PUSAT" else 2
+            tahun = data["tanggal_pembelian"].year
+            year_str = str(tahun)[-2:] if tahun >= 2000 else str(tahun)
+
+            generated_id_aset = f"{nomor_urut}.{ka}.{id_pengadaan}.{year_str}.{data['kode_peruntukan']}.{data['parent_lokasi']}"
+
+            aset_to_insert.append(
+                models.Aset(
+                    id_aset=generated_id_aset,
+                    kode_alat=ka,
+                    id_lokasi=data["id_lokasi"],
+                    tanggal_pembelian=data["tanggal_pembelian"],
+                    sumber_pengadaan=data["sumber_pengadaan"],
+                    status_terakhir="SO",
+                    peruntukan=data["peruntukan"].lower(),
+                )
+            )
+
+            riwayat_to_insert.append(
+                models.RiwayatKondisi(
+                    id_aset=generated_id_aset,
+                    id_pengguna=current_user.id_pengguna,
+                    kondisi="SO",
+                    keterangan=data["keterangan"],
+                )
+            )
+
+        if aset_to_insert:
+            db.add_all(aset_to_insert)
+        if riwayat_to_insert:
+            db.add_all(riwayat_to_insert)
+
+        db.commit()
+
+        import asyncio
+
+        asyncio.create_task(manager.broadcast("REFRESH_ASSET_LIST"))
+
+        return {
+            "message": f"Berhasil mengimpor {len(kategori_to_insert)} Kategori baru, {len(lokasi_to_insert)} Lokasi baru, dan {len(aset_to_insert)} Aset secara massal."
+        }
+
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Terjadi kegagalan sistem saat penulisan database: {str(e)}",
+        )
 
 
 @app.get("/api/aset")
@@ -782,7 +1113,7 @@ def get_riwayat_aset(
         .order_by(models.RiwayatKondisi.waktu_lapor.asc())
         .all()
     )
-    
+
     return [
         {
             "no": i,
@@ -827,7 +1158,10 @@ async def create_kalibrasi(
     db.commit()
     db.refresh(record)
     await manager.broadcast("REFRESH_ASSET_LIST")
-    return {"message": "Laporan kalibrasi berhasil disimpan.", "id_kalibrasi": record.id_kalibrasi}
+    return {
+        "message": "Laporan kalibrasi berhasil disimpan.",
+        "id_kalibrasi": record.id_kalibrasi,
+    }
 
 
 @app.get("/api/kalibrasi/{id_aset}")
@@ -839,28 +1173,39 @@ def get_kalibrasi_by_aset(
     riwayat = (
         db.query(models.RiwayatKalibrasi)
         .filter(models.RiwayatKalibrasi.id_aset == id_aset)
-        .order_by(models.RiwayatKalibrasi.tanggal_kalibrasi.asc(), models.RiwayatKalibrasi.waktu_input.asc())
+        .order_by(
+            models.RiwayatKalibrasi.tanggal_kalibrasi.asc(),
+            models.RiwayatKalibrasi.waktu_input.asc(),
+        )
         .all()
     )
 
     pengguna_ids = {r.id_pengguna for r in riwayat if r.id_pengguna}
     pengguna_map = {
         p.id_pengguna: p.username
-        for p in db.query(models.Pengguna).filter(models.Pengguna.id_pengguna.in_(pengguna_ids)).all()
+        for p in db.query(models.Pengguna)
+        .filter(models.Pengguna.id_pengguna.in_(pengguna_ids))
+        .all()
     }
 
     return [
         {
             "no": i,
             "id_kalibrasi": r.id_kalibrasi,
-            "tanggal_kalibrasi": str(r.tanggal_kalibrasi) if r.tanggal_kalibrasi else None,
+            "tanggal_kalibrasi": str(r.tanggal_kalibrasi)
+            if r.tanggal_kalibrasi
+            else None,
             "tanggal_berlaku": str(r.tanggal_berlaku) if r.tanggal_berlaku else None,
             "status": r.status,
             "pelaksana_kalibrasi": r.pelaksana_kalibrasi or "—",
             "nomor_sertifikat": r.nomor_sertifikat or "—",
             "keterangan": r.keterangan or "—",
-            "waktu_input": r.waktu_input.strftime("%Y-%m-%d %H:%M:%S") if r.waktu_input else None,
-            "id_pengguna": pengguna_map.get(r.id_pengguna, str(r.id_pengguna) if r.id_pengguna else "—"),
+            "waktu_input": r.waktu_input.strftime("%Y-%m-%d %H:%M:%S")
+            if r.waktu_input
+            else None,
+            "id_pengguna": pengguna_map.get(
+                r.id_pengguna, str(r.id_pengguna) if r.id_pengguna else "—"
+            ),
         }
         for i, r in enumerate(riwayat, start=1)
     ]
@@ -912,7 +1257,7 @@ def get_mutasi_by_aset(
                 "alasan_mutasi": m.alasan_mutasi or "—",
             }
         )
-        
+
     original_lokasi_obj = (
         db.query(models.Lokasi).filter_by(id_lokasi=original_lokasi).first()
         if original_lokasi and original_lokasi != "—"
@@ -921,7 +1266,9 @@ def get_mutasi_by_aset(
     return {
         "mutasi": results,
         "original_lokasi": original_lokasi,
-        "original_lokasi_name": original_lokasi_obj.nama_lokasi if original_lokasi_obj else original_lokasi,
+        "original_lokasi_name": original_lokasi_obj.nama_lokasi
+        if original_lokasi_obj
+        else original_lokasi,
         "sudah_kembali": aset.id_lokasi == original_lokasi if aset else False,
         "lokasi_sekarang": aset.id_lokasi if aset else "—",
         "lokasi_sekarang_name": aset.lokasi_ref.nama_lokasi
@@ -1054,12 +1401,15 @@ def get_history_summary(
                     )
                     if latest_kalibrasi and latest_kalibrasi.tanggal_kalibrasi
                     else None,
-                    "latest_status": latest_kalibrasi.status if latest_kalibrasi else None,
+                    "latest_status": latest_kalibrasi.status
+                    if latest_kalibrasi
+                    else None,
                     "latest_pelaksana": latest_kalibrasi.pelaksana_kalibrasi
                     if latest_kalibrasi and latest_kalibrasi.pelaksana_kalibrasi
                     else (
                         pengguna_map.get(latest_kalibrasi.id_pengguna).username
-                        if latest_kalibrasi and latest_kalibrasi.id_pengguna in pengguna_map
+                        if latest_kalibrasi
+                        and latest_kalibrasi.id_pengguna in pengguna_map
                         else None
                     ),
                     "latest_nomor_sertifikat": latest_kalibrasi.nomor_sertifikat
@@ -1098,9 +1448,7 @@ def get_history_summary(
                     else a.id_lokasi,
                     "original_lokasi_name": all_mutasi_for_a[0].lokasi_asal.nama_lokasi
                     if all_mutasi_for_a and all_mutasi_for_a[0].lokasi_asal
-                    else (
-                        a.lokasi_ref.nama_lokasi if a.lokasi_ref else a.id_lokasi
-                    ),
+                    else (a.lokasi_ref.nama_lokasi if a.lokasi_ref else a.id_lokasi),
                 }
                 if all_mutasi_for_a
                 else None,

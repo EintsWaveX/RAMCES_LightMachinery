@@ -32,6 +32,12 @@ class Lokasi(Base):
 
     asets = relationship("Aset", back_populates="lokasi_ref")
 
+    id_induk = Column(String(10), ForeignKey("lokasi.id_lokasi"), nullable=True)
+
+    # sub_lokasi = relationship(
+    #     "Lokasi", backref=backref("induk", remote_side="Lokasi.id_lokasi")
+    # )
+
 
 class Pengguna(Base):
     __tablename__ = "pengguna"
