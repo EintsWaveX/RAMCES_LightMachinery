@@ -5795,7 +5795,7 @@ async function downloadKdakSampleExcel() {
 
     // Beri nama file yang mencantumkan tanggal real-time
     const dateStr = new Date().toISOString().slice(0, 10);
-    a.download = `Template_Import_SIMAKAI_${dateStr}.xlsx`;
+    a.download = `Template_Import_RAMCES_${dateStr}.xlsx`;
 
     document.body.appendChild(a);
     a.click();

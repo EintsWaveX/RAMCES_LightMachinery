@@ -656,7 +656,7 @@ def download_dynamic_template(db: Session = Depends(get_db)):
     buffer.seek(0)
 
     headers = {
-        "Content-Disposition": 'attachment; filename="Template_Import_SIMAKAI.xlsx"'
+        "Content-Disposition": 'attachment; filename="Template_Import_RAMCES.xlsx"'
     }
 
     return StreamingResponse(

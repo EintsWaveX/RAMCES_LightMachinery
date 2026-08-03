@@ -1,7 +1,6 @@
 *.json
 *.sql
 *.bak
-*.xlsx
 
 __pycache__
 .vscode
