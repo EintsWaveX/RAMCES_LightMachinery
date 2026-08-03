@@ -1,6 +1,7 @@
 *.json
 *.sql
 *.bak
+*.xlsx
 
 __pycache__
 .vscode
@@ -9,3 +10,4 @@ temp
 
 inject.py
 seed.py
+database.py
