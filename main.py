@@ -14,7 +14,7 @@ from fastapi import (
 )
 
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import StreamingResponse, FileResponse, JSONResponse
 from fastapi.security import OAuth2PasswordBearer
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session, joinedload
@@ -31,6 +31,9 @@ from io import BytesIO
 import models
 from database import engine, SessionLocal
 from pydantic import BaseModel
+
+import openpyxl
+from openpyxl.styles import Border, Side
 
 
 def parse_ctx_upt_from_keterangan(keterangan: Optional[str]) -> str:
@@ -595,6 +598,72 @@ async def create_aset(
     await manager.broadcast("REFRESH_ASSET_LIST")
 
     return {"message": "Aset berhasil ditambahkan", "id_aset": db_aset.id_aset}
+
+
+@app.get("/api/export/template")
+def download_dynamic_template(db: Session = Depends(get_db)):
+    template_path = os.path.join(BASE_DIR, "Template Import.xlsx")
+    if not os.path.exists(template_path):
+        raise HTTPException(
+            status_code=404, detail="File template fisik tidak ditemukan di server."
+        )
+
+    wb = openpyxl.load_workbook(template_path)
+
+    # Definisikan gaya garis tepi (border tipis standar Excel)
+    thin_border = Border(
+        left=Side(style="thin"),
+        right=Side(style="thin"),
+        top=Side(style="thin"),
+        bottom=Side(style="thin"),
+    )
+
+    # Injeksi Data Sheet: Kategori Aset
+    sheet_kategori = wb["Kategori Aset"]
+    if sheet_kategori.max_row > 1:
+        sheet_kategori.delete_rows(2, sheet_kategori.max_row)
+
+    kategori_data = db.query(models.KategoriAlat).all()
+    for row_idx, kat in enumerate(kategori_data, start=2):
+        c1 = sheet_kategori.cell(row=row_idx, column=1, value=kat.kode_alat)
+        c2 = sheet_kategori.cell(row=row_idx, column=2, value=kat.nama_alat)
+
+        c1.border = thin_border
+        c2.border = thin_border
+
+    # Injeksi Data Sheet: Lokasi
+    sheet_lokasi = wb["Lokasi"]
+    if sheet_lokasi.max_row > 1:
+        sheet_lokasi.delete_rows(2, sheet_lokasi.max_row)
+
+    lokasi_data = db.query(models.Lokasi).all()
+    for row_idx, lok in enumerate(lokasi_data, start=2):
+        c1 = sheet_lokasi.cell(row=row_idx, column=1, value=lok.id_lokasi)
+        c2 = sheet_lokasi.cell(row=row_idx, column=2, value=lok.nama_lokasi)
+        c3 = sheet_lokasi.cell(row=row_idx, column=3, value=lok.tipe)
+        c4 = sheet_lokasi.cell(
+            row=row_idx, column=4, value=lok.id_induk if lok.id_induk else "-"
+        )
+
+        c1.border = thin_border
+        c2.border = thin_border
+        c3.border = thin_border
+        c4.border = thin_border
+
+    # Simpan ke Memory Buffer
+    buffer = BytesIO()
+    wb.save(buffer)
+    buffer.seek(0)
+
+    headers = {
+        "Content-Disposition": 'attachment; filename="Template_Import_SIMAKAI.xlsx"'
+    }
+
+    return StreamingResponse(
+        buffer,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers=headers,
+    )
 
 
 @app.post(

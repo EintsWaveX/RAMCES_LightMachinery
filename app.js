@@ -5767,19 +5767,47 @@ function _setTerbaruPreset(preset) {
   _renderTerbaruList(from, to);
 }
 
-// ── Sample Excel download ──
-function downloadKdakSampleExcel() {
-  // Ganti dengan URL file yang ingin diunduh
-  const fileUrl =
-    "https://docs.google.com/spreadsheets/d/1iikaIYuwpFQ2YXUAvWohyfmXJyToG1deIIZYT4l3sIk/export?format=xlsx";
+// ── Dynamic Excel Template Download ──
+async function downloadKdakSampleExcel() {
+  showToast("Membangun template dinamis dari database...", "info");
 
-  // Membuat elemen <a> untuk mengunduh
-  const a = document.createElement("a");
-  a.href = fileUrl;
-  a.download = "Sample_Excel.xlsx"; // Nama file yang akan diunduh
-  document.body.appendChild(a);
-  a.click(); // Mengklik elemen untuk memulai unduhan
-  document.body.removeChild(a); // Menghapus elemen setelah selesai
+  try {
+    // Gunakan apiFetch untuk menangani Authorization header secara otomatis
+    const res = await apiFetch("/export/template", { method: "GET" });
+
+    if (!res.ok) {
+      const errText = await res.text();
+      let errMsg = "Gagal mengunduh template.";
+      try {
+        const errJson = JSON.parse(errText);
+        errMsg = errJson.detail || errMsg;
+      } catch (e) {}
+      throw new Error(errMsg);
+    }
+
+    // Ekstrak stream biner ke dalam objek Blob
+    const blob = await res.blob();
+    const url = window.URL.createObjectURL(blob);
+
+    // Eksekusi klik bayangan untuk memicu unduhan browser
+    const a = document.createElement("a");
+    a.href = url;
+
+    // Beri nama file yang mencantumkan tanggal real-time
+    const dateStr = new Date().toISOString().slice(0, 10);
+    a.download = `Template_Import_SIMAKAI_${dateStr}.xlsx`;
+
+    document.body.appendChild(a);
+    a.click();
+
+    // Pembersihan memori browser
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(url);
+
+    showToast("Template dinamis berhasil diunduh.", "success");
+  } catch (error) {
+    showToast(error.message, "error");
+  }
 }
 
 // ── Import Excel handler ──
