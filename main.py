@@ -98,6 +98,15 @@ class AsetCreate(BaseModel):
     peruntukan: str
 
 
+class AsetUpdate(BaseModel):
+    kode_alat: str
+    id_lokasi: str
+    tanggal_pembelian: date
+    sumber_pengadaan: str
+    parent_lokasi: str
+    peruntukan: str
+
+
 class PerbaikanCreate(BaseModel):
     id_aset: str
     kondisi: str
@@ -906,9 +915,9 @@ def get_mutasi_by_aset(
                 "waktu_mutasi": m.waktu_mutasi.strftime("%Y-%m-%d %H:%M:%S")
                 if m.waktu_mutasi
                 else None,
-                "id_pengguna": m.pengguna_ref.username
+                "nama_petugas": m.pengguna_ref.username
                 if m.pengguna_ref
-                else m.id_pengguna,
+                else (str(m.id_pengguna) if m.id_pengguna else "—"),
                 "alasan_mutasi": m.alasan_mutasi or "—",
             }
         )
@@ -1247,6 +1256,90 @@ async def delete_aset(
     return {"message": f"Aset {id_aset} berhasil dihapus permanen."}
 
 
+@app.put("/api/aset/{id_aset}")
+async def update_aset(
+    id_aset: str,
+    aset_in: AsetUpdate,
+    db: Session = Depends(get_db),
+    current_user: models.Pengguna = Depends(
+        require_role(["SUPER_ADMIN", "ADMIN_WILAYAH"])
+    ),
+):
+    old_aset = db.query(models.Aset).filter_by(id_aset=id_aset).first()
+    if not old_aset:
+        raise HTTPException(status_code=404, detail="Aset tidak ditemukan.")
+
+    if (
+        current_user.role == "ADMIN_WILAYAH"
+        and old_aset.id_lokasi != current_user.id_lokasi
+    ):
+        raise HTTPException(
+            status_code=403, detail="Hanya bisa mengedit aset dari wilayah Anda."
+        )
+
+    # Rebuild the generated ID from updated fields
+    peruntukan_map = {"JALAN REL": "A", "JEMBATAN": "B", "MEKANIK": "C", "BALAIYASA": "D"}
+    kode_peruntukan = peruntukan_map.get(aset_in.peruntukan.upper(), "X")
+    id_pengadaan = 1 if aset_in.sumber_pengadaan == "PUSAT" else 2
+    tahun = aset_in.tanggal_pembelian.year
+    year_str = str(tahun)[-2:] if tahun >= 2000 else str(tahun)
+
+    # Preserve original sequence number from the old ID
+    old_parts = id_aset.split(".")
+    nomor_urut = old_parts[0] if old_parts[0].isdigit() else "1"
+
+    new_id_aset = f"{nomor_urut}.{aset_in.kode_alat}.{id_pengadaan}.{year_str}.{kode_peruntukan}.{aset_in.parent_lokasi}"
+
+    if new_id_aset == id_aset:
+        # ID unchanged — simple field update
+        old_aset.kode_alat = aset_in.kode_alat
+        old_aset.id_lokasi = aset_in.id_lokasi
+        old_aset.tanggal_pembelian = aset_in.tanggal_pembelian
+        old_aset.sumber_pengadaan = aset_in.sumber_pengadaan
+        old_aset.peruntukan = aset_in.peruntukan.upper()
+        db.commit()
+        await manager.broadcast("REFRESH_ASSET_LIST")
+        return {"message": "Aset berhasil diperbarui.", "id_aset": new_id_aset}
+
+    # ID changes — check for collision
+    if db.query(models.Aset).filter_by(id_aset=new_id_aset).first():
+        raise HTTPException(
+            status_code=400,
+            detail=f"ID baru '{new_id_aset}' sudah digunakan oleh aset lain."
+        )
+
+    # 1. Insert new aset row first so FK target exists before child records point to it
+    new_aset = models.Aset(
+        id_aset=new_id_aset,
+        kode_alat=aset_in.kode_alat,
+        id_lokasi=aset_in.id_lokasi,
+        tanggal_pembelian=aset_in.tanggal_pembelian,
+        sumber_pengadaan=aset_in.sumber_pengadaan,
+        status_terakhir=old_aset.status_terakhir,
+        peruntukan=aset_in.peruntukan.upper(),
+    )
+    db.add(new_aset)
+    db.flush()  # write new_aset row; FK target now exists in DB
+
+    # 2. Re-parent all child records to the new ID (FK target now valid)
+    db.query(models.RiwayatKondisi).filter_by(id_aset=id_aset).update(
+        {"id_aset": new_id_aset}, synchronize_session=False
+    )
+    db.query(models.RiwayatMutasi).filter_by(id_aset=id_aset).update(
+        {"id_aset": new_id_aset}, synchronize_session=False
+    )
+    db.query(models.RiwayatKalibrasi).filter_by(id_aset=id_aset).update(
+        {"id_aset": new_id_aset}, synchronize_session=False
+    )
+
+    # 3. Now safe to delete the old aset row (no children reference it anymore)
+    db.delete(old_aset)
+    db.commit()
+
+    await manager.broadcast("REFRESH_ASSET_LIST")
+    return {"message": "Aset berhasil diperbarui.", "id_aset": new_id_aset}
+
+
 # ==================================================================
 # ── PUBLIC ENDPOINTS (Landing Page / QR) ──────────────────────────
 # ==================================================================
@@ -1274,66 +1367,55 @@ def get_public_aset(id_aset: str, db: Session = Depends(get_db)):
 
 
 # ==================================================================
-# ── STATIC FILES ──────────────────────────────────────────────────
+# ── ASSET FILES ──────────────────────────────────────────────────
 # ==================================================================
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-app.mount("/static", StaticFiles(directory=BASE_DIR), name="static")
 
+assets_dir = os.path.join(BASE_DIR, "assets")
+if os.path.exists(assets_dir):
+    app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
 
 @app.get("/")
 async def serve_index():
     return FileResponse(os.path.join(BASE_DIR, "index.html"))
 
-
-@app.get("/{file_name}.html")
-async def serve_html(file_name: str):
-    # Sanitize: only allow alphanumeric, hyphen, underscore
-    if not re.match(r"^[a-zA-Z0-9_-]+$", file_name):
-        raise HTTPException(status_code=400, detail="Invalid filename.")
-
-    path = os.path.join(BASE_DIR, f"{file_name}.html")
-    # Ensure path is within BASE_DIR (prevent traversal)
+@app.get("/{file_path:path}")
+async def serve_static(file_path: str):
+    # Prevent directory traversal
+    if ".." in file_path or file_path.startswith("/"):
+        raise HTTPException(status_code=403, detail="Access denied.")
+    
+    allowed_extensions = {'.html', '.js', '.css', '.svg', '.png', '.jpg', '.jpeg', '.gif', '.ico', '.webp'}
+    ext = os.path.splitext(file_path)[1].lower()
+    if ext not in allowed_extensions:
+        raise HTTPException(status_code=404, detail="File not found.")
+    
+    path = os.path.join(BASE_DIR, file_path)
     real_path = os.path.realpath(path)
     real_base = os.path.realpath(BASE_DIR)
+    
     if not real_path.startswith(real_base):
         raise HTTPException(status_code=403, detail="Access denied.")
-
+    
     if os.path.exists(real_path) and os.path.isfile(real_path):
-        return FileResponse(real_path)
-    raise HTTPException(status_code=404, detail="File not found.")
-
-
-@app.get("/{file_name}.js")
-async def serve_js(file_name: str):
-    # Sanitize: only allow alphanumeric, hyphen, underscore
-    if not re.match(r"^[a-zA-Z0-9_-]+$", file_name):
-        raise HTTPException(status_code=400, detail="Invalid filename.")
-
-    path = os.path.join(BASE_DIR, f"{file_name}.js")
-    # Ensure path is within BASE_DIR (prevent traversal)
-    real_path = os.path.realpath(path)
-    real_base = os.path.realpath(BASE_DIR)
-    if not real_path.startswith(real_base):
-        raise HTTPException(status_code=403, detail="Access denied.")
-
-    if os.path.exists(real_path) and os.path.isfile(real_path):
-        return FileResponse(real_path, media_type="application/javascript")
-    raise HTTPException(status_code=404, detail="File not found.")
-
-
-@app.get("/{file_name}.css")
-async def serve_css(file_name: str):
-    # Sanitize: only allow alphanumeric, hyphen, underscore
-    if not re.match(r"^[a-zA-Z0-9_-]+$", file_name):
-        raise HTTPException(status_code=400, detail="Invalid filename.")
-
-    path = os.path.join(BASE_DIR, f"{file_name}.css")
-    # Ensure path is within BASE_DIR (prevent traversal)
-    real_path = os.path.realpath(path)
-    real_base = os.path.realpath(BASE_DIR)
-    if not real_path.startswith(real_base):
-        raise HTTPException(status_code=403, detail="Access denied.")
-
-    if os.path.exists(real_path) and os.path.isfile(real_path):
-        return FileResponse(real_path, media_type="text/css")
+        media_type = None
+        if ext == '.svg':
+            media_type = "image/svg+xml"
+        elif ext == '.png':
+            media_type = "image/png"
+        elif ext == '.jpg' or ext == '.jpeg':
+            media_type = "image/jpeg"
+        elif ext == '.gif':
+            media_type = "image/gif"
+        elif ext == '.ico':
+            media_type = "image/x-icon"
+        elif ext == '.webp':
+            media_type = "image/webp"
+        elif ext == '.css':
+            media_type = "text/css"
+        elif ext == '.js':
+            media_type = "application/javascript"
+        
+        return FileResponse(real_path, media_type=media_type)
+    
     raise HTTPException(status_code=404, detail="File not found.")
