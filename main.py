@@ -1063,6 +1063,21 @@ def get_history_summary(
                     )
                     if latest_kalibrasi and latest_kalibrasi.tanggal_kalibrasi
                     else None,
+                    "latest_tanggal_kalibrasi": latest_kalibrasi.tanggal_kalibrasi.strftime(
+                        "%Y-%m-%d"
+                    )
+                    if latest_kalibrasi and latest_kalibrasi.tanggal_kalibrasi
+                    else None,
+                    "latest_berlaku": latest_kalibrasi.tanggal_berlaku.strftime(
+                        "%Y-%m-%d"
+                    )
+                    if latest_kalibrasi and latest_kalibrasi.tanggal_berlaku
+                    else None,
+                    "latest_waktu_input": latest_kalibrasi.waktu_input.strftime(
+                        "%Y-%m-%d %H:%M:%S"
+                    )
+                    if latest_kalibrasi and latest_kalibrasi.waktu_input
+                    else None,
                     "latest_status": latest_kalibrasi.status if latest_kalibrasi else None,
                     "latest_pelaksana": latest_kalibrasi.pelaksana_kalibrasi
                     if latest_kalibrasi and latest_kalibrasi.pelaksana_kalibrasi
