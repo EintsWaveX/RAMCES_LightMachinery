@@ -27,14 +27,6 @@ from database import engine, SessionLocal
 from pydantic import BaseModel
 
 
-def parse_ctx_upt_from_keterangan(keterangan: Optional[str]) -> str:
-    """Extract [UPT: value] from keterangan context tags."""
-    if not keterangan:
-        return "—"
-    match = re.search(r"\[UPT:\s*([^\]]+)\]", keterangan)
-    return match.group(1).strip() if match else "—"
-
-
 # Inisialisasi Database
 models.Base.metadata.create_all(bind=engine)
 load_dotenv()
@@ -112,6 +104,7 @@ class PerbaikanCreate(BaseModel):
     kondisi: str
     keterangan: Optional[str] = "-"
     peruntukan: Optional[str] = None
+    id_lokasi: Optional[str] = None
 
 
 class MutasiCreate(BaseModel):
@@ -693,18 +686,31 @@ async def catat_perbaikan(
     if not aset:
         raise HTTPException(status_code=404, detail="Aset tidak ditemukan.")
 
-    # NORMALISASI INPUT PERUNTUKAN DI SINI
+    # # NORMALISASI INPUT PERUNTUKAN DI SINI
+    # if laporan.peruntukan:
+    #     p_val = laporan.peruntukan.strip().upper()
+    #     # Pemetaan ketat jika frontend mengirimkan A, B, C, D alih-alih teks penuh
+    #     peruntukan_map = {
+    #         "a": "JALAN REL",
+    #         "b": "JEMBATAN",
+    #         "c": "MEKANIK",
+    #         "d": "BALAIYASA",
+    #     }
+    #     # Gunakan mapping, atau gunakan nilai aslinya jika sudah berupa teks penuh
+    #     aset.peruntukan = peruntukan_map.get(p_val, p_val)
+
+    # Normalise peruntukan for per-row storage (accepts A/B/C/D or full text)
+    peruntukan_row = None
     if laporan.peruntukan:
         p_val = laporan.peruntukan.strip().upper()
-        # Pemetaan ketat jika frontend mengirimkan A, B, C, D alih-alih teks penuh
-        peruntukan_map = {
-            "a": "JALAN REL",
-            "b": "JEMBATAN",
-            "c": "MEKANIK",
-            "d": "BALAIYASA",
+        peruntukan_map_row = {
+            "A": "JALAN REL", "B": "JEMBATAN", "C": "MEKANIK", "D": "BALAIYASA",
+            "JALAN REL": "JALAN REL", "JEMBATAN": "JEMBATAN", "MEKANIK": "MEKANIK", "BALAIYASA": "BALAIYASA"
         }
-        # Gunakan mapping, atau gunakan nilai aslinya jika sudah berupa teks penuh
-        aset.peruntukan = peruntukan_map.get(p_val, p_val)
+        peruntukan_row = peruntukan_map_row.get(p_val, laporan.peruntukan.upper())
+
+    # Resolve lokasi: prefer the sent id_lokasi, fall back to aset's current lokasi
+    id_lokasi_row = laporan.id_lokasi or aset.id_lokasi
 
     db.add(
         models.RiwayatKondisi(
@@ -712,11 +718,11 @@ async def catat_perbaikan(
             id_pengguna=current_user.id_pengguna,
             kondisi=laporan.kondisi,
             keterangan=laporan.keterangan,
+            id_lokasi=id_lokasi_row,
+            peruntukan=peruntukan_row,
         )
     )
     aset.status_terakhir = laporan.kondisi
-    # lokasi terakhir
-    # aset.id_lokasi = laporan.id_lokasi
     db.commit()
     await manager.broadcast("REFRESH_ASSET_LIST")
     return {"message": "Laporan kondisi berhasil dicatat."}
@@ -801,7 +807,9 @@ def get_riwayat_aset(
             "id_pengguna": r.pengguna_ref.username if r.pengguna_ref else r.id_pengguna,
             "kondisi": r.kondisi,
             "keterangan": r.keterangan or "—",
-            # "id_lokasi": r.id_lokasi,
+            "id_lokasi": r.id_lokasi or "",
+            "nama_lokasi": r.lokasi_ref.nama_lokasi if r.lokasi_ref else (r.id_lokasi or "—"),
+            "peruntukan": r.peruntukan or "",
         }
         for i, r in enumerate(riwayat, start=1)
     ]
@@ -1148,22 +1156,28 @@ def export_riwayat(
         for a in asets:
             nama_alat = a.kategori.nama_alat if a.kategori else a.kode_alat
             nama_lokasi = a.lokasi_ref.nama_lokasi if a.lokasi_ref else a.id_lokasi
+            
+            # Query riwayat with joinedload on lokasi_ref to efficiently fetch UPT/lokasi info
             riwayat = (
                 db.query(models.RiwayatKondisi)
+                .options(joinedload(models.RiwayatKondisi.lokasi_ref))
                 .filter_by(id_aset=a.id_aset)
                 .order_by(models.RiwayatKondisi.waktu_lapor.asc())
                 .all()
             )
 
             if not riwayat:
+                default_upt = a.lokasi_ref.nama_lokasi if a.lokasi_ref else (a.id_lokasi or "—")
                 rows.append(
                     {
                         "no": None,
                         "tanggal": "—",
                         "id_aset": a.id_aset,
                         "kode_alat": nama_alat,
+                        "id_lokasi": a.id_lokasi,
+                        "peruntukan": a.peruntukan,
                         "id_lokasi_asal": nama_lokasi,
-                        "upt": "—",
+                        "upt": default_upt,
                         "id_pengguna": "—",
                         "kondisi": a.status_terakhir,
                         "keterangan": "Belum ada riwayat",
@@ -1171,6 +1185,13 @@ def export_riwayat(
                 )
             else:
                 for i, r in enumerate(riwayat, start=1):
+                    # Direct database lookup for UPT/lokasi name instead of text parsing
+                    upt_name = (
+                        r.lokasi_ref.nama_lokasi 
+                        if r.lokasi_ref 
+                        else (r.id_lokasi or "—")
+                    )
+                    
                     rows.append(
                         {
                             "no": i,
@@ -1179,8 +1200,10 @@ def export_riwayat(
                             else "—",
                             "id_aset": a.id_aset,
                             "kode_alat": nama_alat,
+                            "id_lokasi": r.id_lokasi,
+                            "peruntukan": r.peruntukan,
                             "id_lokasi_asal": nama_lokasi,
-                            "upt": parse_ctx_upt_from_keterangan(r.keterangan),
+                            "upt": upt_name,
                             "id_pengguna": r.pengguna_ref.username
                             if r.pengguna_ref
                             else str(r.id_pengguna),
@@ -1192,10 +1215,16 @@ def export_riwayat(
 
     return {
         "active": build_rows(
-            db.query(models.Aset).filter(models.Aset.status_terakhir != "AFKIR").all()
+            db.query(models.Aset)
+            .options(joinedload(models.Aset.lokasi_ref), joinedload(models.Aset.kategori))
+            .filter(models.Aset.status_terlahir != "AFKIR" if hasattr(models.Aset, "status_terlahir") else models.Aset.status_terakhir != "AFKIR")
+            .all()
         ),
         "afkir": build_rows(
-            db.query(models.Aset).filter(models.Aset.status_terakhir == "AFKIR").all()
+            db.query(models.Aset)
+            .options(joinedload(models.Aset.lokasi_ref), joinedload(models.Aset.kategori))
+            .filter(models.Aset.status_terakhir == "AFKIR")
+            .all()
         ),
     }
 

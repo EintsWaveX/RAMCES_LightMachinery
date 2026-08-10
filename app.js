@@ -51,9 +51,10 @@ window.applyUptSelect = applyUptSelect;
 
 (function () {
   const saved = localStorage.getItem("theme");
-  const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-  if (saved === "dark" || (!saved && prefersDark)) {
+  if (saved === "dark") {
     document.documentElement.classList.add("dark");
+  } else {
+    document.documentElement.classList.remove("dark");
   }
 })();
 
@@ -1312,6 +1313,10 @@ function switchView(viewId) {
       title: "Kelola Aset Alat Kerja",
       subtitle: "Pantau, Registrasi, dan Kelola Inventaris Aset Alat Kerja",
     },
+    inventaris: {
+      title: "Kelola Inventaris",
+      subtitle: "Kelola Suku Cadang dan Riwayat Transfer Inventaris",
+    },
     database: {
       title: "Kelola Data Aset",
       subtitle: "Daftar Seluruh Aset Alat Kerja yang Terdaftar",
@@ -2061,26 +2066,27 @@ function setupEventListeners() {
     ?.addEventListener("submit", async function (e) {
       e.preventDefault();
 
-      const kondisi = document.getElementById("edit-kondisi").value;
-      const keterangan =
-        document.getElementById("edit-keterangan").value || "-";
-      const uptVal = document.getElementById("edit-upt")?.value || "";
-      const lokasiVal = document.getElementById("edit-lokasi")?.value || "";
+      const kondisi    = document.getElementById("edit-kondisi").value;
+      const keterangan = document.getElementById("edit-keterangan").value || "-";
+      const uptVal     = document.getElementById("edit-upt")?.value || "";
+      const lokasiVal  = document.getElementById("edit-lokasi")?.value || "";
 
-      const peruntukan =
-        document.querySelector('input[name="edit-unit"]:checked')?.value || "";
+      // Radio values are A/B/C/D — map to full name before sending
+      const _PERUNTUKAN_SUBMIT = { A: "JALAN REL", B: "JEMBATAN", C: "MEKANIK", D: "BALAIYASA" };
+      const unitRaw    = document.querySelector('input[name="edit-unit"]:checked')?.value || "";
+      const peruntukan = _PERUNTUKAN_SUBMIT[unitRaw] || unitRaw || "";
 
       if (!kondisi)
         return showToast("Pilih Kondisi Alat Kerja (SO/TSO)!", "warning");
-
-      const targetLokasi = uptVal;
+      if (!peruntukan)
+        return showToast("Pilih Unit Peruntukan terlebih dahulu!", "warning");
 
       const payload = {
-        id_aset: document.getElementById("edit-uid").value,
+        id_aset:    document.getElementById("edit-uid").value,
         kondisi,
-        keterangan: keterangan, // Keterangan bersih tanpa prefix tag
-        // id_lokasi: targetLokasi,
-        peruntukan: peruntukan,
+        keterangan,
+        peruntukan,
+        id_lokasi:  uptVal || lokasiVal || "",
       };
 
       try {
@@ -2252,20 +2258,22 @@ function setupEventListeners() {
   document
     .getElementById("btn-submit-mutasi")
     ?.addEventListener("click", async () => {
-      const uid = document.getElementById("mutasi-uid").value;
+      const uid        = document.getElementById("mutasi-uid").value;
       const lokasiTuju = document.getElementById("mutasi-lokasi-tuju").value;
-      const petugasInput = (document.getElementById("mutasi-petugas")?.value || "").trim();
-      const alasanRaw = document.getElementById("mutasi-alasan").value.trim();
-      const alasan = petugasInput ? `[Petugas: ${petugasInput}] ${alasanRaw}` : alasanRaw;
-      const uptTuju = document.getElementById("mutasi-upt-tuju")?.value || "";
+      const uptTuju    = document.getElementById("mutasi-upt-tuju")?.value || "";
+      const alasan     = document.getElementById("mutasi-alasan").value.trim();
+
+      // Field value takes priority; fall back to logged-in username when blank
+      const petugasVal = (document.getElementById("mutasi-petugas")?.value || "").trim()
+        || currentUser || "";
 
       if (!lokasiTuju)
         return showToast("Pilih lokasi tujuan terlebih dahulu.", "warning");
 
-      if (!uptTuju)
-        return showToast("Pilih UPT tujuan terlebih dahulu.", "warning");
+      // UPT is optional — use UPT when chosen, otherwise use the parent lokasi code
+      const idLokasiTujuan = uptTuju || lokasiTuju;
 
-      const btn = document.getElementById("btn-submit-mutasi");
+      const btn  = document.getElementById("btn-submit-mutasi");
       const orig = btn.innerHTML;
       btn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> Memproses...`;
       btn.disabled = true;
@@ -2275,8 +2283,9 @@ function setupEventListeners() {
           method: "POST",
           body: JSON.stringify({
             id_aset: uid,
-            id_lokasi_tujuan: uptTuju,
+            id_lokasi_tujuan: idLokasiTujuan,
             alasan_mutasi: alasan || null,
+            nama_petugas: petugasVal,
           }),
         });
 
@@ -2464,9 +2473,11 @@ window.openEdit = (uid) => {
   if (_v("kalib-teknisi")) _v("kalib-teknisi").value = currentUser;
   if (_v("edit-kondisi")) _v("edit-kondisi").value = "";
 
-  // Pre-select peruntukan radio matching asset's stored value
+  // Pre-select peruntukan radio — radio values are A/B/C/D, stored value is full name
+  const _PERUNTUKAN_REV = { "JALAN REL": "A", "JEMBATAN": "B", "MEKANIK": "C", "BALAIYASA": "D" };
+  const preselectedUnit = _PERUNTUKAN_REV[item.peruntukan] || item.peruntukan || "";
   document.querySelectorAll('input[name="edit-unit"]').forEach((r) => {
-    r.checked = r.value === item.peruntukan;
+    r.checked = r.value === preselectedUnit;
   });
 
   // ── Populate summary card ──
@@ -2518,10 +2529,22 @@ window.openEdit = (uid) => {
 
   // ── Populate UPT dropdowns based on the asset's parent location ──
   const editUpt = document.getElementById("edit-upt");
-  const initialParentLoc = getParentLokasiCode(item.id_lokasi_raw || item.id_lokasi) || item.id_lokasi || "";
+  const editLokasiEl = document.getElementById("edit-lokasi");
+  const currentUptCode = item.id_lokasi_raw || item.id_lokasi || "";
+  const initialParentLoc = getParentLokasiCode(currentUptCode) || currentUptCode || "";
+
+  // Pre-set the Lokasi dropdown so it submits the correct parent code
+  if (editLokasiEl && initialParentLoc) {
+    editLokasiEl.value = initialParentLoc;
+  }
   if (editUpt) {
     applyUptSelect(initialParentLoc, editUpt);
+    // Pre-select the exact UPT the asset is currently assigned to
+    if (currentUptCode && editUpt.querySelector(`option[value="${currentUptCode}"]`)) {
+      editUpt.value = currentUptCode;
+    }
   }
+
   const kalibLokasi = document.getElementById("kalib-lokasi");
   const kalibUpt = document.getElementById("kalib-upt");
   if (kalibLokasi) kalibLokasi.value = "";
@@ -2716,41 +2739,29 @@ async function loadDetailRepair(uid) {
     }
 
     const asetTerkait = db.find((x) => x.id_aset === uid);
-    const peruntukanName = asetTerkait && asetTerkait.peruntukan ? asetTerkait.peruntukan : "—";
+
+    const resolveLokasiCode = (kode) => {
+      if (!kode) return { parentName: "—", uptName: "—" };
+      const uptEntry = uptDatabase.find((u) => u.upt === kode);
+      if (uptEntry) {
+        const parentCode = getParentLokasiCode(kode) || uptEntry.lokasi;
+        const parentEntry = lokasiData.find((l) => l.code === parentCode);
+        return { parentName: parentEntry ? parentEntry.name : parentCode, uptName: uptEntry.nama };
+      }
+      const parentEntry = lokasiData.find((l) => l.code === kode);
+      if (parentEntry) return { parentName: parentEntry.name, uptName: "—" };
+      return { parentName: kode, uptName: "—" };
+    };
 
     tbody.innerHTML = repairEntries
       .map((h, i) => {
-        // Ambil langsung id_lokasi dari payload backend
-        // const rawLokasiCode = h.id_lokasi || "—";
-        const rawLokasiCode =
-          asetTerkait.id_lokasi_raw || asetTerkait.id_lokasi || "—";
+        // Use the per-row id_lokasi now returned by the backend.
+        // Fall back to the asset's current lokasi for legacy rows that predate the schema change.
+        const rowLokasi = h.id_lokasi || asetTerkait?.id_lokasi_raw || asetTerkait?.id_lokasi || "";
+        const lokasi = resolveLokasiCode(rowLokasi);
 
-        // Helper untuk meresolve kode lokasi menjadi Nama Induk (DAOP/DIVRE) dan UPT
-        const resolveLokasi = (kode) => {
-          if (!kode || kode === "—") return { parentName: "—", uptName: "—" };
-
-          // 1. Cek apakah ini level UPT
-          const uptEntry = uptDatabase.find((u) => u.upt === kode);
-          if (uptEntry) {
-            const parentCode = getParentLokasiCode(kode) || uptEntry.lokasi;
-            const parentEntry = lokasiData.find((l) => l.code === parentCode);
-            return {
-              parentName: parentEntry ? parentEntry.name : parentCode,
-              uptName: uptEntry.nama,
-            };
-          }
-
-          // 2. Cek apakah ini level Induk / Parent
-          const parentEntry = lokasiData.find((l) => l.code === kode);
-          if (parentEntry) {
-            return { parentName: parentEntry.name, uptName: "—" };
-          }
-
-          // Fallback
-          return { parentName: kode, uptName: "—" };
-        };
-
-        const lokasi = resolveLokasi(rawLokasiCode);
+        // Use per-row peruntukan from backend; fall back to asset's current value for legacy rows.
+        const peruntukanName = h.peruntukan || asetTerkait?.peruntukan || "—";
 
         return `
             <tr class="border-b dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50">
@@ -2758,12 +2769,12 @@ async function loadDetailRepair(uid) {
                 <td class="p-3 font-mono text-xs">${formatUtcToLocal(h.waktu_lapor)}</td>
                 <td class="p-3 text-sm">${lokasi.parentName}</td>
                 <td class="p-3 text-sm">${lokasi.uptName}</td>
+                <td class="p-3 text-center">
+                    <span class="text-xs text-gray-600 dark:text-gray-300 capitalize">${peruntukanName}</span>
+                </td>
                 <td class="p-3 text-sm font-medium">${h.id_pengguna}</td>
                 <td class="p-3 text-center">
                     <span class="text-xs font-bold px-2 py-0.5 rounded ${h.kondisi === "SO" ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"}">${h.kondisi}</span>
-                </td>
-                <td class="p-3 text-center">
-                    <span class="text-xs text-gray-600 dark:text-gray-300 capitalize">${peruntukanName}</span>
                 </td>
                 <td class="p-3 text-xs text-gray-500 whitespace-pre-wrap">${h.keterangan || "—"}</td>
             </tr>`;
@@ -4932,20 +4943,22 @@ function applyExportFilters() {
     if (dateTo   && tgl && tgl > dateTo)   return false;
     if (kondisi  && r.kondisi !== kondisi)  return false;
     if (lokasi) {
-      // r.id_lokasi_asal is the lokasi name from the API; resolve to code for comparison
-      const asetItem = db.find((x) => x.id_aset === r.id_aset);
-      const rawCode  = asetItem ? (asetItem.id_lokasi_raw || asetItem.id_lokasi || "") : "";
-      const parentCode = getParentLokasiCode(rawCode) || rawCode;
-      if (parentCode !== lokasi && rawCode !== lokasi) return false;
+      // Use r.id_lokasi (per-row, from schema); fall back to aset current lokasi for legacy rows
+      const asetItem  = db.find((x) => x.id_aset === r.id_aset);
+      const rowCode   = r.id_lokasi || (asetItem ? (asetItem.id_lokasi_raw || asetItem.id_lokasi || "") : "");
+      const parentCode = getParentLokasiCode(rowCode) || rowCode;
+      if (parentCode !== lokasi && rowCode !== lokasi) return false;
     }
     if (uptPengirim) {
       const asetItem = db.find((x) => x.id_aset === r.id_aset);
-      const rawCode  = asetItem ? (asetItem.id_lokasi_raw || asetItem.id_lokasi || "") : "";
-      if (rawCode !== uptPengirim) return false;
+      const rowCode  = r.id_lokasi || (asetItem ? (asetItem.id_lokasi_raw || asetItem.id_lokasi || "") : "");
+      if (rowCode !== uptPengirim) return false;
     }
     if (peruntukan) {
+      // Use r.peruntukan (per-row); fall back to aset current value for legacy rows
       const asetItem = db.find((x) => x.id_aset === r.id_aset);
-      if ((asetItem?.peruntukan || "") !== peruntukan) return false;
+      const rowPeruntukan = r.peruntukan || asetItem?.peruntukan || "";
+      if (rowPeruntukan !== peruntukan) return false;
     }
     return true;
   });
@@ -5178,8 +5191,12 @@ function _resolveLokasiUpt(kode) {
 
 function _buildExpPemeliharaanDisplay(r, i = 0) {
   const aset = db.find((x) => x.id_aset === r.id_aset);
-  const rawKode = aset ? (aset.id_lokasi_raw || aset.id_lokasi || "") : "";
-  const lok = _resolveLokasiUpt(rawKode);
+  // r.id_lokasi is the per-row lokasi stored by the backend (from the new schema column).
+  // Fall back to the aset's current lokasi only for legacy rows that predate the schema change.
+  const rowLokasi = r.id_lokasi || (aset ? (aset.id_lokasi_raw || aset.id_lokasi || "") : "");
+  const lok = _resolveLokasiUpt(rowLokasi);
+  // r.peruntukan is the per-row peruntukan stored at save time; fall back to aset current value.
+  const peruntukanDisplay = r.peruntukan || aset?.peruntukan || "—";
   return {
     no: i + 1,
     tanggal: formatUtcToLocal(r.tanggal),
@@ -5187,7 +5204,7 @@ function _buildExpPemeliharaanDisplay(r, i = 0) {
     nama_alat: aset?.kode_alat_name || r.kode_alat || "—",
     lokasi_pengirim: lok.parentName,
     upt_pengirim: lok.uptName,
-    peruntukan: aset?.peruntukan || "—",
+    peruntukan: peruntukanDisplay,
     petugas: r.id_pengguna || "—",
     kondisi: r.kondisi || "—",
     keterangan: r.keterangan || "—",
@@ -5761,7 +5778,20 @@ window.openMutasiModal = (uid) => {
   }
 
   document.getElementById("mutasi-alasan").value = "";
-  document.getElementById("mutasi-petugas").value = "";
+
+  // Pre-fill Petugas with the logged-in username; user can override freely
+  const petugasEl = document.getElementById("mutasi-petugas");
+  if (petugasEl) petugasEl.value = currentUser || "";
+
+  // Pre-select the user's default Lokasi from JWT, then fire UPT cascade
+  const jwtPayload   = getJwtPayload(authToken);
+  const userLokasi   = jwtPayload?.id_lokasi || "";
+  const userParent   = getParentLokasiCode(userLokasi) || userLokasi;
+  if (tujuSel && userParent) {
+    tujuSel.value = userParent;
+    tujuSel.dispatchEvent(new Event("change"));
+  }
+
   document.getElementById("mutasi-modal").classList.remove("hidden");
 };
 
@@ -7613,3 +7643,144 @@ function formatUtcToLocal(utcStr) {
   const ss = String(date.getSeconds()).padStart(2, "0");
   return `${d} ${m} ${y} ${hh}:${mm}:${ss}`;
 }
+
+// ════════════════════════════════════════════════════════════════════
+// INVENTARIS — Kelola Inventaris (Parts)
+// ════════════════════════════════════════════════════════════════════
+
+(function setupInventaris() {
+  // ── Tab switching ──
+  const tabParts      = document.getElementById("inv-tab-parts");
+  const tabTransfer   = document.getElementById("inv-tab-transfer");
+  const panelParts    = document.getElementById("inv-panel-parts");
+  const panelTransfer = document.getElementById("inv-panel-transfer");
+  const toolbarActions = document.getElementById("inv-toolbar-actions");
+  const searchInput   = document.getElementById("inv-parts-search");
+
+  function setInvTab(which) {
+    const isP = which === "parts";
+
+    // Tab active styles
+    tabParts.classList.toggle("border-kai-blue",    isP);
+    tabParts.classList.toggle("text-kai-blue",      isP);
+    tabParts.classList.toggle("border-transparent", !isP);
+    tabParts.classList.toggle("text-gray-400",      !isP);
+    tabTransfer.classList.toggle("border-kai-blue",    !isP);
+    tabTransfer.classList.toggle("text-kai-blue",      !isP);
+    tabTransfer.classList.toggle("border-transparent",  isP);
+    tabTransfer.classList.toggle("text-gray-400",       isP);
+
+    // Show/hide panels
+    panelParts.classList.toggle("hidden",    !isP);
+    panelTransfer.classList.toggle("hidden",  isP);
+
+    // Show/hide action buttons (Parts-only); search bar always stays
+    toolbarActions?.classList.toggle("hidden", !isP);
+
+    // Clear search when switching tabs
+    if (searchInput) searchInput.value = "";
+  }
+
+  tabParts?.addEventListener("click",    () => setInvTab("parts"));
+  tabTransfer?.addEventListener("click", () => setInvTab("transfer"));
+
+  // ── Bulk Upload dropdown ──
+  const bulkToggle   = document.getElementById("inv-btn-bulk-toggle");
+  const bulkDropdown = document.getElementById("inv-bulk-dropdown");
+  bulkToggle?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    bulkDropdown?.classList.toggle("hidden");
+  });
+  document.addEventListener("click", () => bulkDropdown?.classList.add("hidden"));
+
+  // ── Add Parts Item modal ──
+  const addModal    = document.getElementById("inv-add-modal");
+  const btnOpen     = document.getElementById("inv-btn-add-part");
+  const btnClose    = document.getElementById("inv-add-modal-close");
+  const btnCancel   = document.getElementById("inv-add-modal-cancel");
+  const btnSubmit   = document.getElementById("inv-add-modal-submit");
+
+  function openAddModal()  { addModal?.classList.remove("hidden"); }
+  function closeAddModal() { addModal?.classList.add("hidden"); }
+
+  btnOpen?.addEventListener("click",   openAddModal);
+  btnClose?.addEventListener("click",  closeAddModal);
+  btnCancel?.addEventListener("click", closeAddModal);
+  addModal?.addEventListener("click", (e) => { if (e.target === addModal) closeAddModal(); });
+  btnSubmit?.addEventListener("click", () => {
+    showToast("Parts item berhasil ditambahkan (stub).", "success");
+    closeAddModal();
+  });
+
+  // ── Parts Category modal ──
+  const catModal     = document.getElementById("inv-category-modal");
+  const btnCatOpen   = document.getElementById("inv-btn-parts-category");
+  const btnCatClose  = document.getElementById("inv-category-modal-close");
+  const btnCatDone   = document.getElementById("inv-category-modal-close-btn");
+  const catInput     = document.getElementById("inv-category-input");
+  const catAddBtn    = document.getElementById("inv-category-add-btn");
+  const catList      = document.getElementById("inv-category-list");
+  const catSelect    = document.getElementById("inv-field-category");
+
+  let _categories = [];
+
+  function openCatModal()  { catModal?.classList.remove("hidden"); }
+  function closeCatModal() { catModal?.classList.add("hidden"); }
+
+  btnCatOpen?.addEventListener("click",  openCatModal);
+  btnCatClose?.addEventListener("click", closeCatModal);
+  btnCatDone?.addEventListener("click",  closeCatModal);
+  catModal?.addEventListener("click", (e) => { if (e.target === catModal) closeCatModal(); });
+
+  function renderCategories() {
+    if (!catList) return;
+    if (_categories.length === 0) {
+      catList.innerHTML = '<li class="text-sm text-gray-400 italic py-2 text-center">No categories yet.</li>';
+    } else {
+      catList.innerHTML = _categories.map((cat, i) => `
+        <li class="flex items-center justify-between px-3 py-2 rounded-lg bg-white dark:bg-gray-700 border border-gray-100 dark:border-gray-600">
+          <span class="text-sm text-gray-700 dark:text-gray-200 font-medium">${cat}</span>
+          <button data-idx="${i}" class="inv-cat-delete text-gray-300 hover:text-red-400 transition text-xs">
+            <i class="fas fa-times"></i>
+          </button>
+        </li>`).join("");
+    }
+    // Sync into Add Parts Item category dropdown
+    if (catSelect) {
+      catSelect.innerHTML = '<option value="">— Select Category —</option>' +
+        _categories.map(c => `<option value="${c}">${c}</option>`).join("");
+    }
+    // Attach delete handlers
+    catList.querySelectorAll(".inv-cat-delete").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        _categories.splice(parseInt(btn.dataset.idx), 1);
+        renderCategories();
+      });
+    });
+  }
+
+  catAddBtn?.addEventListener("click", () => {
+    const val = catInput?.value.trim();
+    if (!val) return;
+    if (_categories.includes(val)) {
+      showToast("Category already exists.", "warning");
+      return;
+    }
+    _categories.push(val);
+    if (catInput) catInput.value = "";
+    renderCategories();
+  });
+  catInput?.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") catAddBtn?.click();
+  });
+
+  // ── Unified search: routes to active tab's table ──
+  searchInput?.addEventListener("input", function () {
+    const q = this.value.toLowerCase();
+    const isPartsTab = !panelParts.classList.contains("hidden");
+    const tbody = isPartsTab ? "#inv-parts-body tr" : "#inv-transfer-body tr";
+    document.querySelectorAll(tbody).forEach((row) => {
+      row.style.display = row.textContent.toLowerCase().includes(q) ? "" : "none";
+    });
+  });
+})();

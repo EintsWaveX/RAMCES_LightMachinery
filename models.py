@@ -76,10 +76,12 @@ class RiwayatKondisi(Base):
     kondisi = Column(String(20), nullable=False)
     keterangan = Column(Text)
     waktu_lapor = Column(DateTime, server_default=text("CURRENT_TIMESTAMP"))
-    # id_lokasi = Column(String(10), ForeignKey("lokasi.id_lokasi"))
+    id_lokasi = Column(String(10), ForeignKey("lokasi.id_lokasi"), nullable=True)
+    peruntukan = Column(String(20), nullable=True)
 
     aset_ref = relationship("Aset", back_populates="riwayat_kondisi")
     pengguna_ref = relationship("Pengguna")
+    lokasi_ref = relationship("Lokasi")
 
 
 class RiwayatMutasi(Base):
