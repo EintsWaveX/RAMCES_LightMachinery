@@ -125,3 +125,89 @@ class RiwayatKalibrasi(Base):
             name="riwayat_kalibrasi_status_check",
         ),
     )
+
+
+# ══════════════════════════════════════════════════════════════════════
+# INVENTARIS — Sparepart Management
+# ══════════════════════════════════════════════════════════════════════
+
+class SparePartKategori(Base):
+    """Part categories / subsystems (ELECTRIC, ENGINE, MECHANIC, CONSUMABLES, etc.)"""
+    __tablename__ = "sparepart_kategori"
+
+    id_kategori = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    nama         = Column(String(100), nullable=False, unique=True)
+    subsistem    = Column(String(50),  nullable=True)   # e.g. ELECTRIC, ENGINE
+    kode_alat    = Column(String(10),  ForeignKey("kategori_alat.kode_alat"), nullable=True)
+
+    kategori_alat_ref = relationship("KategoriAlat")
+    parts = relationship("SparePart", back_populates="kategori_ref")
+
+
+class SparePart(Base):
+    """Master sparepart catalog."""
+    __tablename__ = "sparepart"
+
+    id_part      = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    sku          = Column(String(50),  unique=True, nullable=False, index=True)
+    nama_part    = Column(String(150), nullable=False)
+    id_kategori  = Column(Integer, ForeignKey("sparepart_kategori.id_kategori"), nullable=True)
+    kode_alat    = Column(String(10),  ForeignKey("kategori_alat.kode_alat"),    nullable=True)
+    unit         = Column(String(20),  nullable=False, server_default="Piece")
+    harga_satuan = Column(Integer,     nullable=True)   # stored in IDR (integer rupiah)
+    stok_min     = Column(Integer,     nullable=False, server_default="0")
+    auto_demand  = Column(Boolean, nullable=False, server_default=text("false"))
+    supplier     = Column(String(100), nullable=True)
+    deskripsi    = Column(Text,        nullable=True)
+    part_number  = Column(String(100), nullable=True)
+    is_critical  = Column(Boolean, nullable=False, server_default=text("false"))
+    serial_numbers = Column(Text,      nullable=True)   # comma-separated list
+    lookup_tags    = Column(Text,      nullable=True)   # comma-separated list
+    linked_vehicle = Column(String(100), nullable=True)
+    warranty_months = Column(Integer,  nullable=True)
+    ref_part       = Column(String(100), nullable=True)
+
+    kategori_ref   = relationship("SparePartKategori", back_populates="parts")
+    kategori_alat_ref = relationship("KategoriAlat")
+    stok_entries   = relationship("SparePartStok", back_populates="part_ref",
+                                  foreign_keys="SparePartStok.id_part")
+
+
+class SparePartStok(Base):
+    """
+    Stock ledger — one row per movement (IN or OUT).
+    Supports two modes:
+      - global   : id_lokasi is NULL  → single global pool
+      - per_lokasi: id_lokasi set     → per-UPT stock
+    Transfer between lokasi = one OUT row + one IN row linked by id_ref_transfer.
+    """
+    __tablename__ = "sparepart_stok"
+
+    id_stok          = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    id_part          = Column(Integer, ForeignKey("sparepart.id_part"), nullable=False, index=True)
+    id_lokasi        = Column(String(10), ForeignKey("lokasi.id_lokasi"), nullable=True, index=True)
+    tipe_gerakan     = Column(String(10), nullable=False)   # IN | OUT
+    jumlah           = Column(Integer,    nullable=False)
+    harga_satuan     = Column(Integer,    nullable=True)    # snapshot at time of entry
+    keterangan       = Column(Text,       nullable=True)
+    id_pengguna      = Column(Integer,    ForeignKey("pengguna.id_pengguna"), nullable=True)
+    waktu            = Column(DateTime,   server_default=text("CURRENT_TIMESTAMP"), index=True)
+    id_ref_transfer  = Column(Integer,    ForeignKey("sparepart_stok.id_stok"), nullable=True)
+    site_from        = Column(String(10), ForeignKey("lokasi.id_lokasi"), nullable=True)
+    site_to          = Column(String(10), ForeignKey("lokasi.id_lokasi"), nullable=True)
+    transfer_by      = Column(String(100), nullable=True)
+    transfer_to      = Column(String(100), nullable=True)
+    catatan          = Column(Text,        nullable=True)
+
+    part_ref    = relationship("SparePart", back_populates="stok_entries",
+                               foreign_keys=[id_part])
+    lokasi_ref  = relationship("Lokasi", foreign_keys=[id_lokasi])
+    site_from_ref = relationship("Lokasi", foreign_keys=[site_from])
+    site_to_ref   = relationship("Lokasi", foreign_keys=[site_to])
+    pengguna_ref  = relationship("Pengguna", foreign_keys=[id_pengguna])
+    pair_ref      = relationship("SparePartStok", remote_side=[id_stok],
+                                 foreign_keys=[id_ref_transfer])
+
+    __table_args__ = (
+        CheckConstraint(tipe_gerakan.in_(["IN", "OUT"]), name="sparepart_stok_gerakan_check"),
+    )

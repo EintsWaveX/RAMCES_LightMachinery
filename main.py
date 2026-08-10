@@ -1385,6 +1385,484 @@ async def update_aset(
 
 
 # ==================================================================
+# ── INVENTARIS — Sparepart Management ─────────────────────────────
+# ==================================================================
+
+# ── Pydantic Schemas ──
+
+class SparePartKategoriCreate(BaseModel):
+    nama: str
+    subsistem: Optional[str] = None
+    kode_alat: Optional[str] = None
+
+
+class SparePartCreate(BaseModel):
+    sku: Optional[str] = None
+    nama_part: str
+    id_kategori: Optional[int] = None
+    kode_alat: Optional[str] = None
+    unit: str = "Pcs"
+    harga_satuan: Optional[int] = None
+    stok_min: int = 0
+    auto_demand: bool = False
+    supplier: Optional[str] = None
+    deskripsi: Optional[str] = None
+    part_number: Optional[str] = None
+    is_critical: bool = False
+    serial_numbers: Optional[str] = None
+    lookup_tags: Optional[str] = None
+    linked_vehicle: Optional[str] = None
+    warranty_months: Optional[int] = None
+    ref_part: Optional[str] = None
+    # Initial stock
+    jumlah_awal: int = 0
+    id_lokasi_awal: Optional[str] = None
+
+
+class SparePartUpdate(BaseModel):
+    nama_part: Optional[str] = None
+    id_kategori: Optional[int] = None
+    kode_alat: Optional[str] = None
+    unit: Optional[str] = None
+    harga_satuan: Optional[int] = None
+    stok_min: Optional[int] = None
+    auto_demand: Optional[bool] = None
+    supplier: Optional[str] = None
+    deskripsi: Optional[str] = None
+    part_number: Optional[str] = None
+    is_critical: Optional[bool] = None
+    serial_numbers: Optional[str] = None
+    lookup_tags: Optional[str] = None
+    linked_vehicle: Optional[str] = None
+    warranty_months: Optional[int] = None
+    ref_part: Optional[str] = None
+
+
+class StokTransferCreate(BaseModel):
+    id_part: int
+    jumlah: int
+    id_lokasi_asal: Optional[str] = None     # None = global pool
+    id_lokasi_tujuan: Optional[str] = None   # None = global pool
+    transfer_by: Optional[str] = None
+    transfer_to: Optional[str] = None
+    catatan: Optional[str] = None
+
+
+class StokAdjustCreate(BaseModel):
+    id_part: int
+    tipe_gerakan: str   # IN | OUT
+    jumlah: int
+    id_lokasi: Optional[str] = None
+    keterangan: Optional[str] = None
+
+
+# ── Helper: compute net stock ──────────────────────────────────────
+
+def _net_stok(db: Session, id_part: int, id_lokasi: Optional[str] = None) -> int:
+    """Return net stock for a part. id_lokasi=None → global (all lokasi summed)."""
+    q = db.query(
+        func.coalesce(
+            func.sum(
+                func.case(
+                    (models.SparePartStok.tipe_gerakan == "IN",  models.SparePartStok.jumlah),
+                    else_=-models.SparePartStok.jumlah
+                )
+            ), 0
+        )
+    ).filter(models.SparePartStok.id_part == id_part)
+    if id_lokasi is not None:
+        q = q.filter(models.SparePartStok.id_lokasi == id_lokasi)
+    return q.scalar() or 0
+
+
+# ── Part Categories ────────────────────────────────────────────────
+
+@app.get("/api/inventaris/kategori")
+def get_inv_kategori(db: Session = Depends(get_db)):
+    rows = db.query(models.SparePartKategori).order_by(
+        models.SparePartKategori.subsistem, models.SparePartKategori.nama
+    ).all()
+    return [
+        {
+            "id_kategori": r.id_kategori,
+            "nama": r.nama,
+            "subsistem": r.subsistem,
+            "kode_alat": r.kode_alat,
+        }
+        for r in rows
+    ]
+
+
+@app.post("/api/inventaris/kategori",
+          dependencies=[Depends(require_role(["SUPER_ADMIN", "ADMIN_WILAYAH"]))])
+def create_inv_kategori(data: SparePartKategoriCreate, db: Session = Depends(get_db)):
+    if db.query(models.SparePartKategori).filter_by(nama=data.nama).first():
+        raise HTTPException(status_code=400, detail="Kategori sudah ada.")
+    row = models.SparePartKategori(
+        nama=data.nama, subsistem=data.subsistem, kode_alat=data.kode_alat
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return {"message": "Kategori ditambahkan.", "id_kategori": row.id_kategori}
+
+
+@app.delete("/api/inventaris/kategori/{id_kategori}",
+            dependencies=[Depends(require_role(["SUPER_ADMIN", "ADMIN_WILAYAH"]))])
+def delete_inv_kategori(id_kategori: int, db: Session = Depends(get_db)):
+    row = db.query(models.SparePartKategori).filter_by(id_kategori=id_kategori).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Kategori tidak ditemukan.")
+    db.delete(row)
+    db.commit()
+    return {"message": "Kategori dihapus."}
+
+
+# ── Parts CRUD ─────────────────────────────────────────────────────
+
+@app.get("/api/inventaris/parts")
+def get_inv_parts(
+    id_lokasi: Optional[str] = None,
+    id_kategori: Optional[int] = None,
+    kode_alat: Optional[str] = None,
+    mode: str = "global",   # global | per_lokasi
+    db: Session = Depends(get_db),
+    current_user: models.Pengguna = Depends(get_current_user),
+):
+    q = db.query(models.SparePart)
+    if id_kategori:
+        q = q.filter(models.SparePart.id_kategori == id_kategori)
+    if kode_alat:
+        q = q.filter(models.SparePart.kode_alat == kode_alat)
+    parts = q.order_by(models.SparePart.nama_part).all()
+
+    result = []
+    for p in parts:
+        stok = _net_stok(db, p.id_part, id_lokasi if mode == "per_lokasi" else None)
+        kat = p.kategori_ref
+        alat = p.kategori_alat_ref
+        result.append({
+            "id_part": p.id_part,
+            "sku": p.sku,
+            "nama_part": p.nama_part,
+            "id_kategori": p.id_kategori,
+            "nama_kategori": kat.nama if kat else None,
+            "subsistem": kat.subsistem if kat else None,
+            "kode_alat": p.kode_alat,
+            "nama_alat": alat.nama_alat if alat else None,
+            "unit": p.unit,
+            "harga_satuan": p.harga_satuan,
+            "stok_min": p.stok_min,
+            "stok_sekarang": stok,
+            "is_critical": p.is_critical or (stok <= p.stok_min and p.stok_min > 0),
+            "auto_demand": p.auto_demand,
+            "supplier": p.supplier,
+            "deskripsi": p.deskripsi,
+            "part_number": p.part_number,
+            "linked_vehicle": p.linked_vehicle,
+            "warranty_months": p.warranty_months,
+        })
+    return result
+
+
+@app.post("/api/inventaris/parts",
+          dependencies=[Depends(require_role(["SUPER_ADMIN", "ADMIN_WILAYAH"]))])
+async def create_inv_part(
+    data: SparePartCreate,
+    db: Session = Depends(get_db),
+    current_user: models.Pengguna = Depends(get_current_user),
+):
+    # Auto-generate SKU if not provided
+    if not data.sku:
+        count = db.query(models.SparePart).count()
+        data.sku = f"SP{count + 1:05d}"
+    if db.query(models.SparePart).filter_by(sku=data.sku).first():
+        raise HTTPException(status_code=400, detail="SKU sudah ada.")
+
+    part = models.SparePart(
+        sku=data.sku, nama_part=data.nama_part, id_kategori=data.id_kategori,
+        kode_alat=data.kode_alat, unit=data.unit, harga_satuan=data.harga_satuan,
+        stok_min=data.stok_min, auto_demand=data.auto_demand, supplier=data.supplier,
+        deskripsi=data.deskripsi, part_number=data.part_number,
+        is_critical=data.is_critical, serial_numbers=data.serial_numbers,
+        lookup_tags=data.lookup_tags, linked_vehicle=data.linked_vehicle,
+        warranty_months=data.warranty_months, ref_part=data.ref_part,
+    )
+    db.add(part)
+    db.flush()
+
+    if data.jumlah_awal > 0:
+        db.add(models.SparePartStok(
+            id_part=part.id_part,
+            id_lokasi=data.id_lokasi_awal,
+            tipe_gerakan="IN",
+            jumlah=data.jumlah_awal,
+            harga_satuan=data.harga_satuan,
+            keterangan="Stok awal",
+            id_pengguna=current_user.id_pengguna,
+        ))
+
+    db.commit()
+    db.refresh(part)
+    await manager.broadcast("REFRESH_INVENTARIS")
+    return {"message": "Part berhasil ditambahkan.", "id_part": part.id_part, "sku": part.sku}
+
+
+@app.put("/api/inventaris/parts/{id_part}",
+         dependencies=[Depends(require_role(["SUPER_ADMIN", "ADMIN_WILAYAH"]))])
+async def update_inv_part(
+    id_part: int, data: SparePartUpdate, db: Session = Depends(get_db),
+    current_user: models.Pengguna = Depends(get_current_user),
+):
+    part = db.query(models.SparePart).filter_by(id_part=id_part).first()
+    if not part:
+        raise HTTPException(status_code=404, detail="Part tidak ditemukan.")
+    for field, val in data.dict(exclude_unset=True).items():
+        setattr(part, field, val)
+    db.commit()
+    await manager.broadcast("REFRESH_INVENTARIS")
+    return {"message": "Part diperbarui."}
+
+
+@app.delete("/api/inventaris/parts/{id_part}",
+            dependencies=[Depends(require_role(["SUPER_ADMIN", "ADMIN_WILAYAH"]))])
+async def delete_inv_part(
+    id_part: int, db: Session = Depends(get_db),
+    current_user: models.Pengguna = Depends(get_current_user),
+):
+    part = db.query(models.SparePart).filter_by(id_part=id_part).first()
+    if not part:
+        raise HTTPException(status_code=404, detail="Part tidak ditemukan.")
+    db.delete(part)
+    db.commit()
+    await manager.broadcast("REFRESH_INVENTARIS")
+    return {"message": "Part dihapus."}
+
+
+# ── Stock: Transfer ────────────────────────────────────────────────
+
+@app.post("/api/inventaris/transfer",
+          dependencies=[Depends(require_role(["SUPER_ADMIN", "ADMIN_WILAYAH", "TEKNISI"]))])
+async def create_transfer(
+    data: StokTransferCreate, db: Session = Depends(get_db),
+    current_user: models.Pengguna = Depends(get_current_user),
+):
+    part = db.query(models.SparePart).filter_by(id_part=data.id_part).first()
+    if not part:
+        raise HTTPException(status_code=404, detail="Part tidak ditemukan.")
+
+    # Check available stock at source
+    stok_asal = _net_stok(db, data.id_part, data.id_lokasi_asal)
+    if stok_asal < data.jumlah:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Stok tidak mencukupi. Tersedia: {stok_asal}, diminta: {data.jumlah}."
+        )
+
+    now = datetime.now()
+
+    # OUT from source
+    out_row = models.SparePartStok(
+        id_part=data.id_part,
+        id_lokasi=data.id_lokasi_asal,
+        tipe_gerakan="OUT",
+        jumlah=data.jumlah,
+        harga_satuan=part.harga_satuan,
+        keterangan=f"Transfer ke {data.id_lokasi_tujuan or 'GLOBAL'}",
+        id_pengguna=current_user.id_pengguna,
+        waktu=now,
+        site_from=data.id_lokasi_asal,
+        site_to=data.id_lokasi_tujuan,
+        transfer_by=data.transfer_by or current_user.username,
+        transfer_to=data.transfer_to,
+        catatan=data.catatan,
+    )
+    db.add(out_row)
+    db.flush()
+
+    # IN to destination
+    in_row = models.SparePartStok(
+        id_part=data.id_part,
+        id_lokasi=data.id_lokasi_tujuan,
+        tipe_gerakan="IN",
+        jumlah=data.jumlah,
+        harga_satuan=part.harga_satuan,
+        keterangan=f"Transfer dari {data.id_lokasi_asal or 'GLOBAL'}",
+        id_pengguna=current_user.id_pengguna,
+        waktu=now,
+        site_from=data.id_lokasi_asal,
+        site_to=data.id_lokasi_tujuan,
+        transfer_by=data.transfer_by or current_user.username,
+        transfer_to=data.transfer_to,
+        catatan=data.catatan,
+        id_ref_transfer=out_row.id_stok,
+    )
+    db.add(in_row)
+    db.commit()
+    await manager.broadcast("REFRESH_INVENTARIS")
+    return {"message": "Transfer berhasil.", "id_out": out_row.id_stok, "id_in": in_row.id_stok}
+
+
+@app.get("/api/inventaris/transfer")
+def get_transfer_history(
+    id_lokasi: Optional[str] = None,
+    id_part: Optional[int] = None,
+    db: Session = Depends(get_db),
+    current_user: models.Pengguna = Depends(get_current_user),
+):
+    q = (
+        db.query(models.SparePartStok)
+        .filter(models.SparePartStok.site_from != None)  # noqa: E711
+        .filter(models.SparePartStok.tipe_gerakan == "OUT")  # one row per transfer
+        .order_by(models.SparePartStok.waktu.desc())
+    )
+    if id_lokasi:
+        q = q.filter(
+            (models.SparePartStok.site_from == id_lokasi) |
+            (models.SparePartStok.site_to == id_lokasi)
+        )
+    if id_part:
+        q = q.filter(models.SparePartStok.id_part == id_part)
+
+    rows = q.all()
+    result = []
+    for r in rows:
+        p = r.part_ref
+        sf = r.site_from_ref
+        st = r.site_to_ref
+        result.append({
+            "id_stok": r.id_stok,
+            "waktu": r.waktu.strftime("%Y-%m-%d %H:%M") if r.waktu else None,
+            "nama_part": p.nama_part if p else str(r.id_part),
+            "jumlah": r.jumlah,
+            "unit": p.unit if p else "",
+            "nama_alat": p.kategori_alat_ref.nama_alat if p and p.kategori_alat_ref else "",
+            "site_from": sf.nama_lokasi if sf else (r.site_from or "GLOBAL"),
+            "site_to": st.nama_lokasi if st else (r.site_to or "GLOBAL"),
+            "transfer_by": r.transfer_by or "—",
+            "transfer_to": r.transfer_to or "—",
+            "catatan": r.catatan or "—",
+        })
+    return result
+
+
+# ── Dashboard Summary ──────────────────────────────────────────────
+
+@app.get("/api/inventaris/dashboard")
+def get_inv_dashboard(
+    id_lokasi: Optional[str] = None,     # parent lokasi filter (DAOP/DIVRE)
+    mode: str = "global",                # global | per_lokasi
+    db: Session = Depends(get_db),
+    current_user: models.Pengguna = Depends(get_current_user),
+):
+    """
+    Returns aggregated stats for the Inventaris Dashboard tab.
+    id_lokasi = parent lokasi code → auto-includes all its UPT children.
+    """
+    all_parts = db.query(models.SparePart).all()
+
+    # Resolve child UPT lokasi ids for filtering
+    child_lokasi_ids: Optional[list] = None
+    if id_lokasi:
+        # UPTs that "belong" to this parent use the parent code as part of their id_lokasi
+        # Convention from seed.py: UPT id_lokasi contains the parent prefix e.g. "JR1.1" → D1
+        # We filter sparepart_stok by lokasi where id_lokasi LIKE parent%
+        child_rows = db.query(models.Lokasi).filter(
+            models.Lokasi.id_lokasi.like(f"{id_lokasi}%")
+        ).all()
+        child_lokasi_ids = [r.id_lokasi for r in child_rows] or [id_lokasi]
+
+    total_parts = len(all_parts)
+    total_types = len(set(p.kode_alat for p in all_parts if p.kode_alat))
+    total_value = 0
+    auto_demand_count = sum(1 for p in all_parts if p.auto_demand)
+    critical_list = []
+    by_subsistem: dict[str, int] = {}
+    by_alat: dict[str, int] = {}
+    supplier_set: set = set()
+    total_suppliers = 0
+
+    for p in all_parts:
+        if mode == "per_lokasi" and child_lokasi_ids:
+            stok = sum(_net_stok(db, p.id_part, loc) for loc in child_lokasi_ids)
+        else:
+            stok = _net_stok(db, p.id_part)
+
+        val = (p.harga_satuan or 0) * max(stok, 0)
+        total_value += val
+
+        if p.supplier:
+            supplier_set.add(p.supplier)
+
+        kat = p.kategori_ref
+        sub = kat.subsistem if kat else "LAINNYA"
+        by_subsistem[sub] = by_subsistem.get(sub, 0) + 1
+
+        alat_key = p.kode_alat or "LAINNYA"
+        by_alat[alat_key] = by_alat.get(alat_key, 0) + 1
+
+        is_crit = p.is_critical or (p.stok_min > 0 and stok <= p.stok_min)
+        if is_crit:
+            critical_list.append({
+                "id_part": p.id_part,
+                "sku": p.sku,
+                "nama_part": p.nama_part,
+                "stok_sekarang": stok,
+                "stok_min": p.stok_min,
+                "unit": p.unit,
+                "kode_alat": p.kode_alat,
+                "nama_alat": p.kategori_alat_ref.nama_alat if p.kategori_alat_ref else None,
+            })
+
+    total_suppliers = len(supplier_set)
+
+    # Monthly usage trend (last 12 months, OUT movements)
+    twelve_ago = datetime.now() - timedelta(days=365)
+    monthly_q = (
+        db.query(
+            func.strftime("%Y-%m", models.SparePartStok.waktu).label("bulan"),
+            func.sum(models.SparePartStok.jumlah).label("jumlah"),
+        )
+        .filter(
+            models.SparePartStok.tipe_gerakan == "OUT",
+            models.SparePartStok.waktu >= twelve_ago,
+        )
+    )
+    if mode == "per_lokasi" and child_lokasi_ids:
+        monthly_q = monthly_q.filter(models.SparePartStok.id_lokasi.in_(child_lokasi_ids))
+    monthly_data = monthly_q.group_by("bulan").order_by("bulan").all()
+
+    return {
+        "total_parts": total_parts,
+        "total_types": total_types,
+        "total_value": total_value,
+        "auto_demand": auto_demand_count,
+        "total_suppliers": total_suppliers,
+        "critical_count": len(critical_list),
+        "critical_list": critical_list[:50],   # cap at 50 for UI
+        "by_subsistem": by_subsistem,
+        "by_alat": by_alat,
+        "monthly_usage": [
+            {"bulan": r.bulan, "jumlah": int(r.jumlah)} for r in monthly_data
+        ],
+    }
+
+
+# ── One-time Seed Trigger (SUPER_ADMIN only) ───────────────────────
+
+@app.post("/api/inventaris/seed",
+          dependencies=[Depends(require_role(["SUPER_ADMIN"]))])
+def trigger_seed(db: Session = Depends(get_db)):
+    """Triggers the sparepart catalog seed. Safe to call multiple times."""
+    try:
+        from seed import seed_spareparts
+        seed_spareparts()
+        return {"message": "Seed sparepart selesai."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==================================================================
 # ── PUBLIC ENDPOINTS (Landing Page / QR) ──────────────────────────
 # ==================================================================
 

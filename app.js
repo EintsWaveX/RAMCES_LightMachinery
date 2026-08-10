@@ -7645,8 +7645,453 @@ function formatUtcToLocal(utcStr) {
 }
 
 // ════════════════════════════════════════════════════════════════════
-// INVENTARIS — Kelola Inventaris (Parts)
+// INVENTARIS — Kelola Inventaris (Parts + Dashboard)
 // ════════════════════════════════════════════════════════════════════
+
+(function setupInventaris() {
+
+  // ── State ─────────────────────────────────────────────────────────
+  let _invStockMode   = "global";    // "global" | "per_lokasi"
+  let _invLokasiFilter = "";         // selected parent lokasi id_lokasi
+  let _categories      = [];         // local cache from API
+
+  // ── Tab elements ──────────────────────────────────────────────────
+  const tabDash     = document.getElementById("inv-tab-dashboard");
+  const tabParts    = document.getElementById("inv-tab-parts");
+  const tabTransfer = document.getElementById("inv-tab-transfer");
+  const panelDash     = document.getElementById("inv-panel-dashboard");
+  const panelParts    = document.getElementById("inv-panel-parts");
+  const panelTransfer = document.getElementById("inv-panel-transfer");
+  const toolbarActions = document.getElementById("inv-toolbar-actions");
+  const searchInput    = document.getElementById("inv-parts-search");
+
+  // ── Tab switching ─────────────────────────────────────────────────
+  const ALL_TABS = [
+    { btn: tabDash,     panel: panelDash,     id: "dashboard" },
+    { btn: tabParts,    panel: panelParts,    id: "parts"     },
+    { btn: tabTransfer, panel: panelTransfer, id: "transfer"  },
+  ];
+
+  function setInvTab(which) {
+    ALL_TABS.forEach(({ btn, panel, id }) => {
+      const active = id === which;
+      btn?.classList.toggle("border-kai-blue", active);
+      btn?.classList.toggle("text-kai-blue",   active);
+      btn?.classList.toggle("border-transparent", !active);
+      btn?.classList.toggle("text-gray-400",   !active);
+      panel?.classList.toggle("hidden", !active);
+    });
+    // Show action buttons only on Parts tab
+    toolbarActions?.classList.toggle("hidden", which !== "parts");
+    // Clear search
+    if (searchInput) searchInput.value = "";
+    // Load dashboard data on first switch
+    if (which === "dashboard") loadInvDashboard();
+  }
+
+  ALL_TABS.forEach(({ btn, id }) => btn?.addEventListener("click", () => setInvTab(id)));
+
+  // Start on Dashboard tab
+  setInvTab("dashboard");
+
+  // ── "Open Full Inventory" buttons → switch to Parts tab ───────────
+  document.getElementById("inv-dash-open-mgmt")?.addEventListener("click",  () => setInvTab("parts"));
+  document.getElementById("inv-dash-open-mgmt2")?.addEventListener("click", () => setInvTab("parts"));
+
+  // ── Bulk Upload dropdown ──────────────────────────────────────────
+  const bulkToggle   = document.getElementById("inv-btn-bulk-toggle");
+  const bulkDropdown = document.getElementById("inv-bulk-dropdown");
+  bulkToggle?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    bulkDropdown?.classList.toggle("hidden");
+  });
+  document.addEventListener("click", () => bulkDropdown?.classList.add("hidden"));
+
+  // ── Stock mode toggle ─────────────────────────────────────────────
+  const modeGlobal = document.getElementById("inv-mode-global");
+  const modePerUpt = document.getElementById("inv-mode-perupt");
+
+  function setStockMode(mode) {
+    _invStockMode = mode;
+    const isGlobal = mode === "global";
+    modeGlobal?.classList.toggle("bg-white/20", isGlobal);
+    modeGlobal?.classList.toggle("text-white",  isGlobal);
+    modeGlobal?.classList.toggle("text-white/60", !isGlobal);
+    modePerUpt?.classList.toggle("bg-white/20",  !isGlobal);
+    modePerUpt?.classList.toggle("text-white",   !isGlobal);
+    modePerUpt?.classList.toggle("text-white/60", isGlobal);
+    loadInvDashboard();
+  }
+
+  modeGlobal?.addEventListener("click", () => setStockMode("global"));
+  modePerUpt?.addEventListener("click", () => setStockMode("per_lokasi"));
+
+  // ── Lokasi dropdown — populate from API ───────────────────────────
+  async function loadInvLokasiOptions() {
+    const sel = document.getElementById("inv-dash-lokasi");
+    if (!sel) return;
+    try {
+      const data = await apiFetch("/api/master/lokasi?tipe=DAOP&tipe=DIVRE&tipe=PUSAT");
+      sel.innerHTML = '<option value="">— Semua Lokasi —</option>' +
+        data.map(l => `<option value="${l.id_lokasi}">${l.nama_lokasi}</option>`).join("");
+    } catch (_) { /* silent */ }
+  }
+  loadInvLokasiOptions();
+
+  document.getElementById("inv-dash-lokasi")?.addEventListener("change", function () {
+    _invLokasiFilter = this.value;
+    loadInvDashboard();
+  });
+
+  // ── Dashboard data loader ─────────────────────────────────────────
+  async function loadInvDashboard() {
+    const params = new URLSearchParams({ mode: _invStockMode });
+    if (_invLokasiFilter) params.set("id_lokasi", _invLokasiFilter);
+    try {
+      const d = await apiFetch(`/api/inventaris/dashboard?${params}`);
+      renderInvDashboard(d);
+    } catch (e) {
+      console.warn("Dashboard load failed:", e);
+    }
+  }
+
+  function fmtRupiah(val) {
+    if (!val) return "Rp 0";
+    if (val >= 1_000_000_000) return `Rp ${(val / 1_000_000_000).toFixed(1)} M`;
+    if (val >= 1_000_000)     return `Rp ${(val / 1_000_000).toFixed(1)} Jt`;
+    return `Rp ${val.toLocaleString("id-ID")}`;
+  }
+
+  function renderInvDashboard(d) {
+    // KPI cards
+    const el = (id) => document.getElementById(id);
+    if (el("inv-dash-total-parts"))  el("inv-dash-total-parts").textContent  = d.total_parts ?? 0;
+    if (el("inv-dash-critical"))     el("inv-dash-critical").textContent     = d.critical_count ?? 0;
+    if (el("inv-dash-value"))        el("inv-dash-value").textContent        = fmtRupiah(d.total_value);
+    if (el("inv-dash-auto-demand"))  el("inv-dash-auto-demand").textContent  = d.auto_demand ?? 0;
+    if (el("inv-dash-critical-badge")) el("inv-dash-critical-badge").textContent = d.critical_count ?? 0;
+
+    // Bar chart: by_subsistem
+    const barEl = el("inv-dash-bar-chart");
+    if (barEl && d.by_subsistem) {
+      const entries = Object.entries(d.by_subsistem).sort((a, b) => b[1] - a[1]);
+      const maxVal  = Math.max(...entries.map(e => e[1]), 1);
+      const COLORS  = {
+        ELECTRIC:    "bg-kai-blue",
+        ENGINE:      "bg-amber-500",
+        MECHANIC:    "bg-emerald-500",
+        CONSUMABLES: "bg-violet-500",
+        LAINNYA:     "bg-gray-400",
+      };
+      barEl.innerHTML = entries.map(([sub, count]) => {
+        const pct   = Math.round((count / maxVal) * 100);
+        const color = COLORS[sub] || "bg-gray-400";
+        return `
+          <div class="flex items-center gap-2">
+            <span class="text-[10px] text-gray-500 dark:text-gray-400 w-24 truncate shrink-0">${sub}</span>
+            <div class="flex-1 bg-gray-100 dark:bg-gray-700 rounded-full h-3 overflow-hidden">
+              <div class="${color} h-full rounded-full transition-all duration-500" style="width:${pct}%"></div>
+            </div>
+            <span class="text-[10px] font-bold text-gray-600 dark:text-gray-300 w-6 text-right">${count}</span>
+          </div>`;
+      }).join("");
+    }
+
+    // Trend chart: monthly_usage (mini bar chart)
+    const trendEl = el("inv-dash-trend-chart");
+    if (trendEl && d.monthly_usage && d.monthly_usage.length > 0) {
+      const maxM = Math.max(...d.monthly_usage.map(m => m.jumlah), 1);
+      trendEl.innerHTML = d.monthly_usage.map(m => {
+        const pct = Math.round((m.jumlah / maxM) * 100);
+        const label = m.bulan?.slice(5) || "";   // "MM" from "YYYY-MM"
+        return `
+          <div class="flex flex-col items-center gap-1 flex-1" title="${m.bulan}: ${m.jumlah}">
+            <span class="text-[9px] text-gray-400 font-mono">${m.jumlah}</span>
+            <div class="w-full bg-kai-blue/20 rounded-t" style="height:${Math.max(pct * 0.8, 4)}px;"></div>
+            <span class="text-[9px] text-gray-400">${label}</span>
+          </div>`;
+      }).join("");
+    } else if (trendEl) {
+      trendEl.innerHTML = '<p class="text-xs text-gray-400 italic self-center">Belum ada data penggunaan.</p>';
+    }
+
+    // Critical stock table
+    const tbody = el("inv-dash-critical-body");
+    if (tbody) {
+      if (!d.critical_list || d.critical_list.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="3" class="py-4 text-center text-gray-400 italic text-xs">Semua stok aman ✓</td></tr>';
+      } else {
+        tbody.innerHTML = d.critical_list.map(r => `
+          <tr class="border-b border-gray-50 dark:border-gray-700 hover:bg-red-50 dark:hover:bg-red-900/10">
+            <td class="py-1.5 pr-2">
+              <p class="font-semibold text-gray-700 dark:text-gray-200 leading-tight">${r.nama_part}</p>
+              <p class="text-[9px] text-gray-400">${r.nama_alat || r.kode_alat || ""}</p>
+            </td>
+            <td class="py-1.5 text-right font-bold text-red-500">${r.stok_sekarang}</td>
+            <td class="py-1.5 text-right text-gray-400">${r.stok_min}</td>
+          </tr>`).join("");
+      }
+    }
+  }
+
+  // ── Add Parts Item modal ──────────────────────────────────────────
+  const addModal  = document.getElementById("inv-add-modal");
+  const btnOpen   = document.getElementById("inv-btn-add-part");
+  const btnClose  = document.getElementById("inv-add-modal-close");
+  const btnCancel = document.getElementById("inv-add-modal-cancel");
+  const btnSubmit = document.getElementById("inv-add-modal-submit");
+
+  function openAddModal()  { addModal?.classList.remove("hidden"); loadInvKategoriOptions(); }
+  function closeAddModal() { addModal?.classList.add("hidden"); }
+
+  btnOpen?.addEventListener("click",   openAddModal);
+  btnClose?.addEventListener("click",  closeAddModal);
+  btnCancel?.addEventListener("click", closeAddModal);
+  addModal?.addEventListener("click", (e) => { if (e.target === addModal) closeAddModal(); });
+
+  btnSubmit?.addEventListener("click", async () => {
+    const body = {
+      nama_part:    document.getElementById("inv-field-item-name")?.value.trim(),
+      id_kategori:  parseInt(document.getElementById("inv-field-category")?.value) || null,
+      kode_alat:    document.getElementById("inv-field-kode-alat")?.value || null,
+      part_number:  document.getElementById("inv-field-part-number")?.value.trim() || null,
+      unit:         document.getElementById("inv-field-unit")?.value || "Pcs",
+      harga_satuan: parseInt(document.getElementById("inv-field-cost")?.value) || null,
+      stok_min:     parseInt(document.getElementById("inv-field-threshold")?.value) || 0,
+      auto_demand:  document.getElementById("inv-field-auto-demand")?.checked || false,
+      supplier:     document.getElementById("inv-field-supplier")?.value.trim() || null,
+      deskripsi:    document.getElementById("inv-field-description")?.value.trim() || null,
+      is_critical:  document.getElementById("inv-field-critical")?.checked || false,
+      linked_vehicle: document.getElementById("inv-field-vehicle")?.value.trim() || null,
+      warranty_months: parseInt(document.getElementById("inv-field-warranty")?.value) || null,
+      jumlah_awal:  parseInt(document.getElementById("inv-field-quantity")?.value) || 0,
+      id_lokasi_awal: _invLokasiFilter || null,
+    };
+    if (!body.nama_part) { showToast("Nama part wajib diisi.", "warning"); return; }
+    try {
+      await apiFetch("/api/inventaris/parts", { method: "POST", body: JSON.stringify(body) });
+      showToast("Part berhasil ditambahkan.", "success");
+      closeAddModal();
+      if (!panelParts.classList.contains("hidden")) loadInvParts();
+    } catch (e) {
+      showToast(e.message || "Gagal menambahkan part.", "error");
+    }
+  });
+
+  // ── Load kategori for dropdown ────────────────────────────────────
+  async function loadInvKategoriOptions() {
+    try {
+      const data = await apiFetch("/api/inventaris/kategori");
+      _categories = data;
+      const sel  = document.getElementById("inv-field-category");
+      if (sel) {
+        sel.innerHTML = '<option value="">— Pilih Kategori —</option>' +
+          data.map(c => `<option value="${c.id_kategori}">[${c.subsistem || ""}] ${c.nama}</option>`).join("");
+      }
+      // Also sync in category modal list
+      renderCategories();
+    } catch (_) { /* silent */ }
+  }
+
+  // ── Parts Category modal ──────────────────────────────────────────
+  const catModal   = document.getElementById("inv-category-modal");
+  const btnCatOpen  = document.getElementById("inv-btn-parts-category");
+  const btnCatClose = document.getElementById("inv-category-modal-close");
+  const btnCatDone  = document.getElementById("inv-category-modal-close-btn");
+  const catInput    = document.getElementById("inv-category-input");
+  const catAddBtn   = document.getElementById("inv-category-add-btn");
+  const catList     = document.getElementById("inv-category-list");
+
+  function openCatModal()  { catModal?.classList.remove("hidden"); loadInvKategoriOptions(); }
+  function closeCatModal() { catModal?.classList.add("hidden"); }
+
+  btnCatOpen?.addEventListener("click",  openCatModal);
+  btnCatClose?.addEventListener("click", closeCatModal);
+  btnCatDone?.addEventListener("click",  closeCatModal);
+  catModal?.addEventListener("click", (e) => { if (e.target === catModal) closeCatModal(); });
+
+  function renderCategories() {
+    if (!catList) return;
+    if (_categories.length === 0) {
+      catList.innerHTML = '<li class="text-sm text-gray-400 italic py-2 text-center">No categories yet.</li>';
+    } else {
+      catList.innerHTML = _categories.map(c => `
+        <li class="flex items-center justify-between px-3 py-2 rounded-lg bg-white dark:bg-gray-700 border border-gray-100 dark:border-gray-600">
+          <div>
+            <span class="text-sm text-gray-700 dark:text-gray-200 font-medium">${c.nama}</span>
+            ${c.subsistem ? `<span class="ml-2 text-[10px] bg-gray-100 dark:bg-gray-600 text-gray-500 dark:text-gray-300 px-1.5 py-0.5 rounded">${c.subsistem}</span>` : ""}
+          </div>
+          <button data-id="${c.id_kategori}" class="inv-cat-delete text-gray-300 hover:text-red-400 transition text-xs">
+            <i class="fas fa-times"></i>
+          </button>
+        </li>`).join("");
+    }
+    catList.querySelectorAll(".inv-cat-delete").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        try {
+          await apiFetch(`/api/inventaris/kategori/${btn.dataset.id}`, { method: "DELETE" });
+          showToast("Kategori dihapus.", "success");
+          loadInvKategoriOptions();
+        } catch (e) {
+          showToast(e.message || "Gagal menghapus.", "error");
+        }
+      });
+    });
+  }
+
+  catAddBtn?.addEventListener("click", async () => {
+    const val = catInput?.value.trim();
+    if (!val) return;
+    try {
+      await apiFetch("/api/inventaris/kategori", {
+        method: "POST",
+        body: JSON.stringify({ nama: val }),
+      });
+      if (catInput) catInput.value = "";
+      showToast("Kategori ditambahkan.", "success");
+      loadInvKategoriOptions();
+    } catch (e) {
+      showToast(e.message || "Gagal menambahkan kategori.", "error");
+    }
+  });
+  catInput?.addEventListener("keydown", (e) => { if (e.key === "Enter") catAddBtn?.click(); });
+
+  // ── Load & render Parts table ──────────────────────────────────────
+  async function loadInvParts() {
+    const params = new URLSearchParams({ mode: _invStockMode });
+    if (_invLokasiFilter) params.set("id_lokasi", _invLokasiFilter);
+    try {
+      const data = await apiFetch(`/api/inventaris/parts?${params}`);
+      renderInvPartsTable(data);
+      // Update stat cards
+      document.getElementById("inv-stat-total")?.textContent != null &&
+        (document.getElementById("inv-stat-total").textContent = data.length);
+      const critCount = data.filter(p => p.is_critical).length;
+      document.getElementById("inv-stat-critical") &&
+        (document.getElementById("inv-stat-critical").textContent = critCount);
+      const types = new Set(data.map(p => p.kode_alat).filter(Boolean));
+      document.getElementById("inv-stat-types") &&
+        (document.getElementById("inv-stat-types").textContent = types.size);
+      const mfgs = new Set(data.map(p => p.nama_alat).filter(Boolean));
+      document.getElementById("inv-stat-manufacturers") &&
+        (document.getElementById("inv-stat-manufacturers").textContent = mfgs.size);
+      const sups = new Set(data.map(p => p.supplier).filter(Boolean));
+      document.getElementById("inv-stat-suppliers") &&
+        (document.getElementById("inv-stat-suppliers").textContent = sups.size);
+      const demCount = data.filter(p => p.auto_demand).length;
+      document.getElementById("inv-stat-demand") &&
+        (document.getElementById("inv-stat-demand").textContent = demCount);
+      const cats = new Set(data.map(p => p.id_kategori).filter(Boolean));
+      document.getElementById("inv-stat-categories") &&
+        (document.getElementById("inv-stat-categories").textContent = cats.size);
+    } catch (e) {
+      console.warn("Parts load failed:", e);
+    }
+  }
+
+  function renderInvPartsTable(data) {
+    const tbody = document.getElementById("inv-parts-body");
+    if (!tbody) return;
+    if (data.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="9" class="text-center py-12 text-sm text-gray-400">
+        <i class="fas fa-box-open text-3xl mb-2 block text-gray-300"></i>No Data</td></tr>`;
+      return;
+    }
+    tbody.innerHTML = data.map(p => {
+      const isCrit = p.is_critical;
+      const rowCls = isCrit ? "bg-red-50 dark:bg-red-900/10" : "hover:bg-gray-50 dark:hover:bg-gray-700/30";
+      return `<tr class="${rowCls} border-b border-gray-50 dark:border-gray-700/50 transition">
+        <td class="px-4 py-2.5 whitespace-nowrap">
+          <button class="inv-part-delete text-gray-300 hover:text-red-400 transition mr-1" data-id="${p.id_part}" title="Hapus">
+            <i class="fas fa-trash-alt text-xs"></i>
+          </button>
+        </td>
+        <td class="px-4 py-2.5">
+          <p class="font-semibold text-gray-800 dark:text-white text-xs leading-tight">${p.nama_part}</p>
+          <p class="text-[10px] text-gray-400">${p.sku}</p>
+        </td>
+        <td class="px-4 py-2.5 text-sm">
+          <span class="${isCrit ? "text-red-500 font-bold" : "text-gray-700 dark:text-gray-300"}">${p.stok_sekarang}</span>
+          <span class="text-[10px] text-gray-400 ml-1">${p.unit}</span>
+          ${isCrit ? '<i class="fas fa-exclamation-circle text-red-400 text-xs ml-1"></i>' : ""}
+        </td>
+        <td class="px-4 py-2.5 text-xs text-gray-600 dark:text-gray-300">${p.harga_satuan ? "Rp " + p.harga_satuan.toLocaleString("id-ID") : "—"}</td>
+        <td class="px-4 py-2.5 text-xs text-gray-500 dark:text-gray-400">${p.subsistem || "—"}</td>
+        <td class="px-4 py-2.5 text-xs text-gray-600 dark:text-gray-300">${p.nama_alat || p.kode_alat || "—"}</td>
+        <td class="px-4 py-2.5 text-xs text-gray-500 dark:text-gray-400">${p.supplier || "—"}</td>
+        <td class="px-4 py-2.5 text-xs text-gray-500 dark:text-gray-400 max-w-[160px] truncate">${p.deskripsi || "—"}</td>
+        <td class="px-4 py-2.5 text-xs text-gray-400">${_invLokasiFilter || "Global"}</td>
+      </tr>`;
+    }).join("");
+
+    // Delete handlers
+    tbody.querySelectorAll(".inv-part-delete").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        if (!confirm("Hapus part ini?")) return;
+        try {
+          await apiFetch(`/api/inventaris/parts/${btn.dataset.id}`, { method: "DELETE" });
+          showToast("Part dihapus.", "success");
+          loadInvParts();
+        } catch (e) { showToast(e.message || "Gagal.", "error"); }
+      });
+    });
+  }
+
+  // Load parts when switching to Parts tab
+  tabParts?.addEventListener("click", () => { loadInvParts(); loadInvKategoriOptions(); });
+
+  // ── Unified search ────────────────────────────────────────────────
+  searchInput?.addEventListener("input", function () {
+    const q = this.value.toLowerCase();
+    const isDash   = !panelDash.classList.contains("hidden");
+    const isParts  = !panelParts.classList.contains("hidden");
+    if (isDash) return;
+    const sel = isParts ? "#inv-parts-body tr" : "#inv-transfer-body tr";
+    document.querySelectorAll(sel).forEach(row => {
+      row.style.display = row.textContent.toLowerCase().includes(q) ? "" : "none";
+    });
+  });
+
+  // ── Transfer history loader ────────────────────────────────────────
+  async function loadInvTransfer() {
+    const params = new URLSearchParams();
+    if (_invLokasiFilter) params.set("id_lokasi", _invLokasiFilter);
+    try {
+      const data = await apiFetch(`/api/inventaris/transfer?${params}`);
+      const tbody = document.getElementById("inv-transfer-body");
+      if (!tbody) return;
+      if (data.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="9" class="text-center py-12 text-sm text-gray-400">
+          <i class="fas fa-exchange-alt text-3xl mb-2 block text-gray-300"></i>No Data</td></tr>`;
+        return;
+      }
+      tbody.innerHTML = data.map(r => `
+        <tr class="border-b border-gray-50 dark:border-gray-700/50 hover:bg-gray-50 dark:hover:bg-gray-700/30 transition">
+          <td class="px-4 py-2.5 text-xs text-gray-500">${r.waktu || "—"}</td>
+          <td class="px-4 py-2.5 text-xs font-medium text-gray-800 dark:text-white">${r.nama_part}</td>
+          <td class="px-4 py-2.5 text-xs text-gray-600">${r.jumlah} ${r.unit}</td>
+          <td class="px-4 py-2.5 text-xs text-gray-500">${r.nama_alat || "—"}</td>
+          <td class="px-4 py-2.5 text-xs text-gray-600">${r.site_from}</td>
+          <td class="px-4 py-2.5 text-xs text-gray-600">${r.site_to}</td>
+          <td class="px-4 py-2.5 text-xs text-gray-500">${r.transfer_by}</td>
+          <td class="px-4 py-2.5 text-xs text-gray-500">${r.transfer_to}</td>
+          <td class="px-4 py-2.5 text-xs text-gray-400">${r.catatan}</td>
+        </tr>`).join("");
+    } catch (e) { console.warn("Transfer load failed:", e); }
+  }
+
+  tabTransfer?.addEventListener("click", loadInvTransfer);
+
+  // WebSocket refresh
+  window.addEventListener("ws-message", (e) => {
+    if (e.detail === "REFRESH_INVENTARIS") {
+      if (!panelDash.classList.contains("hidden"))     loadInvDashboard();
+      if (!panelParts.classList.contains("hidden"))    loadInvParts();
+      if (!panelTransfer.classList.contains("hidden")) loadInvTransfer();
+    }
+  });
+
+})();
 
 (function setupInventaris() {
   // ── Tab switching ──

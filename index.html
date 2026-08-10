@@ -830,14 +830,136 @@
 
                     <!-- ── Tab Switcher ── -->
                     <div class="flex gap-0 border-b border-gray-200 dark:border-gray-700">
-                        <button id="inv-tab-parts"
+                        <button id="inv-tab-dashboard"
                             class="inv-tab-btn px-5 py-3 text-sm font-bold border-b-2 border-kai-blue text-kai-blue transition">
+                            Dashboard
+                        </button>
+                        <button id="inv-tab-parts"
+                            class="inv-tab-btn px-5 py-3 text-sm font-bold border-b-2 border-transparent text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition">
                             Parts
                         </button>
                         <button id="inv-tab-transfer"
                             class="inv-tab-btn px-5 py-3 text-sm font-bold border-b-2 border-transparent text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition">
                             Parts Transfer History
                         </button>
+                    </div>
+
+                    <!-- ── Tab Panel: Dashboard ── -->
+                    <div id="inv-panel-dashboard">
+                        <!-- Dashboard toolbar -->
+                        <div class="flex flex-wrap items-center gap-3 bg-kai-blue rounded-t-xl px-4 py-3">
+                            <!-- Lokasi selector -->
+                            <div class="flex items-center gap-2">
+                                <i class="fas fa-map-marker-alt text-white/70 text-sm"></i>
+                                <select id="inv-dash-lokasi"
+                                    class="pl-3 pr-8 py-2 bg-white dark:bg-gray-700 border border-white/30 rounded-lg text-sm outline-none focus:border-kai-orange transition font-semibold min-w-[180px]">
+                                    <option value="">— Semua Lokasi —</option>
+                                </select>
+                            </div>
+                            <!-- Stock mode toggle -->
+                            <div class="flex items-center gap-1 bg-white/10 rounded-lg p-1 border border-white/20">
+                                <button id="inv-mode-global"
+                                    class="inv-mode-btn px-3 py-1.5 rounded-md text-xs font-bold text-white bg-white/20 transition">
+                                    <i class="fas fa-globe-asia mr-1"></i> Global
+                                </button>
+                                <button id="inv-mode-perupt"
+                                    class="inv-mode-btn px-3 py-1.5 rounded-md text-xs font-bold text-white/60 hover:text-white transition">
+                                    <i class="fas fa-building mr-1"></i> Per-UPT
+                                </button>
+                            </div>
+                            <!-- Spacer + open management link -->
+                            <div class="flex-1"></div>
+                            <button id="inv-dash-open-mgmt"
+                                class="flex items-center gap-2 px-4 py-2 bg-kai-orange hover:bg-orange-600 text-white font-semibold rounded-lg transition text-sm shadow-sm">
+                                <i class="fas fa-external-link-alt"></i> Kelola Inventaris
+                            </button>
+                        </div>
+
+                        <!-- Locked-header notice -->
+                        <div class="flex items-center gap-3 px-4 py-2 bg-amber-50 dark:bg-amber-900/20 border-x border-amber-200 dark:border-amber-700/40 text-amber-700 dark:text-amber-300 text-xs font-medium">
+                            <i class="fas fa-lock text-amber-400"></i>
+                            Dashboard ini hanya menampilkan ringkasan. Untuk mengelola data suku cadang, klik
+                            <button id="inv-dash-open-mgmt2" class="underline font-bold hover:text-amber-900 dark:hover:text-amber-100 transition">
+                                Kelola Inventaris →
+                            </button>
+                        </div>
+
+                        <!-- KPI Cards -->
+                        <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 p-4 bg-white dark:bg-gray-800 border-x border-gray-100 dark:border-gray-700">
+                            <div class="p-4 rounded-xl border border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/50 relative overflow-hidden group">
+                                <p class="text-[9px] font-bold tracking-widest text-gray-400 uppercase mb-1">Total Parts</p>
+                                <h3 class="text-2xl font-bold text-gray-800 dark:text-white" id="inv-dash-total-parts">—</h3>
+                                <p class="text-[10px] text-gray-400 mt-0.5">Item dalam katalog</p>
+                                <i class="fas fa-cubes absolute -bottom-2 -right-1 text-4xl text-gray-200 dark:text-gray-600 group-hover:scale-110 transition-transform"></i>
+                            </div>
+                            <div class="p-4 rounded-xl border border-red-100 dark:border-red-900/40 bg-red-50 dark:bg-red-900/20 relative overflow-hidden group">
+                                <p class="text-[9px] font-bold tracking-widest text-red-400 uppercase mb-1">Critical Parts</p>
+                                <h3 class="text-2xl font-bold text-red-500" id="inv-dash-critical">—</h3>
+                                <p class="text-[10px] text-red-400 mt-0.5">Stok di bawah minimum</p>
+                                <i class="fas fa-exclamation-triangle absolute -bottom-2 -right-1 text-4xl text-red-200 dark:text-red-900/50 group-hover:scale-110 transition-transform"></i>
+                            </div>
+                            <div class="p-4 rounded-xl border border-emerald-100 dark:border-emerald-900/40 bg-emerald-50 dark:bg-emerald-900/20 relative overflow-hidden group">
+                                <p class="text-[9px] font-bold tracking-widest text-emerald-500 uppercase mb-1">Total Nilai Stok</p>
+                                <h3 class="text-lg font-bold text-emerald-600 dark:text-emerald-400 truncate" id="inv-dash-value">—</h3>
+                                <p class="text-[10px] text-emerald-500 mt-0.5">Estimasi nilai inventaris</p>
+                                <i class="fas fa-coins absolute -bottom-2 -right-1 text-4xl text-emerald-200 dark:text-emerald-900/50 group-hover:scale-110 transition-transform"></i>
+                            </div>
+                            <div class="p-4 rounded-xl border border-sky-100 dark:border-sky-900/40 bg-sky-50 dark:bg-sky-900/20 relative overflow-hidden group">
+                                <p class="text-[9px] font-bold tracking-widest text-sky-500 uppercase mb-1">Auto Demand</p>
+                                <h3 class="text-2xl font-bold text-sky-500" id="inv-dash-auto-demand">—</h3>
+                                <p class="text-[10px] text-sky-400 mt-0.5">Item reorder otomatis</p>
+                                <i class="fas fa-sync-alt absolute -bottom-2 -right-1 text-4xl text-sky-200 dark:text-sky-900/50 group-hover:scale-110 transition-transform"></i>
+                            </div>
+                        </div>
+
+                        <!-- Charts + Critical table -->
+                        <div class="grid grid-cols-1 lg:grid-cols-5 gap-0 border-x border-b border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800 rounded-b-xl overflow-hidden">
+                            <!-- Left: charts column (3/5) -->
+                            <div class="lg:col-span-3 p-4 space-y-4 border-b lg:border-b-0 lg:border-r border-gray-100 dark:border-gray-700">
+                                <!-- Bar chart: parts by subsystem -->
+                                <div>
+                                    <p class="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-widest mb-3">
+                                        Parts per Subsistem
+                                    </p>
+                                    <div id="inv-dash-bar-chart" class="space-y-2">
+                                        <p class="text-xs text-gray-400 italic">Memuat data...</p>
+                                    </div>
+                                </div>
+                                <!-- Bar chart: monthly usage trend -->
+                                <div class="pt-3 border-t border-gray-100 dark:border-gray-700">
+                                    <p class="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-widest mb-3">
+                                        Tren Penggunaan (12 Bulan Terakhir)
+                                    </p>
+                                    <div id="inv-dash-trend-chart" class="flex items-end gap-1 h-24">
+                                        <p class="text-xs text-gray-400 italic self-center">Memuat data...</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <!-- Right: critical stock table (2/5) -->
+                            <div class="lg:col-span-2 p-4">
+                                <p class="text-xs font-bold text-red-500 uppercase tracking-widest mb-3 flex items-center gap-2">
+                                    <i class="fas fa-exclamation-circle"></i> Critical Stock
+                                    <span id="inv-dash-critical-badge"
+                                        class="ml-auto bg-red-100 dark:bg-red-900/40 text-red-500 text-[10px] font-bold px-2 py-0.5 rounded-full">0</span>
+                                </p>
+                                <div class="overflow-y-auto max-h-64">
+                                    <table class="w-full text-xs">
+                                        <thead>
+                                            <tr class="border-b border-gray-100 dark:border-gray-700">
+                                                <th class="pb-2 text-left font-bold text-gray-400 uppercase tracking-wider">Part</th>
+                                                <th class="pb-2 text-right font-bold text-gray-400 uppercase tracking-wider">Stok</th>
+                                                <th class="pb-2 text-right font-bold text-gray-400 uppercase tracking-wider">Min</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="inv-dash-critical-body">
+                                            <tr>
+                                                <td colspan="3" class="py-6 text-center text-gray-400 italic">Tidak ada data</td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
                     </div>
 
                     <!-- ── Shared Toolbar (always visible) ── -->
