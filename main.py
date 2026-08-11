@@ -1,11 +1,15 @@
 import asyncio
 import os
 import re
+import secrets
+import shutil
 from dotenv import load_dotenv
 from fastapi import (
     FastAPI,
     Depends,
+    File,
     HTTPException,
+    UploadFile,
     WebSocket,
     WebSocketDisconnect,
     Query,
@@ -32,14 +36,18 @@ models.Base.metadata.create_all(bind=engine)
 load_dotenv()
 
 
-def _ensure_indexes():
+def _ensure_schema():
     """
-    Idempotent index DDL for databases created before these indexes existed.
-    create_all() only adds indexes to tables it creates, so an already-populated
-    schema never picks them up. The composite riwayat index is what lets the
-    repair dashboard's LAG() window use an index scan instead of a full sort.
+    Idempotent DDL for databases created before these columns/indexes existed.
+
+    `create_all()` creates missing TABLES but never ALTERs an existing one, so a
+    populated schema silently misses every column added after it was first
+    created. There is no Alembic in this project, so these additive statements
+    are the migration. All are `IF NOT EXISTS` / `IF EXISTS` guarded and safe to
+    re-run on every boot.
     """
     statements = [
+        # ── Indexes ──
         "CREATE INDEX IF NOT EXISTS ix_rk_aset_waktu "
         "ON riwayat_kondisi (id_aset, waktu_lapor, id_riwayat)",
         "CREATE INDEX IF NOT EXISTS ix_rk_waktu ON riwayat_kondisi (waktu_lapor)",
@@ -48,16 +56,41 @@ def _ensure_indexes():
         "ON aset (id_lokasi, status_terakhir)",
         "CREATE INDEX IF NOT EXISTS ix_stok_part_lokasi "
         "ON sparepart_stok (id_part, id_lokasi)",
+        # ── Presence ──
+        "ALTER TABLE pengguna ADD COLUMN IF NOT EXISTS last_seen TIMESTAMP",
+        "ALTER TABLE pengguna ADD COLUMN IF NOT EXISTS last_view VARCHAR(50)",
+        # ── Spesifikasi teknis (varian) ──
+        "ALTER TABLE aset ADD COLUMN IF NOT EXISTS id_varian INTEGER "
+        "REFERENCES alat_varian(id_varian)",
+        "CREATE INDEX IF NOT EXISTS ix_aset_varian ON aset (id_varian)",
+        # ── Calibration certificate ──
+        "ALTER TABLE riwayat_kalibrasi ADD COLUMN IF NOT EXISTS "
+        "file_sertifikat VARCHAR(255)",
+        # ── Warehouse ── (column first; the index below depends on it)
+        "ALTER TABLE sparepart_stok ADD COLUMN IF NOT EXISTS id_gudang INTEGER "
+        "REFERENCES gudang(id_gudang)",
+        "CREATE INDEX IF NOT EXISTS ix_stok_part_gudang "
+        "ON sparepart_stok (id_part, id_gudang)",
+        # tipe_gerakan widened from 10 to 20 chars for RETUR_VENDOR / ADJ_OUT
+        "ALTER TABLE sparepart_stok ALTER COLUMN tipe_gerakan TYPE VARCHAR(20)",
+        # the old CHECK only permitted IN|OUT — replace it with the wider set
+        "ALTER TABLE sparepart_stok DROP CONSTRAINT IF EXISTS "
+        "sparepart_stok_gerakan_check",
+        "ALTER TABLE sparepart_stok ADD CONSTRAINT sparepart_stok_gerakan_check "
+        "CHECK (tipe_gerakan IN "
+        "('IN','OUT','RETUR_VENDOR','RETUR_CUST','ADJ_IN','ADJ_OUT'))",
     ]
-    try:
-        with engine.begin() as conn:
-            for stmt in statements:
+    for stmt in statements:
+        # Each in its own transaction: one failure (e.g. a constraint that
+        # already exists in a different form) must not roll back the rest.
+        try:
+            with engine.begin() as conn:
                 conn.execute(sa_text(stmt))
-    except Exception as exc:  # never block startup on an index
-        print(f"[warn] index setup skipped: {exc}")
+        except Exception as exc:  # never block startup on schema touch-up
+            print(f"[warn] schema step skipped: {stmt[:60]}… → {exc}")
 
 
-_ensure_indexes()
+_ensure_schema()
 
 app = FastAPI(title="SIMA-KAI Asset API")
 
@@ -323,19 +356,60 @@ def get_db():
 
 
 class ConnectionManager:
+    """
+    Live-update fan-out, plus the presence registry.
+
+    Sockets are keyed by username so "who is online" is answerable without a
+    database round trip. A user may hold several sockets at once (two tabs), so
+    each username maps to a SET — they go offline only when the last one drops.
+    """
+
     def __init__(self):
         self.active_connections: List[WebSocket] = []
         self._lock = asyncio.Lock()
+        # username → set of sockets
+        self.user_sockets: dict = {}
+        # username → { "view": str, "since": datetime }
+        self.presence: dict = {}
 
-    async def connect(self, websocket: WebSocket):
+    async def connect(self, websocket: WebSocket, username: Optional[str] = None):
         await websocket.accept()
         async with self._lock:
             self.active_connections.append(websocket)
+            if username:
+                self.user_sockets.setdefault(username, set()).add(websocket)
+                self.presence.setdefault(
+                    username, {"view": None, "since": datetime.now()}
+                )
 
-    async def disconnect(self, websocket: WebSocket):
+    async def disconnect(self, websocket: WebSocket, username: Optional[str] = None):
         async with self._lock:
             if websocket in self.active_connections:
                 self.active_connections.remove(websocket)
+            if username and username in self.user_sockets:
+                self.user_sockets[username].discard(websocket)
+                # Only truly offline once every tab has closed.
+                if not self.user_sockets[username]:
+                    self.user_sockets.pop(username, None)
+                    self.presence.pop(username, None)
+
+    async def set_view(self, username: str, view: Optional[str]):
+        """Record which screen a user is looking at (for the Pengguna list)."""
+        if not username:
+            return
+        async with self._lock:
+            entry = self.presence.setdefault(
+                username, {"view": None, "since": datetime.now()}
+            )
+            if entry.get("view") != view:
+                entry["view"] = view
+                entry["since"] = datetime.now()
+
+    def online_usernames(self) -> set:
+        return set(self.user_sockets.keys())
+
+    def presence_of(self, username: str) -> dict:
+        return self.presence.get(username) or {}
 
     async def broadcast(self, message: str):
         async with self._lock:
@@ -441,6 +515,9 @@ def login(form_data: LoginForm, db: Session = Depends(get_db)):
         db.commit()
         db.refresh(user)
 
+    user.last_seen = datetime.now()
+    db.commit()
+
     return {
         "access_token": create_access_token(
             {
@@ -533,15 +610,37 @@ def get_all_users(
         )
 
     users = query.order_by(models.Pengguna.role, models.Pengguna.username).all()
-    return [
-        {
-            "id_pengguna": u.id_pengguna,
-            "username": u.username,
-            "role": u.role,
-            "id_lokasi": u.id_lokasi,
-        }
-        for u in users
-    ]
+
+    # "Online" means an open WebSocket right now — not a recent last_seen, which
+    # would keep showing people as present long after they closed the tab.
+    online = manager.online_usernames()
+    lokasi_names = {
+        l.id_lokasi: l.nama_lokasi for l in db.query(models.Lokasi).all()
+    }
+
+    result = []
+    for u in users:
+        pres = manager.presence_of(u.username)
+        result.append(
+            {
+                "id_pengguna": u.id_pengguna,
+                "username": u.username,
+                "role": u.role,
+                "id_lokasi": u.id_lokasi,
+                "nama_lokasi": lokasi_names.get(u.id_lokasi) or u.id_lokasi,
+                "online": u.username in online,
+                "last_seen": u.last_seen.strftime("%Y-%m-%d %H:%M:%S")
+                if u.last_seen
+                else None,
+                # Live view wins over the persisted one: the column is only a
+                # fallback for someone who is currently offline.
+                "last_view": pres.get("view") or u.last_view,
+                "aktif_sejak": pres.get("since").strftime("%Y-%m-%d %H:%M:%S")
+                if pres.get("since")
+                else None,
+            }
+        )
+    return result
 
 
 @app.put("/api/users/{user_id}")
@@ -612,16 +711,73 @@ def delete_own_account(
 # ==================================================================
 
 
+def _username_from_token(token: Optional[str]) -> Optional[str]:
+    """Decode a JWT for the WebSocket handshake. Returns None if unusable."""
+    if not token:
+        return None
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        return payload.get("sub")
+    except jwt.PyJWTError:
+        return None
+
+
+def _touch_last_seen(username: Optional[str], view: Optional[str] = None):
+    """Stamp presence on the user row using a short-lived standalone session."""
+    if not username:
+        return
+    db = SessionLocal()
+    try:
+        user = db.query(models.Pengguna).filter_by(username=username).first()
+        if user:
+            user.last_seen = datetime.now()
+            if view:
+                user.last_view = view
+            db.commit()
+    except Exception:
+        db.rollback()
+    finally:
+        db.close()
+
+
 @app.websocket("/ws/updates")
-async def websocket_endpoint(websocket: WebSocket):
-    await manager.connect(websocket)
+async def websocket_endpoint(websocket: WebSocket, token: Optional[str] = None):
+    """
+    Live-update channel, now identity-aware.
+
+    The token arrives as a query param because the browser WebSocket API cannot
+    set an Authorization header. It is optional: an anonymous socket still gets
+    broadcasts (so nothing regresses), it simply doesn't register presence.
+
+    Client → server messages:
+      "ping"        → "pong"  (heartbeat)
+      "view:<name>" → records which screen the user is on
+    """
+    username = _username_from_token(token)
+    await manager.connect(websocket, username)
+    if username:
+        _touch_last_seen(username)
+        await manager.broadcast("REFRESH_PRESENCE")
     try:
         while True:
             data = await websocket.receive_text()
             if data == "ping":
                 await websocket.send_text("pong")
+                # The heartbeat doubles as the liveness stamp.
+                _touch_last_seen(username)
+            elif data.startswith("view:") and username:
+                view = data.split(":", 1)[1][:50] or None
+                await manager.set_view(username, view)
+                _touch_last_seen(username, view)
+                await manager.broadcast("REFRESH_PRESENCE")
     except WebSocketDisconnect:
-        await manager.disconnect(websocket)
+        await manager.disconnect(websocket, username)
+        if username:
+            _touch_last_seen(username)
+            await manager.broadcast("REFRESH_PRESENCE")
+    except Exception:
+        # Never let a malformed frame leak a socket from the registry.
+        await manager.disconnect(websocket, username)
 
 
 # ==================================================================
@@ -1102,6 +1258,131 @@ async def create_kalibrasi(
     return {"message": "Laporan kalibrasi berhasil disimpan.", "id_kalibrasi": record.id_kalibrasi}
 
 
+# ── Calibration certificate upload ─────────────────────────────────
+# Kept as a separate "attach" step rather than folding multipart into
+# POST /api/kalibrasi, so the existing JSON contract stays intact: the client
+# creates the record, then uploads the file against the returned id.
+
+UPLOAD_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploads")
+SERTIFIKAT_DIR = os.path.join(UPLOAD_DIR, "sertifikat")
+ALLOWED_CERT_EXT = {".pdf", ".png", ".jpg", ".jpeg", ".webp"}
+MAX_CERT_BYTES = 10 * 1024 * 1024  # 10 MB
+
+os.makedirs(SERTIFIKAT_DIR, exist_ok=True)
+
+
+def _save_certificate(upload: UploadFile, id_kalibrasi: int) -> str:
+    """
+    Persist an uploaded certificate and return the stored filename.
+
+    The client-supplied name is used ONLY to read the extension — the stored
+    name is generated from the record id plus a random token, so a hostile
+    filename can never influence the path written to disk.
+    """
+    ext = os.path.splitext(upload.filename or "")[1].lower()
+    if ext not in ALLOWED_CERT_EXT:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Format tidak didukung. Gunakan: {', '.join(sorted(ALLOWED_CERT_EXT))}.",
+        )
+
+    upload.file.seek(0, os.SEEK_END)
+    size = upload.file.tell()
+    upload.file.seek(0)
+    if size == 0:
+        raise HTTPException(status_code=400, detail="Berkas kosong.")
+    if size > MAX_CERT_BYTES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Berkas terlalu besar (maks {MAX_CERT_BYTES // (1024 * 1024)} MB).",
+        )
+
+    stored = f"kalibrasi_{id_kalibrasi}_{secrets.token_hex(8)}{ext}"
+    dest = os.path.join(SERTIFIKAT_DIR, stored)
+    with open(dest, "wb") as fh:
+        shutil.copyfileobj(upload.file, fh)
+    return stored
+
+
+@app.post("/api/kalibrasi/{id_kalibrasi}/sertifikat")
+async def upload_sertifikat_kalibrasi(
+    id_kalibrasi: int,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: models.Pengguna = Depends(get_current_user),
+):
+    record = (
+        db.query(models.RiwayatKalibrasi).filter_by(id_kalibrasi=id_kalibrasi).first()
+    )
+    if not record:
+        raise HTTPException(status_code=404, detail="Data kalibrasi tidak ditemukan.")
+
+    stored = _save_certificate(file, id_kalibrasi)
+
+    # Replacing an existing certificate — drop the old file so uploads don't pile up.
+    if record.file_sertifikat:
+        old = os.path.join(SERTIFIKAT_DIR, os.path.basename(record.file_sertifikat))
+        if os.path.isfile(old):
+            try:
+                os.remove(old)
+            except OSError:
+                pass
+
+    record.file_sertifikat = stored
+    db.commit()
+    await manager.broadcast("REFRESH_ASSET_LIST")
+    return {"message": "Sertifikat berhasil diunggah.", "file_sertifikat": stored}
+
+
+@app.get("/api/kalibrasi/sertifikat/{nama_file}")
+def download_sertifikat(
+    nama_file: str,
+    db: Session = Depends(get_db),
+    current_user: models.Pengguna = Depends(get_current_user),
+):
+    """
+    Serve a stored certificate. Authenticated, and deliberately NOT routed
+    through the public static handler — certificates are not public assets.
+    """
+    # basename() strips any traversal attempt before it reaches the filesystem.
+    safe = os.path.basename(nama_file)
+    if os.path.splitext(safe)[1].lower() not in ALLOWED_CERT_EXT:
+        raise HTTPException(status_code=400, detail="Jenis berkas tidak diizinkan.")
+
+    path = os.path.join(SERTIFIKAT_DIR, safe)
+    # Belt and braces: confirm the resolved path really is inside the upload dir.
+    if not os.path.realpath(path).startswith(os.path.realpath(SERTIFIKAT_DIR)):
+        raise HTTPException(status_code=400, detail="Path tidak valid.")
+    if not os.path.isfile(path):
+        raise HTTPException(status_code=404, detail="Sertifikat tidak ditemukan.")
+    return FileResponse(path, filename=safe)
+
+
+@app.delete("/api/kalibrasi/{id_kalibrasi}/sertifikat")
+async def delete_sertifikat_kalibrasi(
+    id_kalibrasi: int,
+    db: Session = Depends(get_db),
+    current_user: models.Pengguna = Depends(
+        require_role(["SUPER_ADMIN", "ADMIN_WILAYAH"])
+    ),
+):
+    record = (
+        db.query(models.RiwayatKalibrasi).filter_by(id_kalibrasi=id_kalibrasi).first()
+    )
+    if not record:
+        raise HTTPException(status_code=404, detail="Data kalibrasi tidak ditemukan.")
+    if record.file_sertifikat:
+        path = os.path.join(SERTIFIKAT_DIR, os.path.basename(record.file_sertifikat))
+        if os.path.isfile(path):
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+        record.file_sertifikat = None
+        db.commit()
+    return {"message": "Sertifikat dihapus."}
+
+
 @app.get("/api/kalibrasi/{id_aset}")
 def get_kalibrasi_by_aset(
     id_aset: str,
@@ -1131,6 +1412,7 @@ def get_kalibrasi_by_aset(
             "pelaksana_kalibrasi": r.pelaksana_kalibrasi or "—",
             "nomor_sertifikat": r.nomor_sertifikat or "—",
             "keterangan": r.keterangan or "—",
+            "file_sertifikat": r.file_sertifikat,
             "waktu_input": r.waktu_input.strftime("%Y-%m-%d %H:%M:%S") if r.waktu_input else None,
             "id_pengguna": pengguna_map.get(r.id_pengguna, str(r.id_pengguna) if r.id_pengguna else "—"),
         }
@@ -1294,9 +1576,20 @@ def get_history_summary(
         results.append(
             {
                 "id_aset": a.id_aset,
-                "kode_alat": a.kategori.nama_alat if a.kategori else a.kode_alat,
+                # Same field contract as GET /api/aset: kode_alat is the CODE and
+                # kode_alat_name the display name. This used to return the NAME in
+                # `kode_alat`, which made the history sort modal's alat filter (a
+                # code-valued dropdown) match nothing at all.
+                "kode_alat": a.kode_alat,
+                "kode_alat_name": a.kategori.nama_alat if a.kategori else a.kode_alat,
                 "id_lokasi": a.id_lokasi,
                 "peruntukan": a.peruntukan,
+                # Needed by the history sort modal's Pengadaan + Tahun Beli filters,
+                # which previously read undefined and silently dropped every row.
+                "sumber_pengadaan": a.sumber_pengadaan,
+                "tanggal_pembelian": str(a.tanggal_pembelian)
+                if a.tanggal_pembelian
+                else None,
                 "id_lokasi_name": a.lokasi_ref.nama_lokasi
                 if a.lokasi_ref
                 else a.id_lokasi,
@@ -1711,20 +2004,54 @@ class StokTransferCreate(BaseModel):
 
 class StokAdjustCreate(BaseModel):
     id_part: int
-    tipe_gerakan: str   # IN | OUT
+    tipe_gerakan: str   # IN | OUT | RETUR_VENDOR | RETUR_CUST | ADJ_IN | ADJ_OUT
     jumlah: int
+    id_gudang: Optional[int] = None
     id_lokasi: Optional[str] = None
+    harga_satuan: Optional[int] = None   # overrides the part's list price
+    tanggal: Optional[date] = None       # back-dated entry; defaults to now
+    keterangan: Optional[str] = None
+
+
+class GudangCreate(BaseModel):
+    kode: str
+    nama: str
+    keterangan: Optional[str] = None
+    is_active: bool = True
+
+
+class GudangUpdate(BaseModel):
+    kode: Optional[str] = None
+    nama: Optional[str] = None
+    keterangan: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
+class AlatVarianCreate(BaseModel):
+    kode_alat: str
+    nama_varian: str
     keterangan: Optional[str] = None
 
 
 # ── Helper: compute net stock ──────────────────────────────────────
 
 def _net_stok_expr():
-    """SUM(CASE WHEN tipe_gerakan='IN' THEN jumlah ELSE -jumlah END)."""
+    """
+    Signed sum of a stock ledger slice.
+
+    Movement types that ADD stock (IN, RETUR_CUST, ADJ_IN) count positive;
+    everything else (OUT, RETUR_VENDOR, ADJ_OUT) counts negative. Driven off
+    SparePartStok.GERAKAN_MASUK so the vocabulary lives in exactly one place.
+    """
     return func.coalesce(
         func.sum(
             case(
-                (models.SparePartStok.tipe_gerakan == "IN", models.SparePartStok.jumlah),
+                (
+                    models.SparePartStok.tipe_gerakan.in_(
+                        models.SparePartStok.GERAKAN_MASUK
+                    ),
+                    models.SparePartStok.jumlah,
+                ),
                 else_=-models.SparePartStok.jumlah,
             )
         ),
@@ -1732,7 +2059,42 @@ def _net_stok_expr():
     )
 
 
-def _net_stok_map(db: Session, id_lokasi=None) -> dict:
+def _nilai_stok_expr():
+    """Same signed sum, weighted by the price snapshot → stock VALUE in rupiah."""
+    qty_x_price = models.SparePartStok.jumlah * func.coalesce(
+        models.SparePartStok.harga_satuan, 0
+    )
+    return func.coalesce(
+        func.sum(
+            case(
+                (
+                    models.SparePartStok.tipe_gerakan.in_(
+                        models.SparePartStok.GERAKAN_MASUK
+                    ),
+                    qty_x_price,
+                ),
+                else_=-qty_x_price,
+            )
+        ),
+        0,
+    )
+
+
+def _scope_stok(q, id_lokasi=None, id_gudang=None):
+    """Apply the optional lokasi / gudang scope to a sparepart_stok query."""
+    if isinstance(id_lokasi, (list, tuple, set)):
+        ids = list(id_lokasi)
+        if not ids:
+            return None  # an empty scope selects nothing, not everything
+        q = q.filter(models.SparePartStok.id_lokasi.in_(ids))
+    elif id_lokasi is not None:
+        q = q.filter(models.SparePartStok.id_lokasi == id_lokasi)
+    if id_gudang is not None:
+        q = q.filter(models.SparePartStok.id_gudang == id_gudang)
+    return q
+
+
+def _net_stok_map(db: Session, id_lokasi=None, id_gudang=None) -> dict:
     """
     Net stock for EVERY part in one grouped query → {id_part: qty}.
 
@@ -1740,19 +2102,32 @@ def _net_stok_map(db: Session, id_lokasi=None) -> dict:
     parts catalog (and, for per_lokasi mode, every child lokasi of a DAOP), which
     otherwise fans out into hundreds of round trips.
 
-    id_lokasi: None → global (all lokasi summed); a str → that one lokasi;
-    a list/tuple/set → those lokasi summed together.
+    id_lokasi: None → all lokasi summed; a str → that one; a list/set → those summed.
+    id_gudang: None → all warehouses summed; an int → that one warehouse.
     """
-    q = db.query(models.SparePartStok.id_part, _net_stok_expr()).group_by(
-        models.SparePartStok.id_part
+    q = _scope_stok(
+        db.query(models.SparePartStok.id_part, _net_stok_expr()).group_by(
+            models.SparePartStok.id_part
+        ),
+        id_lokasi,
+        id_gudang,
     )
-    if isinstance(id_lokasi, (list, tuple, set)):
-        ids = list(id_lokasi)
-        if not ids:
-            return {}
-        q = q.filter(models.SparePartStok.id_lokasi.in_(ids))
-    elif id_lokasi is not None:
-        q = q.filter(models.SparePartStok.id_lokasi == id_lokasi)
+    if q is None:
+        return {}
+    return {row[0]: int(row[1] or 0) for row in q.all()}
+
+
+def _nilai_stok_map(db: Session, id_lokasi=None, id_gudang=None) -> dict:
+    """Stock VALUE per part in one grouped query → {id_part: rupiah}."""
+    q = _scope_stok(
+        db.query(models.SparePartStok.id_part, _nilai_stok_expr()).group_by(
+            models.SparePartStok.id_part
+        ),
+        id_lokasi,
+        id_gudang,
+    )
+    if q is None:
+        return {}
     return {row[0]: int(row[1] or 0) for row in q.all()}
 
 
@@ -1809,15 +2184,75 @@ def delete_inv_kategori(id_kategori: int, db: Session = Depends(get_db)):
 
 # ── Parts CRUD ─────────────────────────────────────────────────────
 
+def _stok_status(stok: int, stok_min: int, stok_max: Optional[int]) -> str:
+    """
+    Items Master status vocabulary, in priority order.
+
+    MINUS is checked before KOSONG because a negative balance is a data fault
+    that must not be reported as merely "empty".
+    """
+    if stok < 0:
+        return "MINUS"
+    if stok == 0:
+        return "KOSONG"
+    if stok_min and stok < stok_min:
+        return "KRITIS"
+    if stok_min and stok == stok_min:
+        return "DI BAWAH MIN"
+    if stok_max and stok > stok_max:
+        return "DI ATAS MAX"
+    return "AMAN"
+
+
+def _movement_breakdown(db: Session, id_lokasi=None, id_gudang=None) -> dict:
+    """
+    Per-part movement totals split by type → {id_part: {tipe: qty}}.
+
+    One grouped query for the whole catalog; feeds the Items Master columns
+    (Masuk, Keluar, Retur ke Vendor, Retur dari Customer, Penyesuaian ±).
+    """
+    q = _scope_stok(
+        db.query(
+            models.SparePartStok.id_part,
+            models.SparePartStok.tipe_gerakan,
+            func.coalesce(func.sum(models.SparePartStok.jumlah), 0),
+        ).group_by(models.SparePartStok.id_part, models.SparePartStok.tipe_gerakan),
+        id_lokasi,
+        id_gudang,
+    )
+    if q is None:
+        return {}
+    out: dict = {}
+    for id_part, tipe, qty in q.all():
+        out.setdefault(id_part, {})[tipe] = int(qty or 0)
+    return out
+
+
+def _last_out_map(db: Session) -> dict:
+    """{id_part: last OUT timestamp} — drives 'Tanggal Terakhir Barang Keluar'."""
+    rows = (
+        db.query(
+            models.SparePartStok.id_part,
+            func.max(models.SparePartStok.waktu),
+        )
+        .filter(models.SparePartStok.tipe_gerakan.in_(models.SparePartStok.GERAKAN_KELUAR))
+        .group_by(models.SparePartStok.id_part)
+        .all()
+    )
+    return {r[0]: r[1] for r in rows}
+
+
 @app.get("/api/inventaris/parts")
 def get_inv_parts(
     id_lokasi: Optional[str] = None,
+    id_gudang: Optional[int] = None,
     id_kategori: Optional[int] = None,
     kode_alat: Optional[str] = None,
     mode: str = "global",   # global | per_lokasi
     db: Session = Depends(get_db),
     current_user: models.Pengguna = Depends(get_current_user),
 ):
+    """Parts catalog with the full Items Master column set."""
     q = db.query(models.SparePart)
     if id_kategori:
         q = q.filter(models.SparePart.id_kategori == id_kategori)
@@ -1825,14 +2260,30 @@ def get_inv_parts(
         q = q.filter(models.SparePart.kode_alat == kode_alat)
     parts = q.order_by(models.SparePart.nama_part).all()
 
-    # One grouped query for the whole catalog instead of one per part.
-    stok_map = _net_stok_map(db, id_lokasi if mode == "per_lokasi" else None)
+    scope_lokasi = id_lokasi if mode == "per_lokasi" else None
+    # Four grouped queries for the whole catalog, not four per part.
+    stok_map = _net_stok_map(db, scope_lokasi, id_gudang)
+    nilai_map = _nilai_stok_map(db, scope_lokasi, id_gudang)
+    gerak_map = _movement_breakdown(db, scope_lokasi, id_gudang)
+    last_out = _last_out_map(db)
+    now = datetime.now()
 
     result = []
     for p in parts:
         stok = stok_map.get(p.id_part, 0)
+        g = gerak_map.get(p.id_part, {})
         kat = p.kategori_ref
         alat = p.kategori_alat_ref
+        masuk = g.get("IN", 0)
+        keluar = g.get("OUT", 0)
+        nilai_masuk = masuk * (p.harga_satuan or 0)
+        nilai_keluar = keluar * (p.harga_satuan or 0)
+        lo = last_out.get(p.id_part)
+        # "Barang Tidak Bergerak" — days since the last issue. Never issued is
+        # reported as None rather than 0, so the UI can say "belum pernah keluar"
+        # instead of implying it moved today.
+        idle_days = (now - lo).days if lo else None
+        status = _stok_status(stok, p.stok_min or 0, None)
         result.append({
             "id_part": p.id_part,
             "sku": p.sku,
@@ -1853,6 +2304,20 @@ def get_inv_parts(
             "part_number": p.part_number,
             "linked_vehicle": p.linked_vehicle,
             "warranty_months": p.warranty_months,
+            # ── Items Master columns ──
+            "map": p.harga_satuan or 0,          # moving average price
+            "masuk": masuk,
+            "keluar": keluar,
+            "retur_vendor": g.get("RETUR_VENDOR", 0),
+            "retur_customer": g.get("RETUR_CUST", 0),
+            "penyesuaian_masuk": g.get("ADJ_IN", 0),
+            "penyesuaian_keluar": g.get("ADJ_OUT", 0),
+            "nilai_inventory": nilai_map.get(p.id_part, 0),
+            "nilai_masuk": nilai_masuk,
+            "nilai_keluar": nilai_keluar,
+            "status_stok": status,
+            "tanggal_terakhir_keluar": lo.strftime("%Y-%m-%d") if lo else None,
+            "hari_tidak_bergerak": idle_days,
         })
     return result
 
@@ -1999,14 +2464,22 @@ async def create_transfer(
 def get_transfer_history(
     id_lokasi: Optional[str] = None,
     id_part: Optional[int] = None,
+    limit: int = Query(200, ge=1, le=2000),
+    offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
     current_user: models.Pengguna = Depends(get_current_user),
 ):
+    """
+    Transfer ledger, newest first.
+
+    Genuinely server-paged: this table is append-only and unbounded, unlike the
+    asset/parts payloads which are small enough to cache client-side. Returns an
+    envelope so the UI can render "showing X of Y".
+    """
     q = (
         db.query(models.SparePartStok)
         .filter(models.SparePartStok.site_from != None)  # noqa: E711
         .filter(models.SparePartStok.tipe_gerakan == "OUT")  # one row per transfer
-        .order_by(models.SparePartStok.waktu.desc())
     )
     if id_lokasi:
         q = q.filter(
@@ -2016,7 +2489,13 @@ def get_transfer_history(
     if id_part:
         q = q.filter(models.SparePartStok.id_part == id_part)
 
-    rows = q.all()
+    total = q.count()
+    rows = (
+        q.order_by(models.SparePartStok.waktu.desc())
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
     result = []
     for r in rows:
         p = r.part_ref
@@ -2035,7 +2514,289 @@ def get_transfer_history(
             "transfer_to": r.transfer_to or "—",
             "catatan": r.catatan or "—",
         })
-    return result
+    return {"total": total, "limit": limit, "offset": offset, "items": result}
+
+
+# ── Gudang (warehouse) ─────────────────────────────────────────────
+# Flat, deliberately NOT part of the DAOP/UPT lokasi hierarchy: parts live in a
+# handful of named stores that don't map onto the operational region tree.
+
+@app.get("/api/inventaris/gudang")
+def get_gudang(
+    include_inactive: bool = False,
+    db: Session = Depends(get_db),
+    current_user: models.Pengguna = Depends(get_current_user),
+):
+    q = db.query(models.Gudang)
+    if not include_inactive:
+        q = q.filter(models.Gudang.is_active.is_(True))
+    rows = q.order_by(models.Gudang.kode).all()
+    return [
+        {
+            "id_gudang": g.id_gudang,
+            "kode": g.kode,
+            "nama": g.nama,
+            "keterangan": g.keterangan,
+            "is_active": g.is_active,
+        }
+        for g in rows
+    ]
+
+
+@app.post(
+    "/api/inventaris/gudang",
+    dependencies=[Depends(require_role(["SUPER_ADMIN", "ADMIN_WILAYAH"]))],
+)
+def create_gudang(data: GudangCreate, db: Session = Depends(get_db)):
+    kode = data.kode.strip().upper()
+    if not kode:
+        raise HTTPException(status_code=400, detail="Kode gudang wajib diisi.")
+    if db.query(models.Gudang).filter_by(kode=kode).first():
+        raise HTTPException(status_code=400, detail="Kode gudang sudah dipakai.")
+    row = models.Gudang(
+        kode=kode,
+        nama=data.nama.strip(),
+        keterangan=data.keterangan,
+        is_active=data.is_active,
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return {"message": "Gudang ditambahkan.", "id_gudang": row.id_gudang}
+
+
+@app.put(
+    "/api/inventaris/gudang/{id_gudang}",
+    dependencies=[Depends(require_role(["SUPER_ADMIN", "ADMIN_WILAYAH"]))],
+)
+def update_gudang(id_gudang: int, data: GudangUpdate, db: Session = Depends(get_db)):
+    row = db.query(models.Gudang).filter_by(id_gudang=id_gudang).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Gudang tidak ditemukan.")
+    for field, value in data.model_dump(exclude_unset=True).items():
+        setattr(row, field, value.strip().upper() if field == "kode" else value)
+    db.commit()
+    return {"message": "Gudang diperbarui."}
+
+
+@app.delete(
+    "/api/inventaris/gudang/{id_gudang}",
+    dependencies=[Depends(require_role(["SUPER_ADMIN"]))],
+)
+def delete_gudang(id_gudang: int, db: Session = Depends(get_db)):
+    row = db.query(models.Gudang).filter_by(id_gudang=id_gudang).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Gudang tidak ditemukan.")
+    # Never orphan ledger rows — deactivate instead of deleting if stock moved.
+    used = (
+        db.query(models.SparePartStok)
+        .filter(models.SparePartStok.id_gudang == id_gudang)
+        .first()
+    )
+    if used:
+        row.is_active = False
+        db.commit()
+        return {"message": "Gudang dinonaktifkan (masih punya riwayat stok)."}
+    db.delete(row)
+    db.commit()
+    return {"message": "Gudang dihapus."}
+
+
+# ── Stock movement (Transaksi Barang) ──────────────────────────────
+
+@app.post("/api/inventaris/stok")
+async def create_stok_movement(
+    data: StokAdjustCreate,
+    db: Session = Depends(get_db),
+    current_user: models.Pengguna = Depends(get_current_user),
+):
+    """
+    Log one stock movement.
+
+    This is the capability that closes the loop on the parts module: until now
+    stock could be created with a part and transferred between sites, but never
+    consumed, restocked, returned or corrected.
+    """
+    tipe = (data.tipe_gerakan or "").strip().upper()
+    valid = models.SparePartStok.GERAKAN_MASUK + models.SparePartStok.GERAKAN_KELUAR
+    if tipe not in valid:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Tipe gerakan tidak dikenal. Pilihan: {', '.join(valid)}.",
+        )
+    if data.jumlah is None or data.jumlah <= 0:
+        raise HTTPException(status_code=400, detail="Jumlah harus lebih dari nol.")
+
+    part = db.query(models.SparePart).filter_by(id_part=data.id_part).first()
+    if not part:
+        raise HTTPException(status_code=404, detail="Part tidak ditemukan.")
+
+    if data.id_gudang is not None:
+        if not db.query(models.Gudang).filter_by(id_gudang=data.id_gudang).first():
+            raise HTTPException(status_code=404, detail="Gudang tidak ditemukan.")
+
+    # Refuse to drive stock negative — a warehouse cannot issue what it lacks.
+    if tipe in models.SparePartStok.GERAKAN_KELUAR:
+        current = _net_stok_map(
+            db, id_lokasi=data.id_lokasi, id_gudang=data.id_gudang
+        ).get(data.id_part, 0)
+        if data.jumlah > current:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Stok tidak mencukupi. Tersedia {current} {part.unit}.",
+            )
+
+    row = models.SparePartStok(
+        id_part=data.id_part,
+        id_gudang=data.id_gudang,
+        id_lokasi=data.id_lokasi,
+        tipe_gerakan=tipe,
+        jumlah=data.jumlah,
+        # Snapshot the price at entry time so historical value never re-prices.
+        harga_satuan=data.harga_satuan
+        if data.harga_satuan is not None
+        else part.harga_satuan,
+        keterangan=data.keterangan,
+        id_pengguna=current_user.id_pengguna,
+    )
+    if data.tanggal:
+        row.waktu = datetime.combine(data.tanggal, datetime.min.time())
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+
+    await manager.broadcast("REFRESH_INVENTARIS")
+    stok_baru = _net_stok_map(
+        db, id_lokasi=data.id_lokasi, id_gudang=data.id_gudang
+    ).get(data.id_part, 0)
+    return {
+        "message": "Transaksi barang dicatat.",
+        "id_stok": row.id_stok,
+        "stok_sekarang": stok_baru,
+    }
+
+
+@app.get("/api/inventaris/stok")
+def get_stok_movements(
+    id_part: Optional[int] = None,
+    id_gudang: Optional[int] = None,
+    tipe_gerakan: Optional[str] = None,
+    limit: int = Query(100, ge=1, le=2000),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db),
+    current_user: models.Pengguna = Depends(get_current_user),
+):
+    """Movement ledger for the Transaksi Barang running table."""
+    q = db.query(models.SparePartStok).filter(
+        models.SparePartStok.site_from.is_(None)  # exclude transfer legs
+    )
+    if id_part:
+        q = q.filter(models.SparePartStok.id_part == id_part)
+    if id_gudang:
+        q = q.filter(models.SparePartStok.id_gudang == id_gudang)
+    if tipe_gerakan:
+        q = q.filter(models.SparePartStok.tipe_gerakan == tipe_gerakan.upper())
+
+    total = q.count()
+    rows = (
+        q.options(
+            joinedload(models.SparePartStok.part_ref),
+            joinedload(models.SparePartStok.gudang_ref),
+            joinedload(models.SparePartStok.pengguna_ref),
+        )
+        .order_by(models.SparePartStok.waktu.desc(), models.SparePartStok.id_stok.desc())
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
+    items = []
+    for r in rows:
+        p = r.part_ref
+        harga = r.harga_satuan or 0
+        items.append(
+            {
+                "id_stok": r.id_stok,
+                "waktu": r.waktu.strftime("%Y-%m-%d %H:%M") if r.waktu else None,
+                "id_part": r.id_part,
+                "sku": p.sku if p else None,
+                "nama_part": p.nama_part if p else str(r.id_part),
+                "unit": p.unit if p else "",
+                "jenis": p.kategori_ref.subsistem if p and p.kategori_ref else None,
+                "tipe_gerakan": r.tipe_gerakan,
+                "jumlah": r.jumlah,
+                "harga_satuan": harga,
+                "amount": harga * r.jumlah,
+                "id_gudang": r.id_gudang,
+                "gudang": r.gudang_ref.nama if r.gudang_ref else "—",
+                "user": r.pengguna_ref.username if r.pengguna_ref else "—",
+                "keterangan": r.keterangan or "—",
+            }
+        )
+    return {"total": total, "limit": limit, "offset": offset, "items": items}
+
+
+# ── Alat Varian (spesifikasi teknis) ───────────────────────────────
+
+@app.get("/api/master/varian")
+def get_alat_varian(
+    kode_alat: Optional[str] = None,
+    db: Session = Depends(get_db),
+):
+    q = db.query(models.AlatVarian)
+    if kode_alat:
+        q = q.filter(models.AlatVarian.kode_alat == kode_alat)
+    rows = q.order_by(models.AlatVarian.kode_alat, models.AlatVarian.nama_varian).all()
+    return [
+        {
+            "id_varian": v.id_varian,
+            "kode_alat": v.kode_alat,
+            "nama_varian": v.nama_varian,
+            "keterangan": v.keterangan,
+        }
+        for v in rows
+    ]
+
+
+@app.post(
+    "/api/master/varian",
+    dependencies=[Depends(require_role(["SUPER_ADMIN", "ADMIN_WILAYAH"]))],
+)
+def create_alat_varian(data: AlatVarianCreate, db: Session = Depends(get_db)):
+    if not db.query(models.KategoriAlat).filter_by(kode_alat=data.kode_alat).first():
+        raise HTTPException(status_code=404, detail="Kode alat tidak ditemukan.")
+    dupe = (
+        db.query(models.AlatVarian)
+        .filter_by(kode_alat=data.kode_alat, nama_varian=data.nama_varian.strip())
+        .first()
+    )
+    if dupe:
+        raise HTTPException(status_code=400, detail="Varian sudah ada untuk alat ini.")
+    row = models.AlatVarian(
+        kode_alat=data.kode_alat,
+        nama_varian=data.nama_varian.strip(),
+        keterangan=data.keterangan,
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return {"message": "Varian ditambahkan.", "id_varian": row.id_varian}
+
+
+@app.delete(
+    "/api/master/varian/{id_varian}",
+    dependencies=[Depends(require_role(["SUPER_ADMIN"]))],
+)
+def delete_alat_varian(id_varian: int, db: Session = Depends(get_db)):
+    row = db.query(models.AlatVarian).filter_by(id_varian=id_varian).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Varian tidak ditemukan.")
+    # Detach from any assets first so the FK cannot block the delete.
+    db.query(models.Aset).filter(models.Aset.id_varian == id_varian).update(
+        {models.Aset.id_varian: None}, synchronize_session=False
+    )
+    db.delete(row)
+    db.commit()
+    return {"message": "Varian dihapus."}
 
 
 # ── Aset Perbaikan Dashboard ───────────────────────────────────────
@@ -2331,60 +3092,96 @@ def get_aset_perbaikan_dashboard(
     }
 
 
-# ── Dashboard Summary ──────────────────────────────────────────────
+# ── Dasbor Inventaris (stock dashboard) ────────────────────────────
+
+STOK_STATUS_ORDER = ["MINUS", "KOSONG", "KRITIS", "DI BAWAH MIN", "AMAN", "DI ATAS MAX"]
+
+# Human labels for the movement vocabulary, in the order the printed report
+# lists them under "TRANSAKSI BARANG PER PERIODE".
+GERAKAN_LABEL = [
+    ("IN", "Masuk"),
+    ("OUT", "Keluar"),
+    ("RETUR_CUST", "Retur dari Customer"),
+    ("RETUR_VENDOR", "Retur ke Vendor"),
+    ("ADJ_IN", "Penyesuaian Masuk"),
+    ("ADJ_OUT", "Penyesuaian Keluar"),
+]
+
 
 @app.get("/api/inventaris/dashboard")
 def get_inv_dashboard(
     id_lokasi: Optional[str] = None,     # parent lokasi filter (DAOP/DIVRE)
+    id_gudang: Optional[int] = None,     # single warehouse
     mode: str = "global",                # global | per_lokasi
+    dari: Optional[date] = None,         # period start (movement stats only)
+    sampai: Optional[date] = None,       # period end
     db: Session = Depends(get_db),
     current_user: models.Pengguna = Depends(get_current_user),
 ):
     """
-    Returns aggregated stats for the Inventaris Dashboard tab.
-    id_lokasi = parent lokasi code → auto-includes all its UPT children.
-    """
-    all_parts = db.query(models.SparePart).all()
+    Aggregated stock stats for the Kelola Inventaris dashboard.
 
-    # Resolve child UPT lokasi ids for filtering.
+    Two different time semantics live here, deliberately:
+      - STOCK figures (value now, status counts) are point-in-time — the whole
+        ledger up to today, never windowed, or the balance would be wrong.
+      - MOVEMENT figures (nilai masuk/keluar, transaksi per periode) ARE
+        windowed by dari/sampai, because that is what the printed report shows.
+    """
+    all_parts = db.query(models.SparePart).options(
+        joinedload(models.SparePart.kategori_ref),
+        joinedload(models.SparePart.kategori_alat_ref),
+    ).all()
+
     # UPT ids do NOT start with their parent code ("JR1.1" belongs to "D1"), so a
     # LIKE prefix match is wrong in both directions — see resolve_lokasi_scope().
     child_lokasi_ids, _parent_row, _child_rows = resolve_lokasi_scope(db, id_lokasi)
+    scope_lokasi = (
+        child_lokasi_ids if (mode == "per_lokasi" and child_lokasi_ids) else None
+    )
+
+    # Default the period to the current month, matching the report's DARI/KE.
+    today = date.today()
+    if not dari:
+        dari = today.replace(day=1)
+    if not sampai:
+        sampai = today
+
+    # ── Point-in-time stock ──
+    stok_map = _net_stok_map(db, scope_lokasi, id_gudang)
+    nilai_map = _nilai_stok_map(db, scope_lokasi, id_gudang)
 
     total_parts = len(all_parts)
     total_types = len(set(p.kode_alat for p in all_parts if p.kode_alat))
     total_value = 0
     auto_demand_count = sum(1 for p in all_parts if p.auto_demand)
     critical_list = []
-    by_subsistem: dict[str, int] = {}
-    by_alat: dict[str, int] = {}
+    top_value_list = []
+    by_subsistem: dict = {}
+    by_alat: dict = {}
+    by_status: dict = {k: 0 for k in STOK_STATUS_ORDER}
     supplier_set: set = set()
-    total_suppliers = 0
-
-    # Single grouped query for every part, instead of one query per part per
-    # lokasi (which was O(parts × child_lokasi) round trips).
-    stok_map = _net_stok_map(
-        db, child_lokasi_ids if (mode == "per_lokasi" and child_lokasi_ids) else None
-    )
 
     for p in all_parts:
         stok = stok_map.get(p.id_part, 0)
-
-        val = (p.harga_satuan or 0) * max(stok, 0)
-        total_value += val
+        nilai = nilai_map.get(p.id_part, 0)
+        total_value += max(nilai, 0)
 
         if p.supplier:
             supplier_set.add(p.supplier)
 
         kat = p.kategori_ref
-        sub = kat.subsistem if kat else "LAINNYA"
+        sub = (kat.subsistem if kat else None) or "LAINNYA"
         by_subsistem[sub] = by_subsistem.get(sub, 0) + 1
 
-        alat_key = p.kode_alat or "LAINNYA"
+        alat_key = (
+            p.kategori_alat_ref.nama_alat if p.kategori_alat_ref else p.kode_alat
+        ) or "LAINNYA"
         by_alat[alat_key] = by_alat.get(alat_key, 0) + 1
 
-        is_crit = p.is_critical or (p.stok_min > 0 and stok <= p.stok_min)
-        if is_crit:
+        status = _stok_status(stok, p.stok_min or 0, None)
+        by_status[status] = by_status.get(status, 0) + 1
+
+        if status in ("MINUS", "KOSONG", "KRITIS", "DI BAWAH MIN"):
             critical_list.append({
                 "id_part": p.id_part,
                 "sku": p.sku,
@@ -2392,42 +3189,201 @@ def get_inv_dashboard(
                 "stok_sekarang": stok,
                 "stok_min": p.stok_min,
                 "unit": p.unit,
+                "status_stok": status,
                 "kode_alat": p.kode_alat,
                 "nama_alat": p.kategori_alat_ref.nama_alat if p.kategori_alat_ref else None,
             })
 
-    total_suppliers = len(supplier_set)
+        if nilai > 0:
+            top_value_list.append({
+                "id_part": p.id_part,
+                "sku": p.sku,
+                "nama_part": p.nama_part,
+                "stok_sekarang": stok,
+                "unit": p.unit,
+                "nilai": nilai,
+            })
 
-    # Monthly usage trend (last 12 months, OUT movements)
+    top_value_list.sort(key=lambda x: -x["nilai"])
+
+    # ── Windowed movement stats ──
+    win_start = datetime.combine(dari, datetime.min.time())
+    win_end = datetime.combine(sampai, datetime.max.time())
+
+    gerak_q = _scope_stok(
+        db.query(
+            models.SparePartStok.tipe_gerakan,
+            func.coalesce(func.sum(models.SparePartStok.jumlah), 0),
+            func.coalesce(
+                func.sum(
+                    models.SparePartStok.jumlah
+                    * func.coalesce(models.SparePartStok.harga_satuan, 0)
+                ),
+                0,
+            ),
+        )
+        .filter(models.SparePartStok.waktu >= win_start)
+        .filter(models.SparePartStok.waktu <= win_end)
+        .group_by(models.SparePartStok.tipe_gerakan),
+        scope_lokasi,
+        id_gudang,
+    )
+    gerak_rows = gerak_q.all() if gerak_q is not None else []
+    qty_by_tipe = {r[0]: int(r[1] or 0) for r in gerak_rows}
+    val_by_tipe = {r[0]: int(r[2] or 0) for r in gerak_rows}
+
+    transaksi_periode = [
+        {"tipe": tipe, "label": label, "jumlah": qty_by_tipe.get(tipe, 0)}
+        for tipe, label in GERAKAN_LABEL
+    ]
+    nilai_masuk = sum(
+        val_by_tipe.get(t, 0) for t in models.SparePartStok.GERAKAN_MASUK
+    )
+    nilai_keluar = sum(
+        val_by_tipe.get(t, 0) for t in models.SparePartStok.GERAKAN_KELUAR
+    )
+
+    # ── Monthly usage trend (last 12 months, issues only) ──
     twelve_ago = datetime.now() - timedelta(days=365)
-    monthly_q = (
+    monthly_q = _scope_stok(
         db.query(
             # to_char, not strftime — strftime is SQLite-only and raises on PostgreSQL.
             func.to_char(models.SparePartStok.waktu, "YYYY-MM").label("bulan"),
             func.sum(models.SparePartStok.jumlah).label("jumlah"),
-        )
-        .filter(
-            models.SparePartStok.tipe_gerakan == "OUT",
+        ).filter(
+            models.SparePartStok.tipe_gerakan.in_(models.SparePartStok.GERAKAN_KELUAR),
             models.SparePartStok.waktu >= twelve_ago,
-        )
+        ),
+        scope_lokasi,
+        id_gudang,
     )
-    if mode == "per_lokasi" and child_lokasi_ids:
-        monthly_q = monthly_q.filter(models.SparePartStok.id_lokasi.in_(child_lokasi_ids))
-    monthly_data = monthly_q.group_by("bulan").order_by("bulan").all()
+    monthly_data = (
+        monthly_q.group_by("bulan").order_by("bulan").all() if monthly_q is not None else []
+    )
 
     return {
+        "periode": {"dari": str(dari), "sampai": str(sampai)},
+
+        # Headline value KPIs
+        "total_value": total_value,
+        "nilai_masuk": nilai_masuk,
+        "nilai_keluar": nilai_keluar,
+
+        # Status counters (the six coloured boxes on the printed report)
+        "status_counts": {k: by_status.get(k, 0) for k in STOK_STATUS_ORDER},
+
         "total_parts": total_parts,
         "total_types": total_types,
-        "total_value": total_value,
         "auto_demand": auto_demand_count,
-        "total_suppliers": total_suppliers,
+        "total_suppliers": len(supplier_set),
         "critical_count": len(critical_list),
-        "critical_list": critical_list[:50],   # cap at 50 for UI
+        "critical_list": critical_list[:50],
+        "top_value": top_value_list[:15],
         "by_subsistem": by_subsistem,
         "by_alat": by_alat,
+        "transaksi_periode": transaksi_periode,
         "monthly_usage": [
-            {"bulan": r.bulan, "jumlah": int(r.jumlah)} for r in monthly_data
+            {"bulan": r.bulan, "jumlah": int(r.jumlah or 0)} for r in monthly_data
         ],
+    }
+
+
+# ── MCF — Mean Cumulative Function (repair trend) ──────────────────
+
+@app.get("/api/aset/dashboard/mcf")
+def get_mcf(
+    id_lokasi: Optional[str] = None,
+    year: Optional[int] = Query(None, ge=1950, le=2100),
+    db: Session = Depends(get_db),
+    current_user: models.Pengguna = Depends(get_current_user),
+):
+    """
+    Mean Cumulative Function for the repairable fleet (Nelson-Aalen).
+
+    MCF(t) = cumulative number of repairs up to time t, divided by the number of
+    assets at risk. It is the standard reliability curve for REPAIRABLE systems:
+    a straight line means a constant failure rate, an upward bend means the fleet
+    is degrading, a downward bend means maintenance is winning.
+
+    Reported monthly, alongside the raw cumulative count so the reader can see
+    both the normalised rate and the absolute workload.
+    """
+    RK = models.RiwayatKondisi
+    AS = models.Aset
+
+    lokasi_ids, parent_row, _children = resolve_lokasi_scope(db, id_lokasi)
+    region_name, region_label, kota = build_region_labels(parent_row, id_lokasi, db)
+
+    # Years that actually hold repair events in this scope. Same rule as the
+    # repair dashboard: snapping to a year with data beats defaulting to the
+    # calendar year and rendering a flat, empty curve.
+    yq = (
+        select(distinct(extract("year", RK.waktu_lapor)))
+        .select_from(RK)
+        .join(AS, AS.id_aset == RK.id_aset)
+        .where(RK.kondisi == "TSO")
+    )
+    if lokasi_ids:
+        yq = yq.where(func.coalesce(RK.id_lokasi, AS.id_lokasi).in_(lokasi_ids))
+    available_years = sorted(
+        {int(r[0]) for r in db.execute(yq) if r[0] is not None}, reverse=True
+    )
+
+    if year is None:
+        now_year = datetime.now().year
+        if now_year in available_years or not available_years:
+            year = now_year
+        else:
+            year = available_years[0]
+
+    # Assets at risk = every non-scrapped asset in scope. Denominator of the MCF.
+    risk_q = db.query(func.count()).select_from(AS).filter(
+        func.upper(AS.status_terakhir) != "AFKIR"
+    )
+    if lokasi_ids:
+        risk_q = risk_q.filter(AS.id_lokasi.in_(lokasi_ids))
+    n_at_risk = int(db.execute(risk_q).scalar_one() or 0)
+
+    # Repair events (TSO = a fault opened) bucketed by month.
+    m_col = extract("month", RK.waktu_lapor).label("m")
+    ev_q = (
+        select(m_col, func.count().label("n"))
+        .select_from(RK)
+        .join(AS, AS.id_aset == RK.id_aset)
+        .where(RK.kondisi == "TSO")
+        .where(extract("year", RK.waktu_lapor) == year)
+    )
+    if lokasi_ids:
+        ev_q = ev_q.where(func.coalesce(RK.id_lokasi, AS.id_lokasi).in_(lokasi_ids))
+    ev_q = ev_q.group_by(m_col).order_by(m_col)
+
+    per_month = {int(r[0]): int(r[1]) for r in db.execute(ev_q) if r[0] is not None}
+
+    series = []
+    cumulative = 0
+    for i in range(12):
+        n = per_month.get(i + 1, 0)
+        cumulative += n
+        series.append({
+            "bulan": BULAN_SINGKAT[i],
+            "perbaikan": n,
+            "kumulatif": cumulative,
+            # MCF — repairs per asset. Rounded to 4dp: with a few hundred assets
+            # a single month's increment is ~0.003, so 2dp would flatten the curve.
+            "mcf": round(cumulative / n_at_risk, 4) if n_at_risk else 0.0,
+        })
+
+    return {
+        "tahun": year,
+        "available_years": available_years,
+        "aset_berisiko": n_at_risk,
+        "total_perbaikan": cumulative,
+        "mcf_akhir": round(cumulative / n_at_risk, 4) if n_at_risk else 0.0,
+        "region_code": id_lokasi or "",
+        "region_name": region_name,
+        "region_label": region_label,
+        "kota": kota,
+        "series": series,
     }
 
 

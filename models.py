@@ -9,6 +9,7 @@ from sqlalchemy import (
     text,
     Text,
     CheckConstraint,
+    UniqueConstraint,
 )
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
@@ -40,8 +41,57 @@ class Pengguna(Base):
     hashed_password = Column(String(255), nullable=True)  # Wajib untuk autentikasi
     role = Column(String(20), nullable=False)  # SUPER_ADMIN, ADMIN_WILAYAH, TEKNISI
     id_lokasi = Column(String(10), ForeignKey("lokasi.id_lokasi"), nullable=True)
+    # Presence — stamped on login and on every authenticated request. "Online" is
+    # derived from an active WebSocket, not from this column; last_seen is what
+    # remains once the socket closes.
+    last_seen = Column(DateTime, nullable=True)
+    last_view = Column(String(50), nullable=True)  # which screen they are on
 
     lokasi_ref = relationship("Lokasi")
+
+
+class AlatVarian(Base):
+    """
+    Technical spec / variant of a work tool ("spesifikasi teknis").
+
+    One alat kerja has several field variants that are NOT interchangeable for
+    sparepart purposes — a GENSET 3 PHASE HTT is either GX270 or GX390 and each
+    takes a different carburettor, and a brush cutter is 2T TASCO vs 4T PROQUIP
+    vs 4T HONDA. The repair log records this per job, so it belongs on the asset.
+    """
+
+    __tablename__ = "alat_varian"
+
+    id_varian = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    kode_alat = Column(
+        String(10), ForeignKey("kategori_alat.kode_alat"), nullable=False, index=True
+    )
+    nama_varian = Column(String(100), nullable=False)  # GX270, 2T TASCO, GEISMAR…
+    keterangan = Column(Text, nullable=True)
+
+    kategori_alat_ref = relationship("KategoriAlat")
+
+    __table_args__ = (
+        UniqueConstraint("kode_alat", "nama_varian", name="uq_alat_varian"),
+    )
+
+
+class Gudang(Base):
+    """
+    Physical parts warehouse.
+
+    Deliberately FLAT and independent of the `lokasi` DAOP/UPT hierarchy: stock
+    is held in a handful of named stores ("Gudang A", "Gudang B") that do not
+    map onto the operational region tree.
+    """
+
+    __tablename__ = "gudang"
+
+    id_gudang = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    kode = Column(String(20), unique=True, nullable=False, index=True)
+    nama = Column(String(100), nullable=False)
+    keterangan = Column(Text, nullable=True)
+    is_active = Column(Boolean, nullable=False, server_default=text("true"))
 
 
 class Aset(Base):
@@ -61,9 +111,15 @@ class Aset(Base):
         onupdate=text("CURRENT_TIMESTAMP"),
     )
     peruntukan = Column(String(20), nullable=False)
+    # Technical spec / variant (GX270 vs GX390, 2T TASCO vs 4T PROQUIP, …).
+    # Nullable: legacy assets predate the field and not every tool has variants.
+    id_varian = Column(
+        Integer, ForeignKey("alat_varian.id_varian"), nullable=True, index=True
+    )
 
     kategori = relationship("KategoriAlat", back_populates="asets")
     lokasi_ref = relationship("Lokasi", back_populates="asets")
+    varian_ref = relationship("AlatVarian")
     riwayat_kondisi = relationship("RiwayatKondisi", back_populates="aset_ref")
     riwayat_mutasi = relationship("RiwayatMutasi", back_populates="aset_ref")
 
@@ -119,6 +175,9 @@ class RiwayatKalibrasi(Base):
     pelaksana_kalibrasi = Column(String(100))
     nomor_sertifikat = Column(String(100))
     keterangan = Column(Text)
+    # Stored filename of the uploaded certificate, relative to UPLOAD_DIR.
+    # Never a client-supplied path — see save_upload() in main.py.
+    file_sertifikat = Column(String(255), nullable=True)
     waktu_input = Column(DateTime, default=func.now())
 
     __table_args__ = (
@@ -177,18 +236,27 @@ class SparePart(Base):
 
 class SparePartStok(Base):
     """
-    Stock ledger — one row per movement (IN or OUT).
-    Supports two modes:
-      - global   : id_lokasi is NULL  → single global pool
-      - per_lokasi: id_lokasi set     → per-UPT stock
-    Transfer between lokasi = one OUT row + one IN row linked by id_ref_transfer.
+    Stock ledger — one row per movement.
+
+    `tipe_gerakan` vocabulary (matches the printed Items Master report):
+      IN           — goods received
+      OUT          — goods issued / consumed
+      RETUR_VENDOR — returned to supplier   (reduces stock)
+      RETUR_CUST   — returned from the field (increases stock)
+      ADJ_IN       — stock-take adjustment up
+      ADJ_OUT      — stock-take adjustment down
+
+    Location model: `id_gudang` is the warehouse the stock physically sits in and
+    is what the movement-entry form writes. `id_lokasi`/`site_from`/`site_to`
+    are the older region-tree fields kept for the existing transfer history.
     """
     __tablename__ = "sparepart_stok"
 
     id_stok          = Column(Integer, primary_key=True, index=True, autoincrement=True)
     id_part          = Column(Integer, ForeignKey("sparepart.id_part"), nullable=False, index=True)
+    id_gudang        = Column(Integer, ForeignKey("gudang.id_gudang"), nullable=True, index=True)
     id_lokasi        = Column(String(10), ForeignKey("lokasi.id_lokasi"), nullable=True, index=True)
-    tipe_gerakan     = Column(String(10), nullable=False)   # IN | OUT
+    tipe_gerakan     = Column(String(20), nullable=False)
     jumlah           = Column(Integer,    nullable=False)
     harga_satuan     = Column(Integer,    nullable=True)    # snapshot at time of entry
     keterangan       = Column(Text,       nullable=True)
@@ -203,6 +271,7 @@ class SparePartStok(Base):
 
     part_ref    = relationship("SparePart", back_populates="stok_entries",
                                foreign_keys=[id_part])
+    gudang_ref  = relationship("Gudang", foreign_keys=[id_gudang])
     lokasi_ref  = relationship("Lokasi", foreign_keys=[id_lokasi])
     site_from_ref = relationship("Lokasi", foreign_keys=[site_from])
     site_to_ref   = relationship("Lokasi", foreign_keys=[site_to])
@@ -210,6 +279,16 @@ class SparePartStok(Base):
     pair_ref      = relationship("SparePartStok", remote_side=[id_stok],
                                  foreign_keys=[id_ref_transfer])
 
+    # Movements that ADD stock vs REMOVE it — the single source of truth for
+    # every net-stock and stock-value calculation.
+    GERAKAN_MASUK = ("IN", "RETUR_CUST", "ADJ_IN")
+    GERAKAN_KELUAR = ("OUT", "RETUR_VENDOR", "ADJ_OUT")
+
     __table_args__ = (
-        CheckConstraint(tipe_gerakan.in_(["IN", "OUT"]), name="sparepart_stok_gerakan_check"),
+        CheckConstraint(
+            tipe_gerakan.in_(
+                ["IN", "OUT", "RETUR_VENDOR", "RETUR_CUST", "ADJ_IN", "ADJ_OUT"]
+            ),
+            name="sparepart_stok_gerakan_check",
+        ),
     )

@@ -1482,6 +1482,9 @@ function switchView(viewId) {
     // here because it needs an auth token, which does not exist at script-eval.
     window.initInvView?.();
   }
+
+  // Let other sessions see where this user is working.
+  reportCurrentView(viewId);
 }
 
 function setupEventListeners() {
@@ -2424,13 +2427,19 @@ function setupWebSocket() {
   // https:// and a ws:// socket is blocked by the browser as mixed content.
   // The backend serves this SPA itself, so the socket is always same-origin.
   const protocol = window.location.protocol === "https:" ? "wss" : "ws";
-  const ws = new WebSocket(`${protocol}://${window.location.host}/ws/updates`);
+  // The token rides as a query param because the browser WebSocket API cannot
+  // set an Authorization header. It identifies the socket for presence; the
+  // server still accepts anonymous sockets for broadcasts.
+  const qs = authToken ? `?token=${encodeURIComponent(authToken)}` : "";
+  const ws = new WebSocket(`${protocol}://${window.location.host}/ws/updates${qs}`);
 
   ws.onopen = () => {
     _wsRetryCount = 0;
     _wsNgrokFailed = false; // Reset on successful connection
     updateWsDot(true);
     stopPollingFallback(); // Socket is live — no need to poll
+    // Re-announce the current screen: on a reconnect the server has forgotten it.
+    reportCurrentView();
     window._wsHeartbeat = setInterval(() => {
       if (ws.readyState === WebSocket.OPEN) ws.send("ping");
     }, 30000);
@@ -2442,6 +2451,9 @@ function setupWebSocket() {
       fetchAsetFromServer();
       if (typeof window.refreshAfkirIfVisible === "function")
         window.refreshAfkirIfVisible();
+    } else if (event.data === "REFRESH_PRESENCE") {
+      if (typeof window.refreshPresenceIfVisible === "function")
+        window.refreshPresenceIfVisible();
     } else if (event.data === "REFRESH_INVENTARIS") {
       window.dispatchEvent(
         new CustomEvent("ws-message", { detail: event.data }),
@@ -2488,6 +2500,23 @@ function setupWebSocket() {
   };
 
   window._ws = ws;
+}
+
+// ── PRESENCE ───────────────────────────────────────────────────────────────
+// Tells the server which screen this user is on, so the Pengguna list can show
+// live activity. Cheap and fire-and-forget: a closed socket is simply skipped.
+let _currentViewId = "";
+
+function reportCurrentView(viewId) {
+  if (viewId) _currentViewId = viewId;
+  const sock = window._ws;
+  if (sock && sock.readyState === WebSocket.OPEN && _currentViewId) {
+    try {
+      sock.send(`view:${_currentViewId}`);
+    } catch (_) {
+      /* socket closed mid-send — the next reconnect re-announces */
+    }
+  }
 }
 
 // ── LIVE-DATA POLLING FALLBACK ─────────────────────────────────────────────
@@ -3487,7 +3516,7 @@ function renderHistoryCards() {
                 <div class="flex justify-between items-start border-b dark:border-gray-700 pb-3">
                     <div>
                         <h3 class="text-base font-bold font-mono text-kai-blue dark:text-blue-400">${item.id_aset}</h3>
-                        <p class="text-xs text-gray-500 dark:text-gray-200 mt-0.5">${item.kode_alat} — ${item.id_lokasi_name || item.id_lokasi}</p>
+                        <p class="text-xs text-gray-500 dark:text-gray-200 mt-0.5">${item.kode_alat_name || item.kode_alat} — ${item.id_lokasi_name || item.id_lokasi}</p>
                     </div>
                     <span class="text-sm font-bold ${statusColor} shrink-0"><i class="fas fa-circle text-xs mr-1"></i>${item.status_terakhir}</span>
                 </div>
@@ -3615,7 +3644,7 @@ function renderKalibrasiCards() {
                 <div class="flex justify-between items-start border-b dark:border-gray-700 pb-3">
                     <div>
                         <h3 class="text-base font-bold font-mono text-cyan-700 dark:text-cyan-400">${item.id_aset}</h3>
-                        <p class="text-xs text-gray-500 dark:text-gray-200 mt-0.5">${item.kode_alat} — ${item.id_lokasi_name || item.id_lokasi}</p>
+                        <p class="text-xs text-gray-500 dark:text-gray-200 mt-0.5">${item.kode_alat_name || item.kode_alat} — ${item.id_lokasi_name || item.id_lokasi}</p>
                     </div>
                     <span class="text-xs font-bold px-2 py-0.5 rounded-full ${statusClass}"><i class="fas fa-ruler-combined mr-1 text-[9px]"></i>${r.latest_status || "—"}</span>
                 </div>
@@ -3703,7 +3732,7 @@ function renderMutasiCards() {
                 <div class="flex justify-between items-start border-b dark:border-gray-700 pb-3">
                     <div>
                         <h3 class="text-base font-bold font-mono text-kai-orange dark:text-orange-400">${item.id_aset}</h3>
-                        <p class="text-xs text-gray-500 dark:text-gray-200 mt-0.5">${item.kode_alat} — ${item.id_lokasi_name || item.id_lokasi}</p>
+                        <p class="text-xs text-gray-500 dark:text-gray-200 mt-0.5">${item.kode_alat_name || item.kode_alat} — ${item.id_lokasi_name || item.id_lokasi}</p>
                     </div>
                     ${returnedBadge}
                 </div>
@@ -5011,7 +5040,8 @@ async function fetchExportData() {
       const k = item.kalibrasi;
       kalibRows.push({
         id_aset:            item.id_aset,
-        kode_alat:          item.kode_alat,
+        // display name, not the code — /api/history/summary now returns both
+        kode_alat:          item.kode_alat_name || item.kode_alat,
         id_lokasi:          item.id_lokasi,
         tanggal_kalibrasi:  k.latest_date || "—",
         tanggal_berlaku:    k.latest_berlaku || "—",
@@ -8615,7 +8645,9 @@ function formatUtcToLocal(utcStr) {
     try {
       const res = await apiFetch(`/inventaris/transfer?${params}`);
       if (!res.ok) return;
-      const data = await res.json();
+      // Server-paged envelope: { total, limit, offset, items }.
+      const payload = await res.json();
+      const data = Array.isArray(payload) ? payload : payload.items || [];
       const tbody = document.getElementById("inv-transfer-body");
       if (!tbody) return;
       if (data.length === 0) {
