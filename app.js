@@ -2,8 +2,10 @@
 const API_BASE_URL = "/api";
 
 // ── SERVER CONFIG ─────────────────────────────────────────────────────────
-let NGROK_BASE_URL = "";
-let BACKEND_WS_HOST = "";
+// Optional externally-reachable base URL (Tailscale Funnel / ngrok / reverse
+// proxy). Only used to build QR/landing links when the page itself is being
+// viewed on localhost — otherwise window.location.origin is already public.
+let PUBLIC_BASE_URL = "";
 
 // Data master disesuaikan dengan skema PostgreSQL
 let alatKerjaData = [];
@@ -74,17 +76,30 @@ document.addEventListener("DOMContentLoaded", async () => {
 });
 
 async function fetchConfig() {
+  beginLoading("Menghubungi server");
   try {
     const res = await fetch("/api/config");
     const data = await res.json();
-    NGROK_BASE_URL = data.ngrok_url || "";
-    BACKEND_WS_HOST = NGROK_BASE_URL
-      ? NGROK_BASE_URL.replace(/^https?:\/\//, "").replace(/\/$/, "")
-      : window.location.host;
+    PUBLIC_BASE_URL = (data.public_url || data.ngrok_url || "").replace(
+      /\/$/,
+      "",
+    );
   } catch (e) {
-    NGROK_BASE_URL = "";
-    BACKEND_WS_HOST = window.location.host;
+    PUBLIC_BASE_URL = "";
+  } finally {
+    endLoading();
   }
+}
+
+// Base URL for links that get scanned/opened on OTHER devices (QR codes).
+// If this page is already served from a routable host, that host is correct;
+// only fall back to the configured tunnel when we are on localhost.
+function getPublicBaseUrl() {
+  const isLocal = /^(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])$/i.test(
+    window.location.hostname,
+  );
+  if (!isLocal) return window.location.origin;
+  return PUBLIC_BASE_URL || window.location.origin;
 }
 
 function getParentLokasiCode(idLokasi) {
@@ -108,10 +123,16 @@ function getParentLokasiCode(idLokasi) {
   const romanMatch = idLokasi.match(/^JR(IV|IX|VIII|VII|VI|V|I{1,3})\./i);
   if (romanMatch) return romanMap[romanMatch[1].toUpperCase()] ?? null;
 
+  // "BY1A" → "BY1". Without this a Balaiyasa child resolves to null and gets
+  // treated as its own parent, so region filters never match it.
+  const balaiyasaMatch = idLokasi.match(/^(BY\d+)[A-Z]+$/i);
+  if (balaiyasaMatch) return balaiyasaMatch[1].toUpperCase();
+
   return null;
 }
 
 async function fetchMasterData() {
+  beginLoading("Memuat data master (alat kerja & lokasi)");
   try {
     const [alatRes, lokasiRes] = await Promise.all([
       fetch(`${API_BASE_URL}/master/alat`),
@@ -168,10 +189,13 @@ async function fetchMasterData() {
       "Gagal memuat data master. Beberapa dropdown mungkin kosong.",
       "warning",
     );
+  } finally {
+    endLoading();
   }
 }
 
 async function fetchLoginRegions() {
+  beginLoading();
   try {
     const res = await fetch("/api/master/lokasi");
     if (!res.ok) return;
@@ -188,6 +212,8 @@ async function fetchLoginRegions() {
       .join("");
   } catch (e) {
     // master data not seeded yet
+  } finally {
+    endLoading();
   }
 }
 
@@ -268,6 +294,7 @@ async function handleLogin() {
   );
   if (!confirmed) return;
 
+  beginLoading("Memverifikasi akun");
   try {
     const response = await fetch(`${API_BASE_URL}/login`, {
       method: "POST",
@@ -310,6 +337,8 @@ async function handleLogin() {
     fetchAsetFromServer();
   } catch (error) {
     showToast(error.message, "error");
+  } finally {
+    endLoading();
   }
 }
 
@@ -318,6 +347,13 @@ function forceLogout(reloadPage = false) {
   authToken = null;
   sessionStorage.removeItem("activeUser");
   sessionStorage.removeItem("authToken");
+  resetLoading();
+  stopPollingFallback();
+  if (window._wsReconnectTimer) clearTimeout(window._wsReconnectTimer);
+  if (window._wsHeartbeat) clearInterval(window._wsHeartbeat);
+  try {
+    window._ws?.close();
+  } catch (_) {}
 
   if (reloadPage) {
     window.location.href = window.location.pathname;
@@ -454,7 +490,69 @@ function getJwtPayload(token) {
   }
 }
 
+// ── GLOBAL LOADING OVERLAY ─────────────────────────────────────────────────
+// A single request counter drives the blocking overlay: it appears when the
+// first request goes out and disappears when the last one settles. The short
+// delay keeps fast local calls from flashing it.
+let _pendingRequests = 0;
+let _loadingShowTimer = null;
+const LOADING_SHOW_DELAY_MS = 200;
+
+function _setLoadingVisible(visible) {
+  const el = document.getElementById("global-loading-overlay");
+  if (el) el.classList.toggle("hidden", !visible);
+}
+
+function beginLoading(detail) {
+  _pendingRequests++;
+  if (detail) {
+    const d = document.getElementById("global-loading-detail");
+    if (d) d.textContent = detail;
+  }
+  if (_pendingRequests === 1 && !_loadingShowTimer) {
+    _loadingShowTimer = setTimeout(() => {
+      _loadingShowTimer = null;
+      if (_pendingRequests > 0) _setLoadingVisible(true);
+    }, LOADING_SHOW_DELAY_MS);
+  }
+}
+
+function endLoading() {
+  _pendingRequests = Math.max(0, _pendingRequests - 1);
+  if (_pendingRequests === 0) {
+    if (_loadingShowTimer) {
+      clearTimeout(_loadingShowTimer);
+      _loadingShowTimer = null;
+    }
+    _setLoadingVisible(false);
+  }
+}
+
+// Hard reset. The overlay blocks all interaction, so any path that abandons
+// in-flight work (logout, session expiry) must clear the counter or the user is
+// locked out of the UI with no way back.
+function resetLoading() {
+  _pendingRequests = 0;
+  if (_loadingShowTimer) {
+    clearTimeout(_loadingShowTimer);
+    _loadingShowTimer = null;
+  }
+  _setLoadingVisible(false);
+}
+
+// Wraps any promise-returning call so it participates in the overlay counter.
+async function withLoading(fn, detail) {
+  beginLoading(detail);
+  try {
+    return await fn();
+  } finally {
+    endLoading();
+  }
+}
+
 // --- FETCH API WRAPPER ---
+// opts.background — skip the loading overlay (used by the polling fallback, so
+// a periodic refresh doesn't blank the screen while the user is working).
 async function apiFetch(endpoint, options = {}) {
   if (!authToken) throw new Error("Token tidak tersedia");
 
@@ -463,14 +561,26 @@ async function apiFetch(endpoint, options = {}) {
     ...options.headers,
   };
 
-  if (!(options.body instanceof URLSearchParams)) {
+  if (
+    options.body !== undefined &&
+    options.body !== null &&
+    !(options.body instanceof URLSearchParams) &&
+    !(options.body instanceof FormData)
+  ) {
     headers["Content-Type"] = "application/json";
   }
 
-  const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-    ...options,
-    headers,
-  });
+  const { background, ...fetchOptions } = options;
+  if (!background) beginLoading();
+  let response;
+  try {
+    response = await fetch(`${API_BASE_URL}${endpoint}`, {
+      ...fetchOptions,
+      headers,
+    });
+  } finally {
+    if (!background) endLoading();
+  }
 
   if (response.status === 401) {
     showToast("Sesi Anda telah habis. Silakan login kembali.", "warning");
@@ -482,9 +592,11 @@ async function apiFetch(endpoint, options = {}) {
 }
 
 // --- KOMUNIKASI DATABASE ---
-async function fetchAsetFromServer() {
+// opts.silent — suppress the failure toast (used by the background poller so a
+// transient network blip doesn't spam the user).
+async function fetchAsetFromServer(opts = {}) {
   try {
-    const response = await apiFetch("/aset");
+    const response = await apiFetch("/aset", { background: !!opts.silent });
     if (!response.ok) throw new Error("Gagal mengambil data aset");
 
     db = (await response.json()).map((a) => {
@@ -508,36 +620,36 @@ async function fetchAsetFromServer() {
       };
     });
 
+    const isVisible = (id) =>
+      !!document.getElementById(id)?.classList.contains("is-visible");
+
     updateDashboardStats();
     updateKdakStats();
-    if (document.getElementById("view-input").classList.contains("is-visible")) {
+    if (isVisible("view-input")) {
       renderKdakTable();
     }
     // Always refresh summary so badges are up to date everywhere
     loadHistorySummary().then(() => {
-      if (document.getElementById("view-database").classList.contains("is-visible")) {
+      if (isVisible("view-database")) {
         renderDbCards();
       }
-      if (document.getElementById("view-history").classList.contains("is-visible")) {
+      if (isVisible("view-history")) {
         if (_historyMode === "repair") renderHistoryCards();
         else if (_historyMode === "mutasi") renderMutasiCards();
         else if (_historyMode === "kalibrasi") renderKalibrasiCards();
       }
     });
 
-    if (
-      activeHistoryUid &&
-      document
-        .getElementById("view-history-detail")
-        .classList.contains("is-visible")
-    ) {
+    if (activeHistoryUid && isVisible("view-history-detail")) {
       window.openHistoryDetail(activeHistoryUid);
     }
   } catch (error) {
-    showToast(
-      "Koneksi ke server gagal! Mencoba menghubungkan kembali...",
-      "error",
-    );
+    if (!opts.silent) {
+      showToast(
+        "Koneksi ke server gagal! Mencoba menghubungkan kembali...",
+        "error",
+      );
+    }
   }
 }
 
@@ -1161,22 +1273,9 @@ function updateDashboardStats() {
   _renderDashActivePanel();
 }
 
-async function afkirAset(uid) {
-  const isConfirmed = await customConfirm(
-    "Apakah Anda yakin ingin meng-afkir aset ini? Data tidak akan muncul lagi di dashboard.",
-  );
-  if (!isConfirmed) return;
-
-  try {
-    const response = await apiFetch(`/aset/afkir/${uid}`, { method: "POST" });
-    if (!response.ok) throw new Error("Gagal meng-afkir aset.");
-
-    showToast("Aset berhasil di-afkir.", "success");
-    switchView("database");
-  } catch (error) {
-    showToast(error.message, "error");
-  }
-}
+// NOTE: an unreferenced afkirAset() used to live here, duplicating
+// window.deleteAset() with a weaker single confirmation. deleteAset is the one
+// the card trash icon calls.
 
 // --- UI UTILITIES & EVENT LISTENERS ---
 function populateSelects(preserveValues = false) {
@@ -1362,14 +1461,10 @@ function switchView(viewId) {
     if (tv) tv.classList.add("is-flex");
   }
   if (viewId === "database" || viewId === "history") {
+    // This already calls loadHistorySummary() and re-renders whichever view is
+    // visible, so History must not fetch the summary a second time — it used to
+    // request /history/summary twice on every visit.
     fetchAsetFromServer();
-  }
-  if (viewId === "history") {
-    loadHistorySummary().then(() => {
-      if (_historyMode === "repair") renderHistoryCards();
-      else if (_historyMode === "kalibrasi") renderKalibrasiCards();
-      else if (_historyMode === "mutasi") renderMutasiCards();
-    });
   }
   if (viewId === "laporan") {
     initLaporanView();
@@ -1381,6 +1476,11 @@ function switchView(viewId) {
   }
   if (viewId === "afkir") {
     loadAfkirCards();
+  }
+  if (viewId === "inventaris") {
+    // Boots the lokasi/tahun dropdowns and loads the dashboard. Deferred to
+    // here because it needs an auth token, which does not exist at script-eval.
+    window.initInvView?.();
   }
 }
 
@@ -1467,9 +1567,12 @@ function setupEventListeners() {
   document.getElementById("theme-toggle-btn")?.addEventListener("click", () => {
     const html = document.documentElement;
     html.classList.toggle("dark");
-    localStorage.setItem(
-      "theme",
-      html.classList.contains("dark") ? "dark" : "light",
+    const isDark = html.classList.contains("dark");
+    localStorage.setItem("theme", isDark ? "dark" : "light");
+    // Charts bake their palette in at construction time, so anything currently
+    // drawn has to be told to re-render against the new surface.
+    window.dispatchEvent(
+      new CustomEvent("kai-theme-change", { detail: { dark: isDark } }),
     );
   });
 
@@ -2316,23 +2419,34 @@ function setupWebSocket() {
   if (window._wsHeartbeat) clearInterval(window._wsHeartbeat);
   if (window._wsReconnectTimer) clearTimeout(window._wsReconnectTimer);
 
-  const protocol = NGROK_BASE_URL ? "wss" : "ws";
-  const wsUrl = `${protocol}://${BACKEND_WS_HOST}/ws/updates`;
-  const ws = new WebSocket(
-    NGROK_BASE_URL ? `${wsUrl}?ngrok-skip-browser-warning=true` : wsUrl,
-  );
+  // Derive the scheme from the PAGE, not from any tunnel config. Behind a
+  // TLS-terminating tunnel (Tailscale Funnel, Cloudflare, ngrok) the page is
+  // https:// and a ws:// socket is blocked by the browser as mixed content.
+  // The backend serves this SPA itself, so the socket is always same-origin.
+  const protocol = window.location.protocol === "https:" ? "wss" : "ws";
+  const ws = new WebSocket(`${protocol}://${window.location.host}/ws/updates`);
 
   ws.onopen = () => {
     _wsRetryCount = 0;
     _wsNgrokFailed = false; // Reset on successful connection
     updateWsDot(true);
+    stopPollingFallback(); // Socket is live — no need to poll
     window._wsHeartbeat = setInterval(() => {
       if (ws.readyState === WebSocket.OPEN) ws.send("ping");
     }, 30000);
   };
 
   ws.onmessage = (event) => {
-    if (event.data === "REFRESH_ASSET_LIST") fetchAsetFromServer();
+    if (event.data === "pong") return; // heartbeat ack
+    if (event.data === "REFRESH_ASSET_LIST") {
+      fetchAsetFromServer();
+      if (typeof window.refreshAfkirIfVisible === "function")
+        window.refreshAfkirIfVisible();
+    } else if (event.data === "REFRESH_INVENTARIS") {
+      window.dispatchEvent(
+        new CustomEvent("ws-message", { detail: event.data }),
+      );
+    }
   };
 
   ws.onclose = () => {
@@ -2341,10 +2455,13 @@ function setupWebSocket() {
 
     if (!authToken) return; // Don't reconnect if logged out
 
+    // Socket is down — keep the UI fresh by polling until it comes back.
+    startPollingFallback();
+
     if (_wsRetryCount >= WS_MAX_RETRIES) {
       showToast(
-        "Koneksi server terputus. Muat ulang halaman untuk mencoba lagi.",
-        "error",
+        "Live-sync terputus. Data tetap diperbarui secara berkala.",
+        "warning",
       );
       return;
     }
@@ -2360,18 +2477,43 @@ function setupWebSocket() {
     window._wsReconnectTimer = setTimeout(setupWebSocket, delay + jitter);
   };
 
-  ws.onerror = (event) => {
-    if (NGROK_BASE_URL && !_wsNgrokFailed) {
+  ws.onerror = () => {
+    if (!_wsNgrokFailed) {
       _wsNgrokFailed = true;
-      showToast(
-        "Ngrok tunnel tidak aktif. Pastikan ngrok berjalan sebelum menggunakan fitur live-sync.",
-        "warning",
+      console.warn(
+        `WebSocket gagal terhubung ke ${protocol}://${window.location.host}/ws/updates`,
       );
     }
     ws.close();
   };
 
   window._ws = ws;
+}
+
+// ── LIVE-DATA POLLING FALLBACK ─────────────────────────────────────────────
+// The WebSocket is the primary live-update channel. When it is unavailable
+// (proxy drops the upgrade, network flap, retry budget exhausted) we fall back
+// to periodic refetches so the page never shows stale data.
+const POLL_INTERVAL_MS = 30000;
+
+function startPollingFallback() {
+  if (window._dataPollTimer || !authToken) return;
+  window._dataPollTimer = setInterval(() => {
+    if (!authToken) return stopPollingFallback();
+    if (window._ws && window._ws.readyState === WebSocket.OPEN)
+      return stopPollingFallback();
+    if (document.visibilityState !== "visible") return; // don't poll hidden tabs
+    fetchAsetFromServer({ silent: true });
+    if (typeof window.refreshAfkirIfVisible === "function")
+      window.refreshAfkirIfVisible();
+  }, POLL_INTERVAL_MS);
+}
+
+function stopPollingFallback() {
+  if (window._dataPollTimer) {
+    clearInterval(window._dataPollTimer);
+    window._dataPollTimer = null;
+  }
 }
 
 document.addEventListener("visibilitychange", () => {
@@ -2389,14 +2531,14 @@ window.addEventListener("resize", () => {
   if (!sidebar) return;
 
   if (window.innerWidth >= 1024) {
-    overlay.classList.remove("active");
+    overlay?.classList.remove("active");
     if (sidebar.classList.contains("open")) {
-      mainContent.classList.add("sidebar-open");
+      mainContent?.classList.add("sidebar-open");
     }
   } else {
-    mainContent.classList.remove("sidebar-open");
+    mainContent?.classList.remove("sidebar-open");
     if (sidebar.classList.contains("open")) {
-      overlay.classList.add("active");
+      overlay?.classList.add("active");
     }
   }
 });
@@ -2623,41 +2765,9 @@ window.openHistoryDetail = async (uid, tab = "repair") => {
   switchDetailTab(tab, uid);
 };
 
-window.openQrModal = (uid) => {
-  const item = db.find((x) => x.id_aset === uid);
-  if (!item) return;
-  _qrActiveItem = item;
-
-  document.getElementById("qr-modal-subtitle").textContent = item.id_aset;
-  document.getElementById("qr-label-kodeid").textContent = item.id_aset;
-  document.getElementById("qr-label-alat").textContent = item.kode_alat;
-  const qrLokasiEntry =
-    uptDatabase.find((u) => u.upt === item.id_lokasi) ||
-    lokasiData.find((l) => l.code === item.id_lokasi);
-  document.getElementById("qr-label-lokasi").textContent =
-    qrLokasiEntry?.name || item.id_lokasi_name || item.id_lokasi;
-
-  const canvas = document.getElementById("qr-canvas");
-  canvas.getContext("2d").clearRect(0, 0, canvas.width, canvas.height);
-  new QRCode(canvas, {
-    text: `${window.location.origin}/public/${item.id_aset}`,
-    width: 160,
-    height: 160,
-    colorDark: "#000000",
-    colorLight: "#ffffff",
-    correctLevel: QRCode.CorrectLevel.M,
-  });
-
-  const landingUrl = `${NGROK_BASE_URL || window.location.origin}/public/${item.id_aset}`;
-  const linkEl = document.getElementById("qr-landing-link");
-  if (linkEl) {
-    linkEl.href = landingUrl;
-  }
-  const textEl = document.getElementById("qr-landing-link-text");
-  if (textEl) textEl.textContent = landingUrl;
-
-  document.getElementById("qr-modal").classList.remove("hidden");
-};
+// NOTE: an earlier window.openQrModal was defined here and immediately shadowed
+// by the async version further down (which uses drawQrOnCanvas/buildLandingUrl).
+// It also still pointed QR links at the old tunnel variable.
 
 window.deleteAset = async (uid) => {
   const item = db.find((x) => x.id_aset === uid);
@@ -2917,6 +3027,15 @@ async function loadDetailMutasi(uid) {
   }
 }
 
+// ── SHARED ASSET-CARD LOOK ─────────────────────────────────────────────────
+// One definition so the Kelola Data Aset cards and the Pulihkan Aset Afkir
+// cards cannot drift apart again.
+const ASSET_CARD_CLASS =
+  "bg-white dark:bg-gray-800 p-5 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 flex flex-col justify-between hover:border-kai-blue dark:hover:border-kai-orange transition-colors";
+
+const cardDetailRow = (label, val) =>
+  `<div class="flex gap-2 text-xs"><span class="text-gray-400 w-28 shrink-0">${label}</span><span class="text-gray-700 dark:text-gray-200 font-medium">${val}</span></div>`;
+
 function renderDbCards() {
   const container = document.getElementById("db-cards-container");
   const searchInput = document.getElementById("search-db");
@@ -2929,11 +3048,21 @@ function renderDbCards() {
   if (modeSelect) modeSelect.style.display = isTeknisi ? "none" : "";
 
   const searchQ = (searchInput?.value || "").toUpperCase();
+  // "Aset Saya" narrows the list to the region the logged-in user belongs to.
+  // (This select was previously read into an unused variable, so the control
+  // did nothing at all.)
   const mode = isTeknisi ? "public" : modeSelect ? modeSelect.value : "public";
+  const myLokasiRaw = getJwtPayload(authToken)?.id_lokasi || "";
+  const myRegion = getParentLokasiCode(myLokasiRaw) || myLokasiRaw;
   const isAdmin =
     _currentRole === "SUPER_ADMIN" || _currentRole === "ADMIN_WILAYAH";
 
   const filteredItems = db.filter((item) => {
+    if (mode === "local" && myRegion) {
+      const raw = item.id_lokasi_raw || item.id_lokasi || "";
+      const parent = getParentLokasiCode(raw) || raw;
+      if (parent !== myRegion && raw !== myLokasiRaw) return false;
+    }
     const searchQ_upper = searchQ;
     const matchSearch =
       (item.id_aset || "").toUpperCase().includes(searchQ_upper) ||
@@ -2983,7 +3112,7 @@ function renderDbCards() {
   });
 
   if (!filteredItems.length) {
-    container.innerHTML = `<div class="col-span-3 text-center text-gray-400 py-12"><i class="fas fa-inbox text-3xl mb-2 block"></i>Belum ada data penambahan aset alat kerja.</div>`;
+    container.innerHTML = `<div class="col-span-full text-center text-gray-400 py-12"><i class="fas fa-inbox text-3xl mb-2 block"></i>Belum ada data penambahan aset alat kerja.</div>`;
     return;
   }
 
@@ -3094,24 +3223,33 @@ function renderDbCards() {
             ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
             : "bg-blue-100 text-blue-700";
 
-      const row = (label, val) =>
-        `<div class="flex gap-2 text-xs"><span class="text-gray-400 w-28 shrink-0">${label}</span><span class="text-gray-700 dark:text-gray-200 font-medium">${val}</span></div>`;
+      const row = cardDetailRow;
 
       const card = document.createElement("div");
-      card.className =
-        "bg-white dark:bg-gray-800 p-5 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 flex flex-col justify-between hover:border-kai-blue dark:hover:border-kai-orange transition-colors";
+      card.className = ASSET_CARD_CLASS;
 
       card.innerHTML = `
             <div>
-                <div class="flex justify-between items-start">
+                <div class="flex justify-between items-start gap-2">
                     <div class="flex flex-col min-w-0">
                         <span class="text-base font-bold font-mono text-kai-blue dark:text-blue-400 leading-tight">${item.id_aset}</span>
                         <p class="text-sm text-gray-700 dark:text-gray-300 font-semibold mt-0.5">${item.kode_alat_name || item.kode_alat}</p>
                     </div>
-                    <div class="flex flex-col items-end gap-1 shrink-0 ml-2">
-                        ${kondisiBadge}
-                        ${kalibBadge}
-                        ${mutasiBadge}
+                    <div class="flex items-start gap-1.5 shrink-0">
+                        <div class="flex flex-col items-end gap-1">
+                            ${kondisiBadge}
+                            ${kalibBadge}
+                            ${mutasiBadge}
+                        </div>
+                        ${
+                          canDelete
+                            ? `<button onclick="window.deleteAset('${item.id_aset}')"
+                            title="Hapus aset (afkir)" aria-label="Hapus aset ${item.id_aset}"
+                            class="w-7 h-7 flex items-center justify-center rounded-lg text-gray-300 dark:text-gray-600 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition shrink-0">
+                            <i class="fas fa-trash-alt text-xs"></i>
+                        </button>`
+                            : ""
+                        }
                     </div>
                 </div>
 
@@ -3128,30 +3266,20 @@ function renderDbCards() {
                     class="w-full flex items-center justify-center gap-1.5 px-3 py-2.5 bg-kai-blue hover:bg-blue-800 active:bg-blue-900 text-white font-semibold rounded-lg transition text-sm shadow-sm">
                     <i class="fas fa-edit text-sm"></i> Form Pemeliharaan dan Kalibrasi
                 </button>
-                ${
-                  isAdmin
-                    ? `
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                <button onclick="window.openMutasiModal('${item.id_aset}')"
-                    class="w-full flex items-center justify-center gap-1.5 px-3 py-2.5 bg-kai-orange hover:bg-orange-600 active:bg-orange-700 text-white font-semibold rounded-lg transition text-sm shadow-sm">
-                    <i class="fas fa-exchange-alt text-sm"></i> Mutasi Aset
-                </button>`
-                    : `<div class="hidden sm:block"></div>`
-                }
-                <button onclick="window.openQrModal('${item.id_aset}')"
-                    class="w-full flex items-center justify-center gap-1.5 px-3 py-2.5 bg-violet-600 dark:bg-violet-700 hover:bg-violet-500 dark:hover:bg-violet-600 text-white font-semibold rounded-lg transition text-sm shadow-sm">
-                    <i class="fas fa-qrcode text-sm"></i> Pindai/Cetak QR
+                    ${
+                      isAdmin
+                        ? `<button onclick="window.openMutasiModal('${item.id_aset}')"
+                        class="w-full flex items-center justify-center gap-1.5 px-3 py-2.5 bg-kai-orange hover:bg-orange-600 active:bg-orange-700 text-white font-semibold rounded-lg transition text-sm shadow-sm">
+                        <i class="fas fa-exchange-alt text-sm"></i> Mutasi Aset
+                    </button>`
+                        : `<div class="hidden sm:block"></div>`
+                    }
+                    <button onclick="window.openQrModal('${item.id_aset}')"
+                        class="w-full flex items-center justify-center gap-1.5 px-3 py-2.5 bg-violet-600 dark:bg-violet-700 hover:bg-violet-500 dark:hover:bg-violet-600 text-white font-semibold rounded-lg transition text-sm shadow-sm">
+                        <i class="fas fa-qrcode text-sm"></i> Pindai/Cetak QR
+                    </button>
                 </div>
-                </button>
-                ${
-                  canDelete
-                    ? `
-                <button onclick="window.deleteAset('${item.id_aset}')"
-                    class="w-full flex items-center justify-center gap-1.5 px-3 py-2.5 bg-red-600 hover:bg-red-700 active:bg-red-800 text-white font-semibold rounded-lg transition text-sm">
-                    <i class="fas fa-trash-alt text-sm"></i> Hapus Aset (Afkir)
-                </button>`
-                    : ""
-                }
             </div>
         `;
 
@@ -3181,7 +3309,16 @@ const PERUNTUKAN_MAP = {
   C: "MEKANIK",
   D: "BALAIYASA",
 };
-const PENGADAAN_MAP = { 1: "PUSAT", 2: "DAOP / DIVRE" };
+// sumber_pengadaan is stored as a string ("PUSAT" / "DAOP/DIVRE"), so the old
+// integer keys 1/2 never matched and the map was dead. Keys kept for any legacy
+// numeric rows; the string keys are what actually hit.
+const PENGADAAN_MAP = {
+  1: "PUSAT",
+  2: "DAOP / DIVRE",
+  PUSAT: "PUSAT",
+  "DAOP/DIVRE": "DAOP / DIVRE",
+  "DAOP / DIVRE": "DAOP / DIVRE",
+};
 
 /**
  * Decode id_aset format: <kode_alat>-<tahun>-<peruntukan>-<id_lokasi>
@@ -4019,15 +4156,20 @@ function _syncSortPanels(fieldVal, customChecked, panelPrefix, allLabelId, custo
     allLabel.classList.add("hidden");
     customPanels.classList.remove("hidden");
 
-    // Hide all sub-panels first (covers all three prefix families)
+    // Hide every sub-panel first. This must list ALL prefix families — a
+    // missing one means that modal's panels stack instead of swapping when the
+    // user changes the sort criterion.
     customPanels
-        .querySelectorAll("[id^='sort-panel-'], [id^='hist-sort-panel-'], [id^='kdak-sort-panel-']")
+      .querySelectorAll(
+        "[id^='sort-panel-'], [id^='hist-sort-panel-'], [id^='kdak-sort-panel-'], [id^='afkir-sort-panel-']",
+      )
       .forEach((p) => p.classList.add("hidden"));
-    // Show the one matching the active prefix + field
-    const panel =
-      document.getElementById(`${panelPrefix}-panel-${fieldVal}`) ||
-      document.getElementById(`sort-panel-${fieldVal}`) ||
-      document.getElementById(`hist-sort-panel-${fieldVal}`);
+    // Show the one matching the active prefix + field. Scoped to THIS modal's
+    // container — a global id lookup could reveal a panel belonging to another
+    // sort modal when two of them use different names for the same field.
+    const panel = customPanels.querySelector(
+      `#${panelPrefix}-panel-${CSS.escape(fieldVal)}`,
+    );
     if (panel) panel.classList.remove("hidden");
   }
 }
@@ -4368,11 +4510,10 @@ document.getElementById("btn-reset-hist-sort")?.addEventListener("click", () => 
   else renderMutasiCards();
 });
 
-document.getElementById("btn-apply-sort")?.addEventListener("click", () => {
-  _sortField = document.getElementById("sort-field").value;
-  document.getElementById("sort-modal").classList.add("hidden");
-  renderDbCards();
-});
+// NOTE: the real #btn-apply-sort handler lives further up (it builds
+// _sortFilters as well). A second listener used to be registered here; both
+// fired on every click, rendering twice and overwriting _sortField with the raw
+// select value — blanking it whenever no criterion was chosen.
 
 // ── ADD FORMS ─────────────────────────────────────────────────────
 
@@ -5723,12 +5864,14 @@ window.openMutasiModal = (uid) => {
 
   // Populate destination dropdown
   const tujuSel = document.getElementById("mutasi-lokasi-tuju");
-  const options =
-    _currentRole === ("ADMIN_WILAYAH" || "SUPER_ADMIN")
-      ? lokasiData.filter(
-          (l) => l.code === (getJwtPayload(authToken)?.id_lokasi || ""),
-        )
-      : lokasiData.filter((l) => l.code);
+  // ("A" || "B") evaluates to "A", so the old form silently only ever tested
+  // ADMIN_WILAYAH. Region-scoped roles may only mutate within their own region.
+  const isRegionScoped = ["ADMIN_WILAYAH", "TEKNISI"].includes(_currentRole);
+  const myLokasi = getJwtPayload(authToken)?.id_lokasi || "";
+  const myParent = getParentLokasiCode(myLokasi) || myLokasi;
+  const options = isRegionScoped
+    ? lokasiData.filter((l) => l.code === myParent)
+    : lokasiData.filter((l) => l.code);
 
   tujuSel.innerHTML =
     '<option value="">Pilih Lokasi Tujuan...</option>' +
@@ -5798,10 +5941,7 @@ window.openMutasiModal = (uid) => {
 // ── QR MODAL ───────────────────────────────────────────────────────────────
 
 function buildLandingUrl(uid) {
-  const base = NGROK_BASE_URL
-    ? NGROK_BASE_URL.replace(/\/$/, "")
-    : window.location.origin;
-  return `${base}/landing.html?uid=${encodeURIComponent(uid)}`;
+  return `${getPublicBaseUrl()}/landing.html?uid=${encodeURIComponent(uid)}`;
 }
 
 function drawQrOnCanvas(text, targetCanvas) {
@@ -6454,66 +6594,9 @@ async function processKdakImportFile(file) {
   });
 }
 
-// ── Import Lokasi handler ──
-async function processMasterLokasiImport(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = async (e) => {
-      try {
-        const wb = XLSX.read(e.target.result, { type: "binary" });
-        const ws = wb.Sheets[wb.SheetNames[0]];
-        const rows = XLSX.utils.sheet_to_json(ws, { header: 1 });
-        const dataRows = rows.slice(1).filter((r) => r.length >= 3 && r[0]);
-        if (!dataRows.length) { showToast("File tidak memiliki baris data yang valid.", "warning"); return resolve(0); }
-        let success = 0, failed = 0;
-        for (const row of dataRows) {
-          try {
-            const res = await apiFetch("/master/lokasi", {
-              method: "POST",
-              body: JSON.stringify({ id_lokasi: String(row[0] || "").trim().toUpperCase(), nama_lokasi: String(row[1] || "").trim(), tipe: String(row[2] || "DAOP").trim().toUpperCase() }),
-            });
-            if (res.ok) success++; else failed++;
-          } catch { failed++; }
-        }
-        showToast(`Import Lokasi selesai: ${success} berhasil${failed ? `, ${failed} gagal` : ""}.`, success > 0 ? "success" : "error");
-        await fetchMasterData();
-        resolve(success);
-      } catch (err) { showToast("Gagal membaca file Excel.", "error"); reject(err); }
-    };
-    reader.readAsBinaryString(file);
-  });
-}
-
-// ── Import UPT handler ──
-async function processMasterUptImport(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = async (e) => {
-      try {
-        const wb = XLSX.read(e.target.result, { type: "binary" });
-        const ws = wb.Sheets[wb.SheetNames[0]];
-        const rows = XLSX.utils.sheet_to_json(ws, { header: 1 });
-        const dataRows = rows.slice(1).filter((r) => r.length >= 3 && r[0]);
-        if (!dataRows.length) { showToast("File tidak memiliki baris data yang valid.", "warning"); return resolve(0); }
-        let success = 0, failed = 0;
-        for (const row of dataRows) {
-          try {
-            const res = await apiFetch("/master/lokasi", {
-              method: "POST",
-              body: JSON.stringify({ id_lokasi: String(row[0] || "").trim(), nama_lokasi: String(row[1] || "").trim(), tipe: "UPT", parent_lokasi: String(row[2] || "").trim() }),
-            });
-            if (res.ok) success++; else failed++;
-          } catch { failed++; }
-        }
-        showToast(`Import UPT selesai: ${success} berhasil${failed ? `, ${failed} gagal` : ""}.`, success > 0 ? "success" : "error");
-        await fetchMasterData();
-        await loadMasterUpt();
-        resolve(success);
-      } catch (err) { showToast("Gagal membaca file Excel.", "error"); reject(err); }
-    };
-    reader.readAsBinaryString(file);
-  });
-}
+// NOTE: processMasterLokasiImport / processMasterUptImport are defined inside
+// setupEventListeners(), which is where both call sites live. Duplicate
+// top-level copies used to sit here, shadowed and never reachable.
 
 // ── Map View ──
 function openKdakMapModal() {
@@ -7300,23 +7383,33 @@ function customConfirm(message) {
 let _afkirDb = [];
 
 // ── Afkir Sort State ──────────────────────────────────────────────────────
-let _afkirSortField = "tanggal_pembelian";
-let _afkirSortDir   = "date-desc";
-let _afkirSortFilters = { alat: "", lokasi: "", tahunFrom: "", tahunTo: "" };
+// Defaults must match what the Reset button writes, or resetting silently
+// changes the ordering instead of restoring it.
+const AFKIR_SORT_DEFAULTS = { field: "tanggal_pembelian", dir: "date-desc" };
+let _afkirSortField = AFKIR_SORT_DEFAULTS.field;
+let _afkirSortDir   = AFKIR_SORT_DEFAULTS.dir;
+let _afkirSortFilters = {};
 
 async function loadAfkirCards() {
   const container = document.getElementById("afkir-cards-container");
   if (!container) return;
-  container.innerHTML = `<div class="col-span-3 text-center text-gray-400 py-14"><i class="fas fa-spinner fa-spin text-2xl"></i></div>`;
+  container.innerHTML = `<div class="col-span-full text-center text-gray-400 py-14"><i class="fas fa-spinner fa-spin text-2xl"></i></div>`;
   try {
     const res = await apiFetch("/aset/afkir");
     if (!res.ok) throw new Error();
     _afkirDb = await res.json();
     renderAfkirCards();
   } catch {
-    container.innerHTML = `<div class="col-span-3 text-center text-red-400 py-14 text-sm">Gagal memuat data aset afkir.</div>`;
+    container.innerHTML = `<div class="col-span-full text-center text-red-400 py-14 text-sm">Gagal memuat data aset afkir.</div>`;
   }
 }
+
+// Called by the WebSocket handler and the polling fallback so afkir-ing an
+// asset in another tab doesn't leave this list stale.
+window.refreshAfkirIfVisible = function refreshAfkirIfVisible() {
+  if (document.getElementById("view-afkir")?.classList.contains("is-visible"))
+    loadAfkirCards();
+};
 
 function renderAfkirCards() {
   const container = document.getElementById("afkir-cards-container");
@@ -7326,31 +7419,53 @@ function renderAfkirCards() {
   const f = _afkirSortFilters;
 
   let filtered = _afkirDb.filter((item) => {
+    const rawLokasi = item.id_lokasi_raw || item.id_lokasi || "";
     if (q) {
       const match =
-        (item.id_aset    || "").toUpperCase().includes(q) ||
-        (item.kode_alat  || "").toUpperCase().includes(q) ||
-        (item.id_lokasi  || "").toUpperCase().includes(q);
+        (item.id_aset || "").toUpperCase().includes(q) ||
+        (item.kode_alat_name || item.kode_alat || "").toUpperCase().includes(q) ||
+        (item.lokasi_name || rawLokasi).toUpperCase().includes(q);
       if (!match) return false;
     }
     if (f.alat && item.kode_alat !== f.alat) return false;
     if (f.lokasi) {
-      const raw    = item.id_lokasi_raw || item.id_lokasi || "";
-      const parent = getParentLokasiCode(raw) || raw;
-      if (parent !== f.lokasi && raw !== f.lokasi) return false;
+      const parent = getParentLokasiCode(rawLokasi) || rawLokasi;
+      if (parent !== f.lokasi && rawLokasi !== f.lokasi) return false;
+    }
+    if (f.upt && rawLokasi !== f.upt) return false;
+    if (f.pengadaan && item.sumber_pengadaan !== f.pengadaan) return false;
+    if (f.peruntukan) {
+      const dec = decodeAsetId(item.id_aset);
+      if ((dec.peruntukan || "").toUpperCase() !== f.peruntukan) return false;
+    }
+    if (f.idFrom || f.idTo) {
+      // Leading segment of the id is the running number: "6.RGM.1.24.A.D1"
+      const urut = parseInt((item.id_aset || "").split(".")[0], 10);
+      if (!isNaN(urut)) {
+        if (f.idFrom && urut < parseInt(f.idFrom, 10)) return false;
+        if (f.idTo   && urut > parseInt(f.idTo, 10))   return false;
+      }
     }
     if (f.tahunFrom || f.tahunTo) {
-      const yr = parseInt((item.waktu_update || item.tanggal_pembelian || "").slice(0, 4));
-      if (f.tahunFrom && yr < parseInt(f.tahunFrom)) return false;
-      if (f.tahunTo   && yr > parseInt(f.tahunTo))   return false;
+      // "Tahun Beli" means the purchase date, not waktu_update (the scrap date).
+      const yr = parseInt((item.tanggal_pembelian || "").slice(0, 4), 10);
+      if (isNaN(yr)) return false;
+      if (f.tahunFrom && yr < parseInt(f.tahunFrom, 10)) return false;
+      if (f.tahunTo   && yr > parseInt(f.tahunTo, 10))   return false;
     }
     return true;
   });
 
   // Sort
   filtered = [...filtered].sort((a, b) => {
-    if (_afkirSortDir === "date-desc") return new Date(b.waktu_update || 0) - new Date(a.waktu_update || 0);
-    if (_afkirSortDir === "date-asc")  return new Date(a.waktu_update || 0) - new Date(b.waktu_update || 0);
+    if (_afkirSortDir === "date-desc")
+      return new Date(b.waktu_update || 0) - new Date(a.waktu_update || 0);
+    if (_afkirSortDir === "date-asc")
+      return new Date(a.waktu_update || 0) - new Date(b.waktu_update || 0);
+    if (_afkirSortDir === "count-desc" || _afkirSortDir === "count-asc") {
+      const hits = (x) => _historySummary.filter((s) => s.id_aset === x.id_aset).length;
+      return _afkirSortDir === "count-desc" ? hits(b) - hits(a) : hits(a) - hits(b);
+    }
     const av = (a[_afkirSortField] || "").toString().toUpperCase();
     const bv = (b[_afkirSortField] || "").toString().toUpperCase();
     return _afkirSortDir === "asc" ? av.localeCompare(bv) : bv.localeCompare(av);
@@ -7359,11 +7474,13 @@ function renderAfkirCards() {
   if (countEl) countEl.textContent = `${filtered.length} aset`;
 
   if (!filtered.length) {
-    container.innerHTML = `<div class="col-span-3 text-center text-gray-400 py-14">
+    container.innerHTML = `<div class="col-span-full text-center text-gray-400 py-14">
             <i class="fas fa-recycle text-4xl mb-3 block"></i>
             <p class="text-sm">Tidak ada aset afkir${q ? " yang cocok dengan pencarian" : ""}.</p></div>`;
     return;
   }
+
+  const row = cardDetailRow;
 
   container.innerHTML = filtered
     .map((item) => {
@@ -7371,25 +7488,55 @@ function renderAfkirCards() {
       const uptEntry = uptDatabase.find((u) => u.upt === uptCode);
       const isParent = !uptEntry && !!lokasiData.find((l) => l.code === uptCode);
       const parentCode = getParentLokasiCode(uptCode) || uptCode;
-      const lokasiName = lokasiData.find((l) => l.code === parentCode)?.name || parentCode || "—";
-      const uptDisplay = uptEntry ? uptEntry.nama : isParent ? "—" : uptCode || "—";
+      const lokasiName =
+        lokasiData.find((l) => l.code === parentCode)?.name ||
+        item.lokasi_name ||
+        parentCode ||
+        "—";
+      const uptDisplay = uptEntry
+        ? uptEntry.nama
+        : isParent
+          ? "—"
+          : item.lokasi_name || uptCode || "—";
+      const dec = decodeAsetId(item.id_aset);
+      const tanggalBeli = item.tanggal_pembelian
+        ? new Date(item.tanggal_pembelian).toLocaleDateString("id-ID", {
+            day: "2-digit",
+            month: "long",
+            year: "numeric",
+          })
+        : "—";
+      const afkirBadge = `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"><i class="fas fa-circle text-[6px]"></i>AFKIR</span>`;
+      const waktuBadge = `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400"><i class="fas fa-clock text-[8px]"></i>${
+        item.waktu_update ? formatUtcToLocal(item.waktu_update) : "—"
+      }</span>`;
+
       return `
-        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm p-5 flex flex-col hover:border-green-400 dark:hover:border-green-600 hover:shadow-md transition-all">
-            <div class="flex justify-between items-start mb-3 pb-3 border-b border-gray-50 dark:border-gray-700/60">
-                <span class="text-[10px] font-mono text-gray-400">${item.id_aset}</span>
-                <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400">AFKIR</span>
+        <div class="${ASSET_CARD_CLASS}">
+            <div>
+                <div class="flex justify-between items-start gap-2">
+                    <div class="flex flex-col min-w-0">
+                        <span class="text-base font-bold font-mono text-kai-blue dark:text-blue-400 leading-tight">${item.id_aset}</span>
+                        <p class="text-sm text-gray-700 dark:text-gray-300 font-semibold mt-0.5">${item.kode_alat_name || item.kode_alat || "—"}</p>
+                    </div>
+                    <div class="flex flex-col items-end gap-1 shrink-0 ml-2">
+                        ${afkirBadge}
+                        ${waktuBadge}
+                    </div>
+                </div>
+
+                <div class="mt-3 space-y-1 border-t border-gray-100 dark:border-gray-700 pt-3 capitalize">
+                    ${row("Pengadaan", PENGADAAN_MAP[item.sumber_pengadaan] || item.sumber_pengadaan || "—")}
+                    ${row("Tanggal Beli", tanggalBeli)}
+                    ${row("Lokasi", lokasiName)}
+                    ${row("UPT", uptDisplay)}
+                    ${row("Peruntukan", item.peruntukan || dec.peruntukan || "—")}
+                </div>
             </div>
-            <h3 class="text-sm font-bold font-mono text-gray-700 dark:text-gray-200 break-words">${item.id_aset}</h3>
-            <p class="text-xs text-gray-500 mt-1 font-medium">${item.kode_alat_name || item.kode_alat || "—"}</p>
-            <div class="mt-2 space-y-0.5">
-              <p class="text-xs text-gray-400"><span class="w-16 inline-block">Lokasi</span>${lokasiName}</p>
-              <p class="text-xs text-gray-400"><span class="w-16 inline-block">UPT</span>${uptDisplay}</p>
-              <p class="text-xs text-gray-400"><i class="fas fa-clock mr-1"></i>${item.waktu_update ? formatUtcToLocal(item.waktu_update) : "Tanggal tidak tersedia"}</p>
-            </div>
-            <div class="mt-4">
+            <div class="mt-4 space-y-2">
                 <button onclick="window.openPulihkanModal('${item.id_aset}')"
-                    class="w-full bg-green-600 hover:bg-green-700 active:bg-green-800 text-white py-2.5 rounded-lg text-sm font-semibold transition flex items-center justify-center gap-2">
-                    <i class="fas fa-wrench"></i> Proses Lebih Lanjut
+                    class="w-full flex items-center justify-center gap-1.5 px-3 py-2.5 bg-green-600 hover:bg-green-700 active:bg-green-800 text-white font-semibold rounded-lg transition text-sm shadow-sm">
+                    <i class="fas fa-wrench text-sm"></i> Proses Lebih Lanjut
                 </button>
             </div>
         </div>`;
@@ -7416,40 +7563,52 @@ function _paintAfkirDirBtns() {
   });
 }
 
+// Rebuilds the Lokasi → UPT pair the same way the other sort modals do:
+// the UPT list is restricted to the chosen Lokasi's children, stays DISABLED
+// until a Lokasi is picked, and preserves the current UPT across reopens.
+function _syncAfkirLokasiUpt() {
+  const lokSel = document.getElementById("afkir-sort-lok-lokasi");
+  const uptSel = document.getElementById("afkir-sort-lok-upt");
+  if (!uptSel) return;
+  const chosenLok = lokSel?.value || "";
+  const currentUpt = uptSel.value;
+  uptSel.innerHTML = `<option value="">— ${chosenLok ? "Semua UPT" : "Pilih Lokasi dahulu"} —</option>`;
+  uptSel.disabled = !chosenLok;
+  if (chosenLok) {
+    uptDatabase
+      .filter((u) => u.lokasi === chosenLok)
+      .forEach((u) => {
+        const o = document.createElement("option");
+        o.value = u.upt;
+        o.textContent = `${u.nama || u.upt} (${u.upt})`;
+        uptSel.appendChild(o);
+      });
+    if (currentUpt) uptSel.value = currentUpt;
+  }
+}
+
 document.getElementById("afkir-btn-sort")?.addEventListener("click", () => {
   _populateYearDropdowns("afkir-sort-tgl-from", "afkir-sort-tgl-to");
 
-  ["afkir-sort-alat-filter"].forEach((id) => {
-    const sel = document.getElementById(id);
-    if (sel && sel.options.length <= 1) {
-      alatKerjaData.forEach((a) => {
-        const o = document.createElement("option");
-        o.value = a.code; o.textContent = `${a.code} — ${a.name}`;
-        sel.appendChild(o);
-      });
-    }
-  });
-  ["afkir-sort-lok-lokasi"].forEach((id) => {
-    const sel = document.getElementById(id);
-    if (sel && sel.options.length <= 1) {
-      lokasiData.forEach((l) => {
-        const o = document.createElement("option");
-        o.value = l.code; o.textContent = `${l.name} (${l.code})`;
-        sel.appendChild(o);
-      });
-    }
-  });
-
-  // Sync UPT dropdown if lokasi already selected
-  const lokVal = document.getElementById("afkir-sort-lok-lokasi")?.value || "";
-  const uptSel = document.getElementById("afkir-sort-lok-upt");
-  if (uptSel && lokVal) {
-    uptSel.innerHTML = `<option value="">Tampilkan untuk Semua UPT</option>`;
-    uptDatabase.filter((u) => u.lokasi === lokVal).forEach((u) => {
-      const o = document.createElement("option"); o.value = u.upt; o.textContent = u.nama;
-      uptSel.appendChild(o);
+  const alatSel = document.getElementById("afkir-sort-alat-filter");
+  if (alatSel && alatSel.options.length <= 1) {
+    alatKerjaData.forEach((a) => {
+      const o = document.createElement("option");
+      o.value = a.code;
+      o.textContent = `${a.code} — ${a.name}`;
+      alatSel.appendChild(o);
     });
   }
+  const lokSel = document.getElementById("afkir-sort-lok-lokasi");
+  if (lokSel && lokSel.options.length <= 1) {
+    lokasiData.forEach((l) => {
+      const o = document.createElement("option");
+      o.value = l.code;
+      o.textContent = `${l.name} (${l.code})`;
+      lokSel.appendChild(o);
+    });
+  }
+  _syncAfkirLokasiUpt();
 
   // Sync field → panel + checkbox state
   const curField = document.getElementById("afkir-sort-field")?.value || "";
@@ -7475,16 +7634,10 @@ document.getElementById("afkir-sort-custom-spec")?.addEventListener("change", (e
 });
 
 // Lokasi → UPT cascade in sort modal
-document.getElementById("afkir-sort-lok-lokasi")?.addEventListener("change", (e) => {
+document.getElementById("afkir-sort-lok-lokasi")?.addEventListener("change", () => {
   const uptSel = document.getElementById("afkir-sort-lok-upt");
-  if (!uptSel) return;
-  uptSel.innerHTML = `<option value="">Tampilkan untuk Semua UPT</option>`;
-  if (e.target.value) {
-    uptDatabase.filter((u) => u.lokasi === e.target.value).forEach((u) => {
-      const o = document.createElement("option"); o.value = u.upt; o.textContent = u.nama;
-      uptSel.appendChild(o);
-    });
-  }
+  if (uptSel) uptSel.value = ""; // the old UPT belongs to the previous Lokasi
+  _syncAfkirLokasiUpt();
 });
 
 // Direction buttons
@@ -7525,8 +7678,8 @@ document.getElementById("afkir-sort-apply")?.addEventListener("click", () => {
 
 // Reset
 document.getElementById("afkir-sort-reset")?.addEventListener("click", () => {
-  _afkirSortField   = "id_aset";
-  _afkirSortDir     = "asc";
+  _afkirSortField   = AFKIR_SORT_DEFAULTS.field;
+  _afkirSortDir     = AFKIR_SORT_DEFAULTS.dir;
   _afkirSortFilters = {};
 
   const sortField = document.getElementById("afkir-sort-field");
@@ -7535,7 +7688,9 @@ document.getElementById("afkir-sort-reset")?.addEventListener("click", () => {
   if (sortSpec) sortSpec.checked = false;
 
   document.querySelectorAll("#afkir-sort-custom-panels input[type='text'], #afkir-sort-custom-panels input[type='number'], #afkir-sort-custom-panels select").forEach(el => { el.value = ""; });
-  document.querySelectorAll("#afkir-sort-custom-panels input[type='radio']").forEach(el => { el.checked = false; });
+  // Restore the "Semua" default rather than leaving every radio unchecked.
+  document.querySelectorAll("#afkir-sort-custom-panels input[type='radio']").forEach(el => { el.checked = el.value === ""; });
+  _syncAfkirLokasiUpt();
 
   _syncSortPanels("", false, "afkir-sort", "afkir-sort-all-data-label", "afkir-sort-custom-panels");
   _paintAfkirDirBtns();
@@ -7651,9 +7806,10 @@ function formatUtcToLocal(utcStr) {
 (function setupInventaris() {
 
   // ── State ─────────────────────────────────────────────────────────
-  let _invStockMode   = "global";    // "global" | "per_lokasi"
-  let _invLokasiFilter = "";         // selected parent lokasi id_lokasi
-  let _categories      = [];         // local cache from API
+  let _invLokasiFilter = "";   // selected parent lokasi id_lokasi ("" = semua)
+  let _invTahunFilter  = null; // selected year (null until resolved)
+  let _categories      = [];   // local cache from API
+  let _invBooted       = false;
 
   // ── Tab elements ──────────────────────────────────────────────────
   const tabDash     = document.getElementById("inv-tab-dashboard");
@@ -7662,6 +7818,7 @@ function formatUtcToLocal(utcStr) {
   const panelDash     = document.getElementById("inv-panel-dashboard");
   const panelParts    = document.getElementById("inv-panel-parts");
   const panelTransfer = document.getElementById("inv-panel-transfer");
+  const toolbar        = document.getElementById("inv-toolbar");
   const toolbarActions = document.getElementById("inv-toolbar-actions");
   const searchInput    = document.getElementById("inv-parts-search");
 
@@ -7681,22 +7838,15 @@ function formatUtcToLocal(utcStr) {
       btn?.classList.toggle("text-gray-400",   !active);
       panel?.classList.toggle("hidden", !active);
     });
-    // Show action buttons only on Parts tab
+    // The toolbar is shared by Parts/Transfer and lives outside both panels,
+    // so it has to be hidden explicitly on the Dashboard tab.
+    toolbar?.classList.toggle("hidden", which === "dashboard");
     toolbarActions?.classList.toggle("hidden", which !== "parts");
-    // Clear search
     if (searchInput) searchInput.value = "";
-    // Load dashboard data on first switch
     if (which === "dashboard") loadInvDashboard();
   }
 
   ALL_TABS.forEach(({ btn, id }) => btn?.addEventListener("click", () => setInvTab(id)));
-
-  // Start on Dashboard tab
-  setInvTab("dashboard");
-
-  // ── "Open Full Inventory" buttons → switch to Parts tab ───────────
-  document.getElementById("inv-dash-open-mgmt")?.addEventListener("click",  () => setInvTab("parts"));
-  document.getElementById("inv-dash-open-mgmt2")?.addEventListener("click", () => setInvTab("parts"));
 
   // ── Bulk Upload dropdown ──────────────────────────────────────────
   const bulkToggle   = document.getElementById("inv-btn-bulk-toggle");
@@ -7707,133 +7857,526 @@ function formatUtcToLocal(utcStr) {
   });
   document.addEventListener("click", () => bulkDropdown?.classList.add("hidden"));
 
-  // ── Stock mode toggle ─────────────────────────────────────────────
-  const modeGlobal = document.getElementById("inv-mode-global");
-  const modePerUpt = document.getElementById("inv-mode-perupt");
+  // ── Filters: Lokasi + Tahun ───────────────────────────────────────
 
-  function setStockMode(mode) {
-    _invStockMode = mode;
-    const isGlobal = mode === "global";
-    modeGlobal?.classList.toggle("bg-white/20", isGlobal);
-    modeGlobal?.classList.toggle("text-white",  isGlobal);
-    modeGlobal?.classList.toggle("text-white/60", !isGlobal);
-    modePerUpt?.classList.toggle("bg-white/20",  !isGlobal);
-    modePerUpt?.classList.toggle("text-white",   !isGlobal);
-    modePerUpt?.classList.toggle("text-white/60", isGlobal);
-    loadInvDashboard();
+  // The user's home region comes from GET /api/me (which resolves a UPT code
+  // like JR1.3 up to its DAOP), falling back to the JWT claim if that call
+  // fails. Preselected but never locked — every role can browse any region.
+  async function resolveDefaultRegion() {
+    try {
+      const res = await apiFetch("/me");
+      if (res.ok) {
+        const me = await res.json();
+        if (me.default_region) return me.default_region;
+      }
+    } catch (_) { /* fall through to the token */ }
+    const raw = getJwtPayload(authToken)?.id_lokasi || "";
+    if (!raw) return "";
+    if (lokasiData.some((l) => l.code === raw)) return raw;
+    return getParentLokasiCode(raw) || "";
   }
 
-  modeGlobal?.addEventListener("click", () => setStockMode("global"));
-  modePerUpt?.addEventListener("click", () => setStockMode("per_lokasi"));
-
-  // ── Lokasi dropdown — populate from API ───────────────────────────
   async function loadInvLokasiOptions() {
     const sel = document.getElementById("inv-dash-lokasi");
     if (!sel) return;
     try {
-      const data = await apiFetch("/api/master/lokasi?tipe=DAOP&tipe=DIVRE&tipe=PUSAT");
+      const res = await apiFetch("/master/lokasi?tipe=DAOP&tipe=DIVRE&tipe=PUSAT&tipe=BALAIYASA");
+      if (!res.ok) return;
+      const data = await res.json();
       sel.innerHTML = '<option value="">— Semua Lokasi —</option>' +
-        data.map(l => `<option value="${l.id_lokasi}">${l.nama_lokasi}</option>`).join("");
-    } catch (_) { /* silent */ }
+        data.map((l) => `<option value="${l.id_lokasi}">${l.nama_lokasi}</option>`).join("");
+      const preferred = await resolveDefaultRegion();
+      if (preferred && data.some((l) => l.id_lokasi === preferred)) {
+        sel.value = preferred;
+        _invLokasiFilter = preferred;
+      }
+    } catch (_) { /* silent — dashboard falls back to the global view */ }
   }
-  loadInvLokasiOptions();
+
+  const MIN_TAHUN = 1950;
+
+  // Rebuilt on every response: `available_years` is scope-dependent, so the
+  // years that actually hold data change when the region changes. Years with
+  // no data stay selectable but are marked, and the current pick is re-snapped
+  // if the backend resolved a different year.
+  function syncTahunOptions(resolvedYear, availableYears) {
+    const sel = document.getElementById("inv-dash-tahun");
+    if (!sel) return;
+    const withData = new Set(availableYears || []);
+    const maxYear = Math.max(new Date().getFullYear(), resolvedYear || 0, ...withData);
+    const opts = [];
+    for (let y = maxYear; y >= MIN_TAHUN; y--) {
+      const has = withData.has(y);
+      opts.push(
+        `<option value="${y}"${has ? "" : ' class="text-gray-400"'}>${y}${has ? "" : " (kosong)"}</option>`,
+      );
+    }
+    sel.innerHTML = opts.join("");
+    sel.value = String(resolvedYear);
+    _invTahunFilter = resolvedYear;
+  }
 
   document.getElementById("inv-dash-lokasi")?.addEventListener("change", function () {
     _invLokasiFilter = this.value;
+    // Drop the year so the backend re-resolves the newest year that actually
+    // holds data for the new region. Regions have different histories, and
+    // carrying the old year over strands the user on an empty report.
+    _invTahunFilter = null;
     loadInvDashboard();
   });
 
+  document.getElementById("inv-dash-tahun")?.addEventListener("change", function () {
+    _invTahunFilter = parseInt(this.value, 10) || null;
+    loadInvDashboard();
+  });
+
+  document.getElementById("inv-dash-refresh")?.addEventListener("click", () => loadInvDashboard());
+
+  // ── Chart plumbing ────────────────────────────────────────────────
+  let _invDashChartResort    = null;
+  let _invDashChartAlat      = null;
+  let _invDashChartResortAll = null;
+  let _invDashChartAlatAll   = null;
+  let _invDashChartTrend     = null;
+  let _invDashChartPie       = null;
+  let _invDashChartGauge     = null;
+
+  // Series colors. These are hue-preserving steps of the KAI brand blue and
+  // orange, chosen so each mode's pair clears the OKLCH lightness band, the
+  // chroma floor, colour-blind separation (ΔE 26+ protan/deutan) and 3:1
+  // contrast against its surface — the brand hex values themselves do not.
+  const SERIES = {
+    light: { in: "#0b73ca", out: "#cf7217" },
+    dark:  { in: "#1087ed", out: "#db7711" },
+  };
+  // 8-slot categorical theme for the composition doughnut, in fixed order.
+  // Never cycled: a 9th category folds into "Lainnya" instead of reusing a hue.
+  const CATEGORICAL = {
+    light: ["#2a78d6","#eb6834","#1baf7a","#eda100","#e87ba4","#008300","#4a3aa7","#e34948"],
+    dark:  ["#3987e5","#d95926","#199e70","#c98500","#d55181","#008300","#9085e9","#e66767"],
+  };
+
+  function chartTheme() {
+    const isDark = document.documentElement.classList.contains("dark");
+    return {
+      isDark,
+      series: isDark ? SERIES.dark : SERIES.light,
+      categorical: isDark ? CATEGORICAL.dark : CATEGORICAL.light,
+      text: isDark ? "#9ca3af" : "#6b7280",
+      grid: isDark ? "rgba(255,255,255,0.07)" : "rgba(0,0,0,0.05)",
+      surface: isDark ? "#1f2937" : "#ffffff",
+    };
+  }
+
+  // Draws the value above each bar, like the printed report. Selective on
+  // purpose: zeros are skipped and labels are dropped entirely once bars get
+  // too narrow to hold them, so a 25-resort chart doesn't turn into noise.
+  const barValueLabels = {
+    id: "invBarValueLabels",
+    afterDatasetsDraw(chart, _args, opts) {
+      const { ctx } = chart;
+      const color = opts?.color || "#6b7280";
+      const minBarWidth = opts?.minBarWidth ?? 9;
+      ctx.save();
+      ctx.font = "600 9px Inter, system-ui, sans-serif";
+      ctx.fillStyle = color;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "bottom";
+      chart.data.datasets.forEach((ds, di) => {
+        const meta = chart.getDatasetMeta(di);
+        if (meta.hidden) return;
+        for (const el of meta.data) {
+          if (!el || el.width < minBarWidth) return; // bars too thin — skip all
+        }
+        meta.data.forEach((el, i) => {
+          const v = ds.data[i];
+          if (!v) return; // hide zeros
+          ctx.fillText(String(v), el.x, el.y - 2);
+        });
+      });
+      ctx.restore();
+    },
+  };
+
+  // Shared options for the IN/OUT grouped bars. `spacer` is the 2px surface gap
+  // that separates adjacent bars without drawing a border around them.
+  function groupedBarOptions(t, { rotate = 0, valueLabels = true } = {}) {
+    return {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: "index", intersect: false },
+      layout: { padding: { top: 14 } }, // room for the value labels
+      plugins: {
+        legend: {
+          labels: { color: t.text, font: { size: 10 }, boxWidth: 10, usePointStyle: true },
+        },
+        tooltip: {
+          callbacks: {
+            footer: (items) => {
+              const inV  = items.find((i) => i.dataset.label?.includes("Masuk"))?.parsed.y ?? 0;
+              const outV = items.find((i) => i.dataset.label?.includes("Keluar"))?.parsed.y ?? 0;
+              return inV ? `Selesai: ${Math.round((outV / inV) * 100)}%` : "";
+            },
+          },
+        },
+        invBarValueLabels: valueLabels ? { color: t.text } : false,
+      },
+      scales: {
+        x: {
+          ticks: {
+            color: t.text,
+            font: { size: 9 },
+            maxRotation: rotate,
+            minRotation: rotate,
+            autoSkip: false,
+          },
+          grid: { display: false },
+        },
+        y: {
+          ticks: { color: t.text, font: { size: 9 }, precision: 0 },
+          grid: { color: t.grid },
+          beginAtZero: true,
+        },
+      },
+    };
+  }
+
+  function inOutDatasets(t, inData, outData) {
+    const common = {
+      borderRadius: 4,
+      borderSkipped: false,
+      borderWidth: 2,
+      borderColor: t.surface, // 2px surface gap between adjacent bars
+      categoryPercentage: 0.78,
+      barPercentage: 0.92,
+    };
+    return [
+      { label: "Alat Kerja Masuk (IN)",  data: inData,  backgroundColor: t.series.in,  ...common },
+      { label: "Alat Kerja Keluar (OUT)", data: outData, backgroundColor: t.series.out, ...common },
+    ];
+  }
+
   // ── Dashboard data loader ─────────────────────────────────────────
   async function loadInvDashboard() {
-    const params = new URLSearchParams({ mode: _invStockMode });
+    if (!authToken) return;
+    const params = new URLSearchParams();
     if (_invLokasiFilter) params.set("id_lokasi", _invLokasiFilter);
+    if (_invTahunFilter)  params.set("year", String(_invTahunFilter));
     try {
-      const d = await apiFetch(`/api/inventaris/dashboard?${params}`);
-      renderInvDashboard(d);
+      const res = await apiFetch(`/aset/dashboard/perbaikan?${params}`);
+      if (!res.ok) {
+        showToast("Gagal memuat dashboard perbaikan.", "error");
+        return;
+      }
+      renderInvDashboard(await res.json());
     } catch (e) {
       console.warn("Dashboard load failed:", e);
     }
   }
 
-  function fmtRupiah(val) {
-    if (!val) return "Rp 0";
-    if (val >= 1_000_000_000) return `Rp ${(val / 1_000_000_000).toFixed(1)} M`;
-    if (val >= 1_000_000)     return `Rp ${(val / 1_000_000).toFixed(1)} Jt`;
-    return `Rp ${val.toLocaleString("id-ID")}`;
-  }
+  const BULAN_PANJANG = [
+    "Januari", "Februari", "Maret", "April", "Mei", "Juni",
+    "Juli", "Agustus", "September", "Oktober", "November", "Desember",
+  ];
 
   function renderInvDashboard(d) {
-    // KPI cards
     const el = (id) => document.getElementById(id);
-    if (el("inv-dash-total-parts"))  el("inv-dash-total-parts").textContent  = d.total_parts ?? 0;
-    if (el("inv-dash-critical"))     el("inv-dash-critical").textContent     = d.critical_count ?? 0;
-    if (el("inv-dash-value"))        el("inv-dash-value").textContent        = fmtRupiah(d.total_value);
-    if (el("inv-dash-auto-demand"))  el("inv-dash-auto-demand").textContent  = d.auto_demand ?? 0;
-    if (el("inv-dash-critical-badge")) el("inv-dash-critical-badge").textContent = d.critical_count ?? 0;
+    const t  = chartTheme();
 
-    // Bar chart: by_subsistem
-    const barEl = el("inv-dash-bar-chart");
-    if (barEl && d.by_subsistem) {
-      const entries = Object.entries(d.by_subsistem).sort((a, b) => b[1] - a[1]);
-      const maxVal  = Math.max(...entries.map(e => e[1]), 1);
-      const COLORS  = {
-        ELECTRIC:    "bg-kai-blue",
-        ENGINE:      "bg-amber-500",
-        MECHANIC:    "bg-emerald-500",
-        CONSUMABLES: "bg-violet-500",
-        LAINNYA:     "bg-gray-400",
-      };
-      barEl.innerHTML = entries.map(([sub, count]) => {
-        const pct   = Math.round((count / maxVal) * 100);
-        const color = COLORS[sub] || "bg-gray-400";
-        return `
-          <div class="flex items-center gap-2">
-            <span class="text-[10px] text-gray-500 dark:text-gray-400 w-24 truncate shrink-0">${sub}</span>
-            <div class="flex-1 bg-gray-100 dark:bg-gray-700 rounded-full h-3 overflow-hidden">
-              <div class="${color} h-full rounded-full transition-all duration-500" style="width:${pct}%"></div>
-            </div>
-            <span class="text-[10px] font-bold text-gray-600 dark:text-gray-300 w-6 text-right">${count}</span>
-          </div>`;
-      }).join("");
+    // ── Header ──
+    syncTahunOptions(d.tahun, d.available_years);
+    if (el("inv-dash-kpi-year")) el("inv-dash-kpi-year").textContent = d.tahun ?? "—";
+    if (el("inv-dash-region-name"))
+      el("inv-dash-region-name").textContent = d.region_label || "Semua Daerah Operasi";
+    if (el("inv-dash-dateline")) {
+      const now = new Date();
+      el("inv-dash-dateline").textContent =
+        `${d.kota || "Bandung"}, ${now.getDate()} ${BULAN_PANJANG[now.getMonth()]} ${now.getFullYear()}`;
     }
 
-    // Trend chart: monthly_usage (mini bar chart)
-    const trendEl = el("inv-dash-trend-chart");
-    if (trendEl && d.monthly_usage && d.monthly_usage.length > 0) {
-      const maxM = Math.max(...d.monthly_usage.map(m => m.jumlah), 1);
-      trendEl.innerHTML = d.monthly_usage.map(m => {
-        const pct = Math.round((m.jumlah / maxM) * 100);
-        const label = m.bulan?.slice(5) || "";   // "MM" from "YYYY-MM"
-        return `
-          <div class="flex flex-col items-center gap-1 flex-1" title="${m.bulan}: ${m.jumlah}">
-            <span class="text-[9px] text-gray-400 font-mono">${m.jumlah}</span>
-            <div class="w-full bg-kai-blue/20 rounded-t" style="height:${Math.max(pct * 0.8, 4)}px;"></div>
-            <span class="text-[9px] text-gray-400">${label}</span>
-          </div>`;
-      }).join("");
-    } else if (trendEl) {
-      trendEl.innerHTML = '<p class="text-xs text-gray-400 italic self-center">Belum ada data penggunaan.</p>';
+    // ── KPI strip ──
+    if (el("inv-dash-masuk"))   el("inv-dash-masuk").textContent   = d.masuk   ?? "—";
+    if (el("inv-dash-sedang"))  el("inv-dash-sedang").textContent  = d.sedang  ?? "—";
+    if (el("inv-dash-selesai")) el("inv-dash-selesai").textContent = d.selesai ?? "—";
+    if (el("inv-dash-sedang-pct")) {
+      // Deliberately NOT a percentage of `masuk`: sedang is a point-in-time
+      // count that includes repairs opened in earlier years, so the ratio
+      // against a single year's intake is meaningless (and can exceed 100%).
+      el("inv-dash-sedang-pct").textContent = d.sedang
+        ? `${d.sedang} unit di workshop saat ini`
+        : "tidak ada alat di workshop";
+    }
+    if (el("inv-dash-diafkir")) {
+      // Explains why masuk != selesai + sedang: some repairs end in scrapping.
+      el("inv-dash-diafkir").textContent = d.diafkir
+        ? `${d.diafkir} berakhir afkir`
+        : "kembali siap operasi";
     }
 
-    // Critical stock table
-    const tbody = el("inv-dash-critical-body");
-    if (tbody) {
-      if (!d.critical_list || d.critical_list.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="3" class="py-4 text-center text-gray-400 italic text-xs">Semua stok aman ✓</td></tr>';
+    // ── Completion gauge ──
+    const pct = Number(d.persen_selesai || 0);
+    if (el("inv-dash-gauge-pct")) el("inv-dash-gauge-pct").textContent = `${pct.toFixed(1)}%`;
+    const gaugeCanvas = el("inv-dash-chart-gauge");
+    if (gaugeCanvas) {
+      if (_invDashChartGauge) _invDashChartGauge.destroy();
+      // Clamped for the arc only — a carry-over repair closed this year can push
+      // the true ratio past 100%, and the ring must not wrap around itself.
+      const arc = Math.max(0, Math.min(100, pct));
+      _invDashChartGauge = new Chart(gaugeCanvas, {
+        type: "doughnut",
+        data: {
+          labels: ["Selesai", "Belum selesai"],
+          datasets: [{
+            data: [arc, 100 - arc],
+            backgroundColor: [t.series.in, t.isDark ? "#374151" : "#e5e7eb"],
+            borderWidth: 0,
+          }],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          cutout: "72%",
+          plugins: { legend: { display: false }, tooltip: { enabled: false } },
+        },
+      });
+    }
+
+    // ── Workshop rail ──
+    if (el("inv-dash-workshop-badge"))
+      el("inv-dash-workshop-badge").textContent = d.sedang ?? 0;
+    const wBody = el("inv-dash-workshop-body");
+    if (wBody) {
+      if (!d.workshop_list || !d.workshop_list.length) {
+        wBody.innerHTML =
+          '<tr><td colspan="3" class="py-8 text-center text-gray-400 italic text-xs">Tidak ada alat sedang diperbaiki</td></tr>';
       } else {
-        tbody.innerHTML = d.critical_list.map(r => `
-          <tr class="border-b border-gray-50 dark:border-gray-700 hover:bg-red-50 dark:hover:bg-red-900/10">
-            <td class="py-1.5 pr-2">
-              <p class="font-semibold text-gray-700 dark:text-gray-200 leading-tight">${r.nama_part}</p>
-              <p class="text-[9px] text-gray-400">${r.nama_alat || r.kode_alat || ""}</p>
+        wBody.innerHTML = d.workshop_list.map((r, i) => `
+          <tr class="border-b border-gray-50 dark:border-gray-700/50 hover:bg-amber-50 dark:hover:bg-amber-900/10 transition">
+            <td class="px-2 py-1.5 text-gray-400 font-mono align-top">${i + 1}</td>
+            <td class="px-2 py-1.5">
+              <p class="font-semibold text-gray-700 dark:text-gray-200 leading-tight">${r.nama_alat}</p>
+              <p class="text-[9px] text-gray-400">${r.lokasi_label || r.id_lokasi || "—"}</p>
             </td>
-            <td class="py-1.5 text-right font-bold text-red-500">${r.stok_sekarang}</td>
-            <td class="py-1.5 text-right text-gray-400">${r.stok_min}</td>
+            <td class="px-2 py-1.5 text-right font-bold text-amber-600 align-top">${r.jumlah}</td>
           </tr>`).join("");
+      }
+    }
+
+    // ── Top 10 Resort (grouped IN/OUT) ──
+    const resortCanvas = el("inv-dash-chart-resort");
+    if (resortCanvas && d.top_resort) {
+      if (_invDashChartResort) _invDashChartResort.destroy();
+      _invDashChartResort = new Chart(resortCanvas, {
+        type: "bar",
+        data: {
+          labels: d.top_resort.map((r) => r.resort_label || r.resort),
+          datasets: inOutDatasets(t, d.top_resort.map((r) => r.masuk), d.top_resort.map((r) => r.selesai)),
+        },
+        options: groupedBarOptions(t, { rotate: 45 }),
+        plugins: [barValueLabels],
+      });
+    }
+
+    // ── Top 10 Alat (horizontal, single series — bar length carries the value) ──
+    const alatCanvas = el("inv-dash-chart-alat");
+    if (alatCanvas && d.top_alat) {
+      if (_invDashChartAlat) _invDashChartAlat.destroy();
+      _invDashChartAlat = new Chart(alatCanvas, {
+        type: "bar",
+        data: {
+          labels: d.top_alat.map((a) => a.nama_alat),
+          datasets: [{
+            label: "Jumlah Perbaikan",
+            data: d.top_alat.map((a) => a.masuk),
+            backgroundColor: t.series.in,
+            borderRadius: 4,
+            borderSkipped: false,
+          }],
+        },
+        options: {
+          indexAxis: "y",
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false } }, // single series — the title names it
+          scales: {
+            x: { ticks: { color: t.text, font: { size: 9 }, precision: 0 }, grid: { color: t.grid }, beginAtZero: true },
+            y: {
+              ticks: {
+                color: t.text,
+                font: { size: 9 },
+                callback(v) {
+                  const s = this.getLabelForValue(v);
+                  return s.length > 22 ? s.slice(0, 21) + "…" : s;
+                },
+              },
+              grid: { display: false },
+            },
+          },
+        },
+      });
+    }
+
+    // ── Full-width: every resort ──
+    const resortAll = el("inv-dash-chart-resort-all");
+    if (resortAll && d.per_resort) {
+      if (_invDashChartResortAll) _invDashChartResortAll.destroy();
+      // Widen the scroll container so bars stay legible as resorts multiply.
+      const wrap = el("inv-dash-resort-all-wrap");
+      if (wrap) wrap.style.minWidth = `${Math.max(720, d.per_resort.length * 46)}px`;
+      if (el("inv-dash-resort-count"))
+        el("inv-dash-resort-count").textContent = `${d.per_resort.length} resort`;
+      _invDashChartResortAll = new Chart(resortAll, {
+        type: "bar",
+        data: {
+          labels: d.per_resort.map((r) => r.resort_label || r.resort),
+          datasets: inOutDatasets(t, d.per_resort.map((r) => r.masuk), d.per_resort.map((r) => r.selesai)),
+        },
+        options: groupedBarOptions(t, { rotate: 55 }),
+        plugins: [barValueLabels],
+      });
+    }
+
+    // ── Full-width: every alat kerja ──
+    const alatAll = el("inv-dash-chart-alat-all");
+    if (alatAll && d.per_alat) {
+      if (_invDashChartAlatAll) _invDashChartAlatAll.destroy();
+      const wrap = el("inv-dash-alat-all-wrap");
+      if (wrap) wrap.style.minWidth = `${Math.max(720, d.per_alat.length * 56)}px`;
+      if (el("inv-dash-alat-count"))
+        el("inv-dash-alat-count").textContent = `${d.per_alat.length} jenis alat`;
+      _invDashChartAlatAll = new Chart(alatAll, {
+        type: "bar",
+        data: {
+          labels: d.per_alat.map((a) =>
+            a.nama_alat.length > 26 ? a.nama_alat.slice(0, 25) + "…" : a.nama_alat,
+          ),
+          datasets: inOutDatasets(t, d.per_alat.map((a) => a.masuk), d.per_alat.map((a) => a.selesai)),
+        },
+        options: groupedBarOptions(t, { rotate: 55 }),
+        plugins: [barValueLabels],
+      });
+    }
+
+    // ── Monthly trend (line, matching the report) ──
+    const trendCanvas = el("inv-dash-chart-trend");
+    if (trendCanvas && d.monthly_trend) {
+      if (_invDashChartTrend) _invDashChartTrend.destroy();
+      const line = (label, color, data) => ({
+        label,
+        data,
+        borderColor: color,
+        backgroundColor: color,
+        borderWidth: 2,
+        tension: 0.3,
+        pointRadius: 4,
+        pointHoverRadius: 6,
+        pointBackgroundColor: color,
+        pointBorderColor: t.surface, // 2px surface ring on overlapping markers
+        pointBorderWidth: 2,
+      });
+      _invDashChartTrend = new Chart(trendCanvas, {
+        type: "line",
+        data: {
+          labels: d.monthly_trend.map((m) => m.bulan),
+          datasets: [
+            line("Masuk (IN)",  t.series.in,  d.monthly_trend.map((m) => m.masuk)),
+            line("Keluar (OUT)", t.series.out, d.monthly_trend.map((m) => m.selesai)),
+          ],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: { mode: "index", intersect: false },
+          plugins: {
+            legend: { labels: { color: t.text, font: { size: 10 }, boxWidth: 10, usePointStyle: true } },
+          },
+          scales: {
+            x: { ticks: { color: t.text, font: { size: 9 } }, grid: { display: false } },
+            y: { ticks: { color: t.text, font: { size: 9 }, precision: 0 }, grid: { color: t.grid }, beginAtZero: true },
+          },
+        },
+      });
+    }
+
+    // ── Composition doughnut + direct-labeled legend ──
+    const pieCanvas = el("inv-dash-chart-pie");
+    const legEl     = el("inv-dash-pie-legend");
+    if (pieCanvas && d.by_alat) {
+      if (_invDashChartPie) _invDashChartPie.destroy();
+      const all   = Object.entries(d.by_alat).sort((a, b) => b[1] - a[1]);
+      const total = all.reduce((s, [, v]) => s + v, 0);
+      // Part-to-whole reads at a glance only up to ~6 wedges; the rest folds
+      // into "Lainnya". Nothing is lost — the per-alat bar chart above lists
+      // every category individually.
+      const top   = all.slice(0, 6);
+      const rest  = all.slice(6).reduce((s, [, v]) => s + v, 0);
+      const slices = rest > 0 ? [...top, ["Lainnya", rest]] : top;
+
+      if (!total) {
+        pieCanvas.parentElement?.classList.add("hidden");
+        if (legEl) legEl.innerHTML =
+          '<p class="text-center text-gray-400 italic py-4">Tidak ada data perbaikan</p>';
+      } else {
+        pieCanvas.parentElement?.classList.remove("hidden");
+        _invDashChartPie = new Chart(pieCanvas, {
+          type: "doughnut",
+          data: {
+            labels: slices.map(([k]) => k),
+            datasets: [{
+              data: slices.map(([, v]) => v),
+              backgroundColor: slices.map((_, i) => t.categorical[i]),
+              borderWidth: 2,
+              borderColor: t.surface,
+            }],
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            cutout: "58%",
+            plugins: {
+              legend: { display: false }, // replaced by the direct-labeled list below
+              tooltip: {
+                callbacks: {
+                  label: (c) => `${c.label}: ${c.parsed} (${((c.parsed / total) * 100).toFixed(1)}%)`,
+                },
+              },
+            },
+          },
+        });
+        // Direct labels satisfy the relief rule for the lighter categorical
+        // steps, which sit under 3:1 contrast on a white surface.
+        if (legEl) {
+          legEl.innerHTML = slices.map(([k, v], i) => `
+            <div class="flex items-center gap-2">
+              <span class="w-2.5 h-2.5 rounded-sm shrink-0" style="background:${t.categorical[i]}"></span>
+              <span class="truncate" title="${k}">${k}</span>
+              <span class="ml-auto shrink-0 tabular-nums font-bold text-gray-700 dark:text-gray-200">${((v / total) * 100).toFixed(1)}%</span>
+            </div>`).join("");
+        }
       }
     }
   }
 
+  // Charts bake their light/dark colors in at construction, so a theme flip
+  // needs a re-render rather than a resize.
+  window.addEventListener("kai-theme-change", () => {
+    if (panelDash && !panelDash.classList.contains("hidden")) loadInvDashboard();
+  });
+
+  // ── Entry point ───────────────────────────────────────────────────
+  // Deliberately NOT run at script-eval time: apiFetch throws without a token,
+  // so booting before login left the dropdowns and dashboard silently empty.
+  // switchView("inventaris") calls this instead.
+  window.initInvView = async function initInvView() {
+    if (!authToken) return;
+    if (!_invBooted) {
+      _invBooted = true;
+      await loadInvLokasiOptions();
+      setInvTab("dashboard");
+    } else {
+      loadInvDashboard();
+    }
+  };
   // ── Add Parts Item modal ──────────────────────────────────────────
   const addModal  = document.getElementById("inv-add-modal");
   const btnOpen   = document.getElementById("inv-btn-add-part");
@@ -7842,7 +8385,24 @@ function formatUtcToLocal(utcStr) {
   const btnSubmit = document.getElementById("inv-add-modal-submit");
 
   function openAddModal()  { addModal?.classList.remove("hidden"); loadInvKategoriOptions(); }
-  function closeAddModal() { addModal?.classList.add("hidden"); }
+  function closeAddModal() {
+    addModal?.classList.add("hidden");
+    const fields = [
+      "inv-field-sku", "inv-field-part-number", "inv-field-item-name", "inv-field-manufacturer",
+      "inv-field-item-type", "inv-field-quantity", "inv-field-unit", "inv-field-cost",
+      "inv-field-threshold", "inv-field-stored-location", "inv-field-auto-demand",
+      "inv-field-serial", "inv-field-tag", "inv-field-critical", "inv-field-vehicle",
+      "inv-field-warranty", "inv-field-supplier", "inv-field-ref-part", "inv-field-description",
+      "inv-field-category"
+    ];
+    fields.forEach(id => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      if (el.type === "checkbox") el.checked = false;
+      else if (el.tagName === "SELECT") el.value = "";
+      else el.value = "";
+    });
+  }
 
   btnOpen?.addEventListener("click",   openAddModal);
   btnClose?.addEventListener("click",  closeAddModal);
@@ -7850,26 +8410,34 @@ function formatUtcToLocal(utcStr) {
   addModal?.addEventListener("click", (e) => { if (e.target === addModal) closeAddModal(); });
 
   btnSubmit?.addEventListener("click", async () => {
+    const itemName = document.getElementById("inv-field-item-name")?.value.trim();
+    const manufacturer = document.getElementById("inv-field-manufacturer")?.value.trim() || "";
+    const supplierValue = document.getElementById("inv-field-supplier")?.value.trim() || manufacturer || null;
+    const storedLocation = document.getElementById("inv-field-stored-location")?.value.trim() || _invLokasiFilter || null;
     const body = {
-      nama_part:    document.getElementById("inv-field-item-name")?.value.trim(),
-      id_kategori:  parseInt(document.getElementById("inv-field-category")?.value) || null,
-      kode_alat:    document.getElementById("inv-field-kode-alat")?.value || null,
-      part_number:  document.getElementById("inv-field-part-number")?.value.trim() || null,
-      unit:         document.getElementById("inv-field-unit")?.value || "Pcs",
+      sku: document.getElementById("inv-field-sku")?.value.trim() || null,
+      nama_part: itemName,
+      id_kategori: parseInt(document.getElementById("inv-field-category")?.value) || null,
+      kode_alat: document.getElementById("inv-field-item-type")?.value.trim() || null,
+      part_number: document.getElementById("inv-field-part-number")?.value.trim() || null,
+      unit: document.getElementById("inv-field-unit")?.value || "Pcs",
       harga_satuan: parseInt(document.getElementById("inv-field-cost")?.value) || null,
-      stok_min:     parseInt(document.getElementById("inv-field-threshold")?.value) || 0,
-      auto_demand:  document.getElementById("inv-field-auto-demand")?.checked || false,
-      supplier:     document.getElementById("inv-field-supplier")?.value.trim() || null,
-      deskripsi:    document.getElementById("inv-field-description")?.value.trim() || null,
-      is_critical:  document.getElementById("inv-field-critical")?.checked || false,
+      stok_min: parseInt(document.getElementById("inv-field-threshold")?.value) || 0,
+      auto_demand: document.getElementById("inv-field-auto-demand")?.checked || false,
+      supplier: supplierValue,
+      deskripsi: document.getElementById("inv-field-description")?.value.trim() || null,
+      is_critical: document.getElementById("inv-field-critical")?.checked || false,
+      serial_numbers: document.getElementById("inv-field-serial")?.value.trim() || null,
+      lookup_tags: document.getElementById("inv-field-tag")?.value.trim() || null,
       linked_vehicle: document.getElementById("inv-field-vehicle")?.value.trim() || null,
       warranty_months: parseInt(document.getElementById("inv-field-warranty")?.value) || null,
-      jumlah_awal:  parseInt(document.getElementById("inv-field-quantity")?.value) || 0,
-      id_lokasi_awal: _invLokasiFilter || null,
+      ref_part: document.getElementById("inv-field-ref-part")?.value.trim() || null,
+      jumlah_awal: parseInt(document.getElementById("inv-field-quantity")?.value) || 0,
+      id_lokasi_awal: storedLocation,
     };
     if (!body.nama_part) { showToast("Nama part wajib diisi.", "warning"); return; }
     try {
-      await apiFetch("/api/inventaris/parts", { method: "POST", body: JSON.stringify(body) });
+      await apiFetch("/inventaris/parts", { method: "POST", body: JSON.stringify(body) });
       showToast("Part berhasil ditambahkan.", "success");
       closeAddModal();
       if (!panelParts.classList.contains("hidden")) loadInvParts();
@@ -7881,7 +8449,9 @@ function formatUtcToLocal(utcStr) {
   // ── Load kategori for dropdown ────────────────────────────────────
   async function loadInvKategoriOptions() {
     try {
-      const data = await apiFetch("/api/inventaris/kategori");
+      const res = await apiFetch("/inventaris/kategori");
+      if (!res.ok) return;
+      const data = await res.json();
       _categories = data;
       const sel  = document.getElementById("inv-field-category");
       if (sel) {
@@ -7896,6 +8466,7 @@ function formatUtcToLocal(utcStr) {
   // ── Parts Category modal ──────────────────────────────────────────
   const catModal   = document.getElementById("inv-category-modal");
   const btnCatOpen  = document.getElementById("inv-btn-parts-category");
+  const btnCatOpenShortcut = document.getElementById("inv-btn-open-category-modal");
   const btnCatClose = document.getElementById("inv-category-modal-close");
   const btnCatDone  = document.getElementById("inv-category-modal-close-btn");
   const catInput    = document.getElementById("inv-category-input");
@@ -7906,6 +8477,7 @@ function formatUtcToLocal(utcStr) {
   function closeCatModal() { catModal?.classList.add("hidden"); }
 
   btnCatOpen?.addEventListener("click",  openCatModal);
+  btnCatOpenShortcut?.addEventListener("click", openCatModal);
   btnCatClose?.addEventListener("click", closeCatModal);
   btnCatDone?.addEventListener("click",  closeCatModal);
   catModal?.addEventListener("click", (e) => { if (e.target === catModal) closeCatModal(); });
@@ -7929,7 +8501,7 @@ function formatUtcToLocal(utcStr) {
     catList.querySelectorAll(".inv-cat-delete").forEach(btn => {
       btn.addEventListener("click", async () => {
         try {
-          await apiFetch(`/api/inventaris/kategori/${btn.dataset.id}`, { method: "DELETE" });
+          await apiFetch(`/inventaris/kategori/${btn.dataset.id}`, { method: "DELETE" });
           showToast("Kategori dihapus.", "success");
           loadInvKategoriOptions();
         } catch (e) {
@@ -7943,7 +8515,7 @@ function formatUtcToLocal(utcStr) {
     const val = catInput?.value.trim();
     if (!val) return;
     try {
-      await apiFetch("/api/inventaris/kategori", {
+      await apiFetch("/inventaris/kategori", {
         method: "POST",
         body: JSON.stringify({ nama: val }),
       });
@@ -7958,32 +8530,16 @@ function formatUtcToLocal(utcStr) {
 
   // ── Load & render Parts table ──────────────────────────────────────
   async function loadInvParts() {
-    const params = new URLSearchParams({ mode: _invStockMode });
+    // Stock is pooled globally unless a region is selected on the dashboard.
+    const params = new URLSearchParams({
+      mode: _invLokasiFilter ? "per_lokasi" : "global",
+    });
     if (_invLokasiFilter) params.set("id_lokasi", _invLokasiFilter);
     try {
-      const data = await apiFetch(`/api/inventaris/parts?${params}`);
+      const res = await apiFetch(`/inventaris/parts?${params}`);
+      if (!res.ok) return;
+      const data = await res.json();
       renderInvPartsTable(data);
-      // Update stat cards
-      document.getElementById("inv-stat-total")?.textContent != null &&
-        (document.getElementById("inv-stat-total").textContent = data.length);
-      const critCount = data.filter(p => p.is_critical).length;
-      document.getElementById("inv-stat-critical") &&
-        (document.getElementById("inv-stat-critical").textContent = critCount);
-      const types = new Set(data.map(p => p.kode_alat).filter(Boolean));
-      document.getElementById("inv-stat-types") &&
-        (document.getElementById("inv-stat-types").textContent = types.size);
-      const mfgs = new Set(data.map(p => p.nama_alat).filter(Boolean));
-      document.getElementById("inv-stat-manufacturers") &&
-        (document.getElementById("inv-stat-manufacturers").textContent = mfgs.size);
-      const sups = new Set(data.map(p => p.supplier).filter(Boolean));
-      document.getElementById("inv-stat-suppliers") &&
-        (document.getElementById("inv-stat-suppliers").textContent = sups.size);
-      const demCount = data.filter(p => p.auto_demand).length;
-      document.getElementById("inv-stat-demand") &&
-        (document.getElementById("inv-stat-demand").textContent = demCount);
-      const cats = new Set(data.map(p => p.id_kategori).filter(Boolean));
-      document.getElementById("inv-stat-categories") &&
-        (document.getElementById("inv-stat-categories").textContent = cats.size);
     } catch (e) {
       console.warn("Parts load failed:", e);
     }
@@ -8029,7 +8585,7 @@ function formatUtcToLocal(utcStr) {
       btn.addEventListener("click", async () => {
         if (!confirm("Hapus part ini?")) return;
         try {
-          await apiFetch(`/api/inventaris/parts/${btn.dataset.id}`, { method: "DELETE" });
+          await apiFetch(`/inventaris/parts/${btn.dataset.id}`, { method: "DELETE" });
           showToast("Part dihapus.", "success");
           loadInvParts();
         } catch (e) { showToast(e.message || "Gagal.", "error"); }
@@ -8057,7 +8613,9 @@ function formatUtcToLocal(utcStr) {
     const params = new URLSearchParams();
     if (_invLokasiFilter) params.set("id_lokasi", _invLokasiFilter);
     try {
-      const data = await apiFetch(`/api/inventaris/transfer?${params}`);
+      const res = await apiFetch(`/inventaris/transfer?${params}`);
+      if (!res.ok) return;
+      const data = await res.json();
       const tbody = document.getElementById("inv-transfer-body");
       if (!tbody) return;
       if (data.length === 0) {
@@ -8091,141 +8649,4 @@ function formatUtcToLocal(utcStr) {
     }
   });
 
-})();
-
-(function setupInventaris() {
-  // ── Tab switching ──
-  const tabParts      = document.getElementById("inv-tab-parts");
-  const tabTransfer   = document.getElementById("inv-tab-transfer");
-  const panelParts    = document.getElementById("inv-panel-parts");
-  const panelTransfer = document.getElementById("inv-panel-transfer");
-  const toolbarActions = document.getElementById("inv-toolbar-actions");
-  const searchInput   = document.getElementById("inv-parts-search");
-
-  function setInvTab(which) {
-    const isP = which === "parts";
-
-    // Tab active styles
-    tabParts.classList.toggle("border-kai-blue",    isP);
-    tabParts.classList.toggle("text-kai-blue",      isP);
-    tabParts.classList.toggle("border-transparent", !isP);
-    tabParts.classList.toggle("text-gray-400",      !isP);
-    tabTransfer.classList.toggle("border-kai-blue",    !isP);
-    tabTransfer.classList.toggle("text-kai-blue",      !isP);
-    tabTransfer.classList.toggle("border-transparent",  isP);
-    tabTransfer.classList.toggle("text-gray-400",       isP);
-
-    // Show/hide panels
-    panelParts.classList.toggle("hidden",    !isP);
-    panelTransfer.classList.toggle("hidden",  isP);
-
-    // Show/hide action buttons (Parts-only); search bar always stays
-    toolbarActions?.classList.toggle("hidden", !isP);
-
-    // Clear search when switching tabs
-    if (searchInput) searchInput.value = "";
-  }
-
-  tabParts?.addEventListener("click",    () => setInvTab("parts"));
-  tabTransfer?.addEventListener("click", () => setInvTab("transfer"));
-
-  // ── Bulk Upload dropdown ──
-  const bulkToggle   = document.getElementById("inv-btn-bulk-toggle");
-  const bulkDropdown = document.getElementById("inv-bulk-dropdown");
-  bulkToggle?.addEventListener("click", (e) => {
-    e.stopPropagation();
-    bulkDropdown?.classList.toggle("hidden");
-  });
-  document.addEventListener("click", () => bulkDropdown?.classList.add("hidden"));
-
-  // ── Add Parts Item modal ──
-  const addModal    = document.getElementById("inv-add-modal");
-  const btnOpen     = document.getElementById("inv-btn-add-part");
-  const btnClose    = document.getElementById("inv-add-modal-close");
-  const btnCancel   = document.getElementById("inv-add-modal-cancel");
-  const btnSubmit   = document.getElementById("inv-add-modal-submit");
-
-  function openAddModal()  { addModal?.classList.remove("hidden"); }
-  function closeAddModal() { addModal?.classList.add("hidden"); }
-
-  btnOpen?.addEventListener("click",   openAddModal);
-  btnClose?.addEventListener("click",  closeAddModal);
-  btnCancel?.addEventListener("click", closeAddModal);
-  addModal?.addEventListener("click", (e) => { if (e.target === addModal) closeAddModal(); });
-  btnSubmit?.addEventListener("click", () => {
-    showToast("Parts item berhasil ditambahkan (stub).", "success");
-    closeAddModal();
-  });
-
-  // ── Parts Category modal ──
-  const catModal     = document.getElementById("inv-category-modal");
-  const btnCatOpen   = document.getElementById("inv-btn-parts-category");
-  const btnCatClose  = document.getElementById("inv-category-modal-close");
-  const btnCatDone   = document.getElementById("inv-category-modal-close-btn");
-  const catInput     = document.getElementById("inv-category-input");
-  const catAddBtn    = document.getElementById("inv-category-add-btn");
-  const catList      = document.getElementById("inv-category-list");
-  const catSelect    = document.getElementById("inv-field-category");
-
-  let _categories = [];
-
-  function openCatModal()  { catModal?.classList.remove("hidden"); }
-  function closeCatModal() { catModal?.classList.add("hidden"); }
-
-  btnCatOpen?.addEventListener("click",  openCatModal);
-  btnCatClose?.addEventListener("click", closeCatModal);
-  btnCatDone?.addEventListener("click",  closeCatModal);
-  catModal?.addEventListener("click", (e) => { if (e.target === catModal) closeCatModal(); });
-
-  function renderCategories() {
-    if (!catList) return;
-    if (_categories.length === 0) {
-      catList.innerHTML = '<li class="text-sm text-gray-400 italic py-2 text-center">No categories yet.</li>';
-    } else {
-      catList.innerHTML = _categories.map((cat, i) => `
-        <li class="flex items-center justify-between px-3 py-2 rounded-lg bg-white dark:bg-gray-700 border border-gray-100 dark:border-gray-600">
-          <span class="text-sm text-gray-700 dark:text-gray-200 font-medium">${cat}</span>
-          <button data-idx="${i}" class="inv-cat-delete text-gray-300 hover:text-red-400 transition text-xs">
-            <i class="fas fa-times"></i>
-          </button>
-        </li>`).join("");
-    }
-    // Sync into Add Parts Item category dropdown
-    if (catSelect) {
-      catSelect.innerHTML = '<option value="">— Select Category —</option>' +
-        _categories.map(c => `<option value="${c}">${c}</option>`).join("");
-    }
-    // Attach delete handlers
-    catList.querySelectorAll(".inv-cat-delete").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        _categories.splice(parseInt(btn.dataset.idx), 1);
-        renderCategories();
-      });
-    });
-  }
-
-  catAddBtn?.addEventListener("click", () => {
-    const val = catInput?.value.trim();
-    if (!val) return;
-    if (_categories.includes(val)) {
-      showToast("Category already exists.", "warning");
-      return;
-    }
-    _categories.push(val);
-    if (catInput) catInput.value = "";
-    renderCategories();
-  });
-  catInput?.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") catAddBtn?.click();
-  });
-
-  // ── Unified search: routes to active tab's table ──
-  searchInput?.addEventListener("input", function () {
-    const q = this.value.toLowerCase();
-    const isPartsTab = !panelParts.classList.contains("hidden");
-    const tbody = isPartsTab ? "#inv-parts-body tr" : "#inv-transfer-body tr";
-    document.querySelectorAll(tbody).forEach((row) => {
-      row.style.display = row.textContent.toLowerCase().includes(q) ? "" : "none";
-    });
-  });
 })();

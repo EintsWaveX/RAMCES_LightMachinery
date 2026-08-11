@@ -58,6 +58,30 @@
 
 <body class="bg-kai-bg text-gray-800 dark:bg-gray-900 dark:text-gray-200 font-sans flex h-screen overflow-hidden">
     <!-- ══════════════════════════════════════════════════════════════════
+     GLOBAL LOADING OVERLAY
+     Shown by app.js whenever one or more API requests are in flight.
+     Sits above every other layer (auth view is z-60, modals are z-100).
+    ═══════════════════════════════════════════════════════════════════ -->
+    <div id="global-loading-overlay"
+        class="hidden fixed inset-0 z-[200] bg-gray-900/45 backdrop-blur-sm flex items-center justify-center">
+        <div
+            class="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl border border-gray-100 dark:border-gray-700 px-8 py-7 flex flex-col items-center gap-4 max-w-[280px]">
+            <div class="relative w-12 h-12">
+                <div class="absolute inset-0 rounded-full border-4 border-gray-200 dark:border-gray-700"></div>
+                <div
+                    class="absolute inset-0 rounded-full border-4 border-transparent border-t-kai-blue dark:border-t-kai-orange animate-spin">
+                </div>
+            </div>
+            <div class="text-center">
+                <p class="text-sm font-bold text-gray-800 dark:text-white">Memuat data…</p>
+                <p class="text-xs text-gray-400 mt-0.5" id="global-loading-detail">
+                    Mengambil data terbaru dari server
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <!-- ══════════════════════════════════════════════════════════════════
      AUTH VIEW
     ═══════════════════════════════════════════════════════════════════ -->
     <div id="auth-view" class="fixed inset-0 z-[60] flex">
@@ -778,56 +802,6 @@
                 ───────────────────────────────────────────── -->
                 <section id="view-inventaris" class="view-section space-y-5">
 
-                    <!-- ── Stat Cards Row 1: 5 cards ── -->
-                    <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-                        <div class="bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm relative overflow-hidden group hover:border-kai-blue transition-colors">
-                            <p class="text-[9px] font-bold tracking-widest text-gray-400 uppercase mb-1">Total Parts</p>
-                            <h3 class="text-2xl font-bold text-gray-800 dark:text-white" id="inv-stat-total">0</h3>
-                            <p class="text-[10px] text-gray-400 mt-0.5">All parts in inventory</p>
-                            <i class="fas fa-cubes absolute -bottom-3 -right-1 text-5xl text-slate-100 dark:text-slate-700/50 group-hover:scale-125 transition-transform"></i>
-                        </div>
-                        <div class="bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm relative overflow-hidden group hover:border-emerald-400 transition-colors">
-                            <p class="text-[9px] font-bold tracking-widest text-gray-400 uppercase mb-1">Unique Types</p>
-                            <h3 class="text-2xl font-bold text-emerald-500" id="inv-stat-types">0</h3>
-                            <p class="text-[10px] text-gray-400 mt-0.5">Different part types</p>
-                            <i class="fas fa-shapes absolute -bottom-3 -right-1 text-5xl text-emerald-100 dark:text-emerald-900/30 group-hover:scale-125 transition-transform"></i>
-                        </div>
-                        <div class="bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm relative overflow-hidden group hover:border-amber-400 transition-colors">
-                            <p class="text-[9px] font-bold tracking-widest text-gray-400 uppercase mb-1">Total Manufacturers</p>
-                            <h3 class="text-2xl font-bold text-amber-500" id="inv-stat-manufacturers">0</h3>
-                            <p class="text-[10px] text-gray-400 mt-0.5">Active manufacturers</p>
-                            <i class="fas fa-industry absolute -bottom-3 -right-1 text-5xl text-amber-100 dark:text-amber-900/30 group-hover:scale-125 transition-transform"></i>
-                        </div>
-                        <div class="bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm relative overflow-hidden group hover:border-violet-400 transition-colors">
-                            <p class="text-[9px] font-bold tracking-widest text-gray-400 uppercase mb-1">Total Suppliers</p>
-                            <h3 class="text-2xl font-bold text-violet-500" id="inv-stat-suppliers">0</h3>
-                            <p class="text-[10px] text-gray-400 mt-0.5">Active suppliers</p>
-                            <i class="fas fa-truck absolute -bottom-3 -right-1 text-5xl text-violet-100 dark:text-violet-900/30 group-hover:scale-125 transition-transform"></i>
-                        </div>
-                        <div class="bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm relative overflow-hidden group hover:border-red-400 transition-colors col-span-2 sm:col-span-1">
-                            <p class="text-[9px] font-bold tracking-widest text-gray-400 uppercase mb-1">Critical Parts</p>
-                            <h3 class="text-2xl font-bold text-red-500" id="inv-stat-critical">0</h3>
-                            <p class="text-[10px] text-gray-400 mt-0.5">Parts below min level</p>
-                            <i class="fas fa-exclamation-triangle absolute -bottom-3 -right-1 text-5xl text-red-100 dark:text-red-900/30 group-hover:scale-125 transition-transform"></i>
-                        </div>
-                    </div>
-
-                    <!-- ── Stat Cards Row 2: 2 cards ── -->
-                    <div class="grid grid-cols-2 gap-3">
-                        <div class="bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm relative overflow-hidden group hover:border-sky-400 transition-colors">
-                            <p class="text-[9px] font-bold tracking-widest text-gray-400 uppercase mb-1">Automatic Demand</p>
-                            <h3 class="text-2xl font-bold text-sky-500" id="inv-stat-demand">0</h3>
-                            <p class="text-[10px] text-gray-400 mt-0.5">Auto reorder items</p>
-                            <i class="fas fa-sync-alt absolute -bottom-3 -right-1 text-5xl text-sky-100 dark:text-sky-900/30 group-hover:scale-125 transition-transform"></i>
-                        </div>
-                        <div class="bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm relative overflow-hidden group hover:border-purple-400 transition-colors">
-                            <p class="text-[9px] font-bold tracking-widest text-gray-400 uppercase mb-1">Unique Categories</p>
-                            <h3 class="text-2xl font-bold text-purple-500" id="inv-stat-categories">0</h3>
-                            <p class="text-[10px] text-gray-400 mt-0.5">Part categories</p>
-                            <i class="fas fa-sitemap absolute -bottom-3 -right-1 text-5xl text-purple-100 dark:text-purple-900/30 group-hover:scale-125 transition-transform"></i>
-                        </div>
-                    </div>
-
                     <!-- ── Tab Switcher ── -->
                     <div class="flex gap-0 border-b border-gray-200 dark:border-gray-700">
                         <button id="inv-tab-dashboard"
@@ -845,115 +819,221 @@
                     </div>
 
                     <!-- ── Tab Panel: Dashboard ── -->
-                    <div id="inv-panel-dashboard">
-                        <!-- Dashboard toolbar -->
-                        <div class="flex flex-wrap items-center gap-3 bg-kai-blue rounded-t-xl px-4 py-3">
-                            <!-- Lokasi selector -->
-                            <div class="flex items-center gap-2">
-                                <i class="fas fa-map-marker-alt text-white/70 text-sm"></i>
-                                <select id="inv-dash-lokasi"
-                                    class="pl-3 pr-8 py-2 bg-white dark:bg-gray-700 border border-white/30 rounded-lg text-sm outline-none focus:border-kai-orange transition font-semibold min-w-[180px]">
-                                    <option value="">— Semua Lokasi —</option>
-                                </select>
-                            </div>
-                            <!-- Stock mode toggle -->
-                            <div class="flex items-center gap-1 bg-white/10 rounded-lg p-1 border border-white/20">
-                                <button id="inv-mode-global"
-                                    class="inv-mode-btn px-3 py-1.5 rounded-md text-xs font-bold text-white bg-white/20 transition">
-                                    <i class="fas fa-globe-asia mr-1"></i> Global
-                                </button>
-                                <button id="inv-mode-perupt"
-                                    class="inv-mode-btn px-3 py-1.5 rounded-md text-xs font-bold text-white/60 hover:text-white transition">
-                                    <i class="fas fa-building mr-1"></i> Per-UPT
-                                </button>
-                            </div>
-                            <!-- Spacer + open management link -->
-                            <div class="flex-1"></div>
-                            <button id="inv-dash-open-mgmt"
-                                class="flex items-center gap-2 px-4 py-2 bg-kai-orange hover:bg-orange-600 text-white font-semibold rounded-lg transition text-sm shadow-sm">
-                                <i class="fas fa-external-link-alt"></i> Kelola Inventaris
-                            </button>
-                        </div>
+                    <!-- Mirrors the printed "Dashboard Laporan Perbaikan Alat Kerja"
+                         report. Every figure is driven by GET /api/aset/dashboard/perbaikan. -->
+                    <div id="inv-panel-dashboard" class="space-y-4">
 
-                        <!-- Locked-header notice -->
-                        <div class="flex items-center gap-3 px-4 py-2 bg-amber-50 dark:bg-amber-900/20 border-x border-amber-200 dark:border-amber-700/40 text-amber-700 dark:text-amber-300 text-xs font-medium">
-                            <i class="fas fa-lock text-amber-400"></i>
-                            Dashboard ini hanya menampilkan ringkasan. Untuk mengelola data suku cadang, klik
-                            <button id="inv-dash-open-mgmt2" class="underline font-bold hover:text-amber-900 dark:hover:text-amber-100 transition">
-                                Kelola Inventaris →
-                            </button>
-                        </div>
-
-                        <!-- KPI Cards -->
-                        <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 p-4 bg-white dark:bg-gray-800 border-x border-gray-100 dark:border-gray-700">
-                            <div class="p-4 rounded-xl border border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/50 relative overflow-hidden group">
-                                <p class="text-[9px] font-bold tracking-widest text-gray-400 uppercase mb-1">Total Parts</p>
-                                <h3 class="text-2xl font-bold text-gray-800 dark:text-white" id="inv-dash-total-parts">—</h3>
-                                <p class="text-[10px] text-gray-400 mt-0.5">Item dalam katalog</p>
-                                <i class="fas fa-cubes absolute -bottom-2 -right-1 text-4xl text-gray-200 dark:text-gray-600 group-hover:scale-110 transition-transform"></i>
-                            </div>
-                            <div class="p-4 rounded-xl border border-red-100 dark:border-red-900/40 bg-red-50 dark:bg-red-900/20 relative overflow-hidden group">
-                                <p class="text-[9px] font-bold tracking-widest text-red-400 uppercase mb-1">Critical Parts</p>
-                                <h3 class="text-2xl font-bold text-red-500" id="inv-dash-critical">—</h3>
-                                <p class="text-[10px] text-red-400 mt-0.5">Stok di bawah minimum</p>
-                                <i class="fas fa-exclamation-triangle absolute -bottom-2 -right-1 text-4xl text-red-200 dark:text-red-900/50 group-hover:scale-110 transition-transform"></i>
-                            </div>
-                            <div class="p-4 rounded-xl border border-emerald-100 dark:border-emerald-900/40 bg-emerald-50 dark:bg-emerald-900/20 relative overflow-hidden group">
-                                <p class="text-[9px] font-bold tracking-widest text-emerald-500 uppercase mb-1">Total Nilai Stok</p>
-                                <h3 class="text-lg font-bold text-emerald-600 dark:text-emerald-400 truncate" id="inv-dash-value">—</h3>
-                                <p class="text-[10px] text-emerald-500 mt-0.5">Estimasi nilai inventaris</p>
-                                <i class="fas fa-coins absolute -bottom-2 -right-1 text-4xl text-emerald-200 dark:text-emerald-900/50 group-hover:scale-110 transition-transform"></i>
-                            </div>
-                            <div class="p-4 rounded-xl border border-sky-100 dark:border-sky-900/40 bg-sky-50 dark:bg-sky-900/20 relative overflow-hidden group">
-                                <p class="text-[9px] font-bold tracking-widest text-sky-500 uppercase mb-1">Auto Demand</p>
-                                <h3 class="text-2xl font-bold text-sky-500" id="inv-dash-auto-demand">—</h3>
-                                <p class="text-[10px] text-sky-400 mt-0.5">Item reorder otomatis</p>
-                                <i class="fas fa-sync-alt absolute -bottom-2 -right-1 text-4xl text-sky-200 dark:text-sky-900/50 group-hover:scale-110 transition-transform"></i>
-                            </div>
-                        </div>
-
-                        <!-- Charts + Critical table -->
-                        <div class="grid grid-cols-1 lg:grid-cols-5 gap-0 border-x border-b border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800 rounded-b-xl overflow-hidden">
-                            <!-- Left: charts column (3/5) -->
-                            <div class="lg:col-span-3 p-4 space-y-4 border-b lg:border-b-0 lg:border-r border-gray-100 dark:border-gray-700">
-                                <!-- Bar chart: parts by subsystem -->
-                                <div>
-                                    <p class="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-widest mb-3">
-                                        Parts per Subsistem
-                                    </p>
-                                    <div id="inv-dash-bar-chart" class="space-y-2">
-                                        <p class="text-xs text-gray-400 italic">Memuat data...</p>
+                        <!-- ══ Report header: branding, region, dateline, filters ══ -->
+                        <div
+                            class="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm overflow-hidden">
+                            <div class="bg-kai-blue px-5 py-3 flex flex-wrap items-center justify-between gap-4">
+                                <!-- Left: KAI mark + unit + region -->
+                                <div class="flex items-center gap-3 min-w-0">
+                                    <img src="./assets/logo_nav.svg" alt="KAI"
+                                        class="h-8 w-auto shrink-0 brightness-0 invert" />
+                                    <div class="min-w-0">
+                                        <p class="text-white font-bold text-sm leading-tight truncate"
+                                            id="inv-dash-upt-name">
+                                            UPT MEKANIK JALAN REL DAN JEMBATAN
+                                        </p>
+                                        <p class="text-white/75 text-xs font-semibold leading-tight truncate"
+                                            id="inv-dash-region-name">—</p>
+                                        <p class="text-white/50 text-[10px] leading-tight mt-0.5" id="inv-dash-dateline">
+                                            —</p>
                                     </div>
                                 </div>
-                                <!-- Bar chart: monthly usage trend -->
-                                <div class="pt-3 border-t border-gray-100 dark:border-gray-700">
-                                    <p class="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-widest mb-3">
-                                        Tren Penggunaan (12 Bulan Terakhir)
-                                    </p>
-                                    <div id="inv-dash-trend-chart" class="flex items-end gap-1 h-24">
-                                        <p class="text-xs text-gray-400 italic self-center">Memuat data...</p>
+                                <!-- Right: BUMN lockup -->
+                                <div class="hidden md:block text-right shrink-0">
+                                    <p class="text-white font-black text-lg leading-none tracking-tight">BUMN</p>
+                                    <p class="text-white/60 text-[9px] font-semibold tracking-[0.2em] leading-tight">
+                                        UNTUK INDONESIA</p>
+                                </div>
+                            </div>
+                            <!-- Filter row: the two dropdowns -->
+                            <div
+                                class="px-5 py-3 flex flex-wrap items-center gap-3 border-b border-gray-100 dark:border-gray-700 bg-gray-50/60 dark:bg-gray-800">
+                                <div class="flex items-center gap-2">
+                                    <label for="inv-dash-lokasi"
+                                        class="text-[10px] font-bold tracking-widest text-gray-400 uppercase">Lokasi</label>
+                                    <select id="inv-dash-lokasi"
+                                        class="text-xs px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 outline-none focus:border-kai-blue transition font-semibold min-w-[190px]">
+                                        <option value="">— Semua Lokasi —</option>
+                                    </select>
+                                </div>
+                                <div class="flex items-center gap-2">
+                                    <label for="inv-dash-tahun"
+                                        class="text-[10px] font-bold tracking-widest text-gray-400 uppercase">Tahun</label>
+                                    <select id="inv-dash-tahun"
+                                        class="text-xs px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 outline-none focus:border-kai-blue transition font-semibold min-w-[110px]">
+                                    </select>
+                                </div>
+                                <button id="inv-dash-refresh"
+                                    class="ml-auto flex items-center gap-2 px-3 py-2 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 hover:border-kai-blue text-gray-600 dark:text-gray-300 rounded-lg transition text-xs font-semibold">
+                                    <i class="fas fa-rotate-right"></i> Muat Ulang
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- ══ Main grid: report body (4/5) + workshop rail (1/5) ══ -->
+                        <div class="grid grid-cols-1 xl:grid-cols-4 gap-4 items-start">
+
+                            <!-- ─────────── Report body ─────────── -->
+                            <div class="xl:col-span-3 space-y-4">
+
+                                <!-- KPI strip + completion gauge -->
+                                <div
+                                    class="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm overflow-hidden">
+                                    <div
+                                        class="px-5 py-2.5 border-b border-gray-100 dark:border-gray-700 bg-gray-50/60 dark:bg-gray-700/30">
+                                        <p class="text-[10px] font-bold tracking-widest text-gray-400 uppercase">
+                                            Total Perbaikan Alat <span id="inv-dash-kpi-year">—</span>
+                                        </p>
+                                    </div>
+                                    <div class="grid grid-cols-1 sm:grid-cols-4 divide-y sm:divide-y-0 sm:divide-x divide-gray-100 dark:divide-gray-700">
+                                        <div class="p-5 text-center">
+                                            <p class="text-[10px] font-bold tracking-widest text-gray-400 uppercase mb-1">
+                                                Masuk (IN)</p>
+                                            <p class="text-4xl font-black text-gray-800 dark:text-white"
+                                                id="inv-dash-masuk">—</p>
+                                            <p class="text-[10px] text-gray-400 mt-1">alat kerja dilaporkan rusak</p>
+                                        </div>
+                                        <div class="p-5 text-center bg-amber-50 dark:bg-amber-900/10">
+                                            <p class="text-[10px] font-bold tracking-widest text-amber-600 uppercase mb-1">
+                                                Sedang Perbaikan</p>
+                                            <p class="text-4xl font-black text-amber-500" id="inv-dash-sedang">—</p>
+                                            <p class="text-[10px] text-amber-500/80 mt-1" id="inv-dash-sedang-pct">—</p>
+                                        </div>
+                                        <div class="p-5 text-center">
+                                            <p class="text-[10px] font-bold tracking-widest text-gray-400 uppercase mb-1">
+                                                Selesai (OUT)</p>
+                                            <p class="text-4xl font-black text-gray-800 dark:text-white"
+                                                id="inv-dash-selesai">—</p>
+                                            <p class="text-[10px] text-gray-400 mt-1" id="inv-dash-diafkir">—</p>
+                                        </div>
+                                        <!-- Completion gauge -->
+                                        <div class="p-4 flex items-center justify-center gap-3">
+                                            <div class="relative w-24 h-24 shrink-0">
+                                                <canvas id="inv-dash-chart-gauge"></canvas>
+                                                <div
+                                                    class="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                                                    <span class="text-lg font-black text-gray-800 dark:text-white leading-none"
+                                                        id="inv-dash-gauge-pct">—</span>
+                                                    <span
+                                                        class="text-[8px] font-bold tracking-widest text-gray-400 uppercase mt-0.5">Selesai</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Top 10 Resort + Top 10 Alat -->
+                                <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                                    <div
+                                        class="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm p-4">
+                                        <p
+                                            class="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-widest mb-3">
+                                            Top 10 Resort Perbaikan Alat Kerja</p>
+                                        <div class="relative h-64">
+                                            <canvas id="inv-dash-chart-resort"></canvas>
+                                        </div>
+                                    </div>
+                                    <div
+                                        class="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm p-4">
+                                        <p
+                                            class="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-widest mb-3">
+                                            Top 10 Alat Kerja Perbaikan</p>
+                                        <div class="relative h-64">
+                                            <canvas id="inv-dash-chart-alat"></canvas>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Full-width: IN/OUT across every resort -->
+                                <div
+                                    class="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm p-4">
+                                    <div class="flex items-baseline justify-between gap-3 mb-3">
+                                        <p
+                                            class="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-widest">
+                                            Alat Kerja Masuk / Keluar per Resort</p>
+                                        <p class="text-[10px] text-gray-400" id="inv-dash-resort-count">—</p>
+                                    </div>
+                                    <div class="overflow-x-auto">
+                                        <div class="relative h-72 min-w-[720px]" id="inv-dash-resort-all-wrap">
+                                            <canvas id="inv-dash-chart-resort-all"></canvas>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Full-width: IN/OUT by alat kerja -->
+                                <div
+                                    class="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm p-4">
+                                    <div class="flex items-baseline justify-between gap-3 mb-3">
+                                        <p
+                                            class="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-widest">
+                                            Alat Kerja Masuk / Keluar per Jenis Alat</p>
+                                        <p class="text-[10px] text-gray-400" id="inv-dash-alat-count">—</p>
+                                    </div>
+                                    <div class="overflow-x-auto">
+                                        <div class="relative h-72 min-w-[720px]" id="inv-dash-alat-all-wrap">
+                                            <canvas id="inv-dash-chart-alat-all"></canvas>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Monthly trend + composition doughnut -->
+                                <div class="grid grid-cols-1 lg:grid-cols-5 gap-4">
+                                    <div
+                                        class="lg:col-span-3 bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm p-4">
+                                        <p
+                                            class="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-widest mb-3">
+                                            Tren Perbaikan Bulanan</p>
+                                        <div class="relative h-56">
+                                            <canvas id="inv-dash-chart-trend"></canvas>
+                                        </div>
+                                    </div>
+                                    <div
+                                        class="lg:col-span-2 bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm p-4">
+                                        <p
+                                            class="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-widest mb-3">
+                                            Jumlah Alat Perbaikan</p>
+                                        <div class="relative h-36 mb-3">
+                                            <canvas id="inv-dash-chart-pie"></canvas>
+                                        </div>
+                                        <div id="inv-dash-pie-legend"
+                                            class="space-y-1.5 text-[11px] text-gray-600 dark:text-gray-300"></div>
                                     </div>
                                 </div>
                             </div>
-                            <!-- Right: critical stock table (2/5) -->
-                            <div class="lg:col-span-2 p-4">
-                                <p class="text-xs font-bold text-red-500 uppercase tracking-widest mb-3 flex items-center gap-2">
-                                    <i class="fas fa-exclamation-circle"></i> Critical Stock
-                                    <span id="inv-dash-critical-badge"
-                                        class="ml-auto bg-red-100 dark:bg-red-900/40 text-red-500 text-[10px] font-bold px-2 py-0.5 rounded-full">0</span>
-                                </p>
-                                <div class="overflow-y-auto max-h-64">
-                                    <table class="w-full text-xs">
-                                        <thead>
+
+                            <!-- ─────────── Workshop rail ─────────── -->
+                            <div
+                                class="xl:col-span-1 bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm flex flex-col xl:sticky xl:top-4">
+                                <div
+                                    class="px-4 py-3 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between gap-2">
+                                    <p class="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-widest leading-tight">
+                                        Sedang Perbaikan / Di Workshop Mekanik</p>
+                                    <span id="inv-dash-workshop-badge"
+                                        class="bg-amber-100 dark:bg-amber-900/40 text-amber-600 text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0">0</span>
+                                </div>
+                                <div class="overflow-y-auto flex-1 max-h-[560px]">
+                                    <table class="w-full text-[10px]">
+                                        <thead class="sticky top-0 bg-gray-50 dark:bg-gray-700/60 z-10">
                                             <tr class="border-b border-gray-100 dark:border-gray-700">
-                                                <th class="pb-2 text-left font-bold text-gray-400 uppercase tracking-wider">Part</th>
-                                                <th class="pb-2 text-right font-bold text-gray-400 uppercase tracking-wider">Stok</th>
-                                                <th class="pb-2 text-right font-bold text-gray-400 uppercase tracking-wider">Min</th>
+                                                <th
+                                                    class="px-2 py-2 text-left font-bold text-gray-400 uppercase tracking-wider w-6">
+                                                    #</th>
+                                                <th
+                                                    class="px-2 py-2 text-left font-bold text-gray-400 uppercase tracking-wider">
+                                                    Alat / Lokasi</th>
+                                                <th
+                                                    class="px-2 py-2 text-right font-bold text-gray-400 uppercase tracking-wider w-8">
+                                                    Jml</th>
                                             </tr>
                                         </thead>
-                                        <tbody id="inv-dash-critical-body">
+                                        <tbody id="inv-dash-workshop-body">
                                             <tr>
-                                                <td colspan="3" class="py-6 text-center text-gray-400 italic">Tidak ada data</td>
+                                                <td colspan="3" class="py-8 text-center text-gray-400 italic text-xs">
+                                                    Tidak ada data</td>
                                             </tr>
                                         </tbody>
                                     </table>
@@ -962,8 +1042,11 @@
                         </div>
                     </div>
 
-                    <!-- ── Shared Toolbar (always visible) ── -->
-                    <div class="flex flex-wrap items-center gap-2 bg-kai-blue rounded-t-xl px-4 py-3">
+                    <!-- ── Shared Toolbar (Parts + Transfer tabs only) ──
+                         Lives outside both panels because it is shared, so it must be
+                         hidden explicitly on the Dashboard tab or it renders below the
+                         report. -->
+                    <div id="inv-toolbar" class="flex flex-wrap items-center gap-2 bg-kai-blue rounded-t-xl px-4 py-3">
                         <!-- Left: action buttons (only shown on Parts tab) -->
                         <div id="inv-toolbar-actions" class="flex gap-2 flex-wrap">
                             <button id="inv-btn-add-part"
@@ -2113,7 +2196,8 @@
                             <span class="text-xs text-gray-400 shrink-0" id="afkir-table-count"></span>
                         </div>
                     </div>
-                    <div id="afkir-cards-container" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 flex-1">
+                    <!-- Breakpoints match #db-cards-container so both card grids reflow identically -->
+                    <div id="afkir-cards-container" class="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4 flex-1">
                     </div>
                 </section>
             </div>
@@ -3088,17 +3172,20 @@
                             <label class="flex items-center gap-2 cursor-pointer"><input type="radio"
                                     name="afkir-sort-peruntukan-filter" value="" class="accent-green-500"
                                     checked /><span>Semua</span></label>
+                            <!-- Values are the A/B/C/D codes decodeAsetId() returns, matching
+                                 every other sort modal. Using the display names here meant
+                                 this filter could never match anything. -->
                             <label class="flex items-center gap-2 cursor-pointer"><input type="radio"
-                                    name="afkir-sort-peruntukan-filter" value="JALAN REL"
+                                    name="afkir-sort-peruntukan-filter" value="A"
                                     class="accent-green-500" /><span>Jalan Rel</span></label>
                             <label class="flex items-center gap-2 cursor-pointer"><input type="radio"
-                                    name="afkir-sort-peruntukan-filter" value="JEMBATAN"
+                                    name="afkir-sort-peruntukan-filter" value="B"
                                     class="accent-green-500" /><span>Jembatan</span></label>
                             <label class="flex items-center gap-2 cursor-pointer"><input type="radio"
-                                    name="afkir-sort-peruntukan-filter" value="MEKANIK"
+                                    name="afkir-sort-peruntukan-filter" value="C"
                                     class="accent-green-500" /><span>Mekanik</span></label>
                             <label class="flex items-center gap-2 cursor-pointer"><input type="radio"
-                                    name="afkir-sort-peruntukan-filter" value="BALAIYASA"
+                                    name="afkir-sort-peruntukan-filter" value="D"
                                     class="accent-green-500" /><span>Balaiyasa</span></label>
                         </div>
                     </div>
@@ -4059,7 +4146,7 @@
                             <select id="inv-field-category" class="field-input flex-1">
                                 <option value="">— Select Category —</option>
                             </select>
-                            <button class="w-9 h-9 flex items-center justify-center bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-kai-blue hover:bg-blue-50 transition shrink-0">
+                            <button id="inv-btn-open-category-modal" type="button" class="w-9 h-9 flex items-center justify-center bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-kai-blue hover:bg-blue-50 transition shrink-0">
                                 <i class="fas fa-plus text-sm"></i>
                             </button>
                         </div>

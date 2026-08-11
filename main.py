@@ -17,7 +17,7 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session, joinedload
 from datetime import datetime, timedelta, date
 from typing import List, Optional
-from sqlalchemy import or_, func
+from sqlalchemy import or_, func, case, extract, select, distinct, text as sa_text
 import bcrypt
 import jwt
 
@@ -31,6 +31,34 @@ from pydantic import BaseModel
 models.Base.metadata.create_all(bind=engine)
 load_dotenv()
 
+
+def _ensure_indexes():
+    """
+    Idempotent index DDL for databases created before these indexes existed.
+    create_all() only adds indexes to tables it creates, so an already-populated
+    schema never picks them up. The composite riwayat index is what lets the
+    repair dashboard's LAG() window use an index scan instead of a full sort.
+    """
+    statements = [
+        "CREATE INDEX IF NOT EXISTS ix_rk_aset_waktu "
+        "ON riwayat_kondisi (id_aset, waktu_lapor, id_riwayat)",
+        "CREATE INDEX IF NOT EXISTS ix_rk_waktu ON riwayat_kondisi (waktu_lapor)",
+        "CREATE INDEX IF NOT EXISTS ix_rk_lokasi ON riwayat_kondisi (id_lokasi)",
+        "CREATE INDEX IF NOT EXISTS ix_aset_lokasi_status "
+        "ON aset (id_lokasi, status_terakhir)",
+        "CREATE INDEX IF NOT EXISTS ix_stok_part_lokasi "
+        "ON sparepart_stok (id_part, id_lokasi)",
+    ]
+    try:
+        with engine.begin() as conn:
+            for stmt in statements:
+                conn.execute(sa_text(stmt))
+    except Exception as exc:  # never block startup on an index
+        print(f"[warn] index setup skipped: {exc}")
+
+
+_ensure_indexes()
+
 app = FastAPI(title="SIMA-KAI Asset API")
 
 app.add_middleware(
@@ -40,6 +68,164 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# ==================================================================
+# ── LOKASI HIERARCHY HELPERS ──────────────────────────────────────
+# ==================================================================
+# The `lokasi` table is flat — there is no parent_id column. The parent of a
+# UPT/resort is encoded in its id: "JR1.3" belongs to DAOP "D1", "JRIII.7" to
+# DIVRE "VIII", "BY1A" to Balaiyasa "BY1". The same rule lives in seed.py
+# (get_parent_lokasi_code) and app.js (getParentLokasiCode); keep all three in
+# step when changing it.
+
+_ROMAN_TO_DIVRE = {
+    "I": "VI",
+    "II": "VII",
+    "III": "VIII",
+    "IV": "VIV",
+}
+_RE_UPT_ARAB = re.compile(r"^JR(\d+)\.", re.IGNORECASE)
+_RE_UPT_ROMAN = re.compile(r"^JR(IV|IX|VIII|VII|VI|V|I{1,3})\.", re.IGNORECASE)
+_RE_UPT_BALAIYASA = re.compile(r"^(BY\d+)[A-Z]+$", re.IGNORECASE)
+
+
+def get_parent_lokasi_code(id_lokasi: Optional[str]) -> Optional[str]:
+    """UPT code → its DAOP/DIVRE/BALAIYASA parent code. None if already a parent."""
+    if not id_lokasi:
+        return None
+    m = _RE_UPT_ARAB.match(id_lokasi)
+    if m:
+        return f"D{m.group(1)}"
+    m = _RE_UPT_ROMAN.match(id_lokasi)
+    if m:
+        return _ROMAN_TO_DIVRE.get(m.group(1).upper())
+    m = _RE_UPT_BALAIYASA.match(id_lokasi)
+    if m:
+        return m.group(1).upper()
+    return None
+
+
+def resolve_lokasi_scope(db: Session, id_lokasi: Optional[str]):
+    """
+    Resolve a region filter into the concrete set of lokasi ids it covers.
+
+    Returns (lokasi_ids, parent_row, child_rows):
+      - id_lokasi falsy          → (None, None, [])  = no filter, global scope
+      - id_lokasi is a UPT       → ([itself], its row, [its row])
+      - id_lokasi is a parent    → ([parent] + children, parent row, child rows)
+      - id_lokasi unknown to DB  → ([id_lokasi], None, [])
+
+    Replaces `Lokasi.id_lokasi.like(f"{id_lokasi}%")`, which was wrong twice
+    over: LIKE 'D1%' never matched 'JR1.3' (DAOP filters returned nothing), and
+    LIKE 'VI%' matched VI/VII/VIII/VIV (DIVRE I silently aggregated all four).
+
+    The parent code itself stays in the list because riwayat/aset rows may carry
+    it directly; unlike a LIKE prefix, an exact IN () cannot over-match.
+    """
+    if not id_lokasi:
+        return None, None, []
+
+    parent = db.query(models.Lokasi).filter_by(id_lokasi=id_lokasi).first()
+    if parent is not None and (parent.tipe or "").upper() == "UPT":
+        return [parent.id_lokasi], parent, [parent]
+
+    # ~250 rows — one scan in Python beats duplicating the roman-numeral map in
+    # an unindexable SQL CASE expression.
+    target = id_lokasi.upper()
+    children = [
+        l
+        for l in db.query(models.Lokasi).all()
+        if get_parent_lokasi_code(l.id_lokasi) == target
+    ]
+    return [id_lokasi] + [l.id_lokasi for l in children], parent, children
+
+
+# DIVRE nama_lokasi holds a province ("SUMATERA UTARA"), which reads wrong in a
+# "<kota>, <tanggal>" dateline — pin the seat of each region explicitly.
+REGION_KOTA_OVERRIDE = {
+    "VI": "Medan",
+    "VII": "Padang",
+    "VIII": "Palembang",
+    "VIV": "Tanjungkarang",
+    "BY1": "Cirebon",
+    "BY2": "Prabumulih",
+    "BY3": "Bandung",
+}
+DEFAULT_KOTA = "Bandung"  # PT KAI HQ — used for the unscoped/global view
+
+_RE_DAOP = re.compile(r"^DAOP\s+(\d+)\s+(.*)$", re.IGNORECASE)
+_RE_DIVRE = re.compile(r"^DIVRE\s+([IVX]+)\s+(.*)$", re.IGNORECASE)
+_RE_BALAIYASA = re.compile(r"^BALAI\s*YASA\s+(.*)$", re.IGNORECASE)
+_RE_UPT_NAMA = re.compile(r"^JR\s*([\dIVX]+(?:\.\d+)?)\s+(.*)$", re.IGNORECASE)
+
+
+def build_region_labels(parent, id_lokasi: Optional[str], db: Session = None):
+    """→ (region_name, region_label, kota). D1 → DAOP 1 JAKARTA / DAERAH OPERASI 1 JAKARTA / Jakarta."""
+    if parent is None:
+        if id_lokasi:
+            return id_lokasi, id_lokasi, DEFAULT_KOTA
+        return (
+            "SEMUA DAERAH OPERASI",
+            "SELURUH WILAYAH PT KERETA API INDONESIA (PERSERO)",
+            DEFAULT_KOTA,
+        )
+
+    nama = (parent.nama_lokasi or parent.id_lokasi).strip()
+
+    # A UPT is not a region — a dateline of "Jr 1.3 Pasarsenen, 7 Agustus 2026"
+    # is nonsense. Take the city from the UPT's own DAOP/DIVRE parent.
+    if (parent.tipe or "").upper() == "UPT":
+        label = short_lokasi_label(parent.id_lokasi, nama)
+        kota = DEFAULT_KOTA
+        grandparent_code = get_parent_lokasi_code(parent.id_lokasi)
+        if grandparent_code and db is not None:
+            gp = db.query(models.Lokasi).filter_by(id_lokasi=grandparent_code).first()
+            if gp is not None:
+                _n, _l, kota = build_region_labels(gp, grandparent_code, db)
+        return nama, label, kota
+
+    label, kota = nama, nama
+    m = _RE_DAOP.match(nama)
+    if m:
+        label, kota = f"DAERAH OPERASI {m.group(1)} {m.group(2)}", m.group(2)
+    else:
+        m = _RE_DIVRE.match(nama)
+        if m:
+            label, kota = f"DIVISI REGIONAL {m.group(1)} {m.group(2)}", m.group(2)
+        else:
+            m = _RE_BALAIYASA.match(nama)
+            if m:
+                label, kota = f"BALAI YASA {m.group(1)}", m.group(1)
+
+    kota = REGION_KOTA_OVERRIDE.get(parent.id_lokasi, kota.title())
+    return nama, label, kota
+
+
+def short_lokasi_label(id_lokasi: Optional[str], nama_lokasi: Optional[str]) -> str:
+    """
+    'JR 1.2 Tanjungpriuk' → '1.2 Tanjungpriuk'.
+
+    The printed report uses station abbreviations ('1.2 TPK'), but no such
+    column exists in the schema and the codes cannot be derived from the names.
+    Stripping the JR prefix gives the same visual shape with no schema change.
+    Keep this the ONLY location string the frontend renders, so adding a real
+    abbreviation column later upgrades every chart by changing this one function.
+    """
+    if nama_lokasi:
+        m = _RE_UPT_NAMA.match(nama_lokasi.strip())
+        if m:
+            return f"{m.group(1)} {m.group(2)}"
+        return nama_lokasi
+    return id_lokasi or "—"
+
+
+def upt_sort_key(lokasi_row):
+    """Natural resort ordering: 1.1, 1.2, ... 1.10, 1.25 — not lexicographic."""
+    m = _RE_UPT_NAMA.match((lokasi_row.nama_lokasi or "").strip())
+    seg = m.group(1) if m else (lokasi_row.id_lokasi or "")
+    head, _, tail = seg.partition(".")
+    return (head, int(tail) if tail.isdigit() else 0)
+
 
 # ==================================================================
 # ── PYDANTIC SCHEMAS (Pengganti schemas.py) ───────────────────────
@@ -167,8 +353,13 @@ manager = ConnectionManager()
 
 @app.get("/api/config")
 def get_config():
-    ngrok_url = os.environ.get("NGROK_URL", "").rstrip("/")
-    return {"ngrok_url": ngrok_url}
+    # Externally-reachable base URL, used only to build QR/landing links when
+    # the app is being viewed on localhost. Tunnel-agnostic (Tailscale Funnel,
+    # ngrok, reverse proxy); NGROK_URL is kept as a legacy alias.
+    public_url = (
+        os.environ.get("PUBLIC_URL") or os.environ.get("NGROK_URL") or ""
+    ).rstrip("/")
+    return {"public_url": public_url, "ngrok_url": public_url}
 
 
 # ==================================================================
@@ -260,6 +451,35 @@ def login(form_data: LoginForm, db: Session = Depends(get_db)):
             }
         ),
         "token_type": "bearer",
+    }
+
+
+@app.get("/api/me")
+def get_me(
+    db: Session = Depends(get_db),
+    current_user: models.Pengguna = Depends(get_current_user),
+):
+    """
+    The logged-in user plus their resolved home region.
+
+    `default_region` is the DAOP/DIVRE/BALAIYASA the UI should preselect: a user
+    may be assigned a UPT code (JR1.3), a parent code (D1), or nothing at all.
+    Resolving it here keeps the parent-derivation rule in one place instead of
+    making the frontend re-implement it.
+    """
+    own = current_user.id_lokasi or ""
+    default_region = get_parent_lokasi_code(own) or own
+    _ids, parent, _children = resolve_lokasi_scope(db, default_region)
+    region_name, region_label, kota = build_region_labels(parent, default_region, db)
+    return {
+        "username": current_user.username,
+        "role": current_user.role,
+        "id_pengguna": current_user.id_pengguna,
+        "id_lokasi": current_user.id_lokasi,
+        "default_region": default_region,
+        "region_name": region_name,
+        "region_label": region_label,
+        "kota": kota,
     }
 
 
@@ -570,11 +790,15 @@ async def create_aset(
     db.add(db_aset)
 
     # Inisiasi Riwayat Awal (Sesuai perbaikan arsitektur sebelumnya)
+    # id_lokasi/peruntukan are set here for parity with seed.py — without them
+    # every dashboard query has to COALESCE back to the asset to place the row.
     inisiasi_riwayat = models.RiwayatKondisi(
         id_aset=generated_id_aset,
         id_pengguna=current_user.id_pengguna,
         kondisi="SO",
         keterangan="Aset Baru",
+        id_lokasi=aset_in.id_lokasi,
+        peruntukan=aset_in.peruntukan.upper(),
     )
     db.add(inisiasi_riwayat)
 
@@ -622,11 +846,18 @@ def get_afkir_aset(db: Session = Depends(get_db)):
         .filter(func.upper(models.Aset.status_terakhir) == "AFKIR")
         .all()
     )
+    # Same field contract as GET /api/aset: id_lokasi and kode_alat are CODES,
+    # with the human-readable names in the *_name fields. The frontend filters
+    # and lokasi/UPT lookups all key off the codes.
     return [
         {
             "id_aset": a.id_aset,
-            "kode_alat": a.kategori.nama_alat if a.kategori else a.kode_alat,
-            "id_lokasi": a.lokasi_ref.nama_lokasi if a.lokasi_ref else a.id_lokasi,
+            "kode_alat": a.kode_alat,
+            "kode_alat_name": a.kategori.nama_alat if a.kategori else a.kode_alat,
+            "id_lokasi": a.id_lokasi,
+            "lokasi_name": a.lokasi_ref.nama_lokasi if a.lokasi_ref else a.id_lokasi,
+            "peruntukan": a.peruntukan,
+            "sumber_pengadaan": a.sumber_pengadaan,
             "status_terakhir": a.status_terakhir,
             "tanggal_pembelian": str(a.tanggal_pembelian)
             if a.tanggal_pembelian
@@ -650,18 +881,30 @@ async def afkir_aset(
     aset = db.query(models.Aset).filter_by(id_aset=id_aset).first()
     if not aset:
         raise HTTPException(status_code=404, detail="Aset tidak ditemukan.")
-    # aset.is_afkir = True
     aset.status_terakhir = "AFKIR"
+    # Record the transition — without a riwayat row the afkir is invisible to
+    # every history/export/dashboard query.
+    db.add(
+        models.RiwayatKondisi(
+            id_aset=id_aset,
+            id_pengguna=current_user.id_pengguna,
+            kondisi="AFKIR",
+            keterangan="Aset di-afkir",
+            id_lokasi=aset.id_lokasi,
+            peruntukan=aset.peruntukan,
+        )
+    )
     db.commit()
     await manager.broadcast("REFRESH_ASSET_LIST")
     return {"message": "Aset berhasil di-afkir."}
 
 
-@app.post(
-    "/api/aset/pulihkan/{id_aset}",
-    dependencies=[Depends(require_role(["SUPER_ADMIN"]))],
-)
-async def pulihkan_aset(id_aset: str, db: Session = Depends(get_db)):
+@app.post("/api/aset/pulihkan/{id_aset}")
+async def pulihkan_aset(
+    id_aset: str,
+    db: Session = Depends(get_db),
+    current_user: models.Pengguna = Depends(require_role(["SUPER_ADMIN"])),
+):
     aset = db.query(models.Aset).filter_by(id_aset=id_aset).first()
     if not aset:
         raise HTTPException(status_code=404, detail="Aset tidak ditemukan.")
@@ -670,6 +913,18 @@ async def pulihkan_aset(id_aset: str, db: Session = Depends(get_db)):
             status_code=400, detail="Aset ini tidak dalam status AFKIR."
         )
     aset.status_terakhir = "SO"
+    # Record the recovery, mirroring afkir_aset — an AFKIR→SO transition with no
+    # riwayat row leaves a hole in the asset's timeline.
+    db.add(
+        models.RiwayatKondisi(
+            id_aset=id_aset,
+            id_pengguna=current_user.id_pengguna,
+            kondisi="SO",
+            keterangan="Aset dipulihkan dari afkir",
+            id_lokasi=aset.id_lokasi,
+            peruntukan=aset.peruntukan,
+        )
+    )
     db.commit()
     await manager.broadcast("REFRESH_ASSET_LIST")
     return {"message": f"Aset {id_aset} berhasil dipulihkan."}
@@ -976,7 +1231,7 @@ def get_history_summary(
             models.RiwayatKondisi.keterangan,
             models.RiwayatKondisi.waktu_lapor,
             models.RiwayatKondisi.id_pengguna,
-            # models.RiwayatKondisi.id_lokasi,
+            models.RiwayatKondisi.id_lokasi,
             func.row_number()
             .over(
                 partition_by=models.RiwayatKondisi.id_aset,
@@ -1063,6 +1318,12 @@ def get_history_summary(
                     ).username
                     if latest_repair and latest_repair.id_pengguna in pengguna_map
                     else (str(latest_repair.id_pengguna) if latest_repair else None),
+                    # app.js reads this to show where the last report was filed;
+                    # the column had been commented out of the subquery, so the
+                    # field was always undefined on the client.
+                    "latest_id_lokasi": latest_repair.id_lokasi
+                    if latest_repair
+                    else None,
                 },
                 "has_kalibrasi": bool(all_kalibrasi_for_a),
                 "kalibrasi": {
@@ -1458,21 +1719,49 @@ class StokAdjustCreate(BaseModel):
 
 # ── Helper: compute net stock ──────────────────────────────────────
 
+def _net_stok_expr():
+    """SUM(CASE WHEN tipe_gerakan='IN' THEN jumlah ELSE -jumlah END)."""
+    return func.coalesce(
+        func.sum(
+            case(
+                (models.SparePartStok.tipe_gerakan == "IN", models.SparePartStok.jumlah),
+                else_=-models.SparePartStok.jumlah,
+            )
+        ),
+        0,
+    )
+
+
+def _net_stok_map(db: Session, id_lokasi=None) -> dict:
+    """
+    Net stock for EVERY part in one grouped query → {id_part: qty}.
+
+    Prefer this over calling _net_stok() in a loop: the callers iterate the whole
+    parts catalog (and, for per_lokasi mode, every child lokasi of a DAOP), which
+    otherwise fans out into hundreds of round trips.
+
+    id_lokasi: None → global (all lokasi summed); a str → that one lokasi;
+    a list/tuple/set → those lokasi summed together.
+    """
+    q = db.query(models.SparePartStok.id_part, _net_stok_expr()).group_by(
+        models.SparePartStok.id_part
+    )
+    if isinstance(id_lokasi, (list, tuple, set)):
+        ids = list(id_lokasi)
+        if not ids:
+            return {}
+        q = q.filter(models.SparePartStok.id_lokasi.in_(ids))
+    elif id_lokasi is not None:
+        q = q.filter(models.SparePartStok.id_lokasi == id_lokasi)
+    return {row[0]: int(row[1] or 0) for row in q.all()}
+
+
 def _net_stok(db: Session, id_part: int, id_lokasi: Optional[str] = None) -> int:
-    """Return net stock for a part. id_lokasi=None → global (all lokasi summed)."""
-    q = db.query(
-        func.coalesce(
-            func.sum(
-                func.case(
-                    (models.SparePartStok.tipe_gerakan == "IN",  models.SparePartStok.jumlah),
-                    else_=-models.SparePartStok.jumlah
-                )
-            ), 0
-        )
-    ).filter(models.SparePartStok.id_part == id_part)
+    """Return net stock for a single part. id_lokasi=None → global."""
+    q = db.query(_net_stok_expr()).filter(models.SparePartStok.id_part == id_part)
     if id_lokasi is not None:
         q = q.filter(models.SparePartStok.id_lokasi == id_lokasi)
-    return q.scalar() or 0
+    return int(q.scalar() or 0)
 
 
 # ── Part Categories ────────────────────────────────────────────────
@@ -1536,9 +1825,12 @@ def get_inv_parts(
         q = q.filter(models.SparePart.kode_alat == kode_alat)
     parts = q.order_by(models.SparePart.nama_part).all()
 
+    # One grouped query for the whole catalog instead of one per part.
+    stok_map = _net_stok_map(db, id_lokasi if mode == "per_lokasi" else None)
+
     result = []
     for p in parts:
-        stok = _net_stok(db, p.id_part, id_lokasi if mode == "per_lokasi" else None)
+        stok = stok_map.get(p.id_part, 0)
         kat = p.kategori_ref
         alat = p.kategori_alat_ref
         result.append({
@@ -1746,6 +2038,299 @@ def get_transfer_history(
     return result
 
 
+# ── Aset Perbaikan Dashboard ───────────────────────────────────────
+
+BULAN_SINGKAT = [
+    "Jan", "Feb", "Mar", "Apr", "Mei", "Jun",
+    "Jul", "Agu", "Sep", "Okt", "Nov", "Des",
+]
+
+
+def _repair_events_subquery():
+    """
+    Every riwayat_kondisi row tagged with the SAME asset's previous kondisi.
+
+        lag(kondisi) OVER (PARTITION BY id_aset ORDER BY waktu_lapor, id_riwayat)
+
+    This window is deliberately UNFILTERED. Filtering by year or lokasi before
+    the LAG would break adjacency:
+      - a TSO opened in Dec 2025 and closed in Jan 2026 would lose its
+        predecessor and stop counting as a completed repair;
+      - a repair closes at the Balaiyasa the asset was mutated to, so a lokasi
+        pre-filter would sever the open/close pair.
+    Filter AFTER the window, never inside it.
+    """
+    RK = models.RiwayatKondisi
+    return select(
+        RK.id_aset.label("id_aset"),
+        RK.kondisi.label("kondisi"),
+        RK.waktu_lapor.label("waktu_lapor"),
+        RK.id_lokasi.label("id_lokasi"),
+        func.lag(RK.kondisi)
+        .over(partition_by=RK.id_aset, order_by=(RK.waktu_lapor, RK.id_riwayat))
+        .label("prev_kondisi"),
+    ).subquery("ev")
+
+
+def _scoped_repair_events(year: int, lokasi_ids):
+    """
+    The window subquery joined to aset, restricted to `year` and `lokasi_ids`,
+    reduced to three flags:
+
+      f_masuk   — a fault was reported            (kondisi = 'TSO')
+      f_selesai — a repair was completed          (kondisi = 'SO'    AND prev = 'TSO')
+      f_afkir   — a repair ended in scrapping     (kondisi = 'AFKIR' AND prev = 'TSO')
+
+    `prev_kondisi` is NULL for an asset's first row, and `NULL = 'TSO'` is NULL,
+    so the CASE falls through. That is what stops the automatic "Aset Baru" /
+    "Pencatatan aset baru" creation rows from inflating `selesai` — no keterangan
+    string-matching needed, which matters because the two creation paths write
+    different keterangan values.
+    """
+    ev = _repair_events_subquery()
+    AS = models.Aset
+
+    # create_aset writes its seed riwayat row with id_lokasi = NULL; coalesce to
+    # the asset's own lokasi so those rows land in a real bucket, not a NULL one.
+    eff_lokasi = func.coalesce(ev.c.id_lokasi, AS.id_lokasi).label("eff_lokasi")
+
+    sel = (
+        select(
+            ev.c.waktu_lapor.label("waktu_lapor"),
+            eff_lokasi,
+            AS.kode_alat.label("kode_alat"),
+            case((ev.c.kondisi == "TSO", 1), else_=0).label("f_masuk"),
+            case(
+                ((ev.c.kondisi == "SO") & (ev.c.prev_kondisi == "TSO"), 1), else_=0
+            ).label("f_selesai"),
+            case(
+                ((ev.c.kondisi == "AFKIR") & (ev.c.prev_kondisi == "TSO"), 1), else_=0
+            ).label("f_afkir"),
+        )
+        .select_from(ev)
+        .join(AS, AS.id_aset == ev.c.id_aset)
+        .where(extract("year", ev.c.waktu_lapor) == year)
+    )
+    base = sel.subquery("base")
+
+    scoped = select(base)
+    if lokasi_ids:
+        scoped = scoped.where(base.c.eff_lokasi.in_(lokasi_ids))
+    return scoped.subquery("s")
+
+
+@app.get("/api/aset/dashboard/perbaikan")
+def get_aset_perbaikan_dashboard(
+    id_lokasi: Optional[str] = None,
+    year: Optional[int] = Query(None, ge=1950, le=2100),
+    db: Session = Depends(get_db),
+    current_user: models.Pengguna = Depends(get_current_user),
+):
+    """
+    Aggregated repair dashboard matching the printed UPT "Laporan Perbaikan
+    Alat Kerja" report.
+
+    id_lokasi — DAOP/DIVRE/BALAIYASA code (auto-includes its UPT children), or a
+                single UPT code. Omit for a global view.
+    year      — defaults to the current year, or the most recent year that has
+                data if the current year has none.
+    """
+    RK = models.RiwayatKondisi
+    AS = models.Aset
+    KA = models.KategoriAlat
+    LK = models.Lokasi
+
+    lokasi_ids, parent_row, child_rows = resolve_lokasi_scope(db, id_lokasi)
+    region_name, region_label, kota = build_region_labels(parent_row, id_lokasi, db)
+
+    # ── Years that actually contain repair events, within the current scope ──
+    # Restricted to TSO rows on purpose: without it, every purchase year appears
+    # (asset creation writes an SO row back-dated to tanggal_pembelian) and
+    # picking one of those years would show an empty dashboard.
+    yq = (
+        select(distinct(extract("year", RK.waktu_lapor)))
+        .select_from(RK)
+        .join(AS, AS.id_aset == RK.id_aset)
+        .where(RK.kondisi == "TSO")
+    )
+    if lokasi_ids:
+        yq = yq.where(func.coalesce(RK.id_lokasi, AS.id_lokasi).in_(lokasi_ids))
+    available_years = sorted(
+        {int(r[0]) for r in db.execute(yq) if r[0] is not None}, reverse=True
+    )
+
+    if year is None:
+        now_year = datetime.now().year
+        if now_year in available_years or not available_years:
+            year = now_year
+        else:
+            year = available_years[0]
+
+    S = _scoped_repair_events(year, lokasi_ids)
+
+    # ── Headline totals ──────────────────────────────────────────────────────
+    totals = db.execute(
+        select(
+            func.coalesce(func.sum(S.c.f_masuk), 0),
+            func.coalesce(func.sum(S.c.f_selesai), 0),
+            func.coalesce(func.sum(S.c.f_afkir), 0),
+        )
+    ).one()
+    masuk, selesai, diafkir = int(totals[0]), int(totals[1]), int(totals[2])
+
+    # SEDANG is point-in-time (assets currently TSO), not year-scoped — it is a
+    # live workshop count, and must agree with sum(workshop_list[].jumlah).
+    sedang_q = select(func.count()).select_from(AS).where(
+        func.upper(AS.status_terakhir) == "TSO"
+    )
+    if lokasi_ids:
+        sedang_q = sedang_q.where(AS.id_lokasi.in_(lokasi_ids))
+    sedang = int(db.execute(sedang_q).scalar_one() or 0)
+
+    persen_selesai = round(selesai / masuk * 100, 1) if masuk else 0.0
+
+    # ── Monthly trend (densified to exactly 12 points) ───────────────────────
+    m_col = extract("month", S.c.waktu_lapor).label("m")
+    m_rows = db.execute(
+        select(m_col, func.sum(S.c.f_masuk), func.sum(S.c.f_selesai))
+        .group_by(m_col)
+        .order_by(m_col)
+    ).all()
+    m_map = {
+        int(r[0]): (int(r[1] or 0), int(r[2] or 0)) for r in m_rows if r[0] is not None
+    }
+    monthly_trend = [
+        {
+            "bulan": BULAN_SINGKAT[i],
+            "masuk": m_map.get(i + 1, (0, 0))[0],
+            "selesai": m_map.get(i + 1, (0, 0))[1],
+        }
+        for i in range(12)
+    ]
+
+    # ── Per resort (UPT) ─────────────────────────────────────────────────────
+    r_rows = db.execute(
+        select(
+            S.c.eff_lokasi,
+            func.sum(S.c.f_masuk),
+            func.sum(S.c.f_selesai),
+        ).group_by(S.c.eff_lokasi)
+    ).all()
+    r_map = {
+        r[0]: (int(r[1] or 0), int(r[2] or 0)) for r in r_rows if r[0] is not None
+    }
+
+    # Full list = every resort in scope, zero-filled and positionally ordered
+    # (1.1 → 1.25), so the full-width chart shows the whole region like the PDF.
+    if child_rows:
+        ordered = [l for l in child_rows if (l.tipe or "").upper() == "UPT"] or list(
+            child_rows
+        )
+    else:
+        known = {l.id_lokasi: l for l in db.query(LK).all()}
+        ordered = [known[k] for k in r_map if k in known]
+
+    per_resort = [
+        {
+            "resort": l.id_lokasi,
+            "resort_label": short_lokasi_label(l.id_lokasi, l.nama_lokasi),
+            "masuk": r_map.get(l.id_lokasi, (0, 0))[0],
+            "selesai": r_map.get(l.id_lokasi, (0, 0))[1],
+        }
+        for l in sorted(ordered, key=upt_sort_key)
+    ]
+    # Buckets that are not a resort in scope (e.g. rows recorded directly against
+    # the parent code, or an asset mutated to a Balaiyasa for repair).
+    seen_resorts = {p["resort"] for p in per_resort}
+    extra_codes = [k for k in r_map if k not in seen_resorts]
+    if extra_codes:
+        extra_names = {
+            l.id_lokasi: l.nama_lokasi
+            for l in db.query(LK).filter(LK.id_lokasi.in_(extra_codes)).all()
+        }
+        for k in extra_codes:
+            mk, sl = r_map[k]
+            per_resort.append(
+                {
+                    "resort": k,
+                    "resort_label": short_lokasi_label(k, extra_names.get(k)),
+                    "masuk": mk,
+                    "selesai": sl,
+                }
+            )
+
+    top_resort = sorted(per_resort, key=lambda x: -x["masuk"])[:10]
+
+    # ── Per alat kerja ───────────────────────────────────────────────────────
+    a_rows = db.execute(
+        select(
+            KA.nama_alat,
+            func.sum(S.c.f_masuk).label("masuk"),
+            func.sum(S.c.f_selesai).label("selesai"),
+        )
+        .select_from(S)
+        .join(KA, KA.kode_alat == S.c.kode_alat)
+        .group_by(KA.nama_alat)
+        .order_by(func.sum(S.c.f_masuk).desc(), KA.nama_alat)
+    ).all()
+    per_alat = [
+        {"nama_alat": r[0], "masuk": int(r[1] or 0), "selesai": int(r[2] or 0)}
+        for r in a_rows
+    ]
+    top_alat = per_alat[:10]
+    # Zero-count categories are dropped: a doughnut slice of 0 renders as an
+    # invisible wedge with a visible legend entry.
+    by_alat = {p["nama_alat"]: p["masuk"] for p in per_alat if p["masuk"] > 0}
+
+    # ── Workshop list (assets currently under repair) ─────────────────────────
+    wq = (
+        select(KA.nama_alat, AS.id_lokasi, LK.nama_lokasi, func.count().label("jumlah"))
+        .select_from(AS)
+        .join(KA, KA.kode_alat == AS.kode_alat)
+        .outerjoin(LK, LK.id_lokasi == AS.id_lokasi)
+        .where(func.upper(AS.status_terakhir) == "TSO")
+        .group_by(KA.nama_alat, AS.id_lokasi, LK.nama_lokasi)
+        .order_by(func.count().desc(), KA.nama_alat)
+    )
+    if lokasi_ids:
+        wq = wq.where(AS.id_lokasi.in_(lokasi_ids))
+    workshop_list = [
+        {
+            "nama_alat": r[0],
+            "id_lokasi": r[1],
+            "lokasi_label": short_lokasi_label(r[1], r[2]),
+            "jumlah": int(r[3]),
+        }
+        for r in db.execute(wq)
+    ]
+
+    return {
+        "tahun": year,
+        "available_years": available_years,
+
+        "masuk": masuk,
+        "sedang": sedang,
+        "selesai": selesai,
+        # Repairs that ended in scrapping rather than a return to service. Without
+        # this the report cannot explain why masuk != selesai + sedang.
+        "diafkir": diafkir,
+        "persen_selesai": persen_selesai,
+
+        "region_code": id_lokasi or "",
+        "region_name": region_name,
+        "region_label": region_label,
+        "kota": kota,
+
+        "workshop_list": workshop_list,
+        "per_resort": per_resort,
+        "top_resort": top_resort,
+        "per_alat": per_alat,
+        "top_alat": top_alat,
+        "by_alat": by_alat,
+        "monthly_trend": monthly_trend,
+    }
+
+
 # ── Dashboard Summary ──────────────────────────────────────────────
 
 @app.get("/api/inventaris/dashboard")
@@ -1761,16 +2346,10 @@ def get_inv_dashboard(
     """
     all_parts = db.query(models.SparePart).all()
 
-    # Resolve child UPT lokasi ids for filtering
-    child_lokasi_ids: Optional[list] = None
-    if id_lokasi:
-        # UPTs that "belong" to this parent use the parent code as part of their id_lokasi
-        # Convention from seed.py: UPT id_lokasi contains the parent prefix e.g. "JR1.1" → D1
-        # We filter sparepart_stok by lokasi where id_lokasi LIKE parent%
-        child_rows = db.query(models.Lokasi).filter(
-            models.Lokasi.id_lokasi.like(f"{id_lokasi}%")
-        ).all()
-        child_lokasi_ids = [r.id_lokasi for r in child_rows] or [id_lokasi]
+    # Resolve child UPT lokasi ids for filtering.
+    # UPT ids do NOT start with their parent code ("JR1.1" belongs to "D1"), so a
+    # LIKE prefix match is wrong in both directions — see resolve_lokasi_scope().
+    child_lokasi_ids, _parent_row, _child_rows = resolve_lokasi_scope(db, id_lokasi)
 
     total_parts = len(all_parts)
     total_types = len(set(p.kode_alat for p in all_parts if p.kode_alat))
@@ -1782,11 +2361,14 @@ def get_inv_dashboard(
     supplier_set: set = set()
     total_suppliers = 0
 
+    # Single grouped query for every part, instead of one query per part per
+    # lokasi (which was O(parts × child_lokasi) round trips).
+    stok_map = _net_stok_map(
+        db, child_lokasi_ids if (mode == "per_lokasi" and child_lokasi_ids) else None
+    )
+
     for p in all_parts:
-        if mode == "per_lokasi" and child_lokasi_ids:
-            stok = sum(_net_stok(db, p.id_part, loc) for loc in child_lokasi_ids)
-        else:
-            stok = _net_stok(db, p.id_part)
+        stok = stok_map.get(p.id_part, 0)
 
         val = (p.harga_satuan or 0) * max(stok, 0)
         total_value += val
@@ -1820,7 +2402,8 @@ def get_inv_dashboard(
     twelve_ago = datetime.now() - timedelta(days=365)
     monthly_q = (
         db.query(
-            func.strftime("%Y-%m", models.SparePartStok.waktu).label("bulan"),
+            # to_char, not strftime — strftime is SQLite-only and raises on PostgreSQL.
+            func.to_char(models.SparePartStok.waktu, "YYYY-MM").label("bulan"),
             func.sum(models.SparePartStok.jumlah).label("jumlah"),
         )
         .filter(
