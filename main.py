@@ -971,7 +971,13 @@ def get_all_aset(
 ):
     asets = (
         db.query(models.Aset)
-        .options(joinedload(models.Aset.kategori), joinedload(models.Aset.lokasi_ref))
+        .options(
+            joinedload(models.Aset.kategori),
+            joinedload(models.Aset.lokasi_ref),
+            # Spesifikasi teknis. Eager-loaded so surfacing it on the asset cards
+            # costs no extra query per row.
+            joinedload(models.Aset.varian_ref),
+        )
         .filter(func.upper(models.Aset.status_terakhir) != "AFKIR")
         .all()
     )
@@ -989,6 +995,8 @@ def get_all_aset(
             "tanggal_pembelian": str(a.tanggal_pembelian)
             if a.tanggal_pembelian
             else None,
+            "id_varian": a.id_varian,
+            "nama_varian": a.varian_ref.nama_varian if a.varian_ref else None,
         }
         for a in asets
     ]
@@ -1002,6 +1010,35 @@ def get_afkir_aset(db: Session = Depends(get_db)):
         .filter(func.upper(models.Aset.status_terakhir) == "AFKIR")
         .all()
     )
+    afkir_ids = [a.id_aset for a in asets]
+
+    # Recorded activity per scrapped asset. /api/history/summary deliberately
+    # excludes AFKIR rows, so the afkir screen had no counts to sort by at all
+    # and its "Terbanyak / Tersedikit" buttons could never do anything. Two
+    # grouped queries for the whole list, not two per asset.
+    repair_counts: dict = {}
+    mutasi_counts: dict = {}
+    if afkir_ids:
+        repair_counts = {
+            r[0]: int(r[1] or 0)
+            for r in db.query(models.RiwayatKondisi.id_aset, func.count())
+            .filter(
+                models.RiwayatKondisi.id_aset.in_(afkir_ids),
+                # TSO only — an SO row closes a repair, so counting both would
+                # double-count every completed job.
+                models.RiwayatKondisi.kondisi == "TSO",
+            )
+            .group_by(models.RiwayatKondisi.id_aset)
+            .all()
+        }
+        mutasi_counts = {
+            r[0]: int(r[1] or 0)
+            for r in db.query(models.RiwayatMutasi.id_aset, func.count())
+            .filter(models.RiwayatMutasi.id_aset.in_(afkir_ids))
+            .group_by(models.RiwayatMutasi.id_aset)
+            .all()
+        }
+
     # Same field contract as GET /api/aset: id_lokasi and kode_alat are CODES,
     # with the human-readable names in the *_name fields. The frontend filters
     # and lokasi/UPT lookups all key off the codes.
@@ -1021,6 +1058,8 @@ def get_afkir_aset(db: Session = Depends(get_db)):
             "waktu_update": a.waktu_update.strftime("%Y-%m-%d %H:%M:%S")
             if a.waktu_update
             else None,
+            "repair_count": repair_counts.get(a.id_aset, 0),
+            "mutasi_count": mutasi_counts.get(a.id_aset, 0),
         }
         for a in asets
     ]
@@ -1530,6 +1569,24 @@ def get_history_summary(
     )
     repair_map = {r.id_aset: r for r in latest_repairs}
 
+    # How many repair events each asset has had. The frontend's "urutkan by
+    # jumlah perbaikan" had nothing to sort on: the summary carries one row per
+    # asset, so counting rows client-side always returned 1. Only TSO rows count
+    # — an SO row is a repair being CLOSED, and counting both double-counts every
+    # completed job.
+    repair_count_map = {
+        r[0]: int(r[1] or 0)
+        for r in db.query(
+            models.RiwayatKondisi.id_aset, func.count()
+        )
+        .filter(
+            models.RiwayatKondisi.id_aset.in_(aset_ids),
+            models.RiwayatKondisi.kondisi == "TSO",
+        )
+        .group_by(models.RiwayatKondisi.id_aset)
+        .all()
+    }
+
     # Batch load all mutasi for these assets
     all_mutasi = (
         db.query(models.RiwayatMutasi)
@@ -1595,6 +1652,7 @@ def get_history_summary(
                 else a.id_lokasi,
                 "status_terakhir": a.status_terakhir,
                 "repair": {
+                    "count": repair_count_map.get(a.id_aset, 0),
                     "latest_date": latest_repair.waktu_lapor.strftime(
                         "%Y-%m-%d %H:%M:%S"
                     )
@@ -1813,6 +1871,13 @@ def export_mutasi(
                     "lokasi_tujuan": m.lokasi_tujuan.nama_lokasi
                     if m.lokasi_tujuan
                     else m.id_lokasi_tujuan,
+                    # The raw CODES, alongside the display names. Proses Laporan
+                    # used to reverse-look-up a code from the name against the
+                    # parent list only, which cannot resolve a UPT name — so its
+                    # asal/tujuan filters silently matched nothing. Names are for
+                    # display; codes are what filters compare.
+                    "id_lokasi_asal": m.id_lokasi_asal,
+                    "id_lokasi_tujuan": m.id_lokasi_tujuan,
                     "waktu_mutasi": m.waktu_mutasi.strftime("%Y-%m-%d %H:%M:%S")
                     if m.waktu_mutasi
                     else "—",

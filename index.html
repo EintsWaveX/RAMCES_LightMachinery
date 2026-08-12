@@ -540,6 +540,10 @@
                                 <button class="dash-tab-btn px-4 py-2.5 rounded-t-lg text-xs" data-dash-tab="trend">
                                     <i class="fas fa-chart-line mr-1.5"></i>Tren Perbaikan
                                 </button>
+                                <button class="dash-tab-btn px-4 py-2.5 rounded-t-lg text-xs whitespace-nowrap"
+                                    data-dash-tab="perbaikan">
+                                    <i class="fas fa-screwdriver-wrench mr-1.5"></i>Laporan Perbaikan
+                                </button>
                             </div>
                             <!-- Right arrow -->
                             <button id="dash-tab-next"
@@ -573,6 +577,288 @@
                                 style="max-height: 70vh; overflow-y: auto">
                                 <canvas id="dash-chart-trend" style="max-height: 420px"></canvas>
                             </div>
+
+                            <!-- ═══════════════════════════════════════════════
+                                 Panel: Laporan Perbaikan
+                                 Mirrors the printed "Dashboard Laporan Perbaikan
+                                 Alat Kerja". Every figure is driven by
+                                 GET /api/aset/dashboard/perbaikan, and the MCF
+                                 curve by GET /api/aset/dashboard/mcf. Both share
+                                 the Lokasi + Tahun filters in this panel's header.
+                            ═══════════════════════════════════════════════ -->
+                            <div id="dash-panel-perbaikan" class="dash-panel hidden p-4 space-y-4"
+                                style="max-height: 78vh; overflow-y: auto">
+
+                                <!-- ══ Report header: branding, region, dateline, filters ══ -->
+                                <div
+                                    class="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm overflow-hidden">
+                                    <div class="bg-kai-blue px-5 py-3 flex flex-wrap items-center justify-between gap-4">
+                                        <div class="flex items-center gap-3 min-w-0">
+                                            <img src="./assets/logo_nav.svg" alt="KAI"
+                                                class="h-8 w-auto shrink-0 brightness-0 invert" />
+                                            <div class="min-w-0">
+                                                <p class="text-white font-bold text-sm leading-tight truncate"
+                                                    id="rd-upt-name">
+                                                    UPT MEKANIK JALAN REL DAN JEMBATAN
+                                                </p>
+                                                <p class="text-white/75 text-xs font-semibold leading-tight truncate"
+                                                    id="rd-region-name">—</p>
+                                                <p class="text-white/50 text-[10px] leading-tight mt-0.5" id="rd-dateline">
+                                                    —</p>
+                                            </div>
+                                        </div>
+                                        <div class="hidden md:block text-right shrink-0">
+                                            <p class="text-white font-black text-lg leading-none tracking-tight">BUMN</p>
+                                            <p class="text-white/60 text-[9px] font-semibold tracking-[0.2em] leading-tight">
+                                                UNTUK INDONESIA</p>
+                                        </div>
+                                    </div>
+                                    <!-- Filter row -->
+                                    <div
+                                        class="px-5 py-3 flex flex-wrap items-center gap-3 border-b border-gray-100 dark:border-gray-700 bg-gray-50/60 dark:bg-gray-800">
+                                        <div class="flex items-center gap-2">
+                                            <label for="rd-lokasi"
+                                                class="text-[10px] font-bold tracking-widest text-gray-400 uppercase">Lokasi</label>
+                                            <select id="rd-lokasi"
+                                                class="text-xs px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 outline-none focus:border-kai-blue transition font-semibold min-w-[190px]">
+                                                <option value="">— Semua Lokasi —</option>
+                                            </select>
+                                        </div>
+                                        <div class="flex items-center gap-2">
+                                            <label for="rd-tahun"
+                                                class="text-[10px] font-bold tracking-widest text-gray-400 uppercase">Tahun</label>
+                                            <select id="rd-tahun"
+                                                class="text-xs px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 outline-none focus:border-kai-blue transition font-semibold min-w-[110px]">
+                                            </select>
+                                        </div>
+                                        <button id="rd-refresh"
+                                            class="ml-auto flex items-center gap-2 px-3 py-2 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 hover:border-kai-blue text-gray-600 dark:text-gray-300 rounded-lg transition text-xs font-semibold">
+                                            <i class="fas fa-rotate-right"></i> Muat Ulang
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <!-- ══ Main grid: report body (3/4) + workshop rail (1/4) ══ -->
+                                <div class="grid grid-cols-1 xl:grid-cols-4 gap-4 items-start">
+
+                                    <!-- ─────────── Report body ─────────── -->
+                                    <div class="xl:col-span-3 space-y-4">
+
+                                        <!-- KPI strip + completion gauge -->
+                                        <div
+                                            class="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm overflow-hidden">
+                                            <div
+                                                class="px-5 py-2.5 border-b border-gray-100 dark:border-gray-700 bg-gray-50/60 dark:bg-gray-700/30">
+                                                <p class="text-[10px] font-bold tracking-widest text-gray-400 uppercase">
+                                                    Total Perbaikan Alat <span id="rd-kpi-year">—</span>
+                                                </p>
+                                            </div>
+                                            <div
+                                                class="grid grid-cols-1 sm:grid-cols-4 divide-y sm:divide-y-0 sm:divide-x divide-gray-100 dark:divide-gray-700">
+                                                <div class="p-5 text-center">
+                                                    <p
+                                                        class="text-[10px] font-bold tracking-widest text-gray-400 uppercase mb-1">
+                                                        Masuk (IN)</p>
+                                                    <p class="text-4xl font-black text-gray-800 dark:text-white"
+                                                        id="rd-masuk">—</p>
+                                                    <p class="text-[10px] text-gray-400 mt-1">alat kerja dilaporkan rusak
+                                                    </p>
+                                                </div>
+                                                <div class="p-5 text-center bg-amber-50 dark:bg-amber-900/10">
+                                                    <p
+                                                        class="text-[10px] font-bold tracking-widest text-amber-600 uppercase mb-1">
+                                                        Sedang Perbaikan</p>
+                                                    <p class="text-4xl font-black text-amber-500" id="rd-sedang">—</p>
+                                                    <p class="text-[10px] text-amber-500/80 mt-1" id="rd-sedang-pct">—</p>
+                                                </div>
+                                                <div class="p-5 text-center">
+                                                    <p
+                                                        class="text-[10px] font-bold tracking-widest text-gray-400 uppercase mb-1">
+                                                        Selesai (OUT)</p>
+                                                    <p class="text-4xl font-black text-gray-800 dark:text-white"
+                                                        id="rd-selesai">—</p>
+                                                    <p class="text-[10px] text-gray-400 mt-1" id="rd-diafkir">—</p>
+                                                </div>
+                                                <div class="p-4 flex items-center justify-center gap-3">
+                                                    <div class="relative w-24 h-24 shrink-0">
+                                                        <canvas id="rd-chart-gauge"></canvas>
+                                                        <div
+                                                            class="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                                                            <span
+                                                                class="text-lg font-black text-gray-800 dark:text-white leading-none"
+                                                                id="rd-gauge-pct">—</span>
+                                                            <span
+                                                                class="text-[8px] font-bold tracking-widest text-gray-400 uppercase mt-0.5">Selesai</span>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <!-- Top 10 Resort + Top 10 Alat -->
+                                        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                                            <div
+                                                class="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm p-4">
+                                                <p
+                                                    class="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-widest mb-3">
+                                                    Top 10 Resort Perbaikan Alat Kerja</p>
+                                                <div class="relative h-64">
+                                                    <canvas id="rd-chart-resort"></canvas>
+                                                </div>
+                                            </div>
+                                            <div
+                                                class="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm p-4">
+                                                <p
+                                                    class="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-widest mb-3">
+                                                    Top 10 Alat Kerja Perbaikan</p>
+                                                <div class="relative h-64">
+                                                    <canvas id="rd-chart-alat"></canvas>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <!-- Full-width: IN/OUT across every resort -->
+                                        <div
+                                            class="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm p-4">
+                                            <div class="flex items-baseline justify-between gap-3 mb-3">
+                                                <p
+                                                    class="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-widest">
+                                                    Alat Kerja Masuk / Keluar per Resort</p>
+                                                <p class="text-[10px] text-gray-400" id="rd-resort-count">—</p>
+                                            </div>
+                                            <div class="overflow-x-auto">
+                                                <div class="relative h-72 min-w-[720px]" id="rd-resort-all-wrap">
+                                                    <canvas id="rd-chart-resort-all"></canvas>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <!-- Full-width: IN/OUT by alat kerja -->
+                                        <div
+                                            class="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm p-4">
+                                            <div class="flex items-baseline justify-between gap-3 mb-3">
+                                                <p
+                                                    class="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-widest">
+                                                    Alat Kerja Masuk / Keluar per Jenis Alat</p>
+                                                <p class="text-[10px] text-gray-400" id="rd-alat-count">—</p>
+                                            </div>
+                                            <div class="overflow-x-auto">
+                                                <div class="relative h-72 min-w-[720px]" id="rd-alat-all-wrap">
+                                                    <canvas id="rd-chart-alat-all"></canvas>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <!-- Monthly trend + composition doughnut -->
+                                        <div class="grid grid-cols-1 lg:grid-cols-5 gap-4">
+                                            <div
+                                                class="lg:col-span-3 bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm p-4">
+                                                <p
+                                                    class="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-widest mb-3">
+                                                    Tren Perbaikan Bulanan</p>
+                                                <div class="relative h-56">
+                                                    <canvas id="rd-chart-trend"></canvas>
+                                                </div>
+                                            </div>
+                                            <div
+                                                class="lg:col-span-2 bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm p-4">
+                                                <p
+                                                    class="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-widest mb-3">
+                                                    Jumlah Alat Perbaikan</p>
+                                                <div class="relative h-36 mb-3">
+                                                    <canvas id="rd-chart-pie"></canvas>
+                                                </div>
+                                                <div id="rd-pie-legend"
+                                                    class="space-y-1.5 text-[11px] text-gray-600 dark:text-gray-300"></div>
+                                            </div>
+                                        </div>
+
+                                        <!-- MCF — Mean Cumulative Function.
+                                             Sits alongside the monthly IN/OUT view: same scope, same
+                                             year, but normalised per asset so regions of different
+                                             fleet sizes can be compared. Single measure on a single
+                                             axis; the absolute counts ride in the tooltip. -->
+                                        <div
+                                            class="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm p-4">
+                                            <div class="flex flex-wrap items-baseline justify-between gap-2 mb-1">
+                                                <p
+                                                    class="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-widest">
+                                                    Kurva MCF — Perbaikan Kumulatif per Aset</p>
+                                                <p class="text-[10px] text-gray-400" id="rd-mcf-caption">—</p>
+                                            </div>
+                                            <p class="text-[10px] text-gray-400 mb-3 leading-relaxed">
+                                                Rata-rata jumlah perbaikan per unit alat kerja sejak awal tahun.
+                                                Garis lurus berarti laju kerusakan tetap; melengkung naik berarti
+                                                armada menurun; melengkung turun berarti pemeliharaan membaik.
+                                            </p>
+                                            <div class="relative h-56">
+                                                <canvas id="rd-chart-mcf"></canvas>
+                                            </div>
+                                            <div
+                                                class="grid grid-cols-3 gap-3 mt-3 pt-3 border-t border-gray-100 dark:border-gray-700">
+                                                <div>
+                                                    <p
+                                                        class="text-[9px] font-bold tracking-widest text-gray-400 uppercase mb-0.5">
+                                                        Aset Berisiko</p>
+                                                    <p class="text-base font-bold text-gray-800 dark:text-white"
+                                                        id="rd-mcf-risk">—</p>
+                                                </div>
+                                                <div>
+                                                    <p
+                                                        class="text-[9px] font-bold tracking-widest text-gray-400 uppercase mb-0.5">
+                                                        Total Perbaikan</p>
+                                                    <p class="text-base font-bold text-gray-800 dark:text-white"
+                                                        id="rd-mcf-total">—</p>
+                                                </div>
+                                                <div>
+                                                    <p
+                                                        class="text-[9px] font-bold tracking-widest text-gray-400 uppercase mb-0.5">
+                                                        MCF Akhir Tahun</p>
+                                                    <p class="text-base font-bold text-kai-blue dark:text-blue-400"
+                                                        id="rd-mcf-akhir">—</p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- ─────────── Workshop rail ─────────── -->
+                                    <div
+                                        class="xl:col-span-1 bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm flex flex-col xl:sticky xl:top-4">
+                                        <div
+                                            class="px-4 py-3 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between gap-2">
+                                            <p
+                                                class="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-widest leading-tight">
+                                                Sedang Perbaikan / Di Workshop Mekanik</p>
+                                            <span id="rd-workshop-badge"
+                                                class="bg-amber-100 dark:bg-amber-900/40 text-amber-600 text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0">0</span>
+                                        </div>
+                                        <div class="overflow-y-auto flex-1 max-h-[560px]">
+                                            <table class="w-full text-[10px]">
+                                                <thead class="sticky top-0 bg-gray-50 dark:bg-gray-700/60 z-10">
+                                                    <tr class="border-b border-gray-100 dark:border-gray-700">
+                                                        <th
+                                                            class="px-2 py-2 text-left font-bold text-gray-400 uppercase tracking-wider w-6">
+                                                            #</th>
+                                                        <th
+                                                            class="px-2 py-2 text-left font-bold text-gray-400 uppercase tracking-wider">
+                                                            Alat / Lokasi</th>
+                                                        <th
+                                                            class="px-2 py-2 text-right font-bold text-gray-400 uppercase tracking-wider w-8">
+                                                            Jml</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody id="rd-workshop-body">
+                                                    <tr>
+                                                        <td colspan="3"
+                                                            class="py-8 text-center text-gray-400 italic text-xs">
+                                                            Tidak ada data</td>
+                                                    </tr>
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
 
                         <!-- Dot indicators -->
@@ -582,6 +868,7 @@
                             <div class="dash-dot" data-dot="1"></div>
                             <div class="dash-dot" data-dot="2"></div>
                             <div class="dash-dot" data-dot="3"></div>
+                            <div class="dash-dot" data-dot="4"></div>
                         </div>
                     </div>
                 </section>
@@ -742,11 +1029,11 @@
                                         class="hidden absolute left-0 top-full mt-1 w-48 bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-xl shadow-lg z-30 overflow-hidden">
                                         <button id="kdak-btn-sample-excel"
                                             class="w-full flex items-center gap-3 px-4 py-3 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 transition">
-                                            <i class="fas fa-file-excel text-emerald-500"></i> Sample Excel
+                                            <i class="fas fa-file-excel text-emerald-500"></i> Unduh Contoh Excel
                                         </button>
                                         <button id="kdak-btn-import-excel"
                                             class="w-full flex items-center gap-3 px-4 py-3 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 transition border-t border-gray-100 dark:border-gray-700">
-                                            <i class="fas fa-upload text-kai-blue"></i> Import Excel
+                                            <i class="fas fa-upload text-kai-blue"></i> Impor dari Excel
                                         </button>
                                     </div>
                                 </div>
@@ -794,6 +1081,7 @@
                                 </tbody>
                             </table>
                         </div>
+                        <div id="kdak-pager" class="mt-4"></div>
                     </div>
                 </section>
 
@@ -810,234 +1098,495 @@
                         </button>
                         <button id="inv-tab-parts"
                             class="inv-tab-btn px-5 py-3 text-sm font-bold border-b-2 border-transparent text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition">
-                            Parts
+                            Daftar Suku Cadang
+                        </button>
+                        <button id="inv-tab-transaksi"
+                            class="inv-tab-btn px-5 py-3 text-sm font-bold border-b-2 border-transparent text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition">
+                            Transaksi Barang
                         </button>
                         <button id="inv-tab-transfer"
                             class="inv-tab-btn px-5 py-3 text-sm font-bold border-b-2 border-transparent text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition">
-                            Parts Transfer History
+                            Riwayat Transfer Suku Cadang
                         </button>
                     </div>
 
-                    <!-- ── Tab Panel: Dashboard ── -->
-                    <!-- Mirrors the printed "Dashboard Laporan Perbaikan Alat Kerja"
-                         report. Every figure is driven by GET /api/aset/dashboard/perbaikan. -->
+                    <!-- ── Tab Panel: Dashboard → Dasbor Inventaris ──
+                         Stock-management dashboard, mirroring the printed "Dasbor
+                         Inventaris" report. Driven by GET /api/inventaris/dashboard.
+
+                         Two time semantics share this screen, deliberately: the value
+                         and status figures are point-in-time (the whole ledger up to
+                         today), while the transaction figures are windowed by the
+                         Dari/Sampai range. Every caption says which one it is, because
+                         the two disagreeing is the report's most confusing moment. -->
                     <div id="inv-panel-dashboard" class="space-y-4">
 
-                        <!-- ══ Report header: branding, region, dateline, filters ══ -->
+                        <!-- ══ Header: scope + period ══ -->
                         <div
                             class="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm overflow-hidden">
                             <div class="bg-kai-blue px-5 py-3 flex flex-wrap items-center justify-between gap-4">
-                                <!-- Left: KAI mark + unit + region -->
                                 <div class="flex items-center gap-3 min-w-0">
                                     <img src="./assets/logo_nav.svg" alt="KAI"
                                         class="h-8 w-auto shrink-0 brightness-0 invert" />
                                     <div class="min-w-0">
-                                        <p class="text-white font-bold text-sm leading-tight truncate"
-                                            id="inv-dash-upt-name">
-                                            UPT MEKANIK JALAN REL DAN JEMBATAN
+                                        <p class="text-white font-bold text-sm leading-tight truncate">
+                                            DASBOR INVENTARIS SUKU CADANG
                                         </p>
                                         <p class="text-white/75 text-xs font-semibold leading-tight truncate"
-                                            id="inv-dash-region-name">—</p>
-                                        <p class="text-white/50 text-[10px] leading-tight mt-0.5" id="inv-dash-dateline">
-                                            —</p>
+                                            id="sd-scope-label">Semua Gudang</p>
+                                        <p class="text-white/50 text-[10px] leading-tight mt-0.5" id="sd-dateline">—</p>
                                     </div>
                                 </div>
-                                <!-- Right: BUMN lockup -->
                                 <div class="hidden md:block text-right shrink-0">
                                     <p class="text-white font-black text-lg leading-none tracking-tight">BUMN</p>
                                     <p class="text-white/60 text-[9px] font-semibold tracking-[0.2em] leading-tight">
                                         UNTUK INDONESIA</p>
                                 </div>
                             </div>
-                            <!-- Filter row: the two dropdowns -->
                             <div
                                 class="px-5 py-3 flex flex-wrap items-center gap-3 border-b border-gray-100 dark:border-gray-700 bg-gray-50/60 dark:bg-gray-800">
                                 <div class="flex items-center gap-2">
-                                    <label for="inv-dash-lokasi"
-                                        class="text-[10px] font-bold tracking-widest text-gray-400 uppercase">Lokasi</label>
-                                    <select id="inv-dash-lokasi"
-                                        class="text-xs px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 outline-none focus:border-kai-blue transition font-semibold min-w-[190px]">
-                                        <option value="">— Semua Lokasi —</option>
+                                    <label for="sd-filter-gudang"
+                                        class="text-[10px] font-bold tracking-widest text-gray-400 uppercase">Gudang</label>
+                                    <select id="sd-filter-gudang"
+                                        class="text-xs px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 outline-none focus:border-kai-blue transition font-semibold min-w-[170px]">
+                                        <option value="">— Semua Gudang —</option>
                                     </select>
                                 </div>
                                 <div class="flex items-center gap-2">
-                                    <label for="inv-dash-tahun"
-                                        class="text-[10px] font-bold tracking-widest text-gray-400 uppercase">Tahun</label>
-                                    <select id="inv-dash-tahun"
-                                        class="text-xs px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 outline-none focus:border-kai-blue transition font-semibold min-w-[110px]">
-                                    </select>
+                                    <label for="sd-filter-dari"
+                                        class="text-[10px] font-bold tracking-widest text-gray-400 uppercase">Dari</label>
+                                    <input type="date" id="sd-filter-dari"
+                                        class="text-xs px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 outline-none focus:border-kai-blue transition font-semibold" />
                                 </div>
-                                <button id="inv-dash-refresh"
-                                    class="ml-auto flex items-center gap-2 px-3 py-2 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 hover:border-kai-blue text-gray-600 dark:text-gray-300 rounded-lg transition text-xs font-semibold">
-                                    <i class="fas fa-rotate-right"></i> Muat Ulang
-                                </button>
+                                <div class="flex items-center gap-2">
+                                    <label for="sd-filter-sampai"
+                                        class="text-[10px] font-bold tracking-widest text-gray-400 uppercase">Sampai</label>
+                                    <input type="date" id="sd-filter-sampai"
+                                        class="text-xs px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 outline-none focus:border-kai-blue transition font-semibold" />
+                                </div>
+                                <div class="flex items-center gap-1.5 ml-auto">
+                                    <button id="sd-preset-bulan"
+                                        class="px-2.5 py-2 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:border-kai-blue transition text-[11px] font-semibold">
+                                        Bulan Ini
+                                    </button>
+                                    <button id="sd-preset-tahun"
+                                        class="px-2.5 py-2 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:border-kai-blue transition text-[11px] font-semibold">
+                                        Tahun Ini
+                                    </button>
+                                    <button id="sd-refresh"
+                                        class="flex items-center gap-2 px-3 py-2 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 hover:border-kai-blue text-gray-600 dark:text-gray-300 rounded-lg transition text-xs font-semibold">
+                                        <i class="fas fa-rotate-right"></i> Muat Ulang
+                                    </button>
+                                </div>
                             </div>
                         </div>
 
-                        <!-- ══ Main grid: report body (4/5) + workshop rail (1/5) ══ -->
-                        <div class="grid grid-cols-1 xl:grid-cols-4 gap-4 items-start">
+                        <!-- ══ Three value KPIs ══ -->
+                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                            <div
+                                class="bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm relative overflow-hidden group hover:border-kai-blue transition-colors">
+                                <p class="text-[9px] font-bold tracking-widest text-gray-400 uppercase mb-1">
+                                    Nilai Persediaan
+                                </p>
+                                <h3 class="text-2xl font-bold text-gray-800 dark:text-white" id="sd-nilai-total">—</h3>
+                                <p class="text-[10px] text-gray-400 mt-0.5">posisi saat ini, seluruh ledger</p>
+                                <i
+                                    class="fas fa-warehouse absolute -bottom-3 -right-1 text-5xl text-slate-100 dark:text-slate-700/50 group-hover:scale-125 transition-transform"></i>
+                            </div>
+                            <div
+                                class="bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm relative overflow-hidden group hover:border-kai-blue transition-colors">
+                                <p class="text-[9px] font-bold tracking-widest text-gray-400 uppercase mb-1">
+                                    Nilai Barang Masuk
+                                </p>
+                                <h3 class="text-2xl font-bold text-gray-800 dark:text-white" id="sd-nilai-masuk">—</h3>
+                                <p class="text-[10px] text-gray-400 mt-0.5" id="sd-nilai-masuk-note">periode terpilih</p>
+                                <i
+                                    class="fas fa-arrow-down-long absolute -bottom-3 -right-1 text-5xl text-blue-100 dark:text-blue-900/30 group-hover:scale-125 transition-transform"></i>
+                            </div>
+                            <div
+                                class="bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm relative overflow-hidden group hover:border-kai-orange transition-colors">
+                                <p class="text-[9px] font-bold tracking-widest text-gray-400 uppercase mb-1">
+                                    Nilai Barang Keluar
+                                </p>
+                                <h3 class="text-2xl font-bold text-gray-800 dark:text-white" id="sd-nilai-keluar">—</h3>
+                                <p class="text-[10px] text-gray-400 mt-0.5" id="sd-nilai-keluar-note">periode terpilih</p>
+                                <i
+                                    class="fas fa-arrow-up-long absolute -bottom-3 -right-1 text-5xl text-orange-100 dark:text-orange-900/30 group-hover:scale-125 transition-transform"></i>
+                            </div>
+                        </div>
 
-                            <!-- ─────────── Report body ─────────── -->
-                            <div class="xl:col-span-3 space-y-4">
-
-                                <!-- KPI strip + completion gauge -->
-                                <div
-                                    class="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm overflow-hidden">
-                                    <div
-                                        class="px-5 py-2.5 border-b border-gray-100 dark:border-gray-700 bg-gray-50/60 dark:bg-gray-700/30">
-                                        <p class="text-[10px] font-bold tracking-widest text-gray-400 uppercase">
-                                            Total Perbaikan Alat <span id="inv-dash-kpi-year">—</span>
-                                        </p>
-                                    </div>
-                                    <div class="grid grid-cols-1 sm:grid-cols-4 divide-y sm:divide-y-0 sm:divide-x divide-gray-100 dark:divide-gray-700">
-                                        <div class="p-5 text-center">
-                                            <p class="text-[10px] font-bold tracking-widest text-gray-400 uppercase mb-1">
-                                                Masuk (IN)</p>
-                                            <p class="text-4xl font-black text-gray-800 dark:text-white"
-                                                id="inv-dash-masuk">—</p>
-                                            <p class="text-[10px] text-gray-400 mt-1">alat kerja dilaporkan rusak</p>
-                                        </div>
-                                        <div class="p-5 text-center bg-amber-50 dark:bg-amber-900/10">
-                                            <p class="text-[10px] font-bold tracking-widest text-amber-600 uppercase mb-1">
-                                                Sedang Perbaikan</p>
-                                            <p class="text-4xl font-black text-amber-500" id="inv-dash-sedang">—</p>
-                                            <p class="text-[10px] text-amber-500/80 mt-1" id="inv-dash-sedang-pct">—</p>
-                                        </div>
-                                        <div class="p-5 text-center">
-                                            <p class="text-[10px] font-bold tracking-widest text-gray-400 uppercase mb-1">
-                                                Selesai (OUT)</p>
-                                            <p class="text-4xl font-black text-gray-800 dark:text-white"
-                                                id="inv-dash-selesai">—</p>
-                                            <p class="text-[10px] text-gray-400 mt-1" id="inv-dash-diafkir">—</p>
-                                        </div>
-                                        <!-- Completion gauge -->
-                                        <div class="p-4 flex items-center justify-center gap-3">
-                                            <div class="relative w-24 h-24 shrink-0">
-                                                <canvas id="inv-dash-chart-gauge"></canvas>
-                                                <div
-                                                    class="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                                                    <span class="text-lg font-black text-gray-800 dark:text-white leading-none"
-                                                        id="inv-dash-gauge-pct">—</span>
-                                                    <span
-                                                        class="text-[8px] font-bold tracking-widest text-gray-400 uppercase mt-0.5">Selesai</span>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
+                        <!-- ══ Six status counters + part-to-whole bar ══ -->
+                        <div
+                            class="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm overflow-hidden">
+                            <div
+                                class="px-5 py-2.5 border-b border-gray-100 dark:border-gray-700 bg-gray-50/60 dark:bg-gray-700/30 flex flex-wrap items-baseline justify-between gap-2">
+                                <p class="text-[10px] font-bold tracking-widest text-gray-400 uppercase">
+                                    Status Barang
+                                </p>
+                                <p class="text-[10px] text-gray-400">posisi stok saat ini &middot; <span
+                                        id="sd-status-total">—</span> jenis suku cadang</p>
+                            </div>
+                            <!-- Counters are generated in app.js so the label, icon and status
+                                 token for each state stay defined in exactly one place. -->
+                            <div id="sd-status-counters"
+                                class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 divide-x divide-y lg:divide-y-0 divide-gray-100 dark:divide-gray-700">
+                            </div>
+                            <div class="px-5 py-4 border-t border-gray-100 dark:border-gray-700">
+                                <div class="relative h-[54px]">
+                                    <canvas id="sd-chart-status"></canvas>
                                 </div>
-
-                                <!-- Top 10 Resort + Top 10 Alat -->
-                                <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                                    <div
-                                        class="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm p-4">
-                                        <p
-                                            class="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-widest mb-3">
-                                            Top 10 Resort Perbaikan Alat Kerja</p>
-                                        <div class="relative h-64">
-                                            <canvas id="inv-dash-chart-resort"></canvas>
-                                        </div>
-                                    </div>
-                                    <div
-                                        class="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm p-4">
-                                        <p
-                                            class="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-widest mb-3">
-                                            Top 10 Alat Kerja Perbaikan</p>
-                                        <div class="relative h-64">
-                                            <canvas id="inv-dash-chart-alat"></canvas>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <!-- Full-width: IN/OUT across every resort -->
-                                <div
-                                    class="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm p-4">
-                                    <div class="flex items-baseline justify-between gap-3 mb-3">
-                                        <p
-                                            class="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-widest">
-                                            Alat Kerja Masuk / Keluar per Resort</p>
-                                        <p class="text-[10px] text-gray-400" id="inv-dash-resort-count">—</p>
-                                    </div>
-                                    <div class="overflow-x-auto">
-                                        <div class="relative h-72 min-w-[720px]" id="inv-dash-resort-all-wrap">
-                                            <canvas id="inv-dash-chart-resort-all"></canvas>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <!-- Full-width: IN/OUT by alat kerja -->
-                                <div
-                                    class="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm p-4">
-                                    <div class="flex items-baseline justify-between gap-3 mb-3">
-                                        <p
-                                            class="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-widest">
-                                            Alat Kerja Masuk / Keluar per Jenis Alat</p>
-                                        <p class="text-[10px] text-gray-400" id="inv-dash-alat-count">—</p>
-                                    </div>
-                                    <div class="overflow-x-auto">
-                                        <div class="relative h-72 min-w-[720px]" id="inv-dash-alat-all-wrap">
-                                            <canvas id="inv-dash-chart-alat-all"></canvas>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <!-- Monthly trend + composition doughnut -->
-                                <div class="grid grid-cols-1 lg:grid-cols-5 gap-4">
-                                    <div
-                                        class="lg:col-span-3 bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm p-4">
-                                        <p
-                                            class="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-widest mb-3">
-                                            Tren Perbaikan Bulanan</p>
-                                        <div class="relative h-56">
-                                            <canvas id="inv-dash-chart-trend"></canvas>
-                                        </div>
-                                    </div>
-                                    <div
-                                        class="lg:col-span-2 bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm p-4">
-                                        <p
-                                            class="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-widest mb-3">
-                                            Jumlah Alat Perbaikan</p>
-                                        <div class="relative h-36 mb-3">
-                                            <canvas id="inv-dash-chart-pie"></canvas>
-                                        </div>
-                                        <div id="inv-dash-pie-legend"
-                                            class="space-y-1.5 text-[11px] text-gray-600 dark:text-gray-300"></div>
-                                    </div>
+                                <div id="sd-status-legend"
+                                    class="flex flex-wrap gap-x-5 gap-y-1.5 mt-3 text-[11px] text-gray-600 dark:text-gray-300">
                                 </div>
                             </div>
+                        </div>
 
-                            <!-- ─────────── Workshop rail ─────────── -->
+                        <!-- ══ Transaksi per periode + Stok per kategori ══ -->
+                        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
                             <div
-                                class="xl:col-span-1 bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm flex flex-col xl:sticky xl:top-4">
-                                <div
-                                    class="px-4 py-3 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between gap-2">
-                                    <p class="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-widest leading-tight">
-                                        Sedang Perbaikan / Di Workshop Mekanik</p>
-                                    <span id="inv-dash-workshop-badge"
-                                        class="bg-amber-100 dark:bg-amber-900/40 text-amber-600 text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0">0</span>
+                                class="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm p-4">
+                                <div class="flex flex-wrap items-baseline justify-between gap-2 mb-1">
+                                    <p
+                                        class="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-widest">
+                                        Transaksi Barang per Periode</p>
+                                    <p class="text-[10px] text-gray-400" id="sd-transaksi-periode">—</p>
                                 </div>
-                                <div class="overflow-y-auto flex-1 max-h-[560px]">
-                                    <table class="w-full text-[10px]">
-                                        <thead class="sticky top-0 bg-gray-50 dark:bg-gray-700/60 z-10">
+                                <p class="text-[10px] text-gray-400 mb-3">Jumlah unit yang bergerak dalam rentang
+                                    tanggal terpilih.</p>
+                                <div class="relative h-60">
+                                    <canvas id="sd-chart-transaksi"></canvas>
+                                </div>
+                                <div id="sd-transaksi-legend"
+                                    class="flex flex-wrap gap-x-5 gap-y-1.5 mt-3 text-[11px] text-gray-600 dark:text-gray-300">
+                                </div>
+                            </div>
+                            <div
+                                class="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm p-4">
+                                <p
+                                    class="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-widest mb-1">
+                                    Jumlah Suku Cadang per Subsistem</p>
+                                <p class="text-[10px] text-gray-400 mb-3">Banyaknya jenis part yang terdaftar di tiap
+                                    subsistem.</p>
+                                <div class="relative h-60">
+                                    <canvas id="sd-chart-kategori"></canvas>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- ══ Monthly usage trend ══ -->
+                        <div
+                            class="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm p-4">
+                            <p class="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-widest mb-1">
+                                Pemakaian Suku Cadang 12 Bulan Terakhir</p>
+                            <p class="text-[10px] text-gray-400 mb-3">Total unit keluar per bulan (Keluar, Retur ke
+                                Vendor, dan Penyesuaian Keluar). Rentang tanggal di atas tidak berlaku di sini.</p>
+                            <div class="relative h-56">
+                                <canvas id="sd-chart-usage"></canvas>
+                            </div>
+                        </div>
+
+                        <!-- ══ Top nilai + katalog + kritis ══ -->
+                        <div class="grid grid-cols-1 xl:grid-cols-3 gap-4 items-start">
+                            <!-- Top value list -->
+                            <div
+                                class="xl:col-span-2 bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm flex flex-col">
+                                <div
+                                    class="px-4 py-3 border-b border-gray-100 dark:border-gray-700 flex items-baseline justify-between gap-2">
+                                    <p
+                                        class="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-widest">
+                                        Nilai Persediaan Tertinggi</p>
+                                    <p class="text-[10px] text-gray-400">15 teratas</p>
+                                </div>
+                                <div class="overflow-x-auto">
+                                    <table class="w-full text-xs">
+                                        <thead class="bg-gray-50 dark:bg-gray-700/40">
                                             <tr class="border-b border-gray-100 dark:border-gray-700">
                                                 <th
-                                                    class="px-2 py-2 text-left font-bold text-gray-400 uppercase tracking-wider w-6">
+                                                    class="px-3 py-2 text-left font-bold text-gray-400 uppercase tracking-wider w-8">
                                                     #</th>
                                                 <th
-                                                    class="px-2 py-2 text-left font-bold text-gray-400 uppercase tracking-wider">
-                                                    Alat / Lokasi</th>
+                                                    class="px-3 py-2 text-left font-bold text-gray-400 uppercase tracking-wider">
+                                                    Suku Cadang</th>
                                                 <th
-                                                    class="px-2 py-2 text-right font-bold text-gray-400 uppercase tracking-wider w-8">
-                                                    Jml</th>
+                                                    class="px-3 py-2 text-right font-bold text-gray-400 uppercase tracking-wider">
+                                                    Stok</th>
+                                                <th
+                                                    class="px-3 py-2 text-right font-bold text-gray-400 uppercase tracking-wider">
+                                                    Nilai</th>
                                             </tr>
                                         </thead>
-                                        <tbody id="inv-dash-workshop-body">
+                                        <tbody id="sd-top-value">
                                             <tr>
-                                                <td colspan="3" class="py-8 text-center text-gray-400 italic text-xs">
-                                                    Tidak ada data</td>
+                                                <td colspan="4" class="py-8 text-center text-gray-400 italic">Tidak ada
+                                                    data</td>
                                             </tr>
                                         </tbody>
                                     </table>
                                 </div>
+                            </div>
+
+                            <!-- Catalogue summary + critical rail -->
+                            <div class="space-y-4">
+                                <div
+                                    class="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm p-4">
+                                    <p
+                                        class="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-widest mb-3">
+                                        Ringkasan Katalog</p>
+                                    <dl class="grid grid-cols-2 gap-3">
+                                        <div>
+                                            <dt class="text-[9px] font-bold tracking-widest text-gray-400 uppercase mb-0.5">
+                                                Jenis Part</dt>
+                                            <dd class="text-lg font-bold text-gray-800 dark:text-white" id="sd-total-parts">
+                                                —</dd>
+                                        </div>
+                                        <div>
+                                            <dt class="text-[9px] font-bold tracking-widest text-gray-400 uppercase mb-0.5">
+                                                Jenis Alat</dt>
+                                            <dd class="text-lg font-bold text-gray-800 dark:text-white" id="sd-total-types">
+                                                —</dd>
+                                        </div>
+                                        <div>
+                                            <dt class="text-[9px] font-bold tracking-widest text-gray-400 uppercase mb-0.5">
+                                                Pemasok</dt>
+                                            <dd class="text-lg font-bold text-gray-800 dark:text-white"
+                                                id="sd-total-suppliers">—</dd>
+                                        </div>
+                                        <div>
+                                            <dt class="text-[9px] font-bold tracking-widest text-gray-400 uppercase mb-0.5">
+                                                Permintaan Otomatis</dt>
+                                            <dd class="text-lg font-bold text-gray-800 dark:text-white" id="sd-auto-demand">
+                                                —</dd>
+                                        </div>
+                                    </dl>
+                                </div>
+
+                                <div
+                                    class="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm flex flex-col">
+                                    <div
+                                        class="px-4 py-3 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between gap-2">
+                                        <p
+                                            class="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-widest leading-tight">
+                                            Perlu Segera Dipesan</p>
+                                        <span id="sd-critical-badge"
+                                            class="bg-red-100 dark:bg-red-900/40 text-red-600 text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0">0</span>
+                                    </div>
+                                    <div class="overflow-y-auto max-h-[320px]">
+                                        <table class="w-full text-[11px]">
+                                            <tbody id="sd-critical-body">
+                                                <tr>
+                                                    <td class="py-8 text-center text-gray-400 italic">Semua stok aman</td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- ── Tab Panel: Transaksi Barang ──
+                         The movement-entry form from the printed "Transaksi Barang"
+                         sheet, plus the running ledger it appends to. This is the
+                         capability that closes the loop on the parts module: before
+                         it, stock could be created and transferred but never consumed,
+                         restocked, returned or corrected. POSTs /api/inventaris/stok. -->
+                    <div id="inv-panel-transaksi" class="hidden space-y-4">
+
+                        <!-- ══ Entry form ══ -->
+                        <div
+                            class="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm overflow-hidden">
+                            <div
+                                class="px-5 py-3 border-b border-gray-100 dark:border-gray-700 bg-gray-50/60 dark:bg-gray-700/30 flex flex-wrap items-baseline justify-between gap-2">
+                                <p class="text-[11px] font-bold tracking-widest text-gray-400 uppercase">
+                                    Catat Transaksi Barang
+                                </p>
+                                <p class="text-[10px] text-gray-400">Barang masuk menambah stok, barang keluar
+                                    menguranginya.</p>
+                            </div>
+                            <div class="p-5 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+
+                                <!-- Nama Barang — searchable via native datalist -->
+                                <div class="md:col-span-2">
+                                    <label for="tx-part"
+                                        class="block text-[10px] font-bold tracking-widest text-gray-400 uppercase mb-1.5">
+                                        Nama Barang <span class="text-red-400">*</span>
+                                    </label>
+                                    <input type="text" id="tx-part" list="tx-part-list" autocomplete="off"
+                                        placeholder="Ketik nama atau SKU suku cadang…"
+                                        class="w-full text-sm px-3 py-2.5 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 outline-none focus:border-kai-blue transition" />
+                                    <datalist id="tx-part-list"></datalist>
+                                    <p class="text-[10px] mt-1 text-gray-400" id="tx-part-info">Belum ada barang
+                                        dipilih.</p>
+                                </div>
+
+                                <!-- Status (movement type) -->
+                                <div>
+                                    <label for="tx-tipe"
+                                        class="block text-[10px] font-bold tracking-widest text-gray-400 uppercase mb-1.5">
+                                        Status <span class="text-red-400">*</span>
+                                    </label>
+                                    <select id="tx-tipe"
+                                        class="w-full text-sm px-3 py-2.5 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 outline-none focus:border-kai-blue transition">
+                                        <optgroup label="Menambah stok">
+                                            <option value="IN">Masuk</option>
+                                            <option value="RETUR_CUST">Retur dari Customer</option>
+                                            <option value="ADJ_IN">Penyesuaian Masuk</option>
+                                        </optgroup>
+                                        <optgroup label="Mengurangi stok">
+                                            <option value="OUT">Keluar</option>
+                                            <option value="RETUR_VENDOR">Retur ke Vendor</option>
+                                            <option value="ADJ_OUT">Penyesuaian Keluar</option>
+                                        </optgroup>
+                                    </select>
+                                </div>
+
+                                <!-- Gudang -->
+                                <div>
+                                    <label for="tx-gudang"
+                                        class="block text-[10px] font-bold tracking-widest text-gray-400 uppercase mb-1.5">
+                                        Gudang <span class="text-red-400">*</span>
+                                    </label>
+                                    <select id="tx-gudang"
+                                        class="w-full text-sm px-3 py-2.5 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 outline-none focus:border-kai-blue transition">
+                                    </select>
+                                </div>
+
+                                <!-- Jumlah -->
+                                <div>
+                                    <label for="tx-jumlah"
+                                        class="block text-[10px] font-bold tracking-widest text-gray-400 uppercase mb-1.5">
+                                        Jumlah <span class="text-red-400">*</span>
+                                    </label>
+                                    <div class="flex items-center gap-2">
+                                        <input type="number" id="tx-jumlah" min="1" step="1" placeholder="0"
+                                            class="w-full text-sm px-3 py-2.5 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 outline-none focus:border-kai-blue transition" />
+                                        <span class="text-xs text-gray-400 shrink-0 w-10" id="tx-unit">—</span>
+                                    </div>
+                                </div>
+
+                                <!-- Tanggal -->
+                                <div>
+                                    <label for="tx-tanggal"
+                                        class="block text-[10px] font-bold tracking-widest text-gray-400 uppercase mb-1.5">
+                                        Tanggal
+                                    </label>
+                                    <input type="date" id="tx-tanggal"
+                                        class="w-full text-sm px-3 py-2.5 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 outline-none focus:border-kai-blue transition" />
+                                </div>
+
+                                <!-- Unit price -->
+                                <div>
+                                    <label for="tx-harga"
+                                        class="block text-[10px] font-bold tracking-widest text-gray-400 uppercase mb-1.5">
+                                        Harga Satuan
+                                    </label>
+                                    <input type="number" id="tx-harga" min="0" step="1000" placeholder="0"
+                                        class="w-full text-sm px-3 py-2.5 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 outline-none focus:border-kai-blue transition" />
+                                    <p class="text-[10px] mt-1 text-gray-400">Terisi otomatis dari katalog; boleh
+                                        diubah.</p>
+                                </div>
+
+                                <!-- Amount (computed) -->
+                                <div>
+                                    <p class="block text-[10px] font-bold tracking-widest text-gray-400 uppercase mb-1.5">
+                                        Total Nilai</p>
+                                    <p class="text-lg font-bold text-gray-800 dark:text-white tabular-nums py-1.5"
+                                        id="tx-amount">Rp 0</p>
+                                </div>
+
+                                <!-- Keterangan -->
+                                <div class="md:col-span-2 xl:col-span-3">
+                                    <label for="tx-keterangan"
+                                        class="block text-[10px] font-bold tracking-widest text-gray-400 uppercase mb-1.5">
+                                        Keterangan
+                                    </label>
+                                    <input type="text" id="tx-keterangan" placeholder="Opsional — mis. Pemakaian perbaikan"
+                                        class="w-full text-sm px-3 py-2.5 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 outline-none focus:border-kai-blue transition" />
+                                </div>
+
+                                <div class="flex items-end">
+                                    <button id="tx-submit"
+                                        class="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-kai-blue hover:bg-blue-700 text-white font-semibold rounded-lg transition text-sm shadow-sm disabled:opacity-50 disabled:cursor-not-allowed">
+                                        <i class="fas fa-floppy-disk"></i> Simpan
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- ══ Running ledger ══ -->
+                        <div
+                            class="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm overflow-hidden">
+                            <div
+                                class="px-5 py-3 border-b border-gray-100 dark:border-gray-700 flex flex-wrap items-center gap-3">
+                                <p class="text-[11px] font-bold tracking-widest text-gray-400 uppercase">
+                                    Riwayat Transaksi
+                                </p>
+                                <span class="text-[10px] text-gray-400" id="tx-total">—</span>
+                                <select id="tx-filter-tipe"
+                                    class="ml-auto text-xs px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 outline-none focus:border-kai-blue transition">
+                                    <option value="">Semua Status</option>
+                                    <option value="IN">Masuk</option>
+                                    <option value="OUT">Keluar</option>
+                                    <option value="RETUR_CUST">Retur dari Customer</option>
+                                    <option value="RETUR_VENDOR">Retur ke Vendor</option>
+                                    <option value="ADJ_IN">Penyesuaian Masuk</option>
+                                    <option value="ADJ_OUT">Penyesuaian Keluar</option>
+                                </select>
+                                <select id="tx-filter-gudang"
+                                    class="text-xs px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 outline-none focus:border-kai-blue transition">
+                                    <option value="">Semua Gudang</option>
+                                </select>
+                            </div>
+                            <div class="overflow-x-auto">
+                                <table class="w-full text-sm">
+                                    <thead>
+                                        <tr
+                                            class="border-b border-gray-100 dark:border-gray-700 bg-gray-50/60 dark:bg-gray-700/40">
+                                            <th
+                                                class="px-4 py-3 text-left text-[10px] font-bold tracking-widest text-gray-400 uppercase">
+                                                Waktu</th>
+                                            <th
+                                                class="px-4 py-3 text-left text-[10px] font-bold tracking-widest text-gray-400 uppercase">
+                                                Suku Cadang</th>
+                                            <th
+                                                class="px-4 py-3 text-left text-[10px] font-bold tracking-widest text-gray-400 uppercase">
+                                                Status</th>
+                                            <th
+                                                class="px-4 py-3 text-right text-[10px] font-bold tracking-widest text-gray-400 uppercase">
+                                                Jumlah</th>
+                                            <th
+                                                class="px-4 py-3 text-right text-[10px] font-bold tracking-widest text-gray-400 uppercase">
+                                                Harga Satuan</th>
+                                            <th
+                                                class="px-4 py-3 text-right text-[10px] font-bold tracking-widest text-gray-400 uppercase">
+                                                Total Nilai</th>
+                                            <th
+                                                class="px-4 py-3 text-left text-[10px] font-bold tracking-widest text-gray-400 uppercase">
+                                                Gudang</th>
+                                            <th
+                                                class="px-4 py-3 text-left text-[10px] font-bold tracking-widest text-gray-400 uppercase">
+                                                Petugas</th>
+                                            <th
+                                                class="px-4 py-3 text-left text-[10px] font-bold tracking-widest text-gray-400 uppercase">
+                                                Keterangan</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="tx-body">
+                                        <tr>
+                                            <td colspan="9" class="text-center py-12 text-sm text-gray-400">
+                                                <i class="fas fa-receipt text-3xl mb-2 block text-gray-300"></i>
+                                                Belum ada transaksi
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                            <div class="px-5 py-3 border-t border-gray-100 dark:border-gray-700 text-center">
+                                <button id="tx-more"
+                                    class="hidden px-4 py-2 text-xs font-semibold text-kai-blue dark:text-blue-400 border border-gray-200 dark:border-gray-600 rounded-lg hover:border-kai-blue transition">
+                                    Muat lebih banyak
+                                </button>
                             </div>
                         </div>
                     </div>
@@ -1051,25 +1600,25 @@
                         <div id="inv-toolbar-actions" class="flex gap-2 flex-wrap">
                             <button id="inv-btn-add-part"
                                 class="flex items-center gap-2 px-4 py-2 bg-white text-kai-blue hover:bg-blue-50 font-semibold rounded-lg transition text-sm shadow-sm">
-                                <i class="fas fa-plus"></i> Add Parts Item
+                                <i class="fas fa-plus"></i> Tambah Suku Cadang
                             </button>
                             <button id="inv-btn-parts-category"
                                 class="flex items-center gap-2 px-4 py-2 bg-white/10 hover:bg-white/20 border border-white/25 text-white font-semibold rounded-lg transition text-sm">
-                                <i class="fas fa-tags"></i> Parts Category
+                                <i class="fas fa-tags"></i> Kategori Suku Cadang
                             </button>
                             <div class="relative">
                                 <button id="inv-btn-bulk-toggle"
                                     class="flex items-center gap-2 px-4 py-2 bg-kai-orange hover:bg-orange-600 text-white font-semibold rounded-lg transition text-sm shadow-sm">
-                                    <i class="fas fa-cog"></i> Bulk Upload
+                                    <i class="fas fa-cog"></i> Impor Massal
                                     <i class="fas fa-chevron-down text-xs ml-1"></i>
                                 </button>
                                 <div id="inv-bulk-dropdown"
                                     class="hidden absolute left-0 top-full mt-1 w-48 bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-xl shadow-lg z-30 overflow-hidden">
                                     <button class="w-full flex items-center gap-3 px-4 py-3 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 transition">
-                                        <i class="fas fa-file-excel text-emerald-500"></i> Sample Excel
+                                        <i class="fas fa-file-excel text-emerald-500"></i> Unduh Contoh Excel
                                     </button>
                                     <button class="w-full flex items-center gap-3 px-4 py-3 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 transition border-t border-gray-100 dark:border-gray-700">
-                                        <i class="fas fa-upload text-kai-blue"></i> Import Excel
+                                        <i class="fas fa-upload text-kai-blue"></i> Impor dari Excel
                                     </button>
                                 </div>
                             </div>
@@ -1078,7 +1627,7 @@
                         <div class="flex items-center gap-2 flex-1 min-w-0">
                             <div class="relative flex-1 min-w-0">
                                 <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs"></i>
-                                <input type="text" id="inv-parts-search" placeholder="Search"
+                                <input type="text" id="inv-parts-search" placeholder="Cari suku cadang…"
                                     class="w-full pl-8 pr-3 py-2 bg-white dark:bg-gray-700 border border-white/30 rounded-lg text-sm outline-none focus:border-kai-orange transition" />
                             </div>
                             <button class="w-9 h-9 flex items-center justify-center bg-white/10 hover:bg-white/20 border border-white/20 rounded-lg text-white transition shrink-0">
@@ -1095,28 +1644,39 @@
                         <div class="bg-white dark:bg-gray-800 rounded-b-xl border border-t-0 border-gray-100 dark:border-gray-700 shadow-sm overflow-x-auto">
                             <table class="w-full text-sm">
                                 <thead>
+                                    <!-- Items Master column set. Movement columns (Masuk…Penyesuaian)
+                                         are lifetime totals from the ledger, not windowed — the
+                                         Dasbor Inventaris tab is where a date range applies. -->
                                     <tr class="border-b border-gray-100 dark:border-gray-700 bg-gray-50/60 dark:bg-gray-700/40">
-                                        <th class="px-4 py-3 text-left text-[10px] font-bold tracking-widest text-gray-400 uppercase">Action</th>
-                                        <th class="px-4 py-3 text-left text-[10px] font-bold tracking-widest text-gray-400 uppercase">Parts</th>
-                                        <th class="px-4 py-3 text-left text-[10px] font-bold tracking-widest text-gray-400 uppercase">Quantity</th>
-                                        <th class="px-4 py-3 text-left text-[10px] font-bold tracking-widest text-gray-400 uppercase">Item Cost</th>
-                                        <th class="px-4 py-3 text-left text-[10px] font-bold tracking-widest text-gray-400 uppercase">Item Type</th>
-                                        <th class="px-4 py-3 text-left text-[10px] font-bold tracking-widest text-gray-400 uppercase">Manufacturer</th>
-                                        <th class="px-4 py-3 text-left text-[10px] font-bold tracking-widest text-gray-400 uppercase">Supplier</th>
-                                        <th class="px-4 py-3 text-left text-[10px] font-bold tracking-widest text-gray-400 uppercase">Description</th>
-                                        <th class="px-4 py-3 text-left text-[10px] font-bold tracking-widest text-gray-400 uppercase">Site</th>
+                                        <th class="px-3 py-3 text-left text-[10px] font-bold tracking-widest text-gray-400 uppercase">Aksi</th>
+                                        <th class="px-3 py-3 text-left text-[10px] font-bold tracking-widest text-gray-400 uppercase">Suku Cadang</th>
+                                        <th class="px-3 py-3 text-left text-[10px] font-bold tracking-widest text-gray-400 uppercase">Subsistem</th>
+                                        <th class="px-3 py-3 text-left text-[10px] font-bold tracking-widest text-gray-400 uppercase">Alat Kerja</th>
+                                        <th class="px-3 py-3 text-right text-[10px] font-bold tracking-widest text-gray-400 uppercase" title="Moving Average Price">MAP</th>
+                                        <th class="px-3 py-3 text-right text-[10px] font-bold tracking-widest text-gray-400 uppercase">Masuk</th>
+                                        <th class="px-3 py-3 text-right text-[10px] font-bold tracking-widest text-gray-400 uppercase">Keluar</th>
+                                        <th class="px-3 py-3 text-right text-[10px] font-bold tracking-widest text-gray-400 uppercase" title="Retur ke Vendor / dari Customer">Retur</th>
+                                        <th class="px-3 py-3 text-right text-[10px] font-bold tracking-widest text-gray-400 uppercase" title="Penyesuaian masuk dikurangi penyesuaian keluar">Penyesuaian</th>
+                                        <th class="px-3 py-3 text-right text-[10px] font-bold tracking-widest text-gray-400 uppercase">Stok</th>
+                                        <th class="px-3 py-3 text-right text-[10px] font-bold tracking-widest text-gray-400 uppercase">Min</th>
+                                        <th class="px-3 py-3 text-right text-[10px] font-bold tracking-widest text-gray-400 uppercase">Nilai</th>
+                                        <th class="px-3 py-3 text-left text-[10px] font-bold tracking-widest text-gray-400 uppercase">Status</th>
+                                        <th class="px-3 py-3 text-left text-[10px] font-bold tracking-widest text-gray-400 uppercase">Terakhir Keluar</th>
+                                        <th class="px-3 py-3 text-right text-[10px] font-bold tracking-widest text-gray-400 uppercase" title="Hari sejak barang terakhir keluar">Idle</th>
+                                        <th class="px-3 py-3 text-left text-[10px] font-bold tracking-widest text-gray-400 uppercase">Pemasok</th>
                                     </tr>
                                 </thead>
                                 <tbody id="inv-parts-body">
                                     <tr>
-                                        <td colspan="9" class="text-center py-12 text-sm text-gray-400">
+                                        <td colspan="16" class="text-center py-12 text-sm text-gray-400">
                                             <i class="fas fa-box-open text-3xl mb-2 block text-gray-300"></i>
-                                            No Data
+                                            Tidak ada data
                                         </td>
                                     </tr>
                                 </tbody>
                             </table>
                         </div>
+                        <div id="inv-parts-pager" class="mt-4"></div>
                     </div>
 
                     <!-- ── Tab Panel: Parts Transfer History ── -->
@@ -1125,14 +1685,14 @@
                             <table class="w-full text-sm">
                                 <thead>
                                     <tr class="border-b border-gray-100 dark:border-gray-700 bg-gray-50/60 dark:bg-gray-700/40">
-                                        <th class="px-4 py-3 text-left text-[10px] font-bold tracking-widest text-gray-400 uppercase">Transfer Date</th>
-                                        <th class="px-4 py-3 text-left text-[10px] font-bold tracking-widest text-gray-400 uppercase">Parts</th>
-                                        <th class="px-4 py-3 text-left text-[10px] font-bold tracking-widest text-gray-400 uppercase">Quantity</th>
-                                        <th class="px-4 py-3 text-left text-[10px] font-bold tracking-widest text-gray-400 uppercase">Manufacturer</th>
-                                        <th class="px-4 py-3 text-left text-[10px] font-bold tracking-widest text-gray-400 uppercase">Site From</th>
-                                        <th class="px-4 py-3 text-left text-[10px] font-bold tracking-widest text-gray-400 uppercase">Site To</th>
-                                        <th class="px-4 py-3 text-left text-[10px] font-bold tracking-widest text-gray-400 uppercase">Transfer By</th>
-                                        <th class="px-4 py-3 text-left text-[10px] font-bold tracking-widest text-gray-400 uppercase">Transfer To</th>
+                                        <th class="px-4 py-3 text-left text-[10px] font-bold tracking-widest text-gray-400 uppercase">Tanggal Transfer</th>
+                                        <th class="px-4 py-3 text-left text-[10px] font-bold tracking-widest text-gray-400 uppercase">Suku Cadang</th>
+                                        <th class="px-4 py-3 text-left text-[10px] font-bold tracking-widest text-gray-400 uppercase">Jumlah</th>
+                                        <th class="px-4 py-3 text-left text-[10px] font-bold tracking-widest text-gray-400 uppercase">Alat Kerja</th>
+                                        <th class="px-4 py-3 text-left text-[10px] font-bold tracking-widest text-gray-400 uppercase">Dari Lokasi</th>
+                                        <th class="px-4 py-3 text-left text-[10px] font-bold tracking-widest text-gray-400 uppercase">Ke Lokasi</th>
+                                        <th class="px-4 py-3 text-left text-[10px] font-bold tracking-widest text-gray-400 uppercase">Dikirim Oleh</th>
+                                        <th class="px-4 py-3 text-left text-[10px] font-bold tracking-widest text-gray-400 uppercase">Diterima Oleh</th>
                                         <th class="px-4 py-3 text-left text-[10px] font-bold tracking-widest text-gray-400 uppercase">Note</th>
                                     </tr>
                                 </thead>
@@ -1140,7 +1700,7 @@
                                     <tr>
                                         <td colspan="9" class="text-center py-12 text-sm text-gray-400">
                                             <i class="fas fa-exchange-alt text-3xl mb-2 block text-gray-300"></i>
-                                            No Data
+                                            Tidak ada data
                                         </td>
                                     </tr>
                                 </tbody>
@@ -1154,50 +1714,107 @@
                  VIEW: DATABASE
                 ───────────────────────────────────────────── -->
                 <section id="view-database" class="view-section">
-                    <!-- Toolbar -->
-                    <div class="flex flex-col gap-3 mb-5 shrink-0">
-                        <!-- Row 1: search + filter + sort -->
+                    <!-- Restyled to the dashboard visual language: the same blue
+                         report header, filter strip and KPI tiles used by Dasbor
+                         Inventaris and Laporan Perbaikan, so moving between views
+                         doesn't feel like moving between applications. -->
+                    <div class="flex flex-col gap-4 mb-5 shrink-0">
+
+                        <!-- ══ Header: branding + scope + toolbar ══ -->
                         <div
-                            class="flex flex-col sm:flex-row gap-3 bg-white dark:bg-gray-800 p-3 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm">
-                            <div class="relative flex-1">
-                                <i
-                                    class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs"></i>
-                                <input type="text" id="search-db" placeholder="Cari UID atau Kode ID..."
-                                    class="w-full pl-8 pr-3 py-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue font-mono transition" />
+                            class="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm overflow-hidden">
+                            <div class="bg-kai-blue px-5 py-3 flex flex-wrap items-center justify-between gap-4">
+                                <div class="flex items-center gap-3 min-w-0">
+                                    <img src="./assets/logo_nav.svg" alt="KAI"
+                                        class="h-8 w-auto shrink-0 brightness-0 invert" />
+                                    <div class="min-w-0">
+                                        <p class="text-white font-bold text-sm leading-tight truncate">
+                                            DAFTAR ASET ALAT KERJA
+                                        </p>
+                                        <p class="text-white/75 text-xs font-semibold leading-tight truncate"
+                                            id="db-scope-label">Seluruh Wilayah</p>
+                                        <p class="text-white/50 text-[10px] leading-tight mt-0.5" id="db-dateline">—</p>
+                                    </div>
+                                </div>
+                                <div class="hidden md:block text-right shrink-0">
+                                    <p class="text-white font-black text-lg leading-none tracking-tight">BUMN</p>
+                                    <p class="text-white/60 text-[9px] font-semibold tracking-[0.2em] leading-tight">
+                                        UNTUK INDONESIA</p>
+                                </div>
                             </div>
-                            <div class="flex gap-2 shrink-0">
+                            <div
+                                class="px-5 py-3 flex flex-wrap items-center gap-3 border-b border-gray-100 dark:border-gray-700 bg-gray-50/60 dark:bg-gray-800">
+                                <div class="relative flex-1 min-w-[220px]">
+                                    <i
+                                        class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs"></i>
+                                    <input type="text" id="search-db" placeholder="Cari ID aset, alat, lokasi…"
+                                        class="w-full pl-8 pr-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 text-xs outline-none focus:border-kai-blue font-mono transition" />
+                                </div>
                                 <select id="filter-mode"
-                                    class="py-2.5 px-3 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none cursor-pointer focus:border-kai-blue transition">
+                                    class="text-xs px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 outline-none focus:border-kai-blue transition font-semibold cursor-pointer">
                                     <option value="public">Semua Aset</option>
                                     <option value="local">Aset Saya</option>
                                 </select>
                                 <button id="btn-sort-db"
-                                    class="w-10 h-10 flex items-center justify-center bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-gray-500 hover:text-sky-400 transition shrink-0">
-                                    <i class="fas fa-sort-amount-down text-sm"></i>
+                                    class="flex items-center gap-2 px-3 py-2 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 hover:border-kai-blue text-gray-600 dark:text-gray-300 rounded-lg transition text-xs font-semibold">
+                                    <i class="fas fa-sort-amount-down"></i> Urutkan
                                 </button>
+                                <div class="flex gap-2 ml-auto">
+                                    <button id="btn-db-download-xlsx"
+                                        class="flex items-center gap-2 px-3 py-2 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 hover:border-emerald-500 text-gray-600 dark:text-gray-300 rounded-lg transition text-xs font-semibold">
+                                        <i class="fas fa-file-excel text-emerald-500"></i> Excel
+                                    </button>
+                                    <button id="btn-db-download-pdf"
+                                        class="flex items-center gap-2 px-3 py-2 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 hover:border-red-500 text-gray-600 dark:text-gray-300 rounded-lg transition text-xs font-semibold">
+                                        <i class="fas fa-file-pdf text-red-500"></i> PDF
+                                    </button>
+                                </div>
                             </div>
                         </div>
-                        <!-- Row 2: download buttons -->
-                        <div
-                            class="flex flex-col md:flex-row flex-wrap md:flex-nowrap gap-2 items-start md:items-center">
-                            <p class="text-sm font-bold text-kai-blue dark:text-blue-400 w-full md:w-auto"
-                                id="save-aset-info">
-                                Simpan data aset kerja dalam kedua format berikut:
-                            </p>
-                            <div class="flex flex-wrap md:flex-nowrap gap-2 w-full md:w-auto">
-                                <button id="btn-db-download-xlsx"
-                                    class="flex items-center gap-2 px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-semibold rounded-lg transition text-sm shadow-sm flex-1 md:flex-none">
-                                    <i class="fas fa-file-excel"></i> Unduh Excel (.xlsx)
-                                </button>
-                                <button id="btn-db-download-pdf"
-                                    class="flex items-center gap-2 px-6 py-2.5 bg-red-600 hover:bg-red-700 active:bg-red-800 text-white font-semibold rounded-lg transition text-sm shadow-sm flex-1 md:flex-none">
-                                    <i class="fas fa-file-pdf"></i> Unduh PDF
-                                </button>
+
+                        <!-- ══ KPI tiles — reflect the FILTERED set, not the whole fleet ══ -->
+                        <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                            <div
+                                class="bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm relative overflow-hidden group hover:border-kai-blue transition-colors">
+                                <p class="text-[9px] font-bold tracking-widest text-gray-400 uppercase mb-1">
+                                    Aset Ditampilkan</p>
+                                <h3 class="text-2xl font-bold text-gray-800 dark:text-white" id="db-stat-total">—</h3>
+                                <p class="text-[10px] text-gray-400 mt-0.5" id="db-stat-total-note">dari — terdaftar</p>
+                                <i
+                                    class="fas fa-boxes absolute -bottom-3 -right-1 text-5xl text-slate-100 dark:text-slate-700/50 group-hover:scale-125 transition-transform"></i>
+                            </div>
+                            <div
+                                class="bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm relative overflow-hidden group hover:border-green-400 transition-colors">
+                                <p class="text-[9px] font-bold tracking-widest text-gray-400 uppercase mb-1">
+                                    Siap Operasi</p>
+                                <h3 class="text-2xl font-bold text-green-500" id="db-stat-so">—</h3>
+                                <p class="text-[10px] text-gray-400 mt-0.5">status SO</p>
+                                <i
+                                    class="fas fa-check-circle absolute -bottom-3 -right-1 text-5xl text-green-100 dark:text-green-900/30 group-hover:scale-125 transition-transform"></i>
+                            </div>
+                            <div
+                                class="bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm relative overflow-hidden group hover:border-red-400 transition-colors">
+                                <p class="text-[9px] font-bold tracking-widest text-gray-400 uppercase mb-1">
+                                    Tidak Siap</p>
+                                <h3 class="text-2xl font-bold text-red-500" id="db-stat-tso">—</h3>
+                                <p class="text-[10px] text-gray-400 mt-0.5">status TSO</p>
+                                <i
+                                    class="fas fa-times-circle absolute -bottom-3 -right-1 text-5xl text-red-100 dark:text-red-900/30 group-hover:scale-125 transition-transform"></i>
+                            </div>
+                            <div
+                                class="bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm relative overflow-hidden group hover:border-kai-blue transition-colors">
+                                <p class="text-[9px] font-bold tracking-widest text-gray-400 uppercase mb-1">
+                                    Ketersediaan</p>
+                                <h3 class="text-2xl font-bold text-kai-blue dark:text-blue-400" id="db-stat-avail">—</h3>
+                                <p class="text-[10px] text-gray-400 mt-0.5">SO dibagi total tampil</p>
+                                <i
+                                    class="fas fa-gauge-high absolute -bottom-3 -right-1 text-5xl text-blue-100 dark:text-blue-900/30 group-hover:scale-125 transition-transform"></i>
                             </div>
                         </div>
                     </div>
 
                     <div id="db-cards-container" class="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4"></div>
+                    <div id="db-pager" class="mt-4"></div>
                 </section>
 
                 <!-- ─────────────────────────────────────────────
@@ -1218,7 +1835,7 @@
                             </div>
                             <p id="edit-card-nama" class="text-sm font-semibold text-gray-700 dark:text-gray-200">—</p>
                         </div>
-                        <div class="grid grid-cols-2 sm:grid-cols-4 gap-x-6 gap-y-1 text-xs shrink-0">
+                        <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-x-6 gap-y-1 text-xs shrink-0">
                             <div>
                                 <p class="text-gray-400 font-medium">Lokasi</p>
                                 <p id="edit-card-lokasi" class="font-semibold text-gray-700 dark:text-gray-200">—</p>
@@ -1235,6 +1852,14 @@
                                 <p class="text-gray-400 font-medium">Peruntukan</p>
                                 <p id="edit-card-peruntukan" class="font-semibold text-gray-700 dark:text-gray-200">—
                                 </p>
+                            </div>
+                            <div>
+                                <!-- Spektek matters on this form specifically: the
+                                     repair log records which variant was worked on,
+                                     and spareparts are not interchangeable across
+                                     variants (GX270 vs GX390). -->
+                                <p class="text-gray-400 font-medium">Spesifikasi Teknis</p>
+                                <p id="edit-card-varian" class="font-semibold text-gray-700 dark:text-gray-200">—</p>
                             </div>
                         </div>
                     </div>
@@ -1443,10 +2068,13 @@
                         </button>
                     </div>
                     <div id="history-repair-container" class="grid grid-cols-1 lg:grid-cols-2 gap-4 flex-1"></div>
+                    <div id="history-repair-pager" class="mt-4"></div>
                     <div id="history-kalibrasi-container" class="grid grid-cols-1 lg:grid-cols-2 gap-4 flex-1 hidden">
                     </div>
+                    <div id="history-kalibrasi-pager" class="mt-4 hidden"></div>
                     <div id="history-mutasi-container" class="grid grid-cols-1 lg:grid-cols-2 gap-4 flex-1 hidden">
                     </div>
+                    <div id="history-mutasi-pager" class="mt-4 hidden"></div>
                 </section>
 
                 <!-- ─────────────────────────────────────────────
@@ -1615,8 +2243,15 @@
                         <div
                             class="bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm relative overflow-hidden group hover:border-slate-400 transition-colors">
                             <p class="text-[9px] font-bold tracking-widest text-gray-400 uppercase mb-1">Benchmark</p>
-                            <h3 class="text-2xl font-bold text-slate-500 dark:text-slate-400" id="exp-stat-benchmark">—%
-                            </h3>
+                            <div class="flex items-end gap-1">
+                                <h3 class="text-2xl font-bold text-slate-500 dark:text-slate-400"
+                                    id="exp-stat-benchmark">—%
+                                </h3>
+                                <!-- The gap against target. Without it this card
+                                     printed the same number as Ketersediaan and
+                                     told the reader nothing new. -->
+                                <span id="exp-stat-benchmark-delta" class="text-xs font-bold mb-0.5"></span>
+                            </div>
                             <i
                                 class="fas fa-flag-checkered absolute -bottom-3 -right-1 text-5xl text-slate-100 dark:text-slate-700/50 group-hover:scale-125 transition-transform"></i>
                         </div>
@@ -1959,6 +2594,9 @@
                                             <th class="px-4 py-3 font-semibold">Nama Pengguna</th>
                                             <th class="px-4 py-3 font-semibold">Peran</th>
                                             <th class="px-4 py-3 font-semibold">Wilayah</th>
+                                            <!-- Live presence. "Online" means an open WebSocket
+                                                 right now, not a recent last_seen. -->
+                                            <th class="px-4 py-3 font-semibold">Status</th>
                                             <th class="px-4 py-3 font-semibold text-right">Opsi</th>
                                         </tr>
                                     </thead>
@@ -2003,11 +2641,11 @@
                                         class="hidden absolute left-0 top-full mt-1 z-50 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-xl w-48 py-1 text-sm">
                                         <button id="master-alat-btn-sample-excel"
                                             class="w-full text-left px-4 py-2.5 hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center gap-2 text-gray-700 dark:text-gray-200">
-                                            <i class="fas fa-file-excel text-emerald-500"></i> Sample Excel
+                                            <i class="fas fa-file-excel text-emerald-500"></i> Unduh Contoh Excel
                                         </button>
                                         <button id="master-alat-btn-import-excel"
                                             class="w-full text-left px-4 py-2.5 hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center gap-2 text-gray-700 dark:text-gray-200">
-                                            <i class="fas fa-upload text-kai-blue"></i> Import Excel
+                                            <i class="fas fa-upload text-kai-blue"></i> Impor dari Excel
                                         </button>
                                     </div>
                                 </div>
@@ -2022,6 +2660,7 @@
                                         <tr>
                                             <th class="px-4 py-3 font-semibold">Kode</th>
                                             <th class="px-4 py-3 font-semibold">Nama Alat</th>
+                                            <th class="px-4 py-3 font-semibold">Spesifikasi Teknis</th>
                                             <th class="px-4 py-3 font-semibold text-right">Opsi</th>
                                         </tr>
                                     </thead>
@@ -2076,11 +2715,11 @@
                                         class="hidden absolute left-0 top-full mt-1 z-50 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-xl w-48 py-1 text-sm">
                                         <button id="master-lokasi-btn-sample-excel"
                                             class="w-full text-left px-4 py-2.5 hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center gap-2 text-gray-700 dark:text-gray-200">
-                                            <i class="fas fa-file-excel text-emerald-500"></i> Sample Excel
+                                            <i class="fas fa-file-excel text-emerald-500"></i> Unduh Contoh Excel
                                         </button>
                                         <button id="master-lokasi-btn-import-excel"
                                             class="w-full text-left px-4 py-2.5 hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center gap-2 text-gray-700 dark:text-gray-200">
-                                            <i class="fas fa-upload text-kai-blue"></i> Import Excel
+                                            <i class="fas fa-upload text-kai-blue"></i> Impor dari Excel
                                         </button>
                                     </div>
                                 </div>
@@ -2145,11 +2784,11 @@
                                         class="hidden absolute left-0 top-full mt-1 z-50 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-xl w-48 py-1 text-sm">
                                         <button id="master-upt-btn-sample-excel"
                                             class="w-full text-left px-4 py-2.5 hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center gap-2 text-gray-700 dark:text-gray-200">
-                                            <i class="fas fa-file-excel text-emerald-500"></i> Sample Excel
+                                            <i class="fas fa-file-excel text-emerald-500"></i> Unduh Contoh Excel
                                         </button>
                                         <button id="master-upt-btn-import-excel"
                                             class="w-full text-left px-4 py-2.5 hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center gap-2 text-gray-700 dark:text-gray-200">
-                                            <i class="fas fa-upload text-kai-blue"></i> Import Excel
+                                            <i class="fas fa-upload text-kai-blue"></i> Impor dari Excel
                                         </button>
                                     </div>
                                 </div>
@@ -2172,6 +2811,7 @@
                                     </tbody>
                                 </table>
                             </div>
+                            <div id="master-upt-pager" class="mt-4"></div>
                         </div>
                     </div>
                 </section>
@@ -2199,6 +2839,7 @@
                     <!-- Breakpoints match #db-cards-container so both card grids reflow identically -->
                     <div id="afkir-cards-container" class="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4 flex-1">
                     </div>
+                    <div id="afkir-pager" class="mt-4"></div>
                 </section>
             </div>
             <!-- end #view-container -->
@@ -2951,8 +3592,8 @@
                     <select id="master-alat-bulk-action"
                         class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition">
                         <option value="">— Pilih opsi —</option>
-                        <option value="sample"><i class="fas fa-file-excel text-emerald-500"></i> Sample Excel</option>
-                        <option value="import"><i class="fas fa-upload text-kai-blue"></i> Import Excel</option>
+                        <option value="sample"><i class="fas fa-file-excel text-emerald-500"></i> Unduh Contoh Excel</option>
+                        <option value="import"><i class="fas fa-upload text-kai-blue"></i> Impor dari Excel</option>
                     </select>
                 </div>
                 <div id="master-alat-bulk-file-area" class="hidden">
@@ -2997,8 +3638,8 @@
                     <select id="master-lokasi-bulk-action"
                         class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition">
                         <option value="">— Pilih opsi —</option>
-                        <option value="sample"><i class="fas fa-file-excel text-emerald-500"></i> Sample Excel</option>
-                        <option value="import"><i class="fas fa-upload text-kai-blue"></i> Import Excel</option>
+                        <option value="sample"><i class="fas fa-file-excel text-emerald-500"></i> Unduh Contoh Excel</option>
+                        <option value="import"><i class="fas fa-upload text-kai-blue"></i> Impor dari Excel</option>
                     </select>
                 </div>
                 <div id="master-lokasi-bulk-file-area" class="hidden">
@@ -3044,8 +3685,8 @@
                     <select id="master-upt-bulk-action"
                         class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition">
                         <option value="">— Pilih opsi —</option>
-                        <option value="sample"><i class="fas fa-file-excel text-emerald-500"></i> Sample Excel</option>
-                        <option value="import"><i class="fas fa-upload text-kai-blue"></i> Import Excel</option>
+                        <option value="sample"><i class="fas fa-file-excel text-emerald-500"></i> Unduh Contoh Excel</option>
+                        <option value="import"><i class="fas fa-upload text-kai-blue"></i> Impor dari Excel</option>
                     </select>
                 </div>
                 <div id="master-upt-bulk-file-area" class="hidden">
@@ -3534,8 +4175,8 @@
                     <select id="kdak-bulk-action"
                         class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition">
                         <option value="">— Pilih opsi —</option>
-                        <option value="sample"><i class="fas fa-file-excel text-emerald-500"></i> Sample Excel</option>
-                        <option value="import"><i class="fas fa-upload text-kai-blue"></i> Import Excel</option>
+                        <option value="sample"><i class="fas fa-file-excel text-emerald-500"></i> Unduh Contoh Excel</option>
+                        <option value="import"><i class="fas fa-upload text-kai-blue"></i> Impor dari Excel</option>
                     </select>
                 </div>
                 <!-- Import file area (shown only when import selected) -->
@@ -3626,6 +4267,7 @@
                 </div>
             </div>
             <div id="kdak-alat-list" class="p-5 overflow-y-auto space-y-2 flex-1"></div>
+            <div id="kdak-alat-pager" class="px-5 pb-4"></div>
         </div>
     </div>
 
@@ -3665,6 +4307,7 @@
                 </select>
             </div>
             <div id="kdak-lokasi-list" class="p-5 overflow-y-auto space-y-2 flex-1"></div>
+            <div id="kdak-lokasi-pager" class="px-5 pb-4"></div>
         </div>
     </div>
 
@@ -4082,8 +4725,8 @@
                     <i class="fas fa-tags text-kai-blue text-lg"></i>
                 </div>
                 <div class="flex-1">
-                    <h3 class="text-base font-bold text-gray-800 dark:text-white">Parts Category</h3>
-                    <p class="text-xs text-gray-400 mt-0.5">Manage part categories for inventory.</p>
+                    <h3 class="text-base font-bold text-gray-800 dark:text-white">Kategori Suku Cadang</h3>
+                    <p class="text-xs text-gray-400 mt-0.5">Kelola kategori suku cadang untuk inventaris.</p>
                 </div>
                 <button id="inv-category-modal-close"
                     class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 dark:hover:bg-gray-700">
@@ -4091,29 +4734,47 @@
                 </button>
             </div>
             <!-- Add new category row -->
-            <div class="px-6 pt-5 pb-3">
-                <label class="field-label">New Category Name</label>
-                <div class="flex gap-2 mt-1">
-                    <input type="text" id="inv-category-input" placeholder="e.g. Electrical, Mechanical..."
-                        class="field-input flex-1" />
-                    <button id="inv-category-add-btn"
-                        class="flex items-center gap-2 px-4 py-2 bg-kai-blue hover:bg-blue-800 text-white font-semibold rounded-lg transition text-sm shadow-sm shrink-0">
-                        <i class="fas fa-plus"></i> Add
-                    </button>
+            <div class="px-6 pt-5 pb-3 space-y-3">
+                <div>
+                    <label class="field-label">Nama Kategori <span class="text-red-400">*</span></label>
+                    <input type="text" id="inv-category-input" placeholder="mis. Kelistrikan, Mekanikal…"
+                        class="field-input w-full mt-1" />
                 </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="field-label">Subsistem</label>
+                        <select id="inv-category-subsistem" class="field-input w-full mt-1">
+                            <option value="">— Tanpa subsistem —</option>
+                            <option value="ELECTRIC">ELECTRIC</option>
+                            <option value="ENGINE">ENGINE</option>
+                            <option value="MECHANIC">MECHANIC</option>
+                            <option value="CONSUMABLES">CONSUMABLES</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="field-label">Alat Kerja</label>
+                        <select id="inv-category-alat" class="field-input w-full mt-1">
+                            <option value="">— Semua alat kerja —</option>
+                        </select>
+                    </div>
+                </div>
+                <button id="inv-category-add-btn"
+                    class="w-full flex items-center justify-center gap-2 px-4 py-2 bg-kai-blue hover:bg-blue-800 text-white font-semibold rounded-lg transition text-sm shadow-sm">
+                    <i class="fas fa-plus"></i> Tambah Kategori
+                </button>
             </div>
             <!-- Category list -->
             <div class="px-6 pb-2">
-                <p class="text-[10px] font-bold tracking-widest text-gray-400 uppercase mb-2">Existing Categories</p>
+                <p class="text-[10px] font-bold tracking-widest text-gray-400 uppercase mb-2">Kategori Tersedia</p>
                 <ul id="inv-category-list" class="space-y-1 max-h-60 overflow-y-auto">
-                    <li class="text-sm text-gray-400 italic py-2 text-center">No categories yet.</li>
+                    <li class="text-sm text-gray-400 italic py-2 text-center">Belum ada kategori.</li>
                 </ul>
             </div>
             <!-- Footer -->
             <div class="px-6 py-4 border-t border-gray-100 dark:border-gray-700">
                 <button id="inv-category-modal-close-btn"
                     class="w-full flex items-center justify-center gap-2 py-2.5 bg-kai-blue hover:bg-blue-800 text-white font-semibold rounded-lg transition text-sm shadow-sm">
-                    Done
+                    Selesai
                 </button>
             </div>
         </div>
@@ -4128,7 +4789,7 @@
                     <i class="fas fa-boxes text-kai-blue text-lg"></i>
                 </div>
                 <div class="flex-1">
-                    <h3 class="text-base font-bold text-gray-800 dark:text-white">Add Parts Item</h3>
+                    <h3 class="text-base font-bold text-gray-800 dark:text-white">Tambah Suku Cadang</h3>
                     <p class="text-xs text-gray-400 mt-0.5">Add a part to your inventory.</p>
                 </div>
                 <button id="inv-add-modal-close"
@@ -4173,7 +4834,9 @@
                     </div>
                     <div>
                         <label class="field-label">Item Type</label>
-                        <input type="text" id="inv-field-item-type" class="field-input" />
+                        <select id="inv-field-item-type" class="field-input">
+                            <option value="">— Pilih alat kerja —</option>
+                        </select>
                     </div>
                 </div>
                 <!-- Stock & Cost -->
@@ -4184,7 +4847,12 @@
                         <div class="flex gap-2">
                             <input type="number" id="inv-field-quantity" min="0" class="field-input flex-1" />
                             <select id="inv-field-unit" class="field-input w-28 shrink-0">
-                                <option>Piece</option><option>Unit</option><option>Set</option><option>Box</option><option>Roll</option>
+                                <option value="Pcs">Pcs</option>
+                                <option value="Unit">Unit</option>
+                                <option value="Set">Set</option>
+                                <option value="Box">Box</option>
+                                <option value="Roll">Roll</option>
+                                <option value="Liter">Liter</option>
                             </select>
                         </div>
                     </div>
@@ -4200,7 +4868,9 @@
                     </div>
                     <div>
                         <label class="field-label">Stored Location</label>
-                        <input type="text" id="inv-field-stored-location" class="field-input" />
+                        <select id="inv-field-stored-location" class="field-input">
+                            <option value="">— Pilih lokasi —</option>
+                        </select>
                     </div>
                     <div>
                         <label class="field-label">Create automatic demand</label>
