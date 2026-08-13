@@ -673,7 +673,7 @@
     return `${parseInt(day)} ${BULAN[parseInt(m)-1]} ${y}`;
   }
 
-  // Mirrors app.js getParentLokasiCode / main.py get_parent_lokasi_code.
+  // Mirrors getParentLokasiCode in js/core.js / get_parent_lokasi_code in main.py.
   // Keep all three in step — see the note above the Python version.
   function getParentLokasiCode(id) {
     if (!id) return null;
@@ -689,7 +689,7 @@
     return null;
   }
 
-  // Mirrors app.js resolveLokasi
+  // Mirrors resolveLokasi in js/search.js
   function resolveLokasi(val) {
     if (!val || val === "—") return { parentName:"—", uptName:"—", uptCode:"" };
     const up = uptDatabase.find(u => u.upt === val);
@@ -703,7 +703,7 @@
     return { parentName: val, uptName:"—", uptCode:"" };
   }
 
-  // Mirrors app.js applyUptSelect
+  // Mirrors applyUptSelect in js/core.js
   function applyUptSelect(locCode, selEl) {
     if (!selEl) return;
     const loc = lokasiData.find(l => l.code === locCode);
@@ -790,7 +790,7 @@
     // FormData must set its OWN Content-Type, because only the browser knows
     // the multipart boundary. Hard-coding application/json here (as this used
     // to) makes every certificate upload fail with a 422 the moment it is
-    // wired up. Mirrors apiFetch() in app.js.
+    // wired up. Mirrors apiFetch() in js/api.js.
     if (
       opts.body !== undefined &&
       opts.body !== null &&
@@ -937,7 +937,10 @@
 
   async function fetchSummaryForAsset(uid) {
     try {
-      const res = await apiAuth("/history/summary");
+      // Scoped to this one asset. This used to request the whole fleet summary
+      // and .find() a single row out of it — 98.6 KB at 200 assets, and it runs
+      // on page load plus after every repair, kalibrasi and mutasi save.
+      const res = await apiAuth(`/history/summary?id_aset=${encodeURIComponent(uid)}`);
       if (!res.ok) return;
       const all = await res.json();
       summarySelf = all.find(x => x.id_aset === uid) || null;

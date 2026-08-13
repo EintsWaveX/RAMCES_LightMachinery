@@ -12,11 +12,22 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
 
-    <!-- External Libraries -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <!-- External Libraries
+         SheetJS (~900 KB) and jsPDF + autotable (~440 KB) used to load here, on
+         every page view, despite only being reachable from the Laporan view,
+         the bulk importers and the QR label. They are now fetched on first use
+         by ensureXLSX() / ensureJsPDF() in app.js — see the note above
+         loadScript(). That removes ~1.3 MB from every login.
+
+         Chart.js still loads eagerly because the dashboard is the first screen
+         after login, so deferring it would only move the wait; `defer` stops it
+         blocking the parser without changing when it is available.
+
+         Tailwind stays eager: it is a JIT compiler that rewrites the DOM, and
+         deferring it causes a visible flash of unstyled content. Replacing the
+         CDN build with a compiled stylesheet needs a build step — see
+         CLAUDE.md. -->
+    <script defer src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
 
@@ -5385,9 +5396,50 @@
     <!-- QR print area (visible only via @media print) -->
     <div id="qr-print-area" class="hidden"></div>
 
-    <!-- Scripts -->
+    <!-- ══════════════════════════════════════════════════════════════════
+     Scripts
+
+     app.js was one 11.6k-line file. It is now js/*.js, loaded here as plain
+     classic scripts in a FIXED ORDER — no bundler, no ES modules, and the
+     `window.foo = foo` export contract is unchanged, because the onclick
+     handlers these files generate inside template strings resolve against the
+     global scope.
+
+     Two rules govern this list:
+
+       1. ORDER MATTERS ONLY FOR TOP-LEVEL CODE. Function declarations hoist
+          and every cross-file call happens after load, so a function in
+          core.js may call one defined in views/inventaris.js. What must not
+          happen is one file's top-level code reading another's `const` before
+          it is initialised.
+       2. THEY SHARE ONE GLOBAL SCOPE. The same top-level `let` or `const`
+          declared in two files is a fatal SyntaxError that blanks the whole
+          page. Nothing in the browser warns about this, so it is checked by a
+          script rather than by eye — see CLAUDE.md.
+
+     views/inventaris.js is deliberately last: unlike the other view files it
+     caches its DOM nodes at eval time instead of looking them up lazily, so
+     the markup above must already exist.
+    ══════════════════════════════════════════════════════════════════ -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-    <script src="app.js"></script>
+
+    <!-- Foundation -->
+    <script src="js/core.js"></script>
+    <script src="js/api.js"></script>
+    <script src="js/search.js"></script>
+    <script src="js/shell.js"></script>
+
+    <!-- Views -->
+    <script src="js/views/dashboard.js"></script>
+    <script src="js/views/aset.js"></script>
+    <script src="js/views/riwayat.js"></script>
+    <script src="js/views/kdak.js"></script>
+    <script src="js/views/afkir.js"></script>
+    <script src="js/views/masterdata.js"></script>
+    <script src="js/views/sort-modals.js"></script>
+    <script src="js/views/laporan.js"></script>
+    <script src="js/views/repair-dashboard.js"></script>
+    <script src="js/views/inventaris.js"></script>
 </body>
 
 </html>

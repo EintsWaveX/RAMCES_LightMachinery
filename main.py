@@ -15,6 +15,7 @@ from fastapi import (
     Query,
 )
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse
 from fastapi.security import OAuth2PasswordBearer
 from fastapi.staticfiles import StaticFiles
@@ -83,14 +84,91 @@ def _ensure_schema():
         "REFERENCES gudang(id_gudang)",
         "CREATE INDEX IF NOT EXISTS ix_stok_part_gudang "
         "ON sparepart_stok (id_part, id_gudang)",
-        # tipe_gerakan widened from 10 to 20 chars for RETUR_VENDOR / ADJ_OUT
-        "ALTER TABLE sparepart_stok ALTER COLUMN tipe_gerakan TYPE VARCHAR(20)",
-        # the old CHECK only permitted IN|OUT — replace it with the wider set
-        "ALTER TABLE sparepart_stok DROP CONSTRAINT IF EXISTS "
-        "sparepart_stok_gerakan_check",
-        "ALTER TABLE sparepart_stok ADD CONSTRAINT sparepart_stok_gerakan_check "
-        "CHECK (tipe_gerakan IN "
-        "('IN','OUT','RETUR_VENDOR','RETUR_CUST','ADJ_IN','ADJ_OUT'))",
+        # tipe_gerakan widened from 10 to 20 chars for RETUR_VENDOR / ADJ_OUT.
+        #
+        # GUARDED, unlike the rest of this list, because `ALTER COLUMN … TYPE`
+        # is NOT a no-op when the type already matches: PostgreSQL takes an
+        # ACCESS EXCLUSIVE lock and rewrites the whole table plus every index on
+        # it. This runs at import, so it happened on every restart and once per
+        # uvicorn worker — seconds of total lockout on a 100k-row ledger,
+        # minutes at 1M.
+        """
+        DO $$ BEGIN
+          IF EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_name = 'sparepart_stok'
+              AND column_name = 'tipe_gerakan'
+              AND character_maximum_length < 20
+          ) THEN
+            ALTER TABLE sparepart_stok ALTER COLUMN tipe_gerakan TYPE VARCHAR(20);
+          END IF;
+        END $$
+        """,
+        # The old CHECK only permitted IN|OUT — replace it with the wider set.
+        # Also guarded: ADD CONSTRAINT … CHECK validates every existing row
+        # under an ACCESS EXCLUSIVE lock, so re-running it each boot re-scanned
+        # the entire ledger for nothing.
+        """
+        DO $$ BEGIN
+          IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint
+            WHERE conname = 'sparepart_stok_gerakan_check'
+          ) THEN
+            ALTER TABLE sparepart_stok ADD CONSTRAINT sparepart_stok_gerakan_check
+              CHECK (tipe_gerakan IN
+                ('IN','OUT','RETUR_VENDOR','RETUR_CUST','ADJ_IN','ADJ_OUT'));
+          END IF;
+        END $$
+        """,
+
+        # ── Indexes added after the performance audit ──
+        #
+        # riwayat_mutasi had NO index at all beyond its primary key, and is
+        # queried per-asset inside the export loops — so every one of those
+        # lookups was a sequential scan of the whole table. The composite also
+        # serves the `ORDER BY waktu_mutasi` those queries all carry.
+        "CREATE INDEX IF NOT EXISTS ix_rm_aset_waktu "
+        "ON riwayat_mutasi (id_aset, waktu_mutasi)",
+        "CREATE INDEX IF NOT EXISTS ix_rm_lokasi_asal "
+        "ON riwayat_mutasi (id_lokasi_asal)",
+        "CREATE INDEX IF NOT EXISTS ix_rm_lokasi_tujuan "
+        "ON riwayat_mutasi (id_lokasi_tujuan)",
+        # Partial: the repair dashboards filter kondisi='TSO' constantly, and
+        # ix_rk_aset_waktu leads with id_aset so it cannot serve that predicate.
+        "CREATE INDEX IF NOT EXISTS ix_rk_tso ON riwayat_kondisi "
+        "(id_aset, waktu_lapor) WHERE kondisi = 'TSO'",
+        "CREATE INDEX IF NOT EXISTS ix_rk_kondisi_aset "
+        "ON riwayat_kondisi (kondisi, id_aset)",
+        # Turns _last_out_map's full ledger scan into an index-only scan.
+        "CREATE INDEX IF NOT EXISTS ix_stok_gerakan_part_waktu "
+        "ON sparepart_stok (tipe_gerakan, id_part, waktu DESC)",
+        "CREATE INDEX IF NOT EXISTS ix_stok_ref_transfer "
+        "ON sparepart_stok (id_ref_transfer) WHERE id_ref_transfer IS NOT NULL",
+        # create_aset counts assets of the same kode_alat on every insert.
+        "CREATE INDEX IF NOT EXISTS ix_aset_kode_alat ON aset (kode_alat)",
+        "CREATE INDEX IF NOT EXISTS ix_kal_aset_tanggal "
+        "ON riwayat_kalibrasi (id_aset, tanggal_kalibrasi, waktu_input)",
+        # Unindexed FKs, each of which forces a scan of the child table whenever
+        # the parent row is deleted.
+        "CREATE INDEX IF NOT EXISTS ix_rk_pengguna ON riwayat_kondisi (id_pengguna)",
+        "CREATE INDEX IF NOT EXISTS ix_rm_pengguna ON riwayat_mutasi (id_pengguna)",
+        "CREATE INDEX IF NOT EXISTS ix_stok_pengguna ON sparepart_stok (id_pengguna)",
+        "CREATE INDEX IF NOT EXISTS ix_pengguna_lokasi ON pengguna (id_lokasi)",
+        "CREATE INDEX IF NOT EXISTS ix_sparepart_kategori ON sparepart (id_kategori)",
+        "CREATE INDEX IF NOT EXISTS ix_sparepart_kode_alat ON sparepart (kode_alat)",
+
+        # ── Normalise status_terakhir ──
+        #
+        # Five queries wrapped this column in func.upper(), which makes both
+        # declared indexes on it unusable, while six others compared it raw —
+        # so half the code was wrong whichever way the data actually looked.
+        # Normalising once here lets every comparison be a plain indexed
+        # equality. Idempotent: the WHERE means a clean database updates zero
+        # rows and the statement costs one index scan.
+        "UPDATE aset SET status_terakhir = UPPER(status_terakhir) "
+        "WHERE status_terakhir IS NOT NULL AND status_terakhir <> UPPER(status_terakhir)",
+        "UPDATE riwayat_kondisi SET kondisi = UPPER(kondisi) "
+        "WHERE kondisi IS NOT NULL AND kondisi <> UPPER(kondisi)",
     ]
     for stmt in statements:
         # Each in its own transaction: one failure (e.g. a constraint that
@@ -106,6 +184,16 @@ _ensure_schema()
 
 app = FastAPI(title="SIMA-KAI Asset API")
 
+# Everything this app serves is text: app.js was 470 KB on the wire, index.html
+# 383 KB, and /api/history/summary 98.6 KB — all uncompressed. This JSON and JS
+# compresses roughly 8:1, which makes one line of middleware the single largest
+# performance win available here.
+#
+# `minimum_size` skips tiny responses where the gzip header costs more than it
+# saves. WebSocket frames bypass HTTP middleware entirely, so /ws/updates is
+# unaffected.
+app.add_middleware(GZipMiddleware, minimum_size=1000)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -114,20 +202,37 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ── Cache policy ──────────────────────────────────────────────────
+# FileResponse already emits ETag and Last-Modified, but without Cache-Control
+# the browser revalidates nothing and re-downloads on every navigation.
+#
+# Code and markup use `no-cache`, which does NOT mean "don't cache" — it means
+# "cache, but revalidate": the browser sends If-None-Match and usually gets a
+# 304 with an empty body. That keeps deploys instant while still avoiding the
+# transfer. Images and fonts are content that only changes under a new filename,
+# so they get a year.
+_CACHE_REVALIDATE = "no-cache"
+_CACHE_IMMUTABLE = "public, max-age=31536000, immutable"
+_LONG_CACHE_EXT = {".png", ".jpg", ".jpeg", ".gif", ".ico", ".webp", ".svg", ".woff", ".woff2"}
+
+
+def _cache_control_for(ext: str) -> str:
+    return _CACHE_IMMUTABLE if ext in _LONG_CACHE_EXT else _CACHE_REVALIDATE
+
 # ==================================================================
 # ── LOKASI HIERARCHY HELPERS ──────────────────────────────────────
 # ==================================================================
 # The `lokasi` table is flat — there is no parent_id column. The parent of a
 # UPT/resort is encoded in its id: "JR1.3" belongs to DAOP "D1", "JRIII.7" to
 # DIVRE "VIII", "BY1A" to Balaiyasa "BY1". The same rule lives in seed.py
-# (get_parent_lokasi_code) and app.js (getParentLokasiCode); keep all three in
-# step when changing it.
+# (get_parent_lokasi_code) and js/core.js (getParentLokasiCode); keep all three
+# in step when changing it.
 
 # Only I–IV exist in the seeded master data, but the regex below accepts up to
 # IX. Without the V–IX rows a "JRV.1"-style code resolved to a code on the
-# client (app.js) and to None here, so the same asset landed in two different
-# buckets depending on which side did the maths. Keep this table byte-identical
-# to `romanMap` in app.js and `_ROMAN_MAP` in seed.py.
+# client (js/core.js) and to None here, so the same asset landed in two
+# different buckets depending on which side did the maths. Keep this table
+# byte-identical to `romanMap` in js/core.js and `_ROMAN_MAP` in seed.py.
 _ROMAN_TO_DIVRE = {
     "I": "VI",
     "II": "VII",
@@ -482,14 +587,32 @@ class ConnectionManager:
         return self.presence.get(username) or {}
 
     async def broadcast(self, message: str):
+        """
+        Fan a message out to every connected socket, in parallel and bounded.
+
+        This used to send SEQUENTIALLY with no timeout, and it is awaited inside
+        every mutating endpoint — so one client on a stalled mobile connection
+        with a full TCP send buffer blocked the POST response for the user who
+        made the change, and delayed every other client behind it.
+
+        Failures now prune the socket instead of being swallowed: the previous
+        bare `except: pass` left half-open connections in the list forever, to
+        be retried on every subsequent broadcast.
+        """
         async with self._lock:
             connections = list(self.active_connections)
-        for connection in connections:
+        if not connections:
+            return
+
+        async def _send(ws):
             try:
-                await connection.send_text(message)
+                await asyncio.wait_for(ws.send_text(message), timeout=2.0)
             except Exception:
-                # Client disconnected between copy and send
-                pass
+                await self.disconnect(ws)
+
+        await asyncio.gather(
+            *(_send(c) for c in connections), return_exceptions=True
+        )
 
 
 manager = ConnectionManager()
@@ -810,6 +933,37 @@ def _touch_last_seen(username: Optional[str], view: Optional[str] = None):
         db.close()
 
 
+# Last time each user's row was actually written. The heartbeat fires every 30s
+# per open tab, and `last_seen` is only ever read to render "online N minutes
+# ago" — so writing it that often was pure load for no visible difference.
+_LAST_STAMP: dict = {}
+_STAMP_INTERVAL_SECONDS = 60
+
+
+async def _touch_last_seen_async(username: Optional[str], view: Optional[str] = None):
+    """
+    Presence stamp, off the event loop and throttled.
+
+    `_touch_last_seen` is blocking psycopg2, and every caller of it lives inside
+    the `async` WebSocket handler — so a connect, SELECT, UPDATE and COMMIT ran
+    on the event loop, stalling every other request and socket on the worker. It
+    also opened its own session outside `get_db()`, competing for the same pool;
+    when that pool was exhausted the loop froze for the full pool timeout.
+
+    A view change always writes (it is a real state change the Pengguna list
+    shows); a bare heartbeat writes at most once a minute.
+    """
+    if not username:
+        return
+    now = datetime.now()
+    if view is None:
+        last = _LAST_STAMP.get(username)
+        if last and (now - last).total_seconds() < _STAMP_INTERVAL_SECONDS:
+            return
+    _LAST_STAMP[username] = now
+    await asyncio.to_thread(_touch_last_seen, username, view)
+
+
 @app.websocket("/ws/updates")
 async def websocket_endpoint(websocket: WebSocket, token: Optional[str] = None):
     """
@@ -826,24 +980,28 @@ async def websocket_endpoint(websocket: WebSocket, token: Optional[str] = None):
     username = _username_from_token(token)
     await manager.connect(websocket, username)
     if username:
-        _touch_last_seen(username)
+        await _touch_last_seen_async(username)
         await manager.broadcast("REFRESH_PRESENCE")
     try:
         while True:
             data = await websocket.receive_text()
             if data == "ping":
                 await websocket.send_text("pong")
-                # The heartbeat doubles as the liveness stamp.
-                _touch_last_seen(username)
+                # The heartbeat doubles as the liveness stamp — throttled, so a
+                # room full of open tabs is not a room full of UPDATEs.
+                await _touch_last_seen_async(username)
             elif data.startswith("view:") and username:
                 view = data.split(":", 1)[1][:50] or None
                 await manager.set_view(username, view)
-                _touch_last_seen(username, view)
+                await _touch_last_seen_async(username, view)
                 await manager.broadcast("REFRESH_PRESENCE")
     except WebSocketDisconnect:
         await manager.disconnect(websocket, username)
         if username:
-            _touch_last_seen(username)
+            # Force the final stamp past the throttle: this is the timestamp
+            # "terakhir aktif" will show from now on.
+            _LAST_STAMP.pop(username, None)
+            await _touch_last_seen_async(username)
             await manager.broadcast("REFRESH_PRESENCE")
     except Exception:
         # Never let a malformed frame leak a socket from the registry.
@@ -1050,7 +1208,10 @@ def get_all_aset(
             # costs no extra query per row.
             joinedload(models.Aset.varian_ref),
         )
-        .filter(func.upper(models.Aset.status_terakhir) != "AFKIR")
+        # Raw comparison, not func.upper(): _ensure_schema() normalises the
+        # column on boot, and wrapping it in a function makes both indexes on it
+        # unusable — this filter was a sequential scan of `aset`.
+        .filter(models.Aset.status_terakhir != "AFKIR")
         .all()
     )
 
@@ -1084,7 +1245,7 @@ def get_afkir_aset(db: Session = Depends(get_db)):
     asets = (
         db.query(models.Aset)
         .options(joinedload(models.Aset.kategori), joinedload(models.Aset.lokasi_ref))
-        .filter(func.upper(models.Aset.status_terakhir) == "AFKIR")
+        .filter(models.Aset.status_terakhir == "AFKIR")
         .all()
     )
     afkir_ids = [a.id_aset for a in asets]
@@ -1324,6 +1485,13 @@ def get_riwayat_aset(
 ):
     riwayat = (
         db.query(models.RiwayatKondisi)
+        # The row loop reads pengguna_ref.username and lokasi_ref.nama_lokasi;
+        # without these that was two queries per history row on a screen users
+        # open constantly.
+        .options(
+            joinedload(models.RiwayatKondisi.pengguna_ref),
+            joinedload(models.RiwayatKondisi.lokasi_ref),
+        )
         .filter(
             models.RiwayatKondisi.id_aset == id_aset,
             models.RiwayatKondisi.kondisi != "KALIBRASI",
@@ -1440,7 +1608,10 @@ async def upload_sertifikat_kalibrasi(
     if not record:
         raise HTTPException(status_code=404, detail="Data kalibrasi tidak ditemukan.")
 
-    stored = _save_certificate(file, id_kalibrasi)
+    # Off the event loop: this writes up to MAX_CERT_BYTES (10 MB) synchronously,
+    # and the handler is `async`, so on a slow or network-mounted disk it froze
+    # the whole worker for the duration of the write.
+    stored = await asyncio.to_thread(_save_certificate, file, id_kalibrasi)
 
     # Replacing an existing certificate — drop the old file so uploads don't pile up.
     if record.file_sertifikat:
@@ -1551,6 +1722,13 @@ def get_mutasi_by_aset(
 ):
     mutasi = (
         db.query(models.RiwayatMutasi)
+        # The row loop reads all three of these; without eager loading it was
+        # three queries per mutation row.
+        .options(
+            joinedload(models.RiwayatMutasi.lokasi_asal),
+            joinedload(models.RiwayatMutasi.lokasi_tujuan),
+            joinedload(models.RiwayatMutasi.pengguna_ref),
+        )
         .filter_by(id_aset=id_aset)
         .order_by(models.RiwayatMutasi.waktu_mutasi.asc())
         .all()
@@ -1609,19 +1787,33 @@ def get_mutasi_by_aset(
 
 @app.get("/api/history/summary")
 def get_history_summary(
+    id_aset: Optional[str] = None,
     db: Session = Depends(get_db),
     current_user: models.Pengguna = Depends(get_current_user),
 ):
+    """
+    Per-asset rollup of repair / calibration / mutation history.
+
+    `id_aset` narrows the response to a single asset. The QR landing page needs
+    exactly one row, and without this parameter it downloaded the entire fleet
+    summary — 98.6 KB at 200 assets, megabytes at scale — and then `.find()`-ed
+    one entry out of it, four times per page view, on a phone in the field.
+
+    The shape is unchanged either way: still a list, so callers that filter it
+    themselves keep working.
+    """
     from sqlalchemy.orm import joinedload
     from sqlalchemy import func
 
     # Batch load all assets with their relationships
-    asets = (
+    q = (
         db.query(models.Aset)
         .options(joinedload(models.Aset.kategori), joinedload(models.Aset.lokasi_ref))
         .filter(models.Aset.status_terakhir != "AFKIR")
-        .all()
     )
+    if id_aset:
+        q = q.filter(models.Aset.id_aset == id_aset)
+    asets = q.all()
 
     if not asets:
         return []
@@ -1702,9 +1894,27 @@ def get_history_summary(
         )
         pengguna_map = {p.id_pengguna: p for p in penggunas}
 
+    # Calibration: scoped to the assets in this response, ordered so the LAST
+    # element of each list is the latest.
+    #
+    # This was `db.query(models.RiwayatKalibrasi).all()` — every calibration row
+    # ever written, including for the AFKIR assets excluded 200 lines above,
+    # fully hydrated into ORM objects, on every request, just to keep the newest
+    # one per asset. It was the only un-batched query in an otherwise carefully
+    # batched endpoint.
     kalibrasi_map = {}
-    for kal in db.query(models.RiwayatKalibrasi).all():
-        kalibrasi_map.setdefault(kal.id_aset, []).append(kal)
+    if aset_ids:
+        kal_q = (
+            db.query(models.RiwayatKalibrasi)
+            .filter(models.RiwayatKalibrasi.id_aset.in_(aset_ids))
+            .order_by(
+                models.RiwayatKalibrasi.id_aset,
+                models.RiwayatKalibrasi.tanggal_kalibrasi.asc(),
+                models.RiwayatKalibrasi.waktu_input.asc(),
+            )
+        )
+        for kal in kal_q.yield_per(2000):
+            kalibrasi_map.setdefault(kal.id_aset, []).append(kal)
 
     results = []
     for a in asets:
@@ -1857,19 +2067,40 @@ def export_riwayat(
     current_user: models.Pengguna = Depends(get_current_user),
 ):
     def build_rows(asets):
+        """
+        One query for the whole batch, grouped in Python.
+
+        This used to issue one SELECT per asset — and `pengguna_ref` was not in
+        the joinedload, so it lazy-loaded a second time per riwayat ROW. At 10k
+        assets and 100k history rows that is ~110,000 round trips for a single
+        request. Now it is exactly one, regardless of fleet size.
+        """
         rows = []
+        if not asets:
+            return rows
+
+        riwayat_by_aset: dict = {}
+        q = (
+            db.query(models.RiwayatKondisi)
+            .options(
+                joinedload(models.RiwayatKondisi.lokasi_ref),
+                joinedload(models.RiwayatKondisi.pengguna_ref),
+            )
+            .filter(models.RiwayatKondisi.id_aset.in_([a.id_aset for a in asets]))
+            .order_by(
+                models.RiwayatKondisi.id_aset,
+                models.RiwayatKondisi.waktu_lapor.asc(),
+            )
+        )
+        # yield_per keeps the result set streaming rather than materialising
+        # every ORM instance at once.
+        for r in q.yield_per(2000):
+            riwayat_by_aset.setdefault(r.id_aset, []).append(r)
+
         for a in asets:
             nama_alat = a.kategori.nama_alat if a.kategori else a.kode_alat
             nama_lokasi = a.lokasi_ref.nama_lokasi if a.lokasi_ref else a.id_lokasi
-            
-            # Query riwayat with joinedload on lokasi_ref to efficiently fetch UPT/lokasi info
-            riwayat = (
-                db.query(models.RiwayatKondisi)
-                .options(joinedload(models.RiwayatKondisi.lokasi_ref))
-                .filter_by(id_aset=a.id_aset)
-                .order_by(models.RiwayatKondisi.waktu_lapor.asc())
-                .all()
-            )
+            riwayat = riwayat_by_aset.get(a.id_aset, [])
 
             if not riwayat:
                 default_upt = a.lokasi_ref.nama_lokasi if a.lokasi_ref else (a.id_lokasi or "—")
@@ -1922,7 +2153,10 @@ def export_riwayat(
         "active": build_rows(
             db.query(models.Aset)
             .options(joinedload(models.Aset.lokasi_ref), joinedload(models.Aset.kategori))
-            .filter(models.Aset.status_terlahir != "AFKIR" if hasattr(models.Aset, "status_terlahir") else models.Aset.status_terakhir != "AFKIR")
+            # Was a `hasattr(models.Aset, "status_terlahir")` ternary — a typo of
+            # `status_terakhir` that only worked because hasattr returned False
+            # and the else-branch happened to be correct.
+            .filter(models.Aset.status_terakhir != "AFKIR")
             .all()
         ),
         "afkir": build_rows(
@@ -1939,17 +2173,48 @@ def export_mutasi(
     db: Session = Depends(get_db),
     current_user: models.Pengguna = Depends(get_current_user),
 ):
-    asets = db.query(models.Aset).filter(models.Aset.status_terakhir != "AFKIR").all()
+    # Two queries total, not O(assets x mutations).
+    #
+    # This endpoint had NO eager loading at all: it lazy-loaded `kategori` and
+    # `lokasi_ref` once per asset, ran a SELECT per asset for its mutations, and
+    # then lazy-loaded `lokasi_asal`, `lokasi_tujuan` and `pengguna_ref` per
+    # mutation row. Worse, riwayat_mutasi had no index on id_aset (added in
+    # _ensure_schema now), so each of those per-asset lookups was a sequential
+    # scan of the whole table.
+    asets = (
+        db.query(models.Aset)
+        .options(
+            joinedload(models.Aset.kategori),
+            joinedload(models.Aset.lokasi_ref),
+        )
+        .filter(models.Aset.status_terakhir != "AFKIR")
+        .all()
+    )
+    if not asets:
+        return []
+
+    mutasi_by_aset: dict = {}
+    mq = (
+        db.query(models.RiwayatMutasi)
+        .options(
+            joinedload(models.RiwayatMutasi.lokasi_asal),
+            joinedload(models.RiwayatMutasi.lokasi_tujuan),
+            joinedload(models.RiwayatMutasi.pengguna_ref),
+        )
+        .filter(models.RiwayatMutasi.id_aset.in_([a.id_aset for a in asets]))
+        .order_by(
+            models.RiwayatMutasi.id_aset,
+            models.RiwayatMutasi.waktu_mutasi.asc(),
+        )
+    )
+    for m in mq.yield_per(2000):
+        mutasi_by_aset.setdefault(m.id_aset, []).append(m)
+
     rows = []
     for a in asets:
         nama_alat = a.kategori.nama_alat if a.kategori else a.kode_alat
         nama_lokasi = a.lokasi_ref.nama_lokasi if a.lokasi_ref else a.id_lokasi
-        mutasi_list = (
-            db.query(models.RiwayatMutasi)
-            .filter_by(id_aset=a.id_aset)
-            .order_by(models.RiwayatMutasi.waktu_mutasi.asc())
-            .all()
-        )
+        mutasi_list = mutasi_by_aset.get(a.id_aset)
         if not mutasi_list:
             continue
         for i, m in enumerate(mutasi_list, start=1):
@@ -2516,7 +2781,13 @@ def get_inv_parts(
     current_user: models.Pengguna = Depends(get_current_user),
 ):
     """Parts catalog with the full Items Master column set."""
-    q = db.query(models.SparePart)
+    # The row loop reads p.kategori_ref and p.kategori_alat_ref, which were two
+    # lazy loads per part. get_inv_dashboard already eager-loads both, so this
+    # was an inconsistency rather than a decision.
+    q = db.query(models.SparePart).options(
+        joinedload(models.SparePart.kategori_ref),
+        joinedload(models.SparePart.kategori_alat_ref),
+    )
     if id_kategori:
         q = q.filter(models.SparePart.id_kategori == id_kategori)
     if kode_alat:
@@ -2827,7 +3098,16 @@ def get_transfer_history(
 
     total = q.count()
     rows = (
-        q.order_by(models.SparePartStok.waktu.desc())
+        # Eager-load everything the row loop touches. Without these the loop
+        # below lazy-loaded part_ref, site_from_ref, site_to_ref and
+        # part_ref.kategori_alat_ref — four round trips per row, so 800 for a
+        # single default page of 200.
+        q.options(
+            joinedload(SS.part_ref).joinedload(models.SparePart.kategori_alat_ref),
+            joinedload(SS.site_from_ref),
+            joinedload(SS.site_to_ref),
+        )
+        .order_by(models.SparePartStok.waktu.desc())
         .offset(offset)
         .limit(limit)
         .all()
@@ -3082,7 +3362,12 @@ def get_stok_movements(
     total = q.count()
     rows = (
         q.options(
-            joinedload(models.SparePartStok.part_ref),
+            # `.kategori_ref` is nested: the row loop reads
+            # p.kategori_ref.subsistem, which was one extra query per row —
+            # 100 per default page — despite part_ref itself being eager.
+            joinedload(models.SparePartStok.part_ref).joinedload(
+                models.SparePart.kategori_ref
+            ),
             joinedload(models.SparePartStok.gudang_ref),
             joinedload(models.SparePartStok.pengguna_ref),
         )
@@ -3393,7 +3678,7 @@ def get_aset_perbaikan_dashboard(
     # SEDANG is point-in-time (assets currently TSO), not year-scoped — it is a
     # live workshop count, and must agree with sum(workshop_list[].jumlah).
     sedang_q = select(func.count()).select_from(AS).where(
-        func.upper(AS.status_terakhir) == "TSO"
+        AS.status_terakhir == "TSO"
     )
     if lokasi_ids:
         sedang_q = sedang_q.where(AS.id_lokasi.in_(lokasi_ids))
@@ -3536,7 +3821,7 @@ def get_aset_perbaikan_dashboard(
         .select_from(AS)
         .join(KA, KA.kode_alat == AS.kode_alat)
         .outerjoin(LK, LK.id_lokasi == AS.id_lokasi)
-        .where(func.upper(AS.status_terakhir) == "TSO")
+        .where(AS.status_terakhir == "TSO")
         .group_by(KA.nama_alat, AS.id_lokasi, LK.nama_lokasi)
         .order_by(func.count().desc(), KA.nama_alat)
     )
@@ -3832,7 +4117,7 @@ def get_mcf(
 
     # Assets at risk = every non-scrapped asset in scope. Denominator of the MCF.
     risk_q = db.query(func.count()).select_from(AS).filter(
-        func.upper(AS.status_terakhir) != "AFKIR"
+        AS.status_terakhir != "AFKIR"
     )
     if lokasi_ids:
         risk_q = risk_q.filter(AS.id_lokasi.in_(lokasi_ids))
@@ -3992,6 +4277,26 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 assets_dir = os.path.join(BASE_DIR, "assets")
 if os.path.exists(assets_dir):
     app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
+
+
+@app.middleware("http")
+async def add_cache_headers(request, call_next):
+    """
+    Stamp Cache-Control on static responses.
+
+    StaticFiles (the /assets mount) does not set it either, so this covers both
+    that mount and the catch-all below in one place. API responses are left
+    alone — they must never be cached.
+    """
+    response = await call_next(request)
+    path = request.url.path
+    if path.startswith("/api/") or path.startswith("/ws/"):
+        return response
+    ext = os.path.splitext(path)[1].lower()
+    if ext or path == "/":
+        response.headers.setdefault("Cache-Control", _cache_control_for(ext))
+    return response
+
 
 @app.get("/")
 async def serve_index():
