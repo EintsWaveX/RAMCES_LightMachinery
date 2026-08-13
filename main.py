@@ -63,6 +63,18 @@ def _ensure_schema():
         "ALTER TABLE aset ADD COLUMN IF NOT EXISTS id_varian INTEGER "
         "REFERENCES alat_varian(id_varian)",
         "CREATE INDEX IF NOT EXISTS ix_aset_varian ON aset (id_varian)",
+        # Serial number is per physical unit, so it hangs off `aset`, not the
+        # shared variant row.
+        "ALTER TABLE aset ADD COLUMN IF NOT EXISTS nomor_seri VARCHAR(100)",
+        # Spec fields rendered on the public asset card. Adding a column here
+        # WITHOUT the matching models.py change (or vice versa) is the failure
+        # mode this list exists to prevent — keep the two in step.
+        "ALTER TABLE alat_varian ADD COLUMN IF NOT EXISTS merk VARCHAR(100)",
+        "ALTER TABLE alat_varian ADD COLUMN IF NOT EXISTS tipe_model VARCHAR(100)",
+        "ALTER TABLE alat_varian ADD COLUMN IF NOT EXISTS kapasitas VARCHAR(100)",
+        "ALTER TABLE alat_varian ADD COLUMN IF NOT EXISTS daya VARCHAR(100)",
+        "ALTER TABLE alat_varian ADD COLUMN IF NOT EXISTS dimensi VARCHAR(100)",
+        "ALTER TABLE alat_varian ADD COLUMN IF NOT EXISTS berat VARCHAR(50)",
         # ── Calibration certificate ──
         "ALTER TABLE riwayat_kalibrasi ADD COLUMN IF NOT EXISTS "
         "file_sertifikat VARCHAR(255)",
@@ -111,11 +123,21 @@ app.add_middleware(
 # (get_parent_lokasi_code) and app.js (getParentLokasiCode); keep all three in
 # step when changing it.
 
+# Only I–IV exist in the seeded master data, but the regex below accepts up to
+# IX. Without the V–IX rows a "JRV.1"-style code resolved to a code on the
+# client (app.js) and to None here, so the same asset landed in two different
+# buckets depending on which side did the maths. Keep this table byte-identical
+# to `romanMap` in app.js and `_ROMAN_MAP` in seed.py.
 _ROMAN_TO_DIVRE = {
     "I": "VI",
     "II": "VII",
     "III": "VIII",
     "IV": "VIV",
+    "V": "VV",
+    "VI": "VVI",
+    "VII": "VVII",
+    "VIII": "VVIII",
+    "IX": "VIX",
 }
 _RE_UPT_ARAB = re.compile(r"^JR(\d+)\.", re.IGNORECASE)
 _RE_UPT_ROMAN = re.compile(r"^JR(IV|IX|VIII|VII|VI|V|I{1,3})\.", re.IGNORECASE)
@@ -171,6 +193,49 @@ def resolve_lokasi_scope(db: Session, id_lokasi: Optional[str]):
         if get_parent_lokasi_code(l.id_lokasi) == target
     ]
     return [id_lokasi] + [l.id_lokasi for l in children], parent, children
+
+
+def balaiyasa_lokasi_ids(db: Session) -> set:
+    """
+    Every lokasi id on the workshop side of the tree: the BALAIYASA rows
+    themselves plus their UPT-typed children (BY1A → BY1).
+
+    A Balaiyasa is a workshop, not an operating region. An asset visits one for
+    repair but is never based at one, and a repair performed there still belongs
+    to the DAOP/DIVRE that owns the asset. Filtering these ids out is what keeps
+    "BALAIYASA CIREBONPRUNJAKAN" from appearing as a row in the resort tables of
+    Laporan Perbaikan. Mirrors `_is_balaiyasa_side()` in seed.py.
+    """
+    rows = db.query(models.Lokasi).all()
+    parents = {
+        l.id_lokasi for l in rows if (l.tipe or "").upper() == "BALAIYASA"
+    }
+    return parents | {
+        l.id_lokasi for l in rows if get_parent_lokasi_code(l.id_lokasi) in parents
+    }
+
+
+def resolve_home_lokasi(db: Session, aset) -> Optional[str]:
+    """
+    Where an asset BELONGS, as opposed to where it currently sits.
+
+    `aset.id_lokasi` is normally the answer, but an asset mutated to a workshop
+    for repair carries the workshop code until it is sent back. In that window
+    the owning region is the origin of the first mutation that moved it there —
+    the same value the summary endpoint exposes as `original_lokasi_code`.
+    Returns None only if the asset has no location at all.
+    """
+    current = aset.id_lokasi
+    if not current or current not in balaiyasa_lokasi_ids(db):
+        return current
+
+    first = (
+        db.query(models.RiwayatMutasi)
+        .filter(models.RiwayatMutasi.id_aset == aset.id_aset)
+        .order_by(models.RiwayatMutasi.waktu_mutasi.asc())
+        .first()
+    )
+    return (first.id_lokasi_asal if first else None) or current
 
 
 # DIVRE nama_lokasi holds a province ("SUMATERA UTARA"), which reads wrong in a
@@ -307,6 +372,9 @@ class AsetCreate(BaseModel):
     sumber_pengadaan: str
     parent_lokasi: str
     peruntukan: str
+    # Spesifikasi teknis: the shared variant, plus this unit's own serial.
+    id_varian: Optional[int] = None
+    nomor_seri: Optional[str] = None
 
 
 class AsetUpdate(BaseModel):
@@ -316,6 +384,8 @@ class AsetUpdate(BaseModel):
     sumber_pengadaan: str
     parent_lokasi: str
     peruntukan: str
+    id_varian: Optional[int] = None
+    nomor_seri: Optional[str] = None
 
 
 class PerbaikanCreate(BaseModel):
@@ -942,6 +1012,8 @@ async def create_aset(
         sumber_pengadaan=aset_in.sumber_pengadaan,
         status_terakhir="SO",
         peruntukan=aset_in.peruntukan.upper(),
+        id_varian=aset_in.id_varian,
+        nomor_seri=(aset_in.nomor_seri or "").strip() or None,
     )
     db.add(db_aset)
 
@@ -997,6 +1069,11 @@ def get_all_aset(
             else None,
             "id_varian": a.id_varian,
             "nama_varian": a.varian_ref.nama_varian if a.varian_ref else None,
+            "nomor_seri": a.nomor_seri,
+            # The owning DAOP/DIVRE code. Derived here so the client's search
+            # index, its card labels and its region filters all agree on one
+            # value instead of each re-deriving it from a different field.
+            "parent_lokasi": get_parent_lokasi_code(a.id_lokasi) or a.id_lokasi,
         }
         for a in asets
     ]
@@ -1161,6 +1238,13 @@ async def catat_perbaikan(
 
     # Resolve lokasi: prefer the sent id_lokasi, fall back to aset's current lokasi
     id_lokasi_row = laporan.id_lokasi or aset.id_lokasi
+
+    # A repair carried out at a Balaiyasa still belongs to the region that owns
+    # the asset. Stamping the workshop here is what used to make Laporan
+    # Perbaikan grow a "BALAIYASA …" row and under-count every DAOP's completed
+    # repairs, since the closing row fell outside the DAOP's lokasi scope.
+    if id_lokasi_row and id_lokasi_row in balaiyasa_lokasi_ids(db):
+        id_lokasi_row = resolve_home_lokasi(db, aset) or id_lokasi_row
 
     db.add(
         models.RiwayatKondisi(
@@ -1712,6 +1796,15 @@ def get_history_summary(
                     "latest_keterangan": latest_kalibrasi.keterangan
                     if latest_kalibrasi
                     else None,
+                    # Basename of the uploaded certificate, or None. The Riwayat
+                    # cards use it to show an attachment indicator without
+                    # re-fetching /api/kalibrasi/{id_aset} per card.
+                    "latest_id_kalibrasi": latest_kalibrasi.id_kalibrasi
+                    if latest_kalibrasi
+                    else None,
+                    "latest_file_sertifikat": latest_kalibrasi.file_sertifikat
+                    if latest_kalibrasi
+                    else None,
                 }
                 if latest_kalibrasi
                 else None,
@@ -1960,6 +2053,8 @@ async def update_aset(
         old_aset.tanggal_pembelian = aset_in.tanggal_pembelian
         old_aset.sumber_pengadaan = aset_in.sumber_pengadaan
         old_aset.peruntukan = aset_in.peruntukan.upper()
+        old_aset.id_varian = aset_in.id_varian
+        old_aset.nomor_seri = (aset_in.nomor_seri or "").strip() or None
         db.commit()
         await manager.broadcast("REFRESH_ASSET_LIST")
         return {"message": "Aset berhasil diperbarui.", "id_aset": new_id_aset}
@@ -1980,6 +2075,8 @@ async def update_aset(
         sumber_pengadaan=aset_in.sumber_pengadaan,
         status_terakhir=old_aset.status_terakhir,
         peruntukan=aset_in.peruntukan.upper(),
+        id_varian=aset_in.id_varian,
+        nomor_seri=(aset_in.nomor_seri or "").strip() or None,
     )
     db.add(new_aset)
     db.flush()  # write new_aset row; FK target now exists in DB
@@ -2033,8 +2130,13 @@ class SparePartCreate(BaseModel):
     linked_vehicle: Optional[str] = None
     warranty_months: Optional[int] = None
     ref_part: Optional[str] = None
-    # Initial stock
+    # Initial stock. `id_gudang_awal` is the field that matters: every other
+    # inventory screen scopes by warehouse, so an opening balance written
+    # against a region instead was invisible everywhere and could never be
+    # issued (an OUT validates against the warehouse pool and saw 0).
+    # `id_lokasi_awal` is retained for older callers and is recorded alongside.
     jumlah_awal: int = 0
+    id_gudang_awal: Optional[int] = None
     id_lokasi_awal: Optional[str] = None
 
 
@@ -2060,6 +2162,12 @@ class SparePartUpdate(BaseModel):
 class StokTransferCreate(BaseModel):
     id_part: int
     jumlah: int
+    # Warehouse-to-warehouse is the real movement: stock physically lives in a
+    # gudang, and that is what every balance query scopes by. The id_lokasi_*
+    # pair is the older region-tree form, kept so existing transfer history and
+    # any caller still sending it keep working.
+    id_gudang_asal: Optional[int] = None
+    id_gudang_tujuan: Optional[int] = None
     id_lokasi_asal: Optional[str] = None     # None = global pool
     id_lokasi_tujuan: Optional[str] = None   # None = global pool
     transfer_by: Optional[str] = None
@@ -2096,6 +2204,24 @@ class AlatVarianCreate(BaseModel):
     kode_alat: str
     nama_varian: str
     keterangan: Optional[str] = None
+    # Spesifikasi teknis — rendered on the public asset card.
+    merk: Optional[str] = None
+    tipe_model: Optional[str] = None
+    kapasitas: Optional[str] = None
+    daya: Optional[str] = None
+    dimensi: Optional[str] = None
+    berat: Optional[str] = None
+
+
+class AlatVarianUpdate(BaseModel):
+    nama_varian: Optional[str] = None
+    keterangan: Optional[str] = None
+    merk: Optional[str] = None
+    tipe_model: Optional[str] = None
+    kapasitas: Optional[str] = None
+    daya: Optional[str] = None
+    dimensi: Optional[str] = None
+    berat: Optional[str] = None
 
 
 # ── Helper: compute net stock ──────────────────────────────────────
@@ -2196,9 +2322,21 @@ def _nilai_stok_map(db: Session, id_lokasi=None, id_gudang=None) -> dict:
     return {row[0]: int(row[1] or 0) for row in q.all()}
 
 
-def _net_stok(db: Session, id_part: int, id_lokasi: Optional[str] = None) -> int:
-    """Return net stock for a single part. id_lokasi=None → global."""
+def _net_stok(
+    db: Session,
+    id_part: int,
+    id_lokasi: Optional[str] = None,
+    id_gudang: Optional[int] = None,
+) -> int:
+    """
+    Net stock for a single part. Both scopes None → the global pool.
+
+    Prefer `id_gudang`: it is the pool the movement form writes to and the one
+    every dashboard figure is computed against.
+    """
     q = db.query(_net_stok_expr()).filter(models.SparePartStok.id_part == id_part)
+    if id_gudang is not None:
+        q = q.filter(models.SparePartStok.id_gudang == id_gudang)
     if id_lokasi is not None:
         q = q.filter(models.SparePartStok.id_lokasi == id_lokasi)
     return int(q.scalar() or 0)
@@ -2207,7 +2345,10 @@ def _net_stok(db: Session, id_part: int, id_lokasi: Optional[str] = None) -> int
 # ── Part Categories ────────────────────────────────────────────────
 
 @app.get("/api/inventaris/kategori")
-def get_inv_kategori(db: Session = Depends(get_db)):
+def get_inv_kategori(
+    db: Session = Depends(get_db),
+    current_user: models.Pengguna = Depends(get_current_user),
+):
     rows = db.query(models.SparePartKategori).order_by(
         models.SparePartKategori.subsistem, models.SparePartKategori.nama
     ).all()
@@ -2224,7 +2365,9 @@ def get_inv_kategori(db: Session = Depends(get_db)):
 
 @app.post("/api/inventaris/kategori",
           dependencies=[Depends(require_role(["SUPER_ADMIN", "ADMIN_WILAYAH"]))])
-def create_inv_kategori(data: SparePartKategoriCreate, db: Session = Depends(get_db)):
+async def create_inv_kategori(
+    data: SparePartKategoriCreate, db: Session = Depends(get_db)
+):
     if db.query(models.SparePartKategori).filter_by(nama=data.nama).first():
         raise HTTPException(status_code=400, detail="Kategori sudah ada.")
     row = models.SparePartKategori(
@@ -2233,18 +2376,73 @@ def create_inv_kategori(data: SparePartKategoriCreate, db: Session = Depends(get
     db.add(row)
     db.commit()
     db.refresh(row)
+    await manager.broadcast("REFRESH_INVENTARIS")
     return {"message": "Kategori ditambahkan.", "id_kategori": row.id_kategori}
+
+
+@app.put("/api/inventaris/kategori/{id_kategori}",
+         dependencies=[Depends(require_role(["SUPER_ADMIN", "ADMIN_WILAYAH"]))])
+async def update_inv_kategori(
+    id_kategori: int,
+    data: SparePartKategoriCreate,
+    db: Session = Depends(get_db),
+):
+    """
+    Rename / re-classify a category.
+
+    Without this the only way to fix a typo was delete-and-recreate, which
+    silently unlinks every part that pointed at the old row (SparePart.
+    id_kategori is nullable, so the FK does not stop it).
+    """
+    row = db.query(models.SparePartKategori).filter_by(id_kategori=id_kategori).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Kategori tidak ditemukan.")
+
+    clash = (
+        db.query(models.SparePartKategori)
+        .filter(
+            models.SparePartKategori.nama == data.nama,
+            models.SparePartKategori.id_kategori != id_kategori,
+        )
+        .first()
+    )
+    if clash:
+        raise HTTPException(status_code=400, detail="Nama kategori sudah dipakai.")
+
+    row.nama = data.nama
+    row.subsistem = data.subsistem
+    row.kode_alat = data.kode_alat
+    db.commit()
+    await manager.broadcast("REFRESH_INVENTARIS")
+    return {"message": "Kategori diperbarui."}
 
 
 @app.delete("/api/inventaris/kategori/{id_kategori}",
             dependencies=[Depends(require_role(["SUPER_ADMIN", "ADMIN_WILAYAH"]))])
-def delete_inv_kategori(id_kategori: int, db: Session = Depends(get_db)):
+async def delete_inv_kategori(id_kategori: int, db: Session = Depends(get_db)):
     row = db.query(models.SparePartKategori).filter_by(id_kategori=id_kategori).first()
     if not row:
         raise HTTPException(status_code=404, detail="Kategori tidak ditemukan.")
+
+    # Detach the parts first. Deleting the category out from under them leaves
+    # rows whose id_kategori points at nothing, which the parts list renders as
+    # a blank subsistem column with no way to tell it apart from "never set".
+    dipakai = (
+        db.query(models.SparePart)
+        .filter(models.SparePart.id_kategori == id_kategori)
+        .count()
+    )
+    db.query(models.SparePart).filter(
+        models.SparePart.id_kategori == id_kategori
+    ).update({models.SparePart.id_kategori: None}, synchronize_session=False)
+
     db.delete(row)
     db.commit()
-    return {"message": "Kategori dihapus."}
+    await manager.broadcast("REFRESH_INVENTARIS")
+    return {
+        "message": "Kategori dihapus."
+        + (f" {dipakai} suku cadang dilepas dari kategori ini." if dipakai else "")
+    }
 
 
 # ── Parts CRUD ─────────────────────────────────────────────────────
@@ -2414,8 +2612,23 @@ async def create_inv_part(
     db.flush()
 
     if data.jumlah_awal > 0:
+        # The opening balance MUST carry id_gudang. Every balance query scopes
+        # by warehouse (_scope_stok), so a row with only id_lokasi set was
+        # invisible the moment a gudang filter was applied and could never be
+        # issued — an OUT validates against the warehouse pool and saw 0.
+        if not data.id_gudang_awal:
+            raise HTTPException(
+                status_code=400,
+                detail="Gudang wajib dipilih saat mengisi stok awal.",
+            )
+        if not db.query(models.Gudang).filter_by(
+            id_gudang=data.id_gudang_awal
+        ).first():
+            raise HTTPException(status_code=404, detail="Gudang tidak ditemukan.")
+
         db.add(models.SparePartStok(
             id_part=part.id_part,
+            id_gudang=data.id_gudang_awal,
             id_lokasi=data.id_lokasi_awal,
             tipe_gerakan="IN",
             jumlah=data.jumlah_awal,
@@ -2469,12 +2682,56 @@ async def create_transfer(
     data: StokTransferCreate, db: Session = Depends(get_db),
     current_user: models.Pengguna = Depends(get_current_user),
 ):
+    """
+    Move stock between two warehouses as a linked OUT/IN pair.
+
+    Warehouse-to-warehouse is the real movement — stock lives in a gudang, and
+    that is the pool every balance query scopes by. The id_lokasi_* form is
+    still accepted for older callers and is recorded on both rows so existing
+    transfer history keeps rendering, but when gudang ids are supplied they are
+    what the availability check and the ledger rows use.
+    """
     part = db.query(models.SparePart).filter_by(id_part=data.id_part).first()
     if not part:
         raise HTTPException(status_code=404, detail="Part tidak ditemukan.")
+    if data.jumlah <= 0:
+        raise HTTPException(status_code=400, detail="Jumlah harus lebih dari 0.")
 
-    # Check available stock at source
-    stok_asal = _net_stok(db, data.id_part, data.id_lokasi_asal)
+    pakai_gudang = data.id_gudang_asal is not None or data.id_gudang_tujuan is not None
+    if pakai_gudang:
+        if data.id_gudang_asal is None or data.id_gudang_tujuan is None:
+            raise HTTPException(
+                status_code=400, detail="Gudang asal dan tujuan wajib diisi."
+            )
+        if data.id_gudang_asal == data.id_gudang_tujuan:
+            raise HTTPException(
+                status_code=400, detail="Gudang asal dan tujuan tidak boleh sama."
+            )
+        gudang_rows = {
+            g.id_gudang: g
+            for g in db.query(models.Gudang)
+            .filter(
+                models.Gudang.id_gudang.in_(
+                    [data.id_gudang_asal, data.id_gudang_tujuan]
+                )
+            )
+            .all()
+        }
+        if len(gudang_rows) != 2:
+            raise HTTPException(status_code=404, detail="Gudang tidak ditemukan.")
+        label_asal = gudang_rows[data.id_gudang_asal].nama
+        label_tujuan = gudang_rows[data.id_gudang_tujuan].nama
+    else:
+        label_asal = data.id_lokasi_asal or "GLOBAL"
+        label_tujuan = data.id_lokasi_tujuan or "GLOBAL"
+
+    # Check available stock at source, in whichever pool the caller is using.
+    stok_asal = _net_stok(
+        db,
+        data.id_part,
+        id_lokasi=None if pakai_gudang else data.id_lokasi_asal,
+        id_gudang=data.id_gudang_asal if pakai_gudang else None,
+    )
     if stok_asal < data.jumlah:
         raise HTTPException(
             status_code=400,
@@ -2482,15 +2739,9 @@ async def create_transfer(
         )
 
     now = datetime.now()
-
-    # OUT from source
-    out_row = models.SparePartStok(
+    shared = dict(
         id_part=data.id_part,
-        id_lokasi=data.id_lokasi_asal,
-        tipe_gerakan="OUT",
-        jumlah=data.jumlah,
         harga_satuan=part.harga_satuan,
-        keterangan=f"Transfer ke {data.id_lokasi_tujuan or 'GLOBAL'}",
         id_pengguna=current_user.id_pengguna,
         waktu=now,
         site_from=data.id_lokasi_asal,
@@ -2498,26 +2749,28 @@ async def create_transfer(
         transfer_by=data.transfer_by or current_user.username,
         transfer_to=data.transfer_to,
         catatan=data.catatan,
+        jumlah=data.jumlah,
+    )
+
+    # OUT from source
+    out_row = models.SparePartStok(
+        id_gudang=data.id_gudang_asal,
+        id_lokasi=data.id_lokasi_asal,
+        tipe_gerakan="OUT",
+        keterangan=f"Transfer ke {label_tujuan}",
+        **shared,
     )
     db.add(out_row)
     db.flush()
 
     # IN to destination
     in_row = models.SparePartStok(
-        id_part=data.id_part,
+        id_gudang=data.id_gudang_tujuan,
         id_lokasi=data.id_lokasi_tujuan,
         tipe_gerakan="IN",
-        jumlah=data.jumlah,
-        harga_satuan=part.harga_satuan,
-        keterangan=f"Transfer dari {data.id_lokasi_asal or 'GLOBAL'}",
-        id_pengguna=current_user.id_pengguna,
-        waktu=now,
-        site_from=data.id_lokasi_asal,
-        site_to=data.id_lokasi_tujuan,
-        transfer_by=data.transfer_by or current_user.username,
-        transfer_to=data.transfer_to,
-        catatan=data.catatan,
+        keterangan=f"Transfer dari {label_asal}",
         id_ref_transfer=out_row.id_stok,
+        **shared,
     )
     db.add(in_row)
     db.commit()
@@ -2528,6 +2781,7 @@ async def create_transfer(
 @app.get("/api/inventaris/transfer")
 def get_transfer_history(
     id_lokasi: Optional[str] = None,
+    id_gudang: Optional[int] = None,
     id_part: Optional[int] = None,
     limit: int = Query(200, ge=1, le=2000),
     offset: int = Query(0, ge=0),
@@ -2541,15 +2795,32 @@ def get_transfer_history(
     asset/parts payloads which are small enough to cache client-side. Returns an
     envelope so the UI can render "showing X of Y".
     """
-    q = (
-        db.query(models.SparePartStok)
-        .filter(models.SparePartStok.site_from != None)  # noqa: E711
-        .filter(models.SparePartStok.tipe_gerakan == "OUT")  # one row per transfer
+    SS = models.SparePartStok
+
+    # A transfer is the OUT half of a linked pair. Region-tree transfers are
+    # identified by site_from; warehouse transfers leave site_from NULL, so they
+    # are identified by the IN row that points back at them. Testing only
+    # site_from — as this did — hid every gudang-to-gudang move.
+    paired = select(SS.id_ref_transfer).where(SS.id_ref_transfer.isnot(None))
+    q = db.query(SS).filter(
+        SS.tipe_gerakan == "OUT",
+        or_(SS.site_from.isnot(None), SS.id_stok.in_(paired)),
     )
     if id_lokasi:
         q = q.filter(
             (models.SparePartStok.site_from == id_lokasi) |
             (models.SparePartStok.site_to == id_lokasi)
+        )
+    if id_gudang:
+        # Match a transfer if the warehouse is either end of it: the OUT row
+        # carries the source, and the IN row that references it the destination.
+        q = q.filter(
+            or_(
+                SS.id_gudang == id_gudang,
+                SS.id_stok.in_(
+                    select(SS.id_ref_transfer).where(SS.id_gudang == id_gudang)
+                ),
+            )
         )
     if id_part:
         q = q.filter(models.SparePartStok.id_part == id_part)
@@ -2561,11 +2832,24 @@ def get_transfer_history(
         .limit(limit)
         .all()
     )
+    # Destination warehouse lives on the paired IN row, so resolve those in one
+    # query rather than lazy-loading per row.
+    out_ids = [r.id_stok for r in rows]
+    pair_gudang_by_out = {}
+    if out_ids:
+        for ref, gid in db.execute(
+            select(SS.id_ref_transfer, SS.id_gudang).where(SS.id_ref_transfer.in_(out_ids))
+        ):
+            pair_gudang_by_out[ref] = gid
+    gudang_names = {g.id_gudang: g.nama for g in db.query(models.Gudang).all()}
+
     result = []
     for r in rows:
         p = r.part_ref
         sf = r.site_from_ref
         st = r.site_to_ref
+        g_from = gudang_names.get(r.id_gudang)
+        g_to = gudang_names.get(pair_gudang_by_out.get(r.id_stok))
         result.append({
             "id_stok": r.id_stok,
             "waktu": r.waktu.strftime("%Y-%m-%d %H:%M") if r.waktu else None,
@@ -2573,8 +2857,10 @@ def get_transfer_history(
             "jumlah": r.jumlah,
             "unit": p.unit if p else "",
             "nama_alat": p.kategori_alat_ref.nama_alat if p and p.kategori_alat_ref else "",
-            "site_from": sf.nama_lokasi if sf else (r.site_from or "GLOBAL"),
-            "site_to": st.nama_lokasi if st else (r.site_to or "GLOBAL"),
+            # Prefer the warehouse names; fall back to the region-tree fields so
+            # transfers recorded before gudang existed still read correctly.
+            "site_from": g_from or (sf.nama_lokasi if sf else (r.site_from or "GLOBAL")),
+            "site_to": g_to or (st.nama_lokasi if st else (r.site_to or "GLOBAL")),
             "transfer_by": r.transfer_by or "—",
             "transfer_to": r.transfer_to or "—",
             "catatan": r.catatan or "—",
@@ -2612,10 +2898,12 @@ def get_gudang(
     "/api/inventaris/gudang",
     dependencies=[Depends(require_role(["SUPER_ADMIN", "ADMIN_WILAYAH"]))],
 )
-def create_gudang(data: GudangCreate, db: Session = Depends(get_db)):
+async def create_gudang(data: GudangCreate, db: Session = Depends(get_db)):
     kode = data.kode.strip().upper()
     if not kode:
         raise HTTPException(status_code=400, detail="Kode gudang wajib diisi.")
+    if not (data.nama or "").strip():
+        raise HTTPException(status_code=400, detail="Nama gudang wajib diisi.")
     if db.query(models.Gudang).filter_by(kode=kode).first():
         raise HTTPException(status_code=400, detail="Kode gudang sudah dipakai.")
     row = models.Gudang(
@@ -2627,6 +2915,9 @@ def create_gudang(data: GudangCreate, db: Session = Depends(get_db)):
     db.add(row)
     db.commit()
     db.refresh(row)
+    # Without this a new warehouse stays missing from every other client's
+    # movement dropdown until they navigate away and back.
+    await manager.broadcast("REFRESH_INVENTARIS")
     return {"message": "Gudang ditambahkan.", "id_gudang": row.id_gudang}
 
 
@@ -2634,13 +2925,28 @@ def create_gudang(data: GudangCreate, db: Session = Depends(get_db)):
     "/api/inventaris/gudang/{id_gudang}",
     dependencies=[Depends(require_role(["SUPER_ADMIN", "ADMIN_WILAYAH"]))],
 )
-def update_gudang(id_gudang: int, data: GudangUpdate, db: Session = Depends(get_db)):
+async def update_gudang(
+    id_gudang: int, data: GudangUpdate, db: Session = Depends(get_db)
+):
     row = db.query(models.Gudang).filter_by(id_gudang=id_gudang).first()
     if not row:
         raise HTTPException(status_code=404, detail="Gudang tidak ditemukan.")
-    for field, value in data.model_dump(exclude_unset=True).items():
+
+    payload = data.model_dump(exclude_unset=True)
+    if "kode" in payload and payload["kode"]:
+        kode = payload["kode"].strip().upper()
+        clash = (
+            db.query(models.Gudang)
+            .filter(models.Gudang.kode == kode, models.Gudang.id_gudang != id_gudang)
+            .first()
+        )
+        if clash:
+            raise HTTPException(status_code=400, detail="Kode gudang sudah dipakai.")
+
+    for field, value in payload.items():
         setattr(row, field, value.strip().upper() if field == "kode" else value)
     db.commit()
+    await manager.broadcast("REFRESH_INVENTARIS")
     return {"message": "Gudang diperbarui."}
 
 
@@ -2648,7 +2954,7 @@ def update_gudang(id_gudang: int, data: GudangUpdate, db: Session = Depends(get_
     "/api/inventaris/gudang/{id_gudang}",
     dependencies=[Depends(require_role(["SUPER_ADMIN"]))],
 )
-def delete_gudang(id_gudang: int, db: Session = Depends(get_db)):
+async def delete_gudang(id_gudang: int, db: Session = Depends(get_db)):
     row = db.query(models.Gudang).filter_by(id_gudang=id_gudang).first()
     if not row:
         raise HTTPException(status_code=404, detail="Gudang tidak ditemukan.")
@@ -2661,15 +2967,22 @@ def delete_gudang(id_gudang: int, db: Session = Depends(get_db)):
     if used:
         row.is_active = False
         db.commit()
+        await manager.broadcast("REFRESH_INVENTARIS")
         return {"message": "Gudang dinonaktifkan (masih punya riwayat stok)."}
     db.delete(row)
     db.commit()
+    await manager.broadcast("REFRESH_INVENTARIS")
     return {"message": "Gudang dihapus."}
 
 
 # ── Stock movement (Transaksi Barang) ──────────────────────────────
 
-@app.post("/api/inventaris/stok")
+@app.post(
+    "/api/inventaris/stok",
+    dependencies=[
+        Depends(require_role(["SUPER_ADMIN", "ADMIN_WILAYAH", "TEKNISI"]))
+    ],
+)
 async def create_stok_movement(
     data: StokAdjustCreate,
     db: Session = Depends(get_db),
@@ -2681,6 +2994,10 @@ async def create_stok_movement(
     This is the capability that closes the loop on the parts module: until now
     stock could be created with a part and transferred between sites, but never
     consumed, restocked, returned or corrected.
+
+    A TEKNISI may record movements (they are the ones consuming parts) but not
+    edit the catalogue; the explicit role list is there so the endpoint fails
+    closed for any role added later, rather than defaulting to open.
     """
     tipe = (data.tipe_gerakan or "").strip().upper()
     valid = models.SparePartStok.GERAKAN_MASUK + models.SparePartStok.GERAKAN_KELUAR
@@ -2811,47 +3128,104 @@ def get_alat_varian(
     if kode_alat:
         q = q.filter(models.AlatVarian.kode_alat == kode_alat)
     rows = q.order_by(models.AlatVarian.kode_alat, models.AlatVarian.nama_varian).all()
-    return [
-        {
-            "id_varian": v.id_varian,
-            "kode_alat": v.kode_alat,
-            "nama_varian": v.nama_varian,
-            "keterangan": v.keterangan,
-        }
-        for v in rows
-    ]
+    return [_varian_payload(v) for v in rows]
+
+
+def _varian_payload(v) -> dict:
+    """One shape for a variant, so the list, the create response and the public
+    asset card cannot drift apart."""
+    return {
+        "id_varian": v.id_varian,
+        "kode_alat": v.kode_alat,
+        "nama_varian": v.nama_varian,
+        "keterangan": v.keterangan,
+        "merk": v.merk,
+        "tipe_model": v.tipe_model,
+        "kapasitas": v.kapasitas,
+        "daya": v.daya,
+        "dimensi": v.dimensi,
+        "berat": v.berat,
+    }
+
+
+_VARIAN_SPEC_FIELDS = ("merk", "tipe_model", "kapasitas", "daya", "dimensi", "berat")
 
 
 @app.post(
     "/api/master/varian",
     dependencies=[Depends(require_role(["SUPER_ADMIN", "ADMIN_WILAYAH"]))],
 )
-def create_alat_varian(data: AlatVarianCreate, db: Session = Depends(get_db)):
+async def create_alat_varian(data: AlatVarianCreate, db: Session = Depends(get_db)):
     if not db.query(models.KategoriAlat).filter_by(kode_alat=data.kode_alat).first():
         raise HTTPException(status_code=404, detail="Kode alat tidak ditemukan.")
+    nama = (data.nama_varian or "").strip()
+    if not nama:
+        raise HTTPException(status_code=400, detail="Nama varian wajib diisi.")
     dupe = (
         db.query(models.AlatVarian)
-        .filter_by(kode_alat=data.kode_alat, nama_varian=data.nama_varian.strip())
+        .filter_by(kode_alat=data.kode_alat, nama_varian=nama)
         .first()
     )
     if dupe:
         raise HTTPException(status_code=400, detail="Varian sudah ada untuk alat ini.")
+
     row = models.AlatVarian(
         kode_alat=data.kode_alat,
-        nama_varian=data.nama_varian.strip(),
+        nama_varian=nama,
         keterangan=data.keterangan,
+        **{f: getattr(data, f) for f in _VARIAN_SPEC_FIELDS},
     )
     db.add(row)
     db.commit()
     db.refresh(row)
+    await manager.broadcast("REFRESH_ASSET_LIST")
     return {"message": "Varian ditambahkan.", "id_varian": row.id_varian}
+
+
+@app.put(
+    "/api/master/varian/{id_varian}",
+    dependencies=[Depends(require_role(["SUPER_ADMIN", "ADMIN_WILAYAH"]))],
+)
+async def update_alat_varian(
+    id_varian: int, data: AlatVarianUpdate, db: Session = Depends(get_db)
+):
+    """Edit a variant's name and its spesifikasi teknis."""
+    row = db.query(models.AlatVarian).filter_by(id_varian=id_varian).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Varian tidak ditemukan.")
+
+    payload = data.model_dump(exclude_unset=True)
+    if "nama_varian" in payload:
+        nama = (payload["nama_varian"] or "").strip()
+        if not nama:
+            raise HTTPException(status_code=400, detail="Nama varian wajib diisi.")
+        clash = (
+            db.query(models.AlatVarian)
+            .filter(
+                models.AlatVarian.kode_alat == row.kode_alat,
+                models.AlatVarian.nama_varian == nama,
+                models.AlatVarian.id_varian != id_varian,
+            )
+            .first()
+        )
+        if clash:
+            raise HTTPException(
+                status_code=400, detail="Varian sudah ada untuk alat ini."
+            )
+        payload["nama_varian"] = nama
+
+    for field, value in payload.items():
+        setattr(row, field, value)
+    db.commit()
+    await manager.broadcast("REFRESH_ASSET_LIST")
+    return {"message": "Varian diperbarui."}
 
 
 @app.delete(
     "/api/master/varian/{id_varian}",
     dependencies=[Depends(require_role(["SUPER_ADMIN"]))],
 )
-def delete_alat_varian(id_varian: int, db: Session = Depends(get_db)):
+async def delete_alat_varian(id_varian: int, db: Session = Depends(get_db)):
     row = db.query(models.AlatVarian).filter_by(id_varian=id_varian).first()
     if not row:
         raise HTTPException(status_code=404, detail="Varian tidak ditemukan.")
@@ -2861,6 +3235,7 @@ def delete_alat_varian(id_varian: int, db: Session = Depends(get_db)):
     )
     db.delete(row)
     db.commit()
+    await manager.broadcast("REFRESH_ASSET_LIST")
     return {"message": "Varian dihapus."}
 
 
@@ -2935,8 +3310,11 @@ def _scoped_repair_events(year: int, lokasi_ids):
         )
         .select_from(ev)
         .join(AS, AS.id_aset == ev.c.id_aset)
-        .where(extract("year", ev.c.waktu_lapor) == year)
     )
+    # year=None is the "Semua Tahun" case: keep every event. The window above is
+    # still unfiltered either way, so open/close adjacency is never broken.
+    if year is not None:
+        sel = sel.where(extract("year", ev.c.waktu_lapor) == year)
     base = sel.subquery("base")
 
     scoped = select(base)
@@ -2949,6 +3327,7 @@ def _scoped_repair_events(year: int, lokasi_ids):
 def get_aset_perbaikan_dashboard(
     id_lokasi: Optional[str] = None,
     year: Optional[int] = Query(None, ge=1950, le=2100),
+    all_years: bool = False,
     db: Session = Depends(get_db),
     current_user: models.Pengguna = Depends(get_current_user),
 ):
@@ -2960,6 +3339,11 @@ def get_aset_perbaikan_dashboard(
                 single UPT code. Omit for a global view.
     year      — defaults to the current year, or the most recent year that has
                 data if the current year has none.
+    all_years — "Semua Tahun": aggregate every year instead of one. The trend
+                series then carries one point per YEAR rather than per month,
+                flagged by `trend_mode` so the chart can label its axis.
+                Distinct from omitting `year`, which still resolves to a single
+                default year.
     """
     RK = models.RiwayatKondisi
     AS = models.Aset
@@ -2985,7 +3369,9 @@ def get_aset_perbaikan_dashboard(
         {int(r[0]) for r in db.execute(yq) if r[0] is not None}, reverse=True
     )
 
-    if year is None:
+    if all_years:
+        year = None
+    elif year is None:
         now_year = datetime.now().year
         if now_year in available_years or not available_years:
             year = now_year
@@ -3015,24 +3401,48 @@ def get_aset_perbaikan_dashboard(
 
     persen_selesai = round(selesai / masuk * 100, 1) if masuk else 0.0
 
-    # ── Monthly trend (densified to exactly 12 points) ───────────────────────
-    m_col = extract("month", S.c.waktu_lapor).label("m")
-    m_rows = db.execute(
-        select(m_col, func.sum(S.c.f_masuk), func.sum(S.c.f_selesai))
-        .group_by(m_col)
-        .order_by(m_col)
-    ).all()
-    m_map = {
-        int(r[0]): (int(r[1] or 0), int(r[2] or 0)) for r in m_rows if r[0] is not None
-    }
-    monthly_trend = [
-        {
-            "bulan": BULAN_SINGKAT[i],
-            "masuk": m_map.get(i + 1, (0, 0))[0],
-            "selesai": m_map.get(i + 1, (0, 0))[1],
+    # ── Trend ────────────────────────────────────────────────────────────────
+    # One year selected → 12 monthly points, densified so the line always spans
+    # the whole year. "Semua Tahun" → one point per year instead; 12 months
+    # summed across a decade would be meaningless (every January added up).
+    if year is None:
+        y_col = extract("year", S.c.waktu_lapor).label("y")
+        y_rows = db.execute(
+            select(y_col, func.sum(S.c.f_masuk), func.sum(S.c.f_selesai))
+            .group_by(y_col)
+            .order_by(y_col)
+        ).all()
+        monthly_trend = [
+            {
+                "bulan": str(int(r[0])),
+                "masuk": int(r[1] or 0),
+                "selesai": int(r[2] or 0),
+            }
+            for r in y_rows
+            if r[0] is not None
+        ]
+        trend_mode = "tahun"
+    else:
+        m_col = extract("month", S.c.waktu_lapor).label("m")
+        m_rows = db.execute(
+            select(m_col, func.sum(S.c.f_masuk), func.sum(S.c.f_selesai))
+            .group_by(m_col)
+            .order_by(m_col)
+        ).all()
+        m_map = {
+            int(r[0]): (int(r[1] or 0), int(r[2] or 0))
+            for r in m_rows
+            if r[0] is not None
         }
-        for i in range(12)
-    ]
+        monthly_trend = [
+            {
+                "bulan": BULAN_SINGKAT[i],
+                "masuk": m_map.get(i + 1, (0, 0))[0],
+                "selesai": m_map.get(i + 1, (0, 0))[1],
+            }
+            for i in range(12)
+        ]
+        trend_mode = "bulan"
 
     # ── Per resort (UPT) ─────────────────────────────────────────────────────
     r_rows = db.execute(
@@ -3045,6 +3455,18 @@ def get_aset_perbaikan_dashboard(
     r_map = {
         r[0]: (int(r[1] or 0), int(r[2] or 0)) for r in r_rows if r[0] is not None
     }
+
+    # A Balaiyasa is a workshop, not an operating region, so it must never be a
+    # row in a resort table — "BALAIYASA CIREBONPRUNJAKAN" listed alongside
+    # "1.3 Pasarsenen" is what this drops. seed.py now records every repair
+    # against the asset's owning region, so in a freshly seeded database this
+    # loop finds nothing; it is here so legacy rows written against a workshop
+    # cannot reintroduce the leak. The one exception is an explicit Balaiyasa
+    # scope, where the workshop IS the subject of the report.
+    by_ids = balaiyasa_lokasi_ids(db)
+    scope_is_balaiyasa = bool(lokasi_ids) and any(k in by_ids for k in lokasi_ids)
+    if not scope_is_balaiyasa:
+        r_map = {k: v for k, v in r_map.items() if k not in by_ids}
 
     # Full list = every resort in scope, zero-filled and positionally ordered
     # (1.1 → 1.25), so the full-width chart shows the whole region like the PDF.
@@ -3131,7 +3553,11 @@ def get_aset_perbaikan_dashboard(
     ]
 
     return {
+        # None when "Semua Tahun" is active — the client shows the label rather
+        # than a number, and re-sends all_years on the next request.
         "tahun": year,
+        "all_years": year is None,
+        "trend_mode": trend_mode,
         "available_years": available_years,
 
         "masuk": masuk,
@@ -3359,6 +3785,7 @@ def get_inv_dashboard(
 def get_mcf(
     id_lokasi: Optional[str] = None,
     year: Optional[int] = Query(None, ge=1950, le=2100),
+    all_years: bool = False,
     db: Session = Depends(get_db),
     current_user: models.Pengguna = Depends(get_current_user),
 ):
@@ -3394,7 +3821,9 @@ def get_mcf(
         {int(r[0]) for r in db.execute(yq) if r[0] is not None}, reverse=True
     )
 
-    if year is None:
+    if all_years:
+        year = None
+    elif year is None:
         now_year = datetime.now().year
         if now_year in available_years or not available_years:
             year = now_year
@@ -3409,28 +3838,38 @@ def get_mcf(
         risk_q = risk_q.filter(AS.id_lokasi.in_(lokasi_ids))
     n_at_risk = int(db.execute(risk_q).scalar_one() or 0)
 
-    # Repair events (TSO = a fault opened) bucketed by month.
-    m_col = extract("month", RK.waktu_lapor).label("m")
+    # Repair events (TSO = a fault opened), bucketed by month within one year or
+    # by year across the whole history when "Semua Tahun" is active. The MCF is
+    # cumulative either way, so the curve keeps its meaning at both resolutions.
+    bucket_col = (
+        extract("year", RK.waktu_lapor) if year is None else extract("month", RK.waktu_lapor)
+    ).label("b")
     ev_q = (
-        select(m_col, func.count().label("n"))
+        select(bucket_col, func.count().label("n"))
         .select_from(RK)
         .join(AS, AS.id_aset == RK.id_aset)
         .where(RK.kondisi == "TSO")
-        .where(extract("year", RK.waktu_lapor) == year)
     )
+    if year is not None:
+        ev_q = ev_q.where(extract("year", RK.waktu_lapor) == year)
     if lokasi_ids:
         ev_q = ev_q.where(func.coalesce(RK.id_lokasi, AS.id_lokasi).in_(lokasi_ids))
-    ev_q = ev_q.group_by(m_col).order_by(m_col)
+    ev_q = ev_q.group_by(bucket_col).order_by(bucket_col)
 
-    per_month = {int(r[0]): int(r[1]) for r in db.execute(ev_q) if r[0] is not None}
+    per_bucket = {int(r[0]): int(r[1]) for r in db.execute(ev_q) if r[0] is not None}
+
+    if year is None:
+        labels = [(y, str(y)) for y in sorted(per_bucket.keys())]
+    else:
+        labels = [(i + 1, BULAN_SINGKAT[i]) for i in range(12)]
 
     series = []
     cumulative = 0
-    for i in range(12):
-        n = per_month.get(i + 1, 0)
+    for key, label in labels:
+        n = per_bucket.get(key, 0)
         cumulative += n
         series.append({
-            "bulan": BULAN_SINGKAT[i],
+            "bulan": label,
             "perbaikan": n,
             "kumulatif": cumulative,
             # MCF — repairs per asset. Rounded to 4dp: with a few hundred assets
@@ -3440,6 +3879,8 @@ def get_mcf(
 
     return {
         "tahun": year,
+        "all_years": year is None,
+        "trend_mode": "tahun" if year is None else "bulan",
         "available_years": available_years,
         "aset_berisiko": n_at_risk,
         "total_perbaikan": cumulative,
@@ -3473,6 +3914,15 @@ def trigger_seed(db: Session = Depends(get_db)):
 
 @app.get("/api/public/aset/{id_aset}")
 def get_public_aset(id_aset: str, db: Session = Depends(get_db)):
+    """
+    The payload behind the QR landing card.
+
+    Historically this returned five keys, two of which lied: `kode_alat` carried
+    the tool's display NAME and `id_lokasi` carried `nama_lokasi`. The landing
+    page fed that name into a code→name resolver, which naturally failed, which
+    is why its "UPT" row was permanently "—". Codes and names are now separate
+    keys, and the old two are kept as aliases so nothing that reads them breaks.
+    """
     aset = (
         db.query(models.Aset)
         .filter(models.Aset.id_aset == id_aset, models.Aset.status_terakhir != "AFKIR")
@@ -3483,12 +3933,54 @@ def get_public_aset(id_aset: str, db: Session = Depends(get_db)):
             status_code=404, detail="Aset tidak ditemukan atau di-afkir."
         )
 
+    nama_alat = aset.kategori.nama_alat if aset.kategori else aset.kode_alat
+    nama_lokasi = aset.lokasi_ref.nama_lokasi if aset.lokasi_ref else None
+
+    # The card shows both levels: the owning DAOP/DIVRE and the resort inside it.
+    parent_code = get_parent_lokasi_code(aset.id_lokasi)
+    parent_row = (
+        db.query(models.Lokasi).filter_by(id_lokasi=parent_code).first()
+        if parent_code
+        else aset.lokasi_ref
+    )
+
+    v = aset.varian_ref
+    spesifikasi = None
+    if v is not None:
+        spesifikasi = {
+            "nama_varian": v.nama_varian,
+            "merk": v.merk,
+            "tipe_model": v.tipe_model,
+            "kapasitas": v.kapasitas,
+            "daya": v.daya,
+            "dimensi": v.dimensi,
+            "berat": v.berat,
+            "keterangan": v.keterangan,
+        }
+
     return {
         "id_aset": aset.id_aset,
-        "kode_alat": aset.kategori.nama_alat if aset.kategori else aset.kode_alat,
-        "id_lokasi": aset.lokasi_ref.nama_lokasi if aset.lokasi_ref else aset.id_lokasi,
+        # ── Jenis alat ──
+        "kode_alat_code": aset.kode_alat,
+        "nama_alat": nama_alat,
+        "kode_alat": nama_alat,  # legacy alias — carries the NAME, not the code
+        # ── Lokasi ──
+        "id_lokasi_code": aset.id_lokasi,
+        "nama_lokasi": nama_lokasi,
+        "parent_code": parent_code or aset.id_lokasi,
+        "parent_nama": (parent_row.nama_lokasi if parent_row else None) or nama_lokasi,
+        # `parent_code` is None when the asset is homed directly at a DAOP rather
+        # than a resort; in that case there is no separate UPT to show.
+        "upt_nama": nama_lokasi if parent_code else None,
+        "id_lokasi": nama_lokasi or aset.id_lokasi,  # legacy alias — the NAME
+        # ── Status & pengadaan ──
         "status_terakhir": aset.status_terakhir,
+        "peruntukan": aset.peruntukan,
+        "sumber_pengadaan": aset.sumber_pengadaan,
         "tanggal_pembelian": aset.tanggal_pembelian,
+        "waktu_update": aset.waktu_update,
+        "nomor_seri": aset.nomor_seri,
+        "spesifikasi": spesifikasi,
     }
 
 

@@ -1,3 +1,52 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   DESIGN TOKENS + COMPONENT LAYER
+
+   Everything below the "COMPONENTS" heading exists because index.html had no
+   component vocabulary: every card, button, badge, modal and table was written
+   as inline Tailwind and repeated ~40 times, each copy drifting a little
+   (rounded-xl vs rounded-2xl, p-4 vs p-5, border-gray-100 vs border-gray-200).
+   That drift is what made some screens feel like a different product.
+
+   Prefer these classes for new markup. They are plain CSS, not Tailwind
+   @apply, so they work identically in index.html and landing.html — the
+   landing page loads this file too, which is how it inherits the light-mode
+   contrast boost it used to be missing.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+:root {
+  --kai-blue: #164c81;
+  --kai-blue-dark: #0a1f44;
+  --kai-orange: #f3861b;
+
+  --surface: #ffffff;
+  --surface-2: #f1f5f9;
+  --surface-sunken: #e8edf3;
+  --border: #cbd5e1;
+  --border-strong: #94a3b8;
+  --text: #111827;
+  --text-muted: #6b7280;
+  --text-faint: #9ca3af;
+
+  --radius: 0.75rem;
+  --radius-lg: 1rem;
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.08), 0 0 0 1px rgba(0, 0, 0, 0.06);
+  --shadow-pop: 0 10px 30px rgba(15, 23, 42, 0.18);
+}
+
+.dark {
+  --surface: #1f2937;
+  --surface-2: rgba(55, 65, 81, 0.5);
+  --surface-sunken: #111827;
+  --border: #374151;
+  --border-strong: #4b5563;
+  --text: #f9fafb;
+  --text-muted: #9ca3af;
+  --text-faint: #6b7280;
+
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-pop: 0 10px 30px rgba(0, 0, 0, 0.55);
+}
+
 /* ── Custom scrollbar ── */
 ::-webkit-scrollbar {
   width: 5px;
@@ -540,4 +589,605 @@
 
 #dash-matrix-table th:first-child {
   text-align: center !important;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   COMPONENTS
+
+   One definition per visual element. See the note at the top of this file for
+   why these exist. Names are deliberately boring so they read the same in
+   markup as they do here.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Surfaces ─────────────────────────────────────────────────────────── */
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-card);
+}
+
+.card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.875rem 1.25rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.card-title {
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.card-body {
+  padding: 1.25rem;
+}
+
+/* Small uppercase heading used above a group of controls or a table. */
+.section-title {
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+/* KPI tile. The oversized watermark icon is opt-in via .stat-card > .stat-icon
+   so a dense row of tiles can leave it out without looking inconsistent. */
+.stat-card {
+  position: relative;
+  overflow: hidden;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-card);
+  padding: 1rem;
+  transition: border-color 0.15s;
+}
+
+.stat-card:hover {
+  border-color: var(--border-strong);
+}
+
+.stat-card .stat-label {
+  font-size: 0.5625rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  margin-bottom: 0.25rem;
+}
+
+.stat-card .stat-value {
+  font-size: 1.5rem;
+  line-height: 1.2;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.stat-card .stat-note {
+  font-size: 0.625rem;
+  color: var(--text-faint);
+  margin-top: 0.125rem;
+}
+
+.stat-card .stat-icon {
+  position: absolute;
+  right: -0.25rem;
+  bottom: -0.75rem;
+  font-size: 3rem;
+  color: var(--surface-2);
+  transition: transform 0.15s;
+  pointer-events: none;
+}
+
+.stat-card:hover .stat-icon {
+  transform: scale(1.15);
+}
+
+/* ── Buttons ──────────────────────────────────────────────────────────── */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.625rem 1.25rem;
+  border-radius: 0.5rem;
+  border: 1px solid transparent;
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.25rem;
+  cursor: pointer;
+  transition:
+    background-color 0.15s,
+    border-color 0.15s,
+    color 0.15s,
+    opacity 0.15s;
+  white-space: nowrap;
+}
+
+.btn:disabled,
+.btn[disabled] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-sm {
+  padding: 0.375rem 0.75rem;
+  font-size: 0.75rem;
+}
+
+.btn-block {
+  width: 100%;
+}
+
+.btn-primary {
+  background: var(--kai-blue);
+  color: #ffffff;
+  box-shadow: 0 1px 2px rgba(22, 76, 129, 0.3);
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: #1a5fa8;
+}
+
+.btn-accent {
+  background: var(--kai-orange);
+  color: #ffffff;
+}
+
+.btn-accent:hover:not(:disabled) {
+  background: #dd760f;
+}
+
+.btn-success {
+  background: #059669;
+  color: #ffffff;
+}
+
+.btn-success:hover:not(:disabled) {
+  background: #047857;
+}
+
+.btn-danger {
+  background: #dc2626;
+  color: #ffffff;
+}
+
+.btn-danger:hover:not(:disabled) {
+  background: #b91c1c;
+}
+
+.btn-ghost {
+  background: var(--surface-2);
+  color: var(--text-muted);
+  border-color: var(--border);
+}
+
+.btn-ghost:hover:not(:disabled) {
+  background: var(--border);
+  color: var(--text);
+}
+
+/* Square icon-only button, e.g. a row's delete affordance. */
+.btn-icon {
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  border-radius: 0.5rem;
+  background: transparent;
+  color: var(--text-faint);
+  border: none;
+}
+
+.btn-icon:hover:not(:disabled) {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.btn-icon.btn-icon-danger:hover:not(:disabled) {
+  background: rgba(220, 38, 38, 0.1);
+  color: #dc2626;
+}
+
+/* ── Badges ───────────────────────────────────────────────────────────── */
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.125rem 0.5rem;
+  border-radius: 9999px;
+  font-size: 0.625rem;
+  font-weight: 700;
+  line-height: 1rem;
+  white-space: nowrap;
+}
+
+/* SO / TSO / AFKIR colours are defined ONCE here. They previously existed in
+   three places — this file's .status-btn rules, inline Tailwind in index.html
+   and a third inline copy in landing.html — and had already drifted. */
+.badge-so {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.badge-tso {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.badge-afkir,
+.badge-neutral {
+  background: #f3f4f6;
+  color: #6b7280;
+}
+
+.badge-warn {
+  background: #fef3c7;
+  color: #b45309;
+}
+
+.badge-info {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.dark .badge-so {
+  background: rgba(21, 128, 61, 0.25);
+  color: #4ade80;
+}
+
+.dark .badge-tso {
+  background: rgba(185, 28, 28, 0.25);
+  color: #f87171;
+}
+
+.dark .badge-afkir,
+.dark .badge-neutral {
+  background: #374151;
+  color: #9ca3af;
+}
+
+.dark .badge-warn {
+  background: rgba(180, 83, 9, 0.25);
+  color: #fbbf24;
+}
+
+.dark .badge-info {
+  background: rgba(29, 78, 216, 0.25);
+  color: #93c5fd;
+}
+
+/* ── Modals ───────────────────────────────────────────────────────────── */
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: rgba(15, 23, 42, 0.55);
+  -webkit-backdrop-filter: blur(2px);
+  backdrop-filter: blur(2px);
+}
+
+.modal-panel {
+  width: 100%;
+  max-width: 32rem;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-pop);
+  overflow: hidden;
+}
+
+.modal-panel.modal-wide {
+  max-width: 48rem;
+}
+
+.modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.modal-head h3 {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.modal-head p {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-top: 0.125rem;
+}
+
+.modal-body {
+  padding: 1.25rem;
+  overflow-y: auto;
+  flex: 1 1 auto;
+}
+
+.modal-foot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  padding: 0.875rem 1.25rem;
+  border-top: 1px solid var(--border);
+  background: var(--surface-2);
+  flex-shrink: 0;
+}
+
+/* ── Toolbar (search + actions strip above a list) ───────────────────── */
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-card);
+}
+
+.toolbar-search {
+  position: relative;
+  flex: 1 1 14rem;
+  min-width: 0;
+}
+
+.toolbar-search input {
+  width: 100%;
+  padding: 0.625rem 0.75rem 0.625rem 2.25rem;
+  border-radius: 0.5rem;
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 0.875rem;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.toolbar-search input:focus {
+  border-color: var(--kai-blue);
+  box-shadow: 0 0 0 3px rgba(22, 76, 129, 0.12);
+}
+
+.toolbar-search .toolbar-search-icon {
+  position: absolute;
+  left: 0.75rem;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-faint);
+  font-size: 0.8125rem;
+  pointer-events: none;
+}
+
+/* ── Tables ───────────────────────────────────────────────────────────── */
+
+.table-std {
+  width: 100%;
+  text-align: left;
+  font-size: 0.875rem;
+  white-space: nowrap;
+  border-collapse: collapse;
+}
+
+.table-std thead tr {
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+}
+
+.table-std th {
+  padding: 0.75rem 1rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.table-std td {
+  padding: 0.75rem 1rem;
+  color: var(--text);
+}
+
+.table-std tbody tr + tr {
+  border-top: 1px solid var(--border);
+}
+
+.table-std tbody tr:hover {
+  background: var(--surface-2);
+}
+
+.table-wrap {
+  overflow-x: auto;
+}
+
+/* ── Tabs ─────────────────────────────────────────────────────────────── */
+
+.tab {
+  padding: 0.625rem 0.875rem;
+  border-radius: 0.5rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  text-align: center;
+  cursor: pointer;
+  transition: background-color 0.15s, color 0.15s;
+  white-space: nowrap;
+}
+
+.tab:hover:not(.is-active) {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.tab.is-active {
+  background: var(--kai-orange);
+  color: #ffffff;
+  font-weight: 600;
+  box-shadow: 0 2px 8px rgba(243, 134, 27, 0.3);
+}
+
+/* ── Empty state ──────────────────────────────────────────────────────── */
+
+.empty-state {
+  padding: 3rem 1rem;
+  text-align: center;
+  color: var(--text-faint);
+  font-size: 0.875rem;
+}
+
+.empty-state i {
+  display: block;
+  font-size: 1.875rem;
+  margin-bottom: 0.5rem;
+  opacity: 0.7;
+}
+
+/* Error variant — the inventory loaders used to `return` silently on a failed
+   response, leaving stale rows with no indication anything had gone wrong. */
+.empty-state.is-error {
+  color: #b91c1c;
+}
+
+.dark .empty-state.is-error {
+  color: #f87171;
+}
+
+/* ── Definition grid (label / value pairs on a detail card) ───────────── */
+
+.def-grid {
+  display: grid;
+  grid-template-columns: minmax(6rem, auto) 1fr;
+  gap: 0.375rem 1rem;
+  font-size: 0.8125rem;
+}
+
+.def-grid dt {
+  color: var(--text-faint);
+}
+
+.def-grid dd {
+  color: var(--text);
+  font-weight: 500;
+  word-break: break-word;
+}
+
+/* ── Collapsible filter section (Laporan) ─────────────────────────────── */
+
+.filter-section {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--surface);
+}
+
+.filter-section + .filter-section {
+  margin-top: 0.75rem;
+}
+
+.filter-section > summary {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 0.75rem 1rem;
+  cursor: pointer;
+  list-style: none;
+  background: var(--surface-2);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.filter-section > summary::-webkit-details-marker {
+  display: none;
+}
+
+.filter-section > summary::after {
+  content: "\f078"; /* fa-chevron-down */
+  font-family: "Font Awesome 6 Free";
+  font-weight: 900;
+  margin-left: auto;
+  font-size: 0.6875rem;
+  color: var(--text-faint);
+  transition: transform 0.15s;
+}
+
+.filter-section[open] > summary::after {
+  transform: rotate(180deg);
+}
+
+.filter-section .filter-body {
+  padding: 1rem;
+}
+
+/* Chip summarising which filters are active inside a collapsed section, so
+   nothing is ever hidden without a trace. */
+.filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.0625rem 0.5rem;
+  border-radius: 9999px;
+  background: rgba(22, 76, 129, 0.1);
+  color: var(--kai-blue);
+  font-size: 0.625rem;
+  font-weight: 700;
+}
+
+.dark .filter-chip {
+  background: rgba(147, 197, 253, 0.15);
+  color: #93c5fd;
+}
+
+/* ── File input (certificate upload) ──────────────────────────────────── */
+
+.file-drop {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  border: 1px dashed var(--border-strong);
+  border-radius: 0.5rem;
+  background: var(--surface-2);
+  transition: border-color 0.15s, background-color 0.15s;
+}
+
+.file-drop:hover {
+  border-color: var(--kai-blue);
+}
+
+.file-drop input[type="file"] {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.file-hint {
+  font-size: 0.6875rem;
+  color: var(--text-faint);
+  margin-top: 0.375rem;
 }

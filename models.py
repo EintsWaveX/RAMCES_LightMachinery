@@ -69,6 +69,17 @@ class AlatVarian(Base):
     nama_varian = Column(String(100), nullable=False)  # GX270, 2T TASCO, GEISMAR…
     keterangan = Column(Text, nullable=True)
 
+    # ── Spesifikasi teknis ──
+    # Printed on the public asset card (landing.html) under "Spesifikasi Alat
+    # Kerja". All nullable: legacy variants predate the fields, and not every
+    # tool type has a meaningful value for every row (a track gauge has no daya).
+    merk = Column(String(100), nullable=True)  # HONDA, TASCO, GEISMAR…
+    tipe_model = Column(String(100), nullable=True)  # GX390, RM-80, …
+    kapasitas = Column(String(100), nullable=True)  # "5 kVA", "1435 mm", "60 L"
+    daya = Column(String(100), nullable=True)  # "13 HP / 9.6 kW"
+    dimensi = Column(String(100), nullable=True)  # "P x L x T" in mm
+    berat = Column(String(50), nullable=True)  # "78 kg"
+
     kategori_alat_ref = relationship("KategoriAlat")
 
     __table_args__ = (
@@ -116,6 +127,9 @@ class Aset(Base):
     id_varian = Column(
         Integer, ForeignKey("alat_varian.id_varian"), nullable=True, index=True
     )
+    # Serial number is per PHYSICAL UNIT, so it lives here and not on
+    # AlatVarian — two assets of the same variant have different serials.
+    nomor_seri = Column(String(100), nullable=True)
 
     kategori = relationship("KategoriAlat", back_populates="asets")
     lokasi_ref = relationship("Lokasi", back_populates="asets")

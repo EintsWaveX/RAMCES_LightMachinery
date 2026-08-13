@@ -10,7 +10,9 @@ temp
 # User-uploaded calibration certificates — runtime data, never committed
 uploads
 
+# Drops and reseeds the whole database; imports seed.py, so it is untracked too
 inject.py
 seed.py
+reset.py
 
 CLAUDE.md

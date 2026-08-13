@@ -131,6 +131,211 @@ function getParentLokasiCode(idLokasi) {
   return null;
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// SEARCH / MATCH HELPERS
+//
+// Every list in this app filters an in-memory array; nothing is searched
+// server-side. Before this block each view rolled its own matcher, and they
+// disagreed in two ways that were visible to the user:
+//
+//   1. The asset cards PRINT the owning DAOP ("DAOP 1 JAKARTA"), but the
+//      matchers compared against the resort name the backend sends
+//      ("JR 1.1 Gambir"). Typing a string straight off the card matched
+//      nothing.
+//   2. Everything used unanchored `includes()`, so the naive fix would have
+//      made "DAOP 1" also match DAOP 10 and "DIVRE I" match DIVRE II/III/IV.
+//
+// The fix is one identity per asset (used by cards, search, filters and sort
+// alike) and one matcher that understands the three shapes a location term can
+// take: a region label, a bare code, or free text.
+// ═══════════════════════════════════════════════════════════════════════════
+
+function normalizeSearchText(value) {
+  return (value ?? "").toString().toUpperCase().replace(/\s+/g, " ").trim();
+}
+
+// "DAOP 1", "DIVRE III", "BALAI YASA", "DAERAH OPERASI 5" — a region NAME with
+// its ordinal. Matched whole, so the ordinal can be compared as a token rather
+// than a substring.
+const _RE_REGION_TERM =
+  /^(DAOP|DAERAH OPERASI|DIVRE|DIVISI REGIONAL|BALAI ?YASA)(?: ([0-9]+|[IVX]+))?$/;
+
+// A location CODE as it appears in id_lokasi: D1, VIII, BY2, BY1A, JR1.3, JRIII.7.
+const _RE_LOKASI_CODE = /^(D\d+|V[IVX]*|BY\d+[A-Z]*|JR[\dIVX]+(?:\.\d+)?)$/;
+
+// Whole-token prefix match: ["DAOP","1"] matches "DAOP 1 JAKARTA" but NOT
+// "DAOP 10 SURABAYA", because token "1" !== token "10". This is the single
+// line that separates the reported false positive from the false negative.
+function _tokenPrefixMatch(name, termTokens) {
+  const nameTokens = normalizeSearchText(name).split(" ");
+  if (termTokens.length > nameTokens.length) return false;
+  return termTokens.every((t, i) => nameTokens[i] === t);
+}
+
+// Region label → the set of lokasi codes it covers (the parent plus every
+// resort under it). Returns null when the term is not a region label at all.
+function resolveRegionTermToCodes(term) {
+  const norm = normalizeSearchText(term);
+  if (!_RE_REGION_TERM.test(norm)) return null;
+
+  const termTokens = norm.split(" ");
+  const parents = lokasiData
+    .filter((l) => _tokenPrefixMatch(l.name, termTokens))
+    .map((l) => l.code);
+  if (!parents.length) return null;
+
+  const covered = new Set(parents);
+  uptDatabase.forEach((u) => {
+    const parent = getParentLokasiCode(u.upt) || u.lokasi;
+    if (covered.has(parent)) covered.add(u.upt);
+  });
+  return covered;
+}
+
+/**
+ * The one place an asset's location is decided.
+ *
+ * `uptCode` is where the asset BELONGS, not where it currently sits: an asset
+ * mutated to a Balaiyasa for repair still reports to its home resort, and the
+ * cards have always rendered it that way. Search and filters now read the same
+ * value, so a card labelled "DAOP 1 JAKARTA / JR 1.1 Gambir" is found by
+ * searching either string and kept by a DAOP 1 filter — previously the card
+ * said one thing and both the search and the filter tested another.
+ */
+function assetLokasiIdentity(item) {
+  const summary =
+    item && item.id_aset
+      ? _historySummary.find((x) => x.id_aset === item.id_aset)
+      : null;
+
+  const uptCode =
+    summary?.mutasi?.original_lokasi_code ||
+    item?.id_lokasi_raw ||
+    item?.id_lokasi ||
+    "";
+  const parentCode = getParentLokasiCode(uptCode) || uptCode;
+
+  const uptEntry = uptDatabase.find((u) => u.upt === uptCode);
+  const parentEntry = lokasiData.find((l) => l.code === parentCode);
+
+  return {
+    uptCode,
+    parentCode,
+    uptName:
+      uptEntry?.nama ||
+      summary?.mutasi?.original_lokasi_name ||
+      item?.lokasi_name ||
+      item?.id_lokasi_display ||
+      "",
+    parentName: parentEntry?.name || parentCode || "",
+  };
+}
+
+/**
+ * Does this asset's location match a free-typed search term?
+ *
+ * Three term shapes, deliberately handled differently:
+ *   region label ("DAOP 1")  → exact code-set membership, so DAOP 10 is out
+ *   bare code    ("D1")      → exact code equality, so D10 is out
+ *   free text    ("Gambir")  → substring, but over NAMES only; matching codes
+ *                              by substring is what would let "D1" hit "D10"
+ */
+function lokasiMatchesTerm(identity, term) {
+  const norm = normalizeSearchText(term);
+  if (!norm) return true;
+
+  const regionCodes = resolveRegionTermToCodes(norm);
+  if (regionCodes) {
+    return regionCodes.has(identity.uptCode) || regionCodes.has(identity.parentCode);
+  }
+
+  if (_RE_LOKASI_CODE.test(norm)) {
+    return (
+      normalizeSearchText(identity.uptCode) === norm ||
+      normalizeSearchText(identity.parentCode) === norm
+    );
+  }
+
+  return (
+    normalizeSearchText(identity.uptName).includes(norm) ||
+    normalizeSearchText(identity.parentName).includes(norm)
+  );
+}
+
+/**
+ * Region filter (the "Lokasi" dropdown in every sort modal), by CODE.
+ * A parent code keeps the parent row itself and every resort beneath it.
+ */
+function lokasiMatchesCode(identity, wantedCode) {
+  if (!wantedCode) return true;
+  const wanted = normalizeSearchText(wantedCode);
+  return (
+    normalizeSearchText(identity.parentCode) === wanted ||
+    normalizeSearchText(identity.uptCode) === wanted
+  );
+}
+
+/**
+ * Generic text match across a list of non-location fields.
+ *
+ * Substring is right here — "GEN" should find "GENSET" — but the caller must
+ * NOT pass location fields through it; those go to lokasiMatchesTerm, which
+ * knows about token boundaries.
+ */
+function textMatchesTerm(values, term) {
+  const norm = normalizeSearchText(term);
+  if (!norm) return true;
+  return values.some((v) => normalizeSearchText(v).includes(norm));
+}
+
+/**
+ * Match an asset-shaped row against a search box.
+ *
+ * Location is tested by the location-aware matcher; everything else by plain
+ * substring. `extra` lets a view add its own searchable fields (the Riwayat
+ * view searches technician names and certificate numbers too) without
+ * duplicating the location logic.
+ */
+function assetMatchesSearch(item, term, extra = []) {
+  const norm = normalizeSearchText(term);
+  if (!norm) return true;
+
+  const identity = assetLokasiIdentity(item);
+  if (lokasiMatchesTerm(identity, norm)) return true;
+
+  return textMatchesTerm(
+    [
+      item.id_aset,
+      item.kode_alat,
+      item.kode_alat_name,
+      item.nama_varian,
+      item.nomor_seri,
+      item.sumber_pengadaan,
+      item.status_terakhir,
+      item.peruntukan,
+      item.tanggal_pembelian,
+      ...extra,
+    ],
+    norm,
+  );
+}
+
+// Natural ordering for resort labels: 1.1, 1.2, … 1.10, 1.25 — not
+// lexicographic, which puts 1.10 before 1.2. Mirrors upt_sort_key() in main.py.
+function uptSortKey(label) {
+  const m = normalizeSearchText(label).match(/(\d+)\.(\d+)/);
+  if (!m) return [Number.MAX_SAFE_INTEGER, 0, normalizeSearchText(label)];
+  return [parseInt(m[1], 10), parseInt(m[2], 10), ""];
+}
+
+function compareNaturalLabel(a, b) {
+  const ka = uptSortKey(a);
+  const kb = uptSortKey(b);
+  if (ka[0] !== kb[0]) return ka[0] - kb[0];
+  if (ka[1] !== kb[1]) return ka[1] - kb[1];
+  return String(ka[2]).localeCompare(String(kb[2]));
+}
+
 async function fetchMasterData() {
   beginLoading("Memuat data master (alat kerja & lokasi)");
   try {
@@ -660,6 +865,9 @@ let _benchmarkPct = (() => {
   return isNaN(parsed) ? 59 : Math.max(0, Math.min(100, parsed));
 })();
 let _dashFilter = { alat: "", pengadaan: "", tahun: "" };
+// Tren Perbaikan's own year, kept out of _dashFilter: the shared bar's "Semua
+// Tahun" must not silently collapse to a single year here.
+let _dashTrendTahun = "";
 let _dashTabIndex = 0;
 let _dashChartBar = null;
 let _dashChartAvail = null;
@@ -674,16 +882,12 @@ function _dashFilteredDb() {
     // FIX 1: Gunakan properti yang benar (kode_alat)
     if (_dashFilter.alat && item.kode_alat !== _dashFilter.alat) return false;
 
-    // FIX 2: Sesuaikan pemetaan nilai HTML dengan value di Database
-    if (_dashFilter.pengadaan) {
-      const valPengadaan = _dashFilter.pengadaan === "1" ? "PUSAT" : "DAOP";
-      if (
-        !item.sumber_pengadaan ||
-        !item.sumber_pengadaan.includes(valPengadaan)
-      ) {
-        return false;
-      }
-    }
+    // The dropdown's values are the ID segments "1"/"2"; canonicalPengadaan
+    // maps those and every stored spelling onto the same two constants. The
+    // old code mapped "2" to the literal "DAOP" and then substring-tested it,
+    // so any asset stored as plain "DIVRE" was silently excluded.
+    if (!_pengadaanMatches(item.sumber_pengadaan, _dashFilter.pengadaan))
+      return false;
 
     if (
       _dashFilter.tahun &&
@@ -707,17 +911,37 @@ function _buildDashFilterBar() {
     });
   }
 
-  // Year dropdown — 1950 to current
-  const tahunSel = document.getElementById("dash-filter-tahun");
-  if (tahunSel && tahunSel.options.length <= 1) {
-    const curYear = new Date().getFullYear();
-    for (let y = curYear; y >= 1950; y--) {
+  // Year dropdowns. Rebuilt on every call rather than once, because the "(128)"
+  // / "(kosong)" counts change whenever the asset list is refetched.
+  const counts = _yearCounts(db);
+  const years = [...counts.keys()].map(Number).filter((n) => !isNaN(n));
+  const curYear = new Date().getFullYear();
+  const oldest = years.length ? Math.min(...years) : curYear - 10;
+  const newest = Math.max(curYear, ...(years.length ? years : [curYear]));
+
+  const fillYears = (sel, allLabel) => {
+    if (!sel) return;
+    const previous = sel.value;
+    sel.innerHTML = "";
+    if (allLabel !== null) {
+      const o = document.createElement("option");
+      o.value = "";
+      o.textContent = allLabel;
+      sel.appendChild(o);
+    }
+    for (let y = newest; y >= Math.max(1950, oldest); y--) {
       const o = document.createElement("option");
       o.value = String(y);
-      o.textContent = String(y);
-      tahunSel.appendChild(o);
+      o.textContent = yearOptionLabel(y, counts);
+      sel.appendChild(o);
     }
-  }
+    sel.value = previous || (allLabel !== null ? "" : String(newest));
+  };
+
+  fillYears(document.getElementById("dash-filter-tahun"), "Semua Tahun");
+  // Tren Perbaikan plots twelve months of a single year, so it gets no
+  // all-years option — this is the one dropdown that stays single-year.
+  fillYears(document.getElementById("dash-trend-tahun"), null);
 
   // Wire filter changes (only once)
   if (!window._dashFiltersWired) {
@@ -735,6 +959,13 @@ function _buildDashFilterBar() {
         });
       },
     );
+
+    document
+      .getElementById("dash-trend-tahun")
+      ?.addEventListener("change", (e) => {
+        _dashTrendTahun = e.target.value;
+        _renderTrendPanel();
+      });
 
     // Tab clicks
     document.querySelectorAll(".dash-tab-btn").forEach((btn, i) => {
@@ -1162,21 +1393,15 @@ function _renderTrendPanel() {
   const canvas = document.getElementById("dash-chart-trend");
   if (!canvas) return;
 
-  const selectedYear = _dashFilter.tahun || String(new Date().getFullYear());
-  const months = [
-    "Januari",
-    "Februari",
-    "Maret",
-    "April",
-    "Mei",
-    "Juni",
-    "Juli",
-    "Agustus",
-    "Septemebr",
-    "Oktober",
-    "November",
-    "Desember",
-  ];
+  // This panel's own picker, falling back to the shared bar only when it holds
+  // a concrete year. Previously it read _dashFilter.tahun directly and quietly
+  // substituted the current year whenever that was "Semua Tahun".
+  const selectedYear =
+    _dashTrendTahun ||
+    document.getElementById("dash-trend-tahun")?.value ||
+    _dashFilter.tahun ||
+    String(new Date().getFullYear());
+  const months = BULAN_PANJANG;
 
   // Count perbaikan per month from db riwayat — we derive from latest_date in history summary
   // Use db directly: each item has repair.latest_date — for full tren we need per-month count
@@ -1484,6 +1709,7 @@ function switchView(viewId) {
     initLaporanView();
   }
   if (viewId === "masterdata") {
+    loadMasterCounts();
     setTimeout(() => {
       document.querySelector('.master-tab[data-tab="users"]')?.click();
     }, 50);
@@ -2264,6 +2490,32 @@ function setupEventListeners() {
         });
 
         if (!response.ok) throw new Error("Gagal menyimpan laporan kalibrasi.");
+
+        // Upload is a deliberate SECOND step: the file is attached to the
+        // id_kalibrasi the create returns. This response used to be discarded
+        // entirely, throwing away the only value the upload needs.
+        const created = await response.json().catch(() => ({}));
+        const fileInput = document.getElementById("kalib-file");
+        const file = fileInput?.files?.[0];
+        if (file && created.id_kalibrasi) {
+          const fd = new FormData();
+          fd.append("file", file);
+          // apiFetch leaves FormData alone so the browser can set the
+          // multipart boundary itself.
+          const up = await apiFetch(
+            `/kalibrasi/${created.id_kalibrasi}/sertifikat`,
+            { method: "POST", body: fd },
+          );
+          if (!up.ok) {
+            const detail =
+              (await up.json().catch(() => ({}))).detail ||
+              "berkas sertifikat gagal diunggah.";
+            // The record saved — this is a partial success, not a failure.
+            showToast(`Kalibrasi tersimpan, tetapi ${detail}`, "warning");
+          }
+        }
+        if (fileInput) fileInput.value = "";
+
         showToast("Laporan kalibrasi berhasil disimpan", "success");
         switchView("database");
         fetchAsetFromServer();
@@ -3103,26 +3355,100 @@ async function loadDetailRepair(uid) {
   }
 }
 
+/**
+ * Download a calibration certificate.
+ *
+ * GET /api/kalibrasi/sertifikat/{nama} is Bearer-authenticated, so a plain
+ * <a href> 401s. Fetch it as a blob and hand the browser an object URL.
+ */
+window.downloadSertifikat = async function downloadSertifikat(namaFile) {
+  if (!namaFile) return;
+  try {
+    const res = await apiFetch(
+      `/kalibrasi/sertifikat/${encodeURIComponent(namaFile)}`,
+      { background: true },
+    );
+    if (!res.ok) throw new Error("Berkas sertifikat tidak ditemukan.");
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = namaFile;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    // Revoked on a timer: revoking synchronously can cancel the download
+    // before the browser has started it.
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  } catch (e) {
+    if (e.message !== "Unauthorized")
+      showToast(e.message || "Gagal mengunduh sertifikat.", "error");
+  }
+};
+
+/** Detach a certificate from its calibration record. SUPER_ADMIN / ADMIN only. */
+window.hapusSertifikat = async function hapusSertifikat(idKalibrasi, uid) {
+  if (!idKalibrasi) return;
+  if (!confirm("Hapus berkas sertifikat dari catatan kalibrasi ini?")) return;
+  try {
+    const res = await apiFetch(`/kalibrasi/${idKalibrasi}/sertifikat`, {
+      method: "DELETE",
+    });
+    // apiFetch only throws on 401, so a 403/404 arrives as a normal response.
+    if (!res.ok) {
+      const detail = (await res.json().catch(() => ({}))).detail;
+      throw new Error(detail || "Gagal menghapus sertifikat.");
+    }
+    showToast("Berkas sertifikat dihapus.", "success");
+    if (uid) loadDetailKalibrasi(uid);
+  } catch (e) {
+    if (e.message !== "Unauthorized") showToast(e.message, "error");
+  }
+};
+
 async function loadDetailKalibrasi(uid) {
   const tbody = document.getElementById("hist-kalibrasi-tbody");
   if (!tbody) return;
-  tbody.innerHTML = `<tr><td colspan="8" class="p-4 text-center text-gray-500"><i class="fas fa-spinner fa-spin mr-2"></i>Mengambil data...</td></tr>`;
+  const COLS = 9;
+  tbody.innerHTML = `<tr><td colspan="${COLS}" class="p-4 text-center text-gray-500"><i class="fas fa-spinner fa-spin mr-2"></i>Mengambil data...</td></tr>`;
   try {
     const res = await apiFetch(`/kalibrasi/${uid}`);
     if (!res.ok) throw new Error("Gagal mengambil riwayat kalibrasi.");
     const history = await res.json();
     if (!history.length) {
-      tbody.innerHTML = `<tr><td colspan="8" class="p-4 text-center text-gray-500">Belum ada riwayat kalibrasi.</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="${COLS}" class="p-4 text-center text-gray-500">Belum ada riwayat kalibrasi.</td></tr>`;
       return;
     }
+    const canDelete =
+      _currentRole === "SUPER_ADMIN" || _currentRole === "ADMIN_WILAYAH";
+
     tbody.innerHTML = history
       .map((h) => {
         const statusClass =
           h.status === "LULUS"
-            ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+            ? "badge badge-so"
             : h.status === "GAGAL"
-              ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
-              : "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400";
+              ? "badge badge-tso"
+              : "badge badge-warn";
+        // h.file_sertifikat has always been in this payload and was never read,
+        // so an uploaded certificate was unreachable from the UI.
+        const berkas = h.file_sertifikat
+          ? `<div class="flex items-center justify-center gap-1">
+               <button type="button" onclick="window.downloadSertifikat('${h.file_sertifikat}')"
+                 title="Unduh ${h.file_sertifikat}"
+                 class="text-cyan-600 dark:text-cyan-400 hover:underline text-xs font-semibold">
+                 <i class="fas fa-file-arrow-down mr-1"></i>Unduh</button>
+               ${
+                 canDelete
+                   ? `<button type="button" class="btn-icon btn-icon-danger"
+                        title="Hapus berkas sertifikat"
+                        onclick="window.hapusSertifikat(${h.id_kalibrasi}, '${uid}')">
+                        <i class="fas fa-trash-alt text-[11px]"></i></button>`
+                   : ""
+               }
+             </div>`
+          : `<span class="text-gray-300 dark:text-gray-600 text-xs">—</span>`;
+
         return `
           <tr class="border-b dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50">
             <td class="p-3 text-center text-gray-400">${h.no}</td>
@@ -3130,17 +3456,18 @@ async function loadDetailKalibrasi(uid) {
             <td class="p-3 font-mono text-xs">${h.tanggal_kalibrasi ? formatDateOnly(h.tanggal_kalibrasi) : "—"}</td>
             <td class="p-3 font-mono text-xs">${h.tanggal_berlaku ? formatDateOnly(h.tanggal_berlaku) : "—"}</td>
             <td class="p-3 text-sm text-center">
-              <span class="text-xs font-bold px-2 py-0.5 rounded ${statusClass}">${h.status || "—"}</span>
+              <span class="${statusClass}">${h.status || "—"}</span>
             </td>
             <td class="p-3 text-sm">${h.pelaksana_kalibrasi || "—"}</td>
             <td class="p-3 text-sm">${h.nomor_sertifikat || "—"}</td>
+            <td class="p-3 text-center">${berkas}</td>
             <td class="p-3 text-xs text-gray-500 whitespace-pre-wrap">${h.keterangan || "—"}</td>
           </tr>`;
       })
       .join("");
   } catch (e) {
     if (e.message !== "Unauthorized")
-      tbody.innerHTML = `<tr><td colspan="8" class="p-4 text-center text-red-500">${e.message}</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="${COLS}" class="p-4 text-center text-red-500">${e.message}</td></tr>`;
   }
 }
 
@@ -3252,15 +3579,27 @@ function _eventCount(item) {
   return (s.repair?.count || 0) + (s.mutasi?.count || 0);
 }
 
-// Procurement source is compared loosely because the value has been written two
-// ways over the project's life — "DAOP/DIVRE" and "DAOP / DIVRE". Comparing
-// strictly made every pengadaan filter miss whichever spelling it wasn't
-// written against. Normalising whitespace here fixes all four sort modals at
-// once and survives whichever spelling arrives next.
+// Procurement source has been written several ways over the project's life —
+// "DAOP/DIVRE", "DAOP / DIVRE", "DAOP", "DIVRE", and the numeric ID segment
+// "1"/"2" that appears inside id_aset. Canonicalising to one of two values and
+// comparing EXACTLY beats the previous `includes()`, which matched a stored
+// "DAOP/DIVRE" against a wanted "DAOP" but not the reverse, and would happily
+// match any label that merely contained the other as a substring.
+const _PENGADAAN_PUSAT = "PUSAT";
+const _PENGADAAN_DAERAH = "DAOP/DIVRE";
+
+function canonicalPengadaan(value) {
+  const norm = (value ?? "").toString().toUpperCase().replace(/\s+/g, "");
+  if (!norm) return "";
+  if (norm === "1" || norm.includes("PUSAT")) return _PENGADAAN_PUSAT;
+  if (norm === "2" || norm.includes("DAOP") || norm.includes("DIVRE"))
+    return _PENGADAAN_DAERAH;
+  return norm;
+}
+
 function _pengadaanMatches(value, wanted) {
   if (!wanted) return true;
-  const norm = (s) => (s || "").toString().toUpperCase().replace(/\s+/g, "");
-  return norm(value).includes(norm(wanted));
+  return canonicalPengadaan(value) === canonicalPengadaan(wanted);
 }
 
 // KPI tiles for Kelola Data Aset. Deliberately scoped to the filtered list
@@ -3316,23 +3655,15 @@ function renderDbCards() {
     _currentRole === "SUPER_ADMIN" || _currentRole === "ADMIN_WILAYAH";
 
   const filteredItems = db.filter((item) => {
+    // One identity per row, reused by the region scope, the search and the
+    // Lokasi/UPT filters — so all three agree with the label on the card.
+    const ident = assetLokasiIdentity(item);
+
     if (mode === "local" && myRegion) {
-      const raw = item.id_lokasi_raw || item.id_lokasi || "";
-      const parent = getParentLokasiCode(raw) || raw;
-      if (parent !== myRegion && raw !== myLokasiRaw) return false;
+      if (ident.parentCode !== myRegion && ident.uptCode !== myLokasiRaw)
+        return false;
     }
-    const searchQ_upper = searchQ;
-    const matchSearch =
-      (item.id_aset || "").toUpperCase().includes(searchQ_upper) ||
-      (item.kode_alat || "").toUpperCase().includes(searchQ_upper) ||
-      (item.kode_alat_name || "").toUpperCase().includes(searchQ_upper) ||
-      (item.id_lokasi || "").toUpperCase().includes(searchQ_upper) ||
-      (item.id_lokasi_display || "").toUpperCase().includes(searchQ_upper) ||
-      (item.sumber_pengadaan || "").toUpperCase().includes(searchQ_upper) ||
-      (item.status_terakhir || "").toUpperCase().includes(searchQ_upper) ||
-      (item.peruntukan || "").toUpperCase().includes(searchQ_upper) ||
-      (item.tanggal_pembelian || "").toUpperCase().includes(searchQ_upper);
-    if (!matchSearch) return false;
+    if (!assetMatchesSearch(item, searchQ)) return false;
 
     // Apply custom sort filters
     const f = _sortFilters;
@@ -3344,13 +3675,8 @@ function renderDbCards() {
       if (dec.peruntukan !== f.peruntukan)
         return false;
     }
-    if (f.lokasi) {
-      const _rawUpt = item.id_lokasi_raw || item.id_lokasi || "";
-      const _parent = getParentLokasiCode(_rawUpt) || _rawUpt;
-      if (_parent !== f.lokasi && _rawUpt !== f.lokasi) return false;
-    }
-    if (f.upt && item.id_lokasi_raw !== f.upt && item.id_lokasi !== f.upt)
-        return false;
+    if (!lokasiMatchesCode(ident, f.lokasi)) return false;
+    if (f.upt && ident.uptCode !== f.upt) return false;
     if (f.tahunFrom || f.tahunTo) {
       const yr = parseInt((item.tanggal_pembelian || "").slice(0, 4));
       if (f.tahunFrom && yr < parseInt(f.tahunFrom))
@@ -3419,28 +3745,18 @@ function renderDbCards() {
       // Peruntukan: Prioritas 1 dari database, Prioritas 2 ekstrak dari ID aset
       const peruntukanName = item.peruntukan ? item.peruntukan : "—";
 
-      // --- REVISI LOGIKA LOKASI MURNI ---
-      const rawUptCode =
-        summaryItem?.mutasi?.original_lokasi_code || item.id_lokasi_raw || item.id_lokasi || "";
-      const parentCode = getParentLokasiCode(rawUptCode) || rawUptCode;
-
-      // Lokasi Induk (DAOP/DIVRE)
-      const lokasiName =
-        lokasiData.find((l) => l.code === parentCode)?.name ||
-        summaryItem?.mutasi?.original_lokasi_name ||
-        item.lokasi_name ||
-        item.id_lokasi_name ||
-        parentCode ||
-        "—";
+      // Location comes from the shared identity, the same call the search and
+      // the filters above make — so what the card prints is by construction
+      // what a search for that string will find.
+      const ident = assetLokasiIdentity(item);
+      const rawUptCode = ident.uptCode;
+      const lokasiName = ident.parentName || "—";
 
       // UPT — show em-dash when the stored code is a parent Lokasi (not a UPT)
-      const uptEntry = uptDatabase.find((u) => u.upt === rawUptCode);
-      const isDirectLokasi = !uptEntry && !!lokasiData.find((l) => l.code === rawUptCode);
-      const uptDisplay = uptEntry
-        ? `${uptEntry.nama}`
-        : isDirectLokasi
-          ? "—"
-          : summaryItem?.mutasi?.original_lokasi_name || item.lokasi_name || "—";
+      const isDirectLokasi =
+        !uptDatabase.some((u) => u.upt === rawUptCode) &&
+        lokasiData.some((l) => l.code === rawUptCode);
+      const uptDisplay = isDirectLokasi ? "—" : ident.uptName || "—";
 
       const tahunFull = dec.tahun
         ? dec.tahun.length === 2
@@ -3780,10 +4096,9 @@ function renderHistoryCards() {
 // everywhere — Kalibrasi and Mutasi used to match on id_aset alone.
 function _historySearchMatches(item, q) {
   if (!q) return true;
-  return [
-    // Shared across all three tabs
-    item.id_aset, item.kode_alat, item.kode_alat_name,
-    item.id_lokasi, item.id_lokasi_name, item.status_terakhir, item.peruntukan,
+  // Location goes through assetMatchesSearch, which understands region labels;
+  // the card-specific fields ride along as free text.
+  return assetMatchesSearch(item, q, [
     // Perbaikan card
     item.repair?.latest_teknisi, item.repair?.latest_keterangan, item.repair?.latest_kondisi,
     // Kalibrasi card — searching "LULUS" or a certificate number should work on
@@ -3793,7 +4108,7 @@ function _historySearchMatches(item, q) {
     // Mutasi card
     item.mutasi?.latest_lokasi_tuju, item.mutasi?.latest_oleh,
     item.mutasi?.latest_alasan, item.mutasi?.original_lokasi_name,
-  ].some((v) => (v || "").toString().toUpperCase().includes(q));
+  ]);
 }
 
 // Shared filter for the three Pantau Riwayat tabs — every criterion the sort
@@ -3806,11 +4121,12 @@ function _historyFilterMatches(item, f) {
     if (f.tahunFrom && yr < parseInt(f.tahunFrom)) return false;
     if (f.tahunTo && yr > parseInt(f.tahunTo)) return false;
   }
-  if (f.lokasi) {
-    const parentCode = getParentLokasiCode(item.id_lokasi) || item.id_lokasi;
-    if (parentCode !== f.lokasi) return false;
-  }
-  if (f.upt && item.id_lokasi !== f.upt) return false;
+  // Same identity the cards and the search use. This tab used to read
+  // item.id_lokasi directly, so it disagreed with the other three views about
+  // which location an asset belongs to.
+  const ident = assetLokasiIdentity(item);
+  if (!lokasiMatchesCode(ident, f.lokasi)) return false;
+  if (f.upt && ident.uptCode !== f.upt) return false;
   if (f.peruntukan) {
     const dec = decodeAsetId(item.id_aset);
     if ((dec.peruntukan || "").toUpperCase() !== f.peruntukan) return false;
@@ -4001,30 +4317,55 @@ function renderMutasiCards() {
 
 // ── MASTER DATA UI ─────────────────────────────────────────────────────────
 
+// Which Pusat Data tab is open. The shared search box filters whichever table
+// this names, so every renderer reads the same query.
+let _masterTab = "users";
+let _masterSearch = "";
+
+/** Reload the visible master table. Used by the tabs, the search box and the
+ *  post-mutation refreshes, so no caller has to remember the mapping. */
+function refreshMasterTab() {
+  if (_masterTab === "users") loadMasterUsers();
+  if (_masterTab === "alat") loadMasterAlat();
+  if (_masterTab === "varian") loadMasterVarian();
+  if (_masterTab === "lokasi") loadMasterLokasi();
+  if (_masterTab === "upt") loadMasterUpt();
+  if (_masterTab === "gudang") loadMasterGudang();
+}
+
+/**
+ * Shared row matcher for every Pusat Data table.
+ *
+ * Location-bearing rows go through lokasiMatchesTerm so "DAOP 1" behaves the
+ * same here as it does on the asset views; everything else is plain substring.
+ */
+function masterRowMatches(values, { lokasiIdentity } = {}) {
+  const q = _masterSearch;
+  if (!q) return true;
+  if (lokasiIdentity && lokasiMatchesTerm(lokasiIdentity, q)) return true;
+  return textMatchesTerm(values, q);
+}
+
+function setMasterSearchCount(shown, total) {
+  const node = document.getElementById("master-search-count");
+  if (!node) return;
+  node.textContent = _masterSearch
+    ? `${shown} dari ${total} baris`
+    : `${total} baris`;
+}
+
 // Tab switching
 document.querySelectorAll(".master-tab").forEach((tab) => {
   tab.addEventListener("click", () => {
     const target = tab.dataset.tab;
+    _masterTab = target;
 
-    const ACTIVE_CLS = [
-      "bg-kai-orange",
-      "text-white",
-      "font-semibold",
-      "shadow-sm",
-    ];
-    const INACTIVE_CLS = [
-      "text-gray-500",
-      "dark:text-gray-400",
-      "font-medium",
-      "hover:bg-kai-orange/20",
-      "hover:text-kai-orange",
-    ];
-
-    document.querySelectorAll(".master-tab").forEach((t) => {
-      const isActive = t.dataset.tab === target;
-      [...ACTIVE_CLS, ...INACTIVE_CLS].forEach((c) => t.classList.remove(c));
-      (isActive ? ACTIVE_CLS : INACTIVE_CLS).forEach((c) => t.classList.add(c));
-    });
+    // The tabs now carry the shared .tab component class, so activation is a
+    // single class toggle rather than two lists of Tailwind utilities that had
+    // to be kept in sync with the markup by hand.
+    document
+      .querySelectorAll(".master-tab")
+      .forEach((t) => t.classList.toggle("is-active", t.dataset.tab === target));
 
     document
       .querySelectorAll(".master-tab-panel")
@@ -4033,12 +4374,58 @@ document.querySelectorAll(".master-tab").forEach((tab) => {
       .getElementById(`master-panel-${target}`)
       ?.classList.remove("hidden");
 
-    if (target === "users") loadMasterUsers();
-    if (target === "alat") loadMasterAlat();
-    if (target === "lokasi") loadMasterLokasi();
-    if (target === "upt") loadMasterUpt();
+    // A query typed for one table rarely means anything in the next.
+    const box = document.getElementById("master-search");
+    if (box) box.value = "";
+    _masterSearch = "";
+
+    refreshMasterTab();
   });
 });
+
+document.getElementById("master-search")?.addEventListener("input", (e) => {
+  _masterSearch = normalizeSearchText(e.target.value);
+  refreshMasterTab();
+});
+
+/**
+ * Row counts across every table Pusat Data governs.
+ *
+ * Deliberately includes the tables this screen does NOT edit (aset, riwayat,
+ * sparepart) so "Pusat Data" reads as a view of the whole database rather than
+ * of the four tables that happen to have forms.
+ */
+async function loadMasterCounts() {
+  const mount = document.getElementById("master-counts");
+  if (!mount) return;
+
+  const tile = (label, value, icon, tone) => `
+    <div class="stat-card">
+      <p class="stat-label">${label}</p>
+      <h3 class="stat-value ${tone}">${value}</h3>
+      <i class="fas ${icon} stat-icon"></i>
+    </div>`;
+
+  // Everything here is already cached or cheap; nothing new is fetched for the
+  // counts alone.
+  const [varianRes, gudangRes, partsRes] = await Promise.all([
+    apiFetch("/master/varian", { background: true }).catch(() => null),
+    apiFetch("/inventaris/gudang?include_inactive=true", { background: true }).catch(() => null),
+    apiFetch("/inventaris/parts", { background: true }).catch(() => null),
+  ]);
+  const varian = varianRes?.ok ? (await varianRes.json()).length : 0;
+  const gudang = gudangRes?.ok ? (await gudangRes.json()).length : 0;
+  const parts = partsRes?.ok ? (await partsRes.json()).length : 0;
+
+  mount.innerHTML = [
+    tile("Alat Kerja", alatKerjaData.length, "fa-gears", "text-purple-500"),
+    tile("Spesifikasi", varian, "fa-screwdriver-wrench", "text-rose-500"),
+    tile("Lokasi", lokasiData.length, "fa-map", "text-teal-500"),
+    tile("UPT", uptDatabase.length, "fa-sitemap", "text-cyan-600"),
+    tile("Gudang", gudang, "fa-warehouse", "text-amber-600"),
+    tile("Suku Cadang", parts, "fa-boxes", "text-kai-blue dark:text-blue-400"),
+  ].join("");
+}
 
 // ── LOAD FUNCTIONS ────────────────────────────────────────────────
 
@@ -4078,10 +4465,24 @@ async function loadMasterUsers() {
   try {
     const res = await apiFetch("/users");
     if (!res.ok) throw new Error();
-    const data = await res.json();
+    const all = await res.json();
+
+    const data = all.filter((u) =>
+      masterRowMatches([u.username, u.role, u.nama_lokasi, u.id_lokasi], {
+        lokasiIdentity: {
+          uptCode: u.id_lokasi || "",
+          parentCode: getParentLokasiCode(u.id_lokasi) || u.id_lokasi || "",
+          uptName: u.nama_lokasi || "",
+          parentName: u.nama_lokasi || "",
+        },
+      }),
+    );
+    setMasterSearchCount(data.length, all.length);
 
     if (!data.length) {
-      tbody.innerHTML = `<tr><td colspan="4" class="px-4 py-6 text-center text-gray-400 text-sm">Belum ada data pengguna.</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="5" class="empty-state">${
+        all.length ? "Tidak ada pengguna yang cocok." : "Belum ada data pengguna."
+      }</td></tr>`;
       return;
     }
 
@@ -4194,10 +4595,23 @@ async function loadMasterAlat() {
   try {
     await loadAlatVarian();
     const res = await apiFetch("/master/alat");
-    const data = await res.json();
+    const all = await res.json();
+
+    // Variant names are searchable too: looking up "GX390" should find the
+    // GENSET row that carries it.
+    const data = all.filter((a) =>
+      masterRowMatches([
+        a.kode_alat,
+        a.nama_alat,
+        ...(_varianByAlat[a.kode_alat] || []).map((v) => v.nama_varian),
+      ]),
+    );
+    setMasterSearchCount(data.length, all.length);
 
     if (!data.length) {
-      tbody.innerHTML = `<tr><td colspan="4" class="px-4 py-6 text-center text-gray-400 text-sm">Belum ada data alat.</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="4" class="empty-state">${
+        all.length ? "Tidak ada alat yang cocok." : "Belum ada data alat."
+      }</td></tr>`;
       return;
     }
 
@@ -4242,10 +4656,25 @@ async function loadMasterLokasi() {
     const res = await apiFetch(
       "/master/lokasi?tipe=DAOP&tipe=DIVRE&tipe=BALAIYASA&tipe=PUSAT",
     );
-    const data = await res.json();
+    const all = await res.json();
+
+    // Region-aware: typing "DAOP 1" must match DAOP 1 and not DAOP 10.
+    const data = all.filter((l) =>
+      masterRowMatches([l.id_lokasi, l.nama_lokasi, l.tipe], {
+        lokasiIdentity: {
+          uptCode: l.id_lokasi,
+          parentCode: l.id_lokasi,
+          uptName: l.nama_lokasi,
+          parentName: l.nama_lokasi,
+        },
+      }),
+    );
+    setMasterSearchCount(data.length, all.length);
 
     if (!data.length) {
-      tbody.innerHTML = `<tr><td colspan="4" class="px-4 py-6 text-center text-gray-400 text-sm">Belum ada data lokasi.</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="4" class="empty-state">${
+        all.length ? "Tidak ada lokasi yang cocok." : "Belum ada data lokasi."
+      }</td></tr>`;
       return;
     }
 
@@ -4286,6 +4715,323 @@ async function loadMasterLokasi() {
     tbody.innerHTML = `<tr><td colspan="4" class="px-4 py-6 text-center text-red-400 text-sm">Gagal memuat data.</td></tr>`;
   }
 }
+
+// ══════════════════════════════════════════════════════════════════════════
+// PUSAT DATA ▸ SPESIFIKASI TEKNIS (alat_varian)
+//
+// The endpoints existed with no UI, so variants — and the spec fields the
+// public QR card renders — could only be created by running seed.py.
+// ══════════════════════════════════════════════════════════════════════════
+
+let _masterVarianRows = [];
+
+async function loadMasterVarian() {
+  const tbody = document.getElementById("table-varian");
+  if (!tbody) return;
+  tbody.innerHTML = `<tr><td colspan="6" class="empty-state"><i class="fas fa-spinner fa-spin"></i>Memuat…</td></tr>`;
+
+  const alatSel = document.getElementById("new-varian-alat");
+  if (alatSel && alatKerjaData.length) {
+    const keep = alatSel.value;
+    alatSel.innerHTML =
+      '<option value="">— Pilih alat kerja —</option>' +
+      alatKerjaData
+        .map((a) => `<option value="${a.code}">${a.code} — ${a.name}</option>`)
+        .join("");
+    alatSel.value = keep;
+  }
+
+  try {
+    const res = await apiFetch("/master/varian");
+    if (!res.ok) throw new Error();
+    _masterVarianRows = await res.json();
+    resetPage("master-varian");
+    renderMasterVarian();
+  } catch (e) {
+    tbody.innerHTML = `<tr><td colspan="6" class="empty-state is-error">Gagal memuat spesifikasi teknis.</td></tr>`;
+  }
+}
+
+function renderMasterVarian() {
+  const tbody = document.getElementById("table-varian");
+  if (!tbody) return;
+
+  const alatName = (kode) =>
+    alatKerjaData.find((a) => a.code === kode)?.name || kode;
+
+  const rows = _masterVarianRows.filter((v) =>
+    masterRowMatches([
+      v.kode_alat, alatName(v.kode_alat), v.nama_varian,
+      v.merk, v.tipe_model, v.kapasitas, v.daya, v.keterangan,
+    ]),
+  );
+  setMasterSearchCount(rows.length, _masterVarianRows.length);
+
+  if (!rows.length) {
+    renderPagerBar("master-varian-pager", paginateList("master-varian", rows), renderMasterVarian);
+    tbody.innerHTML = `<tr><td colspan="6" class="empty-state">${
+      _masterVarianRows.length
+        ? "Tidak ada spesifikasi yang cocok."
+        : "Belum ada spesifikasi teknis."
+    }</td></tr>`;
+    return;
+  }
+
+  const page = paginateList("master-varian", rows);
+  renderPagerBar("master-varian-pager", page, renderMasterVarian);
+
+  const dash = (v) => v || '<span class="text-gray-300 dark:text-gray-600">—</span>';
+  tbody.innerHTML = page.items
+    .map(
+      (v) => `
+      <tr>
+        <td><span class="font-mono font-bold text-kai-blue dark:text-blue-400">${v.kode_alat}</span>
+            <span class="block text-[10px] text-gray-400">${alatName(v.kode_alat)}</span></td>
+        <td class="font-semibold">${v.nama_varian}</td>
+        <td class="text-xs">${dash([v.merk, v.tipe_model].filter(Boolean).join(" · "))}</td>
+        <td class="text-xs">${dash(v.kapasitas)}</td>
+        <td class="text-xs">${dash(v.daya)}</td>
+        <td class="text-right whitespace-nowrap">
+          <button class="btn-icon" title="Ubah" onclick="window.editMasterVarian(${v.id_varian})">
+            <i class="fas fa-pen text-[11px]"></i></button>
+          <button class="btn-icon btn-icon-danger" title="Hapus" onclick="window.deleteMasterVarian(${v.id_varian})">
+            <i class="fas fa-trash-alt text-[11px]"></i></button>
+        </td>
+      </tr>`,
+    )
+    .join("");
+}
+
+const _VARIAN_FORM_FIELDS = {
+  "new-varian-merk": "merk",
+  "new-varian-tipe": "tipe_model",
+  "new-varian-kapasitas": "kapasitas",
+  "new-varian-daya": "daya",
+  "new-varian-dimensi": "dimensi",
+  "new-varian-berat": "berat",
+  "new-varian-keterangan": "keterangan",
+};
+
+window.editMasterVarian = function (id) {
+  const v = _masterVarianRows.find((x) => x.id_varian === id);
+  if (!v) return;
+  document.getElementById("varian-edit-id").value = id;
+  document.getElementById("new-varian-alat").value = v.kode_alat;
+  // kode_alat is part of the uniqueness constraint and the API has no move
+  // path, so it is locked while editing.
+  document.getElementById("new-varian-alat").disabled = true;
+  document.getElementById("new-varian-nama").value = v.nama_varian || "";
+  Object.entries(_VARIAN_FORM_FIELDS).forEach(([id, key]) => {
+    const n = document.getElementById(id);
+    if (n) n.value = v[key] || "";
+  });
+  document.getElementById("varian-submit-label").textContent = "Simpan Perubahan";
+  document.getElementById("varian-cancel-edit")?.classList.remove("hidden");
+  document.getElementById("form-add-varian")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+};
+
+function _resetVarianForm() {
+  document.getElementById("varian-edit-id").value = "";
+  const alatSel = document.getElementById("new-varian-alat");
+  if (alatSel) { alatSel.disabled = false; alatSel.value = ""; }
+  const nama = document.getElementById("new-varian-nama");
+  if (nama) nama.value = "";
+  Object.keys(_VARIAN_FORM_FIELDS).forEach((id) => {
+    const n = document.getElementById(id);
+    if (n) n.value = "";
+  });
+  const label = document.getElementById("varian-submit-label");
+  if (label) label.textContent = "Simpan Spesifikasi";
+  document.getElementById("varian-cancel-edit")?.classList.add("hidden");
+}
+
+window.deleteMasterVarian = async function (id) {
+  const v = _masterVarianRows.find((x) => x.id_varian === id);
+  if (!confirm(`Hapus spesifikasi "${v?.nama_varian || id}"?\n\nAset yang memakai varian ini akan kehilangan spesifikasinya (data aset itu sendiri tetap aman).`))
+    return;
+  try {
+    const res = await apiFetch(`/master/varian/${id}`, { method: "DELETE" });
+    const payload = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      showToast(payload.detail || "Gagal menghapus spesifikasi.", "error");
+      return;
+    }
+    showToast("Spesifikasi dihapus.", "success");
+    await loadMasterVarian();
+    await loadAlatVarian();
+  } catch (e) {
+    if (e.message !== "Unauthorized") showToast(e.message, "error");
+  }
+};
+
+document.getElementById("varian-cancel-edit")?.addEventListener("click", _resetVarianForm);
+
+document.getElementById("form-add-varian")?.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const editId = document.getElementById("varian-edit-id")?.value;
+  const kodeAlat = document.getElementById("new-varian-alat")?.value;
+  const namaVarian = document.getElementById("new-varian-nama")?.value.trim();
+  if (!kodeAlat || !namaVarian)
+    return showToast("Alat kerja dan nama varian wajib diisi.", "warning");
+
+  const body = { nama_varian: namaVarian };
+  Object.entries(_VARIAN_FORM_FIELDS).forEach(([id, key]) => {
+    body[key] = document.getElementById(id)?.value.trim() || null;
+  });
+  if (!editId) body.kode_alat = kodeAlat;
+
+  try {
+    const res = editId
+      ? await apiFetch(`/master/varian/${editId}`, { method: "PUT", body: JSON.stringify(body) })
+      : await apiFetch("/master/varian", { method: "POST", body: JSON.stringify(body) });
+    const payload = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      showToast(payload.detail || "Gagal menyimpan spesifikasi.", "error");
+      return;
+    }
+    showToast(editId ? "Spesifikasi diperbarui." : "Spesifikasi ditambahkan.", "success");
+    _resetVarianForm();
+    await loadMasterVarian();
+    await loadAlatVarian();
+  } catch (err) {
+    if (err.message !== "Unauthorized") showToast(err.message, "error");
+  }
+});
+
+// ══════════════════════════════════════════════════════════════════════════
+// PUSAT DATA ▸ GUDANG
+//
+// The only master table with no UI whatsoever, and a hard blocker: with no
+// warehouses, every stock movement was refused client-side before it reached
+// the server.
+// ══════════════════════════════════════════════════════════════════════════
+
+let _masterGudangRows = [];
+
+async function loadMasterGudang() {
+  const tbody = document.getElementById("table-gudang");
+  if (!tbody) return;
+  tbody.innerHTML = `<tr><td colspan="5" class="empty-state"><i class="fas fa-spinner fa-spin"></i>Memuat…</td></tr>`;
+  try {
+    // include_inactive so a deactivated warehouse can be found and reactivated
+    // rather than disappearing from the only screen that manages it.
+    const res = await apiFetch("/inventaris/gudang?include_inactive=true");
+    if (!res.ok) throw new Error();
+    _masterGudangRows = await res.json();
+    renderMasterGudang();
+  } catch (e) {
+    tbody.innerHTML = `<tr><td colspan="5" class="empty-state is-error">Gagal memuat data gudang.</td></tr>`;
+  }
+}
+
+function renderMasterGudang() {
+  const tbody = document.getElementById("table-gudang");
+  if (!tbody) return;
+
+  const rows = _masterGudangRows.filter((g) =>
+    masterRowMatches([g.kode, g.nama, g.keterangan]),
+  );
+  setMasterSearchCount(rows.length, _masterGudangRows.length);
+
+  if (!rows.length) {
+    tbody.innerHTML = `<tr><td colspan="5" class="empty-state">${
+      _masterGudangRows.length
+        ? "Tidak ada gudang yang cocok."
+        : "Belum ada gudang. Tambahkan minimal satu sebelum mencatat pergerakan stok."
+    }</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = rows
+    .map(
+      (g) => `
+      <tr>
+        <td><span class="font-mono font-bold text-kai-blue dark:text-blue-400">${g.kode}</span></td>
+        <td class="font-semibold">${g.nama}</td>
+        <td class="text-xs text-gray-500">${g.keterangan || "—"}</td>
+        <td><span class="badge ${g.is_active ? "badge-so" : "badge-neutral"}">${g.is_active ? "Aktif" : "Nonaktif"}</span></td>
+        <td class="text-right whitespace-nowrap">
+          <button class="btn-icon" title="Ubah" onclick="window.editMasterGudang(${g.id_gudang})">
+            <i class="fas fa-pen text-[11px]"></i></button>
+          <button class="btn-icon btn-icon-danger" title="Hapus" onclick="window.deleteMasterGudang(${g.id_gudang})">
+            <i class="fas fa-trash-alt text-[11px]"></i></button>
+        </td>
+      </tr>`,
+    )
+    .join("");
+}
+
+window.editMasterGudang = function (id) {
+  const g = _masterGudangRows.find((x) => x.id_gudang === id);
+  if (!g) return;
+  document.getElementById("gudang-edit-id").value = id;
+  document.getElementById("new-gudang-kode").value = g.kode || "";
+  document.getElementById("new-gudang-nama").value = g.nama || "";
+  document.getElementById("new-gudang-keterangan").value = g.keterangan || "";
+  document.getElementById("gudang-submit-label").textContent = "Simpan Perubahan";
+  document.getElementById("gudang-cancel-edit")?.classList.remove("hidden");
+  document.getElementById("form-add-gudang")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+};
+
+function _resetGudangMasterForm() {
+  ["gudang-edit-id", "new-gudang-kode", "new-gudang-nama", "new-gudang-keterangan"]
+    .forEach((id) => { const n = document.getElementById(id); if (n) n.value = ""; });
+  const label = document.getElementById("gudang-submit-label");
+  if (label) label.textContent = "Simpan Gudang";
+  document.getElementById("gudang-cancel-edit")?.classList.add("hidden");
+}
+
+window.deleteMasterGudang = async function (id) {
+  const g = _masterGudangRows.find((x) => x.id_gudang === id);
+  if (!confirm(`Hapus gudang "${g?.nama || id}"?\n\nJika gudang masih memiliki riwayat stok, gudang hanya akan dinonaktifkan agar riwayat tidak menjadi yatim.`))
+    return;
+  try {
+    const res = await apiFetch(`/inventaris/gudang/${id}`, { method: "DELETE" });
+    const payload = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      showToast(payload.detail || "Gagal menghapus gudang.", "error");
+      return;
+    }
+    showToast(payload.message || "Gudang dihapus.", "success");
+    await loadMasterGudang();
+  } catch (e) {
+    if (e.message !== "Unauthorized") showToast(e.message, "error");
+  }
+};
+
+document.getElementById("gudang-cancel-edit")?.addEventListener("click", _resetGudangMasterForm);
+
+document.getElementById("form-add-gudang")?.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const editId = document.getElementById("gudang-edit-id")?.value;
+  const kode = document.getElementById("new-gudang-kode")?.value.trim().toUpperCase();
+  const nama = document.getElementById("new-gudang-nama")?.value.trim();
+  const keterangan = document.getElementById("new-gudang-keterangan")?.value.trim() || null;
+  if (!kode || !nama)
+    return showToast("Kode dan nama gudang wajib diisi.", "warning");
+
+  try {
+    const res = editId
+      ? await apiFetch(`/inventaris/gudang/${editId}`, {
+          method: "PUT",
+          body: JSON.stringify({ kode, nama, keterangan }),
+        })
+      : await apiFetch("/inventaris/gudang", {
+          method: "POST",
+          body: JSON.stringify({ kode, nama, keterangan, is_active: true }),
+        });
+    const payload = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      showToast(payload.detail || "Gagal menyimpan gudang.", "error");
+      return;
+    }
+    showToast(editId ? "Gudang diperbarui." : "Gudang ditambahkan.", "success");
+    _resetGudangMasterForm();
+    await loadMasterGudang();
+  } catch (err) {
+    if (err.message !== "Unauthorized") showToast(err.message, "error");
+  }
+});
 
 function getParentLokasiName(idLokasi) {
   if (!idLokasi) return "-";
@@ -4335,13 +5081,30 @@ function renderMasterUpt() {
   const tbody = document.getElementById("table-upt");
   if (!tbody) return;
 
-  if (!_masterUptRows.length) {
-    renderPagerBar("master-upt-pager", paginateList("master-upt", _masterUptRows), renderMasterUpt);
-    tbody.innerHTML = `<tr><td colspan="4" class="px-4 py-6 text-center text-gray-400 text-sm">Belum ada data UPT.</td></tr>`;
+  // Region-aware search: "DAOP 1" lists JR1.x and excludes JR10.x, using the
+  // same matcher the asset views use.
+  const rows = _masterUptRows.filter((u) => {
+    const parentCode = getParentLokasiCode(u.id_lokasi) || u.id_lokasi;
+    return masterRowMatches([u.id_lokasi, u.nama_lokasi], {
+      lokasiIdentity: {
+        uptCode: u.id_lokasi,
+        parentCode,
+        uptName: u.nama_lokasi,
+        parentName: lokasiData.find((l) => l.code === parentCode)?.name || parentCode,
+      },
+    });
+  });
+  setMasterSearchCount(rows.length, _masterUptRows.length);
+
+  if (!rows.length) {
+    renderPagerBar("master-upt-pager", paginateList("master-upt", rows), renderMasterUpt);
+    tbody.innerHTML = `<tr><td colspan="4" class="empty-state">${
+      _masterUptRows.length ? "Tidak ada UPT yang cocok." : "Belum ada data UPT."
+    }</td></tr>`;
     return;
   }
 
-  const page = paginateList("master-upt", _masterUptRows);
+  const page = paginateList("master-upt", rows);
   renderPagerBar("master-upt-pager", page, renderMasterUpt);
 
   {
@@ -4392,18 +5155,66 @@ let _histSortField = "id_aset";
 let _histSortDir = "date-desc";
 let _histSortFilters = {};
 
-// ── Helper: populate year dropdowns ──
-function _populateYearDropdowns(fromId, toId) {
+// ── Helper: how many rows fall in each purchase year ──
+//
+// Drives the "(128)" / "(kosong)" suffix on every year option, so a user can
+// see which years hold data before selecting one instead of picking a year and
+// getting an empty list.
+function _yearCounts(rows = db, dateField = "tanggal_pembelian") {
+  const counts = new Map();
+  (rows || []).forEach((r) => {
+    const y = String(r?.[dateField] ?? "").slice(0, 4);
+    if (/^\d{4}$/.test(y)) counts.set(y, (counts.get(y) || 0) + 1);
+  });
+  return counts;
+}
+
+function yearOptionLabel(year, counts) {
+  const n = counts.get(String(year)) || 0;
+  return n ? `${year} (${n.toLocaleString("id-ID")})` : `${year} (kosong)`;
+}
+
+/**
+ * Fill a pair of year <select>s.
+ *
+ * Two things were wrong before. The selects are authored EMPTY in index.html,
+ * so option[0] was the current year and got auto-selected — choosing "Tahun
+ * Beli" + a custom range then filtered to 2026 alone and emptied every list,
+ * since the seeded data stops at 2023. And the reset handlers set value = ""
+ * against an option that did not exist, leaving selectedIndex = -1 and a blank
+ * box. A real "Semua Tahun" option at index 0 fixes both.
+ *
+ * The range is capped at the oldest year present (floored at 1950) rather than
+ * always walking back to 1950 — 70+ dead options are noise.
+ */
+function _populateYearDropdowns(fromId, toId, rows = db, dateField = "tanggal_pembelian") {
+  const counts = _yearCounts(rows, dateField);
   const curYear = new Date().getFullYear();
+  const years = [...counts.keys()].map(Number).filter((n) => !isNaN(n));
+  const oldest = years.length ? Math.min(...years) : curYear - 10;
+  const newest = Math.max(curYear, ...(years.length ? years : [curYear]));
+
   [fromId, toId].forEach((id) => {
     const sel = document.getElementById(id);
-    if (!sel || sel.options.length > 1) return;
-    for (let y = curYear; y >= 1950; y--) {
+    if (!sel) return;
+
+    // Rebuild rather than bail on `options.length > 1`: the counts change every
+    // time the asset list is refetched, so a cached list would go stale.
+    const previous = sel.value;
+    sel.innerHTML = "";
+
+    const all = document.createElement("option");
+    all.value = "";
+    all.textContent = "Semua Tahun";
+    sel.appendChild(all);
+
+    for (let y = newest; y >= Math.max(1950, oldest); y--) {
       const o = document.createElement("option");
       o.value = String(y);
-      o.textContent = String(y);
+      o.textContent = yearOptionLabel(y, counts);
       sel.appendChild(o);
     }
+    sel.value = previous || "";
   });
 }
 
@@ -4519,7 +5330,7 @@ function _syncSortPanels(fieldVal, customChecked, panelPrefix, allLabelId, custo
 
 // ── DB Sort Modal ──
 document.getElementById("btn-sort-db")?.addEventListener("click", () => {
-  _populateYearDropdowns("sort-id-tahun-from", "sort-id-tahun-to");
+  // "sort-id-tahun-from/-to" exist in no HTML — the call was a no-op.
   _populateYearDropdowns("sort-tgl-from", "sort-tgl-to");
   _populateSortDropdowns("sort");
 
@@ -4691,7 +5502,8 @@ document.getElementById("btn-reset-sort")?.addEventListener("click", () => {
 
 // ── History Sort Modal ──
 document.getElementById("btn-sort-history")?.addEventListener("click", () => {
-  _populateYearDropdowns("hist-sort-tgl-from", "hist-sort-tgl-to");
+  // Counts come from the summary rows this view actually lists.
+  _populateYearDropdowns("hist-sort-tgl-from", "hist-sort-tgl-to", _historySummary);
 
   // Sync panels and Terbaru/Terlama visibility for current field
   const curField = document.getElementById("hist-sort-field")?.value || "id_aset";
@@ -4993,29 +5805,39 @@ document
       } catch (err) {
         showToast(err.message, "error");
       }
-  const loc = lokasiData.find((l) => l.code === e.target.value);
-  const isBalaiyasa =
-    loc?.name?.toUpperCase().includes("BALAIYASA") ||
-    loc?.tipe?.toUpperCase() === "BALAIYASA";
-  const namaInput = document.getElementById("new-upt-nama");
-  const submitBtn = document.querySelector(
-    '#form-add-upt button[type="submit"]',
-  );
-  if (isBalaiyasa) {
-    if (namaInput) {
-      namaInput.disabled = true;
-      namaInput.placeholder = "Tidak berlaku untuk Balaiyasa";
+  });
+
+// A Balaiyasa is a workshop and has no resorts under it, so picking one as the
+// parent must block the form. This ran inside the SUBMIT handler above, where
+// `e.target` is the <form> and `e.target.value` is undefined — so the guard
+// resolved nothing and always took the "enable" branch. It belongs on the
+// select's own change event.
+document
+  .getElementById("new-upt-lokasi")
+  ?.addEventListener("change", (e) => {
+    const loc = lokasiData.find((l) => l.code === e.target.value);
+    // Type, not a name substring: a resort legitimately named "… BALAIYASA"
+    // is not itself a Balaiyasa.
+    const isBalaiyasa = (loc?.tipe || "").toUpperCase() === "BALAIYASA";
+    const namaInput = document.getElementById("new-upt-nama");
+    const submitBtn = document.querySelector(
+      '#form-add-upt button[type="submit"]',
+    );
+    if (isBalaiyasa) {
+      if (namaInput) {
+        namaInput.disabled = true;
+        namaInput.placeholder = "Tidak berlaku untuk Balaiyasa";
+      }
+      if (submitBtn) submitBtn.disabled = true;
+      showToast("Lokasi Balaiyasa tidak memiliki UPT terkait.", "warning");
+    } else {
+      if (namaInput) {
+        namaInput.disabled = false;
+        namaInput.placeholder = "Nama UPT";
+      }
+      if (submitBtn) submitBtn.disabled = false;
     }
-    if (submitBtn) submitBtn.disabled = true;
-    showToast("Lokasi Balaiyasa tidak memiliki UPT terkait.", "warning");
-  } else {
-    if (namaInput) {
-      namaInput.disabled = false;
-      namaInput.placeholder = "Nama UPT";
-    }
-    if (submitBtn) submitBtn.disabled = false;
-  }
-});
+  });
 
 // ── EDIT MODAL ────────────────────────────────────────────────────
 
@@ -5412,7 +6234,35 @@ async function fetchExportData() {
 // ── Laporan: active preview tab state ──
 let _expActiveTab = "pemeliharaan";
 
+/**
+ * Count the filters actually set inside each collapsible section and label its
+ * summary chip. Progressive disclosure is only safe if the collapsed header
+ * still says something is in there.
+ */
+const _EXP_FILTER_GROUPS = {
+  perbaikan: ["exp-date-from", "exp-date-to", "exp-filter-lokasi",
+              "exp-filter-upt", "exp-filter-peruntukan", "exp-filter-kondisi"],
+  kalibrasi: ["exp-kalib-date-from", "exp-kalib-date-to",
+              "exp-filter-kalib-status", "exp-filter-kalib-nomor"],
+  mutasi:    ["exp-mutasi-date-from", "exp-mutasi-date-to",
+              "exp-filter-mutasi-asal", "exp-filter-mutasi-upt-asal",
+              "exp-filter-mutasi-tuju", "exp-filter-mutasi-upt-tuju"],
+};
+
+function syncExportFilterChips() {
+  Object.entries(_EXP_FILTER_GROUPS).forEach(([group, ids]) => {
+    const active = ids.filter(
+      (id) => (document.getElementById(id)?.value || "").trim() !== "",
+    ).length;
+    const chip = document.querySelector(`[data-chip="${group}"]`);
+    if (!chip) return;
+    chip.textContent = `${active} filter aktif`;
+    chip.classList.toggle("hidden", active === 0);
+  });
+}
+
 function applyExportFilters() {
+  syncExportFilterChips();
   const dateFrom      = document.getElementById("exp-date-from")?.value || "";
   const dateTo        = document.getElementById("exp-date-to")?.value || "";
   const lokasi        = document.getElementById("exp-filter-lokasi")?.value || "";
@@ -5886,15 +6736,24 @@ function _renderExpMutasi(rows) {
 });
 
 // ── Wire all filter inputs ──
+//
+// The three cascade parents (exp-filter-lokasi and the two mutasi lokasi
+// selects) are deliberately absent: each already calls applyExportFilters()
+// from its own change listener in _populateExpLokasiDropdowns, after it has
+// rebuilt its dependent UPT select. Listing them here too made every change on
+// those controls run the whole filter pass twice.
 [
-  "exp-date-from", "exp-date-to", "exp-filter-lokasi", "exp-filter-upt",
+  "exp-date-from", "exp-date-to", "exp-filter-upt",
   "exp-filter-peruntukan", "exp-filter-kondisi",
   "exp-kalib-date-from", "exp-kalib-date-to", "exp-filter-kalib-status", "exp-filter-kalib-nomor",
   "exp-mutasi-date-from", "exp-mutasi-date-to",
   "exp-filter-mutasi-upt-asal", "exp-filter-mutasi-upt-tuju",
 ].forEach((id) => {
-  document.getElementById(id)?.addEventListener("change", applyExportFilters);
-  document.getElementById(id)?.addEventListener("input", applyExportFilters);
+  const node = document.getElementById(id);
+  if (!node) return;
+  // Text and date inputs fire `input`; selects fire `change`. Binding both to
+  // the same element double-fires, so pick by control type.
+  node.addEventListener(node.tagName === "SELECT" ? "change" : "input", applyExportFilters);
 });
 
 // ── EXCEL EXPORT ──────────────────────────────────────────────────
@@ -6081,7 +6940,7 @@ document
         "UPT Asal",
         "Lokasi Tujuan",
         "UPT Tujuan",
-        "Keterangan / BKO",
+        "Keterangan",
         "Petugas",
       ];
 
@@ -6609,21 +7468,12 @@ function renderKdakTable() {
   const f = _kdakSortFilters;
 
   let filtered = db.filter((a) => {
-    // Search filter
-    if (q) {
-      const matchSearch =
-        (a.id_aset || "").toUpperCase().includes(q) ||
-        (a.kode_alat || "").toUpperCase().includes(q) ||
-        (a.kode_alat_name || "").toUpperCase().includes(q) ||
-        (a.id_lokasi_display || "").toUpperCase().includes(q) ||
-        (a.id_lokasi || "").toUpperCase().includes(q) ||
-        (a.sumber_pengadaan || "").toUpperCase().includes(q) ||
-        (a.status_terakhir || "").toUpperCase().includes(q) ||
-        (a.peruntukan || "").toUpperCase().includes(q) ||
-        (a.tanggal_pembelian || "").toUpperCase().includes(q);
-      if (!matchSearch)
-        return false;
-    }
+    const ident = assetLokasiIdentity(a);
+
+    // Search filter — shared matcher, so "DAOP 1" here behaves exactly as it
+    // does in Kelola Data Aset, Pantau Riwayat and Aset Afkir.
+    if (!assetMatchesSearch(a, q)) return false;
+
     // Custom sort filters (same logic as renderDbCards)
     if (f.alat && a.kode_alat !== f.alat)
       return false;
@@ -6633,13 +7483,8 @@ function renderKdakTable() {
       if (dec.peruntukan !== f.peruntukan)
         return false;
     }
-    if (f.lokasi) {
-      const _rawUpt = a.id_lokasi_raw || a.id_lokasi || "";
-      const _parent = getParentLokasiCode(_rawUpt) || _rawUpt;
-      if (_parent !== f.lokasi && _rawUpt !== f.lokasi) return false;
-    }
-    if (f.upt && a.id_lokasi_raw !== f.upt && a.id_lokasi !== f.upt)
-        return false;
+    if (!lokasiMatchesCode(ident, f.lokasi)) return false;
+    if (f.upt && ident.uptCode !== f.upt) return false;
     if (f.tahunFrom || f.tahunTo) {
       const yr = parseInt((a.tanggal_pembelian || "").slice(0, 4));
       if (f.tahunFrom && yr < parseInt(f.tahunFrom))
@@ -6817,24 +7662,31 @@ function _buildAlatGroups(filterCode, sortVal) {
 function _buildLokasiGroups(filterLokasi, filterUpt, sortVal) {
   const map = {};
   db.forEach((a) => {
-    const uptCode = a.id_lokasi_raw || a.id_lokasi || "—";
-    const uptName = a.id_lokasi_display || uptCode;
-    const uptEntry = uptDatabase.find((u) => u.upt === uptCode);
-    const parentCode = uptEntry ? uptEntry.lokasi : uptCode;
+    // Shared identity, not a second derivation. This used to read the parent
+    // out of uptDatabase, which silently fell back to treating a UPT code as
+    // its own parent whenever the code was missing from that table.
+    const ident = assetLokasiIdentity(a);
+    const uptCode = ident.uptCode || "—";
 
-    // Apply lokasi filter
-    if (filterLokasi && parentCode !== filterLokasi) return;
-    // Apply UPT filter
+    if (!lokasiMatchesCode(ident, filterLokasi)) return;
     if (filterUpt && uptCode !== filterUpt) return;
 
-    if (!map[uptCode]) map[uptCode] = { code: uptCode, name: uptName, parentCode, count: 0 };
+    if (!map[uptCode])
+      map[uptCode] = {
+        code: uptCode,
+        name: ident.uptName || uptCode,
+        parentCode: ident.parentCode,
+        count: 0,
+      };
     map[uptCode].count++;
   });
   let arr = Object.values(map);
   if (sortVal === "count-desc") arr.sort((a, b) => b.count - a.count);
   else if (sortVal === "count-asc") arr.sort((a, b) => a.count - b.count);
-  else if (sortVal === "name-asc") arr.sort((a, b) => a.name.localeCompare(b.name));
-  else if (sortVal === "name-desc") arr.sort((a, b) => b.name.localeCompare(a.name));
+  // Natural order, so 1.2 comes before 1.10 — a plain localeCompare on the
+  // label puts "1.10" first, which reads as a bug in a numbered resort list.
+  else if (sortVal === "name-asc") arr.sort((a, b) => compareNaturalLabel(a.name, b.name));
+  else if (sortVal === "name-desc") arr.sort((a, b) => compareNaturalLabel(b.name, a.name));
   return arr;
 }
 
@@ -7258,7 +8110,7 @@ function setupKdakListeners() {
 
   // Sort button — open modal, populate dropdowns
   document.getElementById("kdak-btn-sort")?.addEventListener("click", () => {
-    _populateYearDropdowns("kdak-sort-id-tahun-from", "kdak-sort-id-tahun-to");
+    // "kdak-sort-id-tahun-from/-to" exist in no HTML — the call was a no-op.
     _populateYearDropdowns("kdak-sort-tgl-from", "kdak-sort-tgl-to");
 
     // Sync panels and Terbaru/Terlama visibility for current field
@@ -7838,20 +8690,18 @@ function renderAfkirCards() {
   const f = _afkirSortFilters;
 
   let filtered = _afkirDb.filter((item) => {
-    const rawLokasi = item.id_lokasi_raw || item.id_lokasi || "";
-    if (q) {
-      const match =
-        (item.id_aset || "").toUpperCase().includes(q) ||
-        (item.kode_alat_name || item.kode_alat || "").toUpperCase().includes(q) ||
-        (item.lokasi_name || rawLokasi).toUpperCase().includes(q);
-      if (!match) return false;
-    }
+    // Afkir assets are excluded from _historySummary by design, so the identity
+    // falls back to the row's own lokasi — which is correct here: a written-off
+    // asset has no "current vs home" distinction left to make.
+    const ident = assetLokasiIdentity(item);
+
+    // The old matcher checked three fields only, so searching a status, a
+    // peruntukan or a purchase date silently returned nothing on this view.
+    if (!assetMatchesSearch(item, q)) return false;
+
     if (f.alat && item.kode_alat !== f.alat) return false;
-    if (f.lokasi) {
-      const parent = getParentLokasiCode(rawLokasi) || rawLokasi;
-      if (parent !== f.lokasi && rawLokasi !== f.lokasi) return false;
-    }
-    if (f.upt && rawLokasi !== f.upt) return false;
+    if (!lokasiMatchesCode(ident, f.lokasi)) return false;
+    if (f.upt && ident.uptCode !== f.upt) return false;
     if (!_pengadaanMatches(item.sumber_pengadaan, f.pengadaan)) return false;
     if (f.peruntukan) {
       const dec = decodeAsetId(item.id_aset);
@@ -8018,7 +8868,8 @@ function _syncAfkirLokasiUpt() {
 }
 
 document.getElementById("afkir-btn-sort")?.addEventListener("click", () => {
-  _populateYearDropdowns("afkir-sort-tgl-from", "afkir-sort-tgl-to");
+  // Afkir has its own row set, so the counts must come from it and not `db`.
+  _populateYearDropdowns("afkir-sort-tgl-from", "afkir-sort-tgl-to", _afkirDb);
 
   const alatSel = document.getElementById("afkir-sort-alat-filter");
   if (alatSel && alatSel.options.length <= 1) {
@@ -8423,6 +9274,10 @@ const BULAN_PANJANG = [
 (function setupRepairDashboard() {
   let _lokasiFilter = "";
   let _tahunFilter = null; // null until the backend resolves a year with data
+  // Distinct from `_tahunFilter === null`: that means "let the server pick a
+  // default year", this means "aggregate every year". Both send no `year`, so
+  // they need a separate flag to stay distinguishable.
+  let _semuaTahun = false;
   let _booted = false;
 
   const el = (id) => document.getElementById(id);
@@ -8469,21 +9324,27 @@ const BULAN_PANJANG = [
   // years that actually hold data change when the region changes. Years with
   // no data stay selectable but are marked, and the current pick is re-snapped
   // if the backend resolved a different year.
-  function syncTahunOptions(resolvedYear, availableYears) {
+  function syncTahunOptions(resolvedYear, availableYears, isAllYears) {
     const sel = el("rd-tahun");
     if (!sel) return;
     const withData = new Set(availableYears || []);
+    const oldest = withData.size ? Math.min(...withData) : new Date().getFullYear();
     const maxYear = Math.max(new Date().getFullYear(), resolvedYear || 0, ...withData);
-    const opts = [];
-    for (let y = maxYear; y >= MIN_TAHUN; y--) {
+
+    // "Semua Tahun" aggregates every year server-side (all_years=true) rather
+    // than falling back to a default year, and the trend series then carries
+    // one point per year instead of per month.
+    const opts = ['<option value="">Semua Tahun</option>'];
+    for (let y = maxYear; y >= Math.max(MIN_TAHUN, oldest); y--) {
       const has = withData.has(y);
       opts.push(
         `<option value="${y}"${has ? "" : ' class="text-gray-400"'}>${y}${has ? "" : " (kosong)"}</option>`,
       );
     }
     sel.innerHTML = opts.join("");
-    sel.value = String(resolvedYear);
-    _tahunFilter = resolvedYear;
+    sel.value = isAllYears ? "" : String(resolvedYear ?? "");
+    _tahunFilter = isAllYears ? null : resolvedYear;
+    _semuaTahun = !!isAllYears;
   }
 
   el("rd-lokasi")?.addEventListener("change", function () {
@@ -8491,12 +9352,14 @@ const BULAN_PANJANG = [
     // Drop the year so the backend re-resolves the newest year that actually
     // holds data for the new region. Regions have different histories, and
     // carrying the old year over strands the user on an empty report.
-    _tahunFilter = null;
+    // "Semua Tahun" is a deliberate choice, so it survives a region change.
+    if (!_semuaTahun) _tahunFilter = null;
     load();
   });
 
   el("rd-tahun")?.addEventListener("change", function () {
-    _tahunFilter = parseInt(this.value, 10) || null;
+    _semuaTahun = this.value === "";
+    _tahunFilter = _semuaTahun ? null : parseInt(this.value, 10) || null;
     load();
   });
 
@@ -8517,7 +9380,8 @@ const BULAN_PANJANG = [
     if (!authToken) return;
     const params = new URLSearchParams();
     if (_lokasiFilter) params.set("id_lokasi", _lokasiFilter);
-    if (_tahunFilter) params.set("year", String(_tahunFilter));
+    if (_semuaTahun) params.set("all_years", "true");
+    else if (_tahunFilter) params.set("year", String(_tahunFilter));
     try {
       const res = await apiFetch(`/aset/dashboard/perbaikan?${params}`);
       if (!res.ok) {
@@ -8538,7 +9402,8 @@ const BULAN_PANJANG = [
     if (!canvas) return;
     const params = new URLSearchParams();
     if (_lokasiFilter) params.set("id_lokasi", _lokasiFilter);
-    if (_tahunFilter) params.set("year", String(_tahunFilter));
+    if (_semuaTahun) params.set("all_years", "true");
+    else if (_tahunFilter) params.set("year", String(_tahunFilter));
     try {
       const res = await apiFetch(`/aset/dashboard/mcf?${params}`, { background: true });
       if (!res.ok) return;
@@ -8552,8 +9417,9 @@ const BULAN_PANJANG = [
     const t = KAI_VIZ.theme();
 
     // ── Header ──
-    syncTahunOptions(d.tahun, d.available_years);
-    if (el("rd-kpi-year")) el("rd-kpi-year").textContent = d.tahun ?? "—";
+    syncTahunOptions(d.tahun, d.available_years, d.all_years);
+    if (el("rd-kpi-year"))
+      el("rd-kpi-year").textContent = d.all_years ? "Semua Tahun" : (d.tahun ?? "—");
     if (el("rd-region-name"))
       el("rd-region-name").textContent = d.region_label || "Semua Daerah Operasi";
     if (el("rd-dateline")) {
@@ -8838,9 +9704,10 @@ const BULAN_PANJANG = [
     if (el("rd-mcf-total")) el("rd-mcf-total").textContent = (d.total_perbaikan ?? 0).toLocaleString("id-ID");
     if (el("rd-mcf-akhir")) el("rd-mcf-akhir").textContent = Number(d.mcf_akhir || 0).toFixed(4);
     if (el("rd-mcf-caption")) {
+      const periode = d.all_years ? "Semua Tahun" : d.tahun;
       el("rd-mcf-caption").textContent = d.aset_berisiko
-        ? `${d.tahun} · ${d.aset_berisiko} unit berisiko`
-        : `${d.tahun} · tidak ada aset dalam cakupan`;
+        ? `${periode} · ${d.aset_berisiko} unit berisiko`
+        : `${periode} · tidak ada aset dalam cakupan`;
     }
 
     const series = d.series || [];
@@ -8975,24 +9842,29 @@ const BULAN_PANJANG = [
     // The toolbar belongs to Parts and Transfer and lives outside every panel,
     // so it has to be hidden explicitly on the tabs that don't want it.
     toolbar?.classList.toggle("hidden", which === "dashboard" || which === "transaksi");
-    toolbarActions?.classList.toggle("hidden", which !== "parts");
+    toolbarActions?.classList.toggle("hidden", which === "dashboard" || which === "transaksi");
+
+    // Catalogue actions are Parts-only; Transfer is the one action that also
+    // belongs to the Transfer tab. `.relative` is the wrapper around the bulk
+    // dropdown, so hiding the button alone would leave an empty box behind.
+    const partsOnly = which === "parts";
+    ["inv-btn-add-part", "inv-btn-parts-category", "inv-btn-gudang"].forEach((id) =>
+      el(id)?.classList.toggle("hidden", !partsOnly),
+    );
+    el("inv-btn-bulk-toggle")?.closest(".relative")?.classList.toggle("hidden", !partsOnly);
+    el("inv-btn-transfer")?.classList.toggle(
+      "hidden",
+      which !== "parts" && which !== "transfer",
+    );
+
     if (searchInput) searchInput.value = "";
     if (which === "dashboard") loadStockDashboard();
-    if (which === "parts") { loadInvParts(); loadInvKategoriOptions(); }
+    if (which === "parts") { loadInvParts(); loadInvKategoriOptions(); loadGudangOptions(); }
     if (which === "transaksi") { loadPartCatalog(); loadLedger({ reset: true }); }
     if (which === "transfer") loadInvTransfer();
   }
 
   ALL_TABS.forEach(({ btn, id }) => btn?.addEventListener("click", () => setInvTab(id)));
-
-  // ── Bulk Upload dropdown ──────────────────────────────────────────
-  const bulkToggle = el("inv-btn-bulk-toggle");
-  const bulkDropdown = el("inv-bulk-dropdown");
-  bulkToggle?.addEventListener("click", (e) => {
-    e.stopPropagation();
-    bulkDropdown?.classList.toggle("hidden");
-  });
-  document.addEventListener("click", () => bulkDropdown?.classList.add("hidden"));
 
   // ══════════════════════════════════════════════════════════════════
   // DASBOR INVENTARIS — stock dashboard
@@ -9023,8 +9895,10 @@ const BULAN_PANJANG = [
       hint: "tepat di stok minimum" },
     { key: "AMAN", label: "Aman", icon: "fa-circle-check", band: "aman",
       hint: "di atas stok minimum" },
-    { key: "DI ATAS MAX", label: "Di Atas Max", icon: "fa-layer-group", band: "atasmax",
-      hint: "melebihi stok maksimum" },
+    // "DI ATAS MAX" used to sit here as a sixth tile. _stok_status() in main.py
+    // is only ever called with stok_max=None (there is no stok_max column on
+    // SparePart), so the bucket could never be non-zero — a permanent 0 that
+    // read as a real category. Removed until the column exists.
   ];
 
   function bandTone(t, key) {
@@ -9051,7 +9925,7 @@ const BULAN_PANJANG = [
       _gudangList = [];
     }
     const opts = _gudangList
-      .map((g) => `<option value="${g.id_gudang}">${g.nama}</option>`)
+      .map((g) => `<option value="${g.id_gudang}">${g.kode} — ${g.nama}</option>`)
       .join("");
     const dash = el("sd-filter-gudang");
     if (dash) dash.innerHTML = '<option value="">— Semua Gudang —</option>' + opts;
@@ -9062,6 +9936,23 @@ const BULAN_PANJANG = [
     if (entry) {
       entry.innerHTML = opts || '<option value="">— Belum ada gudang —</option>';
     }
+    // Opening stock on the "Tambah Suku Cadang" modal, and both ends of a
+    // transfer. All three write id_gudang, the pool every balance is computed
+    // against.
+    const awal = el("inv-field-gudang");
+    if (awal) {
+      const keep = awal.value;
+      awal.innerHTML = '<option value="">— Pilih gudang —</option>' + opts;
+      awal.value = keep;
+    }
+    ["inv-tf-asal", "inv-tf-tujuan"].forEach((id) => {
+      const sel = el(id);
+      if (!sel) return;
+      const keep = sel.value;
+      sel.innerHTML = opts || '<option value="">— Belum ada gudang —</option>';
+      sel.value = keep;
+    });
+    renderGudangList();
   }
 
   el("sd-filter-gudang")?.addEventListener("change", function () {
@@ -9471,8 +10362,16 @@ const BULAN_PANJANG = [
   const partKey = (p) => `${p.sku} · ${p.nama_part}`;
 
   async function loadPartCatalog() {
+    // Scoped to the SELECTED warehouse. Fetching unscoped (as this used to)
+    // returned the globally pooled `stok_sekarang`, which the hint below then
+    // printed as if it were the chosen warehouse's — so the form could read
+    // "Stok tercatat 120 Pcs" and the submit still fail with "Tersedia 0 Pcs",
+    // because the server validates against the warehouse pool.
+    const params = new URLSearchParams();
+    const gudangAktif = el("tx-gudang")?.value || _gudangFilter;
+    if (gudangAktif) params.set("id_gudang", gudangAktif);
     try {
-      const res = await apiFetch("/inventaris/parts");
+      const res = await apiFetch(`/inventaris/parts?${params}`, { background: true });
       if (!res.ok) return;
       _partList = await res.json();
     } catch (_) {
@@ -9485,10 +10384,12 @@ const BULAN_PANJANG = [
         .map((p) => `<option value="${partKey(p)}"></option>`)
         .join("");
     }
+    syncPartFields();
   }
 
-  function selectedPart() {
-    return _partByKey.get(el("tx-part")?.value.trim() || "") || null;
+  function selectedPart(value) {
+    const key = (value ?? el("tx-part")?.value ?? "").trim();
+    return _partByKey.get(key) || null;
   }
 
   function recalcAmount() {
@@ -9504,12 +10405,19 @@ const BULAN_PANJANG = [
       el("tx-harga").value = p.harga_satuan ?? "";
     }
     if (el("tx-part-info")) {
+      const gudangNama =
+        _gudangList.find((g) => String(g.id_gudang) === String(el("tx-gudang")?.value))
+          ?.nama || "gudang terpilih";
       el("tx-part-info").textContent = p
-        ? `Stok tercatat ${p.stok_sekarang} ${p.unit} · min ${p.stok_min} · ${p.subsistem || "tanpa subsistem"}`
+        ? `Stok di ${gudangNama}: ${p.stok_sekarang} ${p.unit} · min ${p.stok_min} · ${p.subsistem || "tanpa subsistem"}`
         : "Belum ada barang dipilih.";
     }
     recalcAmount();
   }
+
+  // Changing the warehouse changes the available stock, so the catalogue is
+  // refetched for that pool and the hint above re-rendered.
+  el("tx-gudang")?.addEventListener("change", () => loadPartCatalog());
 
   el("tx-part")?.addEventListener("input", () => {
     // A new part re-arms the auto-fill; an edit the user made to the price for a
@@ -9702,20 +10610,75 @@ const BULAN_PANJANG = [
       typeSel.innerHTML = '<option value="">— Pilih alat kerja —</option>' +
         alatKerjaData.map((a) => `<option value="${a.code}">${a.code} — ${a.name}</option>`).join("");
     }
-    const locSel = el("inv-field-stored-location");
-    if (locSel && locSel.options.length <= 1) {
-      locSel.innerHTML = '<option value="">— Pilih lokasi —</option>' +
-        lokasiData.map((l) => `<option value="${l.code}">${l.name} (${l.code})</option>`).join("");
-    }
+    // The warehouse select is refilled by loadGudangOptions(), not here: its
+    // contents change whenever a gudang is added, so caching it on first open
+    // would leave a newly created warehouse missing from the list.
   }
 
-  function openAddModal() {
+  // Null when adding, the id_part when editing. PUT /inventaris/parts/{id} and
+  // the whole SparePartUpdate schema existed with no UI at all — the row's
+  // Aksi column only ever offered delete.
+  let _editingPartId = null;
+
+  function openAddModal(part = null) {
     // Only one inventaris modal at a time — these used to be able to stack,
     // leaving two dialogs and two backdrops fighting over the same screen.
     closeCatModal();
+    closeGudangModal();
+    closeTransferModal();
+    _editingPartId = part ? part.id_part : null;
+
     addModal?.classList.remove("hidden");
     fillAddModalRefSelects();
     loadInvKategoriOptions();
+    loadGudangOptions();
+
+    const title = el("inv-add-modal-title");
+    const submitLabel = el("inv-add-modal-submit-label");
+    if (title) title.textContent = part ? "Ubah Suku Cadang" : "Tambah Suku Cadang";
+    if (submitLabel) submitLabel.textContent = part ? "Simpan Perubahan" : "Simpan";
+
+    // Stock fields belong to the OPENING balance, which only makes sense when
+    // creating. Editing a part must never silently re-post an opening receipt,
+    // so they are disabled rather than merely ignored — a filled-in but
+    // discarded field is worse than one that cannot be filled in.
+    ["inv-field-quantity", "inv-field-gudang"].forEach((id) => {
+      const node = el(id);
+      if (node) node.disabled = !!part;
+    });
+    const stokHint = el("inv-field-gudang")?.closest("div")?.querySelector(".field-label");
+    if (stokHint) {
+      stokHint.title = part
+        ? "Stok hanya bisa diubah lewat tab Transaksi Barang."
+        : "";
+    }
+
+    if (part) _fillAddModal(part);
+  }
+
+  function _fillAddModal(p) {
+    const set = (id, val) => { const n = el(id); if (n) n.value = val ?? ""; };
+    const check = (id, val) => { const n = el(id); if (n) n.checked = !!val; };
+    set("inv-field-sku", p.sku);
+    set("inv-field-part-number", p.part_number);
+    set("inv-field-item-name", p.nama_part);
+    set("inv-field-item-type", p.kode_alat);
+    set("inv-field-category", p.id_kategori);
+    set("inv-field-unit", p.unit || UNIT_DEFAULT);
+    set("inv-field-cost", p.harga_satuan);
+    set("inv-field-threshold", p.stok_min);
+    set("inv-field-serial", p.serial_numbers);
+    set("inv-field-tag", p.lookup_tags);
+    set("inv-field-vehicle", p.linked_vehicle);
+    set("inv-field-warranty", p.warranty_months);
+    set("inv-field-supplier", p.supplier);
+    set("inv-field-ref-part", p.ref_part);
+    set("inv-field-description", p.deskripsi);
+    check("inv-field-auto-demand", p.auto_demand);
+    check("inv-field-critical", p.is_critical);
+    // SKU is the natural key and the backend has no rename path for it.
+    const sku = el("inv-field-sku");
+    if (sku) sku.disabled = true;
   }
 
   // "Piece" was never a stored unit; the catalogue uses Pcs/Unit. Resetting the
@@ -9724,10 +10687,11 @@ const BULAN_PANJANG = [
 
   function closeAddModal() {
     addModal?.classList.add("hidden");
+    _editingPartId = null;
     const fields = [
-      "inv-field-sku", "inv-field-part-number", "inv-field-item-name", "inv-field-manufacturer",
+      "inv-field-sku", "inv-field-part-number", "inv-field-item-name",
       "inv-field-item-type", "inv-field-quantity", "inv-field-unit", "inv-field-cost",
-      "inv-field-threshold", "inv-field-stored-location", "inv-field-auto-demand",
+      "inv-field-threshold", "inv-field-gudang", "inv-field-auto-demand",
       "inv-field-serial", "inv-field-tag", "inv-field-critical", "inv-field-vehicle",
       "inv-field-warranty", "inv-field-supplier", "inv-field-ref-part", "inv-field-description",
       "inv-field-category"
@@ -9735,25 +10699,24 @@ const BULAN_PANJANG = [
     fields.forEach(id => {
       const node = document.getElementById(id);
       if (!node) return;
+      node.disabled = false;
       if (node.type === "checkbox") node.checked = false;
       else if (id === "inv-field-unit") node.value = UNIT_DEFAULT;
       else node.value = "";
     });
   }
 
-  btnOpen?.addEventListener("click",   openAddModal);
+  btnOpen?.addEventListener("click", () => openAddModal());
   btnClose?.addEventListener("click",  closeAddModal);
   btnCancel?.addEventListener("click", closeAddModal);
   addModal?.addEventListener("click", (e) => { if (e.target === addModal) closeAddModal(); });
 
   btnSubmit?.addEventListener("click", async () => {
-    const itemName = document.getElementById("inv-field-item-name")?.value.trim();
-    const manufacturer = document.getElementById("inv-field-manufacturer")?.value.trim() || "";
-    const supplierValue = document.getElementById("inv-field-supplier")?.value.trim() || manufacturer || null;
-    const storedLocation = document.getElementById("inv-field-stored-location")?.value || null;
+    const jumlahAwal = parseInt(document.getElementById("inv-field-quantity")?.value) || 0;
+    const gudangAwal = parseInt(document.getElementById("inv-field-gudang")?.value) || null;
+
     const body = {
-      sku: document.getElementById("inv-field-sku")?.value.trim() || null,
-      nama_part: itemName,
+      nama_part: document.getElementById("inv-field-item-name")?.value.trim(),
       id_kategori: parseInt(document.getElementById("inv-field-category")?.value) || null,
       kode_alat: document.getElementById("inv-field-item-type")?.value || null,
       part_number: document.getElementById("inv-field-part-number")?.value.trim() || null,
@@ -9761,7 +10724,10 @@ const BULAN_PANJANG = [
       harga_satuan: parseInt(document.getElementById("inv-field-cost")?.value) || null,
       stok_min: parseInt(document.getElementById("inv-field-threshold")?.value) || 0,
       auto_demand: document.getElementById("inv-field-auto-demand")?.checked || false,
-      supplier: supplierValue,
+      // There is no `manufacturer` column. The modal used to carry a separate
+      // required Manufacturer field that was folded into supplier and silently
+      // discarded whenever supplier was also filled; now there is one field.
+      supplier: document.getElementById("inv-field-supplier")?.value.trim() || null,
       deskripsi: document.getElementById("inv-field-description")?.value.trim() || null,
       is_critical: document.getElementById("inv-field-critical")?.checked || false,
       serial_numbers: document.getElementById("inv-field-serial")?.value.trim() || null,
@@ -9769,34 +10735,266 @@ const BULAN_PANJANG = [
       linked_vehicle: document.getElementById("inv-field-vehicle")?.value.trim() || null,
       warranty_months: parseInt(document.getElementById("inv-field-warranty")?.value) || null,
       ref_part: document.getElementById("inv-field-ref-part")?.value.trim() || null,
-      jumlah_awal: parseInt(document.getElementById("inv-field-quantity")?.value) || 0,
-      id_lokasi_awal: storedLocation,
     };
-    // The form marks these with an asterisk; nothing enforced them, so a blank
-    // submit produced an unnamed, uncategorised, zero-cost part.
+
+    // Only the two fields the form actually stars are required, and the
+    // asterisks in the markup now say exactly that. Harga satuan is optional
+    // on the API, so demanding it here was stricter than the server.
     const missing = [];
     if (!body.nama_part) missing.push("Nama Barang");
     if (!body.id_kategori) missing.push("Kategori");
-    if (body.harga_satuan === null) missing.push("Harga Satuan");
     if (missing.length) {
       showToast(`Lengkapi dulu: ${missing.join(", ")}.`, "warning");
       return;
     }
+
     try {
-      const res = await apiFetch("/inventaris/parts", { method: "POST", body: JSON.stringify(body) });
+      let res;
+      if (_editingPartId) {
+        res = await apiFetch(`/inventaris/parts/${_editingPartId}`, {
+          method: "PUT",
+          body: JSON.stringify(body),
+        });
+      } else {
+        // Opening stock must name a warehouse — it is written with id_gudang,
+        // the pool every balance query scopes by. Writing it against a region
+        // instead (as this used to) made the stock invisible and un-issuable.
+        if (jumlahAwal > 0 && !gudangAwal) {
+          showToast("Pilih gudang penyimpanan untuk stok awal.", "warning");
+          return;
+        }
+        res = await apiFetch("/inventaris/parts", {
+          method: "POST",
+          body: JSON.stringify({
+            ...body,
+            sku: document.getElementById("inv-field-sku")?.value.trim() || null,
+            jumlah_awal: jumlahAwal,
+            id_gudang_awal: gudangAwal,
+          }),
+        });
+      }
       // apiFetch only THROWS on 401. A 400 (duplicate SKU, bad FK) or a 403
       // arrives here as an ordinary response, so without this check every
       // rejected submit still reported success and closed the form.
       const payload = await res.json().catch(() => ({}));
       if (!res.ok) {
-        showToast(payload.detail || "Gagal menambahkan part.", "error");
+        showToast(payload.detail || "Gagal menyimpan suku cadang.", "error");
         return;
       }
-      showToast("Part berhasil ditambahkan.", "success");
+      showToast(
+        _editingPartId ? "Suku cadang diperbarui." : "Suku cadang berhasil ditambahkan.",
+        "success",
+      );
       closeAddModal();
+      loadPartCatalog();
       if (!panelParts.classList.contains("hidden")) loadInvParts();
     } catch (e) {
-      showToast(e.message || "Gagal menambahkan part.", "error");
+      showToast(e.message || "Gagal menyimpan suku cadang.", "error");
+    }
+  });
+
+  // ══════════════════════════════════════════════════════════════════
+  // GUDANG (warehouse) CRUD
+  //
+  // The endpoints have always existed but nothing could reach them. On a
+  // database that had not been seeded there were no warehouses, the movement
+  // form's gudang select read "— Belum ada gudang —", and the client-side
+  // guard blocked every submit. The whole module was unusable from a cold
+  // start.
+  // ══════════════════════════════════════════════════════════════════
+
+  let _editingGudangId = null;
+
+  function openGudangModal() {
+    closeAddModal();
+    closeCatModal();
+    closeTransferModal();
+    el("inv-gudang-modal")?.classList.remove("hidden");
+    loadGudangOptions();
+  }
+
+  function closeGudangModal() {
+    el("inv-gudang-modal")?.classList.add("hidden");
+    _resetGudangForm();
+  }
+
+  function _resetGudangForm() {
+    _editingGudangId = null;
+    ["inv-gudang-kode", "inv-gudang-nama", "inv-gudang-keterangan"].forEach((id) => {
+      const n = el(id);
+      if (n) n.value = "";
+    });
+    const label = el("inv-gudang-save-label");
+    if (label) label.textContent = "Tambah Gudang";
+    el("inv-gudang-cancel-edit")?.classList.add("hidden");
+  }
+
+  function renderGudangList() {
+    const list = el("inv-gudang-list");
+    if (!list) return;
+    if (!_gudangList.length) {
+      list.innerHTML = '<li class="empty-state">Belum ada gudang.</li>';
+      return;
+    }
+    list.innerHTML = _gudangList
+      .map(
+        (g) => `
+      <li class="flex items-center gap-2 px-3 py-2 rounded-lg bg-gray-50 dark:bg-gray-700/40 text-sm">
+        <span class="font-mono font-bold text-kai-blue dark:text-blue-400 shrink-0">${g.kode}</span>
+        <span class="truncate flex-1" title="${g.keterangan || ""}">${g.nama}</span>
+        ${g.is_active ? "" : '<span class="badge badge-neutral">nonaktif</span>'}
+        <button type="button" class="btn-icon" title="Ubah"
+          onclick="window.invEditGudang(${g.id_gudang})"><i class="fas fa-pen text-[11px]"></i></button>
+        <button type="button" class="btn-icon btn-icon-danger" title="Hapus"
+          onclick="window.invDeleteGudang(${g.id_gudang})"><i class="fas fa-trash-alt text-[11px]"></i></button>
+      </li>`,
+      )
+      .join("");
+  }
+
+  window.invEditGudang = function (id) {
+    const g = _gudangList.find((x) => x.id_gudang === id);
+    if (!g) return;
+    _editingGudangId = id;
+    el("inv-gudang-kode").value = g.kode || "";
+    el("inv-gudang-nama").value = g.nama || "";
+    el("inv-gudang-keterangan").value = g.keterangan || "";
+    const label = el("inv-gudang-save-label");
+    if (label) label.textContent = "Simpan Perubahan";
+    el("inv-gudang-cancel-edit")?.classList.remove("hidden");
+  };
+
+  window.invDeleteGudang = async function (id) {
+    const g = _gudangList.find((x) => x.id_gudang === id);
+    if (!confirm(`Hapus gudang "${g?.nama || id}"?\n\nJika gudang masih memiliki riwayat stok, gudang hanya akan dinonaktifkan.`))
+      return;
+    try {
+      const res = await apiFetch(`/inventaris/gudang/${id}`, { method: "DELETE" });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        showToast(payload.detail || "Gagal menghapus gudang.", "error");
+        return;
+      }
+      showToast(payload.message || "Gudang dihapus.", "success");
+      await loadGudangOptions();
+    } catch (e) {
+      showToast(e.message || "Gagal menghapus gudang.", "error");
+    }
+  };
+
+  el("inv-btn-gudang")?.addEventListener("click", openGudangModal);
+  el("inv-btn-open-gudang-modal")?.addEventListener("click", openGudangModal);
+  el("inv-gudang-modal-close")?.addEventListener("click", closeGudangModal);
+  el("inv-gudang-modal-done")?.addEventListener("click", closeGudangModal);
+  el("inv-gudang-cancel-edit")?.addEventListener("click", _resetGudangForm);
+  el("inv-gudang-modal")?.addEventListener("click", (e) => {
+    if (e.target === el("inv-gudang-modal")) closeGudangModal();
+  });
+
+  el("inv-gudang-save-btn")?.addEventListener("click", async () => {
+    const kode = el("inv-gudang-kode")?.value.trim().toUpperCase();
+    const nama = el("inv-gudang-nama")?.value.trim();
+    const keterangan = el("inv-gudang-keterangan")?.value.trim() || null;
+    if (!kode || !nama) {
+      showToast("Kode dan nama gudang wajib diisi.", "warning");
+      return;
+    }
+    try {
+      const res = _editingGudangId
+        ? await apiFetch(`/inventaris/gudang/${_editingGudangId}`, {
+            method: "PUT",
+            body: JSON.stringify({ kode, nama, keterangan }),
+          })
+        : await apiFetch("/inventaris/gudang", {
+            method: "POST",
+            body: JSON.stringify({ kode, nama, keterangan, is_active: true }),
+          });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        showToast(payload.detail || "Gagal menyimpan gudang.", "error");
+        return;
+      }
+      showToast(_editingGudangId ? "Gudang diperbarui." : "Gudang ditambahkan.", "success");
+      _resetGudangForm();
+      await loadGudangOptions();
+    } catch (e) {
+      showToast(e.message || "Gagal menyimpan gudang.", "error");
+    }
+  });
+
+  // ══════════════════════════════════════════════════════════════════
+  // TRANSFER ANTAR GUDANG
+  //
+  // POST /api/inventaris/transfer had no form anywhere; the Transfer tab was a
+  // read-only table.
+  // ══════════════════════════════════════════════════════════════════
+
+  function openTransferModal() {
+    closeAddModal();
+    closeCatModal();
+    closeGudangModal();
+    el("inv-transfer-modal")?.classList.remove("hidden");
+    loadGudangOptions();
+    loadPartCatalog();
+  }
+
+  function closeTransferModal() {
+    el("inv-transfer-modal")?.classList.add("hidden");
+    ["inv-tf-part", "inv-tf-jumlah", "inv-tf-penerima", "inv-tf-catatan"].forEach((id) => {
+      const n = el(id);
+      if (n) n.value = "";
+    });
+    const info = el("inv-tf-part-info");
+    if (info) info.textContent = "";
+  }
+
+  el("inv-btn-transfer")?.addEventListener("click", openTransferModal);
+  el("inv-transfer-close")?.addEventListener("click", closeTransferModal);
+  el("inv-transfer-cancel")?.addEventListener("click", closeTransferModal);
+  el("inv-transfer-modal")?.addEventListener("click", (e) => {
+    if (e.target === el("inv-transfer-modal")) closeTransferModal();
+  });
+
+  el("inv-tf-part")?.addEventListener("input", () => {
+    const p = selectedPart(el("inv-tf-part")?.value);
+    const info = el("inv-tf-part-info");
+    if (info) info.textContent = p ? `${p.nama_part} · satuan ${p.unit}` : "";
+  });
+
+  el("inv-transfer-submit")?.addEventListener("click", async () => {
+    const part = selectedPart(el("inv-tf-part")?.value);
+    const asal = parseInt(el("inv-tf-asal")?.value) || null;
+    const tujuan = parseInt(el("inv-tf-tujuan")?.value) || null;
+    const jumlah = parseInt(el("inv-tf-jumlah")?.value) || 0;
+
+    if (!part) return showToast("Pilih suku cadang dari daftar.", "warning");
+    if (!asal || !tujuan) return showToast("Pilih gudang asal dan tujuan.", "warning");
+    if (asal === tujuan) return showToast("Gudang asal dan tujuan tidak boleh sama.", "warning");
+    if (jumlah <= 0) return showToast("Jumlah transfer harus lebih dari 0.", "warning");
+
+    try {
+      const res = await apiFetch("/inventaris/transfer", {
+        method: "POST",
+        body: JSON.stringify({
+          id_part: part.id_part,
+          jumlah,
+          id_gudang_asal: asal,
+          id_gudang_tujuan: tujuan,
+          transfer_to: el("inv-tf-penerima")?.value.trim() || null,
+          catatan: el("inv-tf-catatan")?.value.trim() || null,
+        }),
+      });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        showToast(payload.detail || "Gagal memproses transfer.", "error");
+        return;
+      }
+      showToast("Transfer berhasil dicatat.", "success");
+      closeTransferModal();
+      loadInvTransfer();
+      if (!panelParts?.classList.contains("hidden")) loadInvParts();
+    } catch (e) {
+      showToast(e.message || "Gagal memproses transfer.", "error");
     }
   });
 
@@ -9934,30 +11132,98 @@ const BULAN_PANJANG = [
   // page, so a match on page 3 was invisible.
   let _partsRows = [];
 
+  // Sort + status filter, driven by #inv-sort-modal. The sort icon in the
+  // toolbar previously had no id and no handler at all.
+  let _invSortField = "nama_part";
+  let _invSortDir = "asc";
+  let _invStatusFilter = "";
+
+  function _invEmptyRow(message, isError = false) {
+    return `<tr><td colspan="16" class="empty-state ${isError ? "is-error" : ""}">
+      <i class="fas ${isError ? "fa-triangle-exclamation" : "fa-box-open"}"></i>${message}</td></tr>`;
+  }
+
   async function loadInvParts() {
+    const tbody = document.getElementById("inv-parts-body");
     // Stock is pooled across every warehouse unless one is picked on the Dasbor
     // Inventaris tab, which is the single place the scope is chosen.
     const params = new URLSearchParams();
     if (_gudangFilter) params.set("id_gudang", _gudangFilter);
     try {
       const res = await apiFetch(`/inventaris/parts?${params}`);
-      if (!res.ok) return;
+      if (!res.ok) {
+        // These loaders used to `return` silently, leaving the previous
+        // payload on screen with no indication anything had failed.
+        if (tbody) tbody.innerHTML = _invEmptyRow("Gagal memuat daftar suku cadang.", true);
+        return;
+      }
       _partsRows = await res.json();
       renderInvPartsTable();
     } catch (e) {
       console.warn("Parts load failed:", e);
+      if (tbody) tbody.innerHTML = _invEmptyRow("Gagal memuat daftar suku cadang.", true);
     }
   }
 
   function _filteredParts() {
     const q = (searchInput?.value || "").trim().toLowerCase();
-    if (!q) return _partsRows;
-    return _partsRows.filter((p) =>
-      [p.nama_part, p.sku, p.part_number, p.subsistem, p.nama_alat,
-       p.kode_alat, p.supplier, p.status_stok, p.deskripsi]
-        .some((v) => (v ?? "").toString().toLowerCase().includes(q)),
-    );
+    let rows = _partsRows;
+
+    if (_invStatusFilter) {
+      rows = rows.filter((p) => p.status_stok === _invStatusFilter);
+    }
+    if (q) {
+      rows = rows.filter((p) =>
+        [p.nama_part, p.sku, p.part_number, p.subsistem, p.nama_alat,
+         p.kode_alat, p.supplier, p.status_stok, p.deskripsi]
+          .some((v) => (v ?? "").toString().toLowerCase().includes(q)),
+      );
+    }
+
+    const dir = _invSortDir === "desc" ? -1 : 1;
+    return [...rows].sort((a, b) => {
+      const av = a[_invSortField];
+      const bv = b[_invSortField];
+      // Numeric columns compare numerically; a localeCompare on "10" vs "9"
+      // would order them 10, 9.
+      if (typeof av === "number" || typeof bv === "number") {
+        return ((av || 0) - (bv || 0)) * dir;
+      }
+      return String(av ?? "").localeCompare(String(bv ?? "")) * dir;
+    });
   }
+
+  function openInvSortModal() {
+    el("inv-sort-field").value = _invSortField;
+    el("inv-sort-dir").value = _invSortDir;
+    el("inv-sort-status").value = _invStatusFilter;
+    el("inv-sort-modal")?.classList.remove("hidden");
+  }
+  function closeInvSortModal() {
+    el("inv-sort-modal")?.classList.add("hidden");
+  }
+
+  el("inv-btn-sort")?.addEventListener("click", openInvSortModal);
+  el("inv-sort-close")?.addEventListener("click", closeInvSortModal);
+  el("inv-sort-modal")?.addEventListener("click", (e) => {
+    if (e.target === el("inv-sort-modal")) closeInvSortModal();
+  });
+  el("inv-sort-apply")?.addEventListener("click", () => {
+    _invSortField = el("inv-sort-field")?.value || "nama_part";
+    _invSortDir = el("inv-sort-dir")?.value || "asc";
+    _invStatusFilter = el("inv-sort-status")?.value || "";
+    resetPage("parts");
+    closeInvSortModal();
+    renderInvPartsTable();
+  });
+  el("inv-sort-reset")?.addEventListener("click", () => {
+    _invSortField = "nama_part";
+    _invSortDir = "asc";
+    _invStatusFilter = "";
+    resetPage("parts");
+    closeInvSortModal();
+    renderInvPartsTable();
+  });
 
   // Items Master row. Movement columns are lifetime ledger totals; the date
   // range on the Dasbor Inventaris tab windows the dashboard, not this table.
@@ -9968,8 +11234,11 @@ const BULAN_PANJANG = [
 
     if (rows.length === 0) {
       renderPagerBar("inv-parts-pager", paginateList("parts", rows), renderInvPartsTable);
-      tbody.innerHTML = `<tr><td colspan="16" class="text-center py-12 text-sm text-gray-400">
-        <i class="fas fa-box-open text-3xl mb-2 block text-gray-300"></i>Tidak ada data</td></tr>`;
+      tbody.innerHTML = _invEmptyRow(
+        _partsRows.length
+          ? "Tidak ada suku cadang yang cocok dengan pencarian atau filter ini."
+          : "Belum ada suku cadang. Mulai dari Gudang → Kategori → Tambah Suku Cadang.",
+      );
       return;
     }
     const t = KAI_VIZ.theme();
@@ -9995,9 +11264,14 @@ const BULAN_PANJANG = [
 
       return `<tr class="${rowCls} border-b border-gray-50 dark:border-gray-700/50 transition">
         <td class="px-3 py-2.5 whitespace-nowrap">
-          <button class="inv-part-delete text-gray-300 hover:text-red-400 transition" data-id="${p.id_part}" title="Hapus">
-            <i class="fas fa-trash-alt text-xs"></i>
-          </button>
+          <div class="flex items-center gap-0.5">
+            <button class="inv-part-edit btn-icon" data-id="${p.id_part}" title="Ubah suku cadang">
+              <i class="fas fa-pen text-[11px]"></i>
+            </button>
+            <button class="inv-part-delete btn-icon btn-icon-danger" data-id="${p.id_part}" title="Hapus">
+              <i class="fas fa-trash-alt text-[11px]"></i>
+            </button>
+          </div>
         </td>
         <td class="px-3 py-2.5 min-w-[180px]">
           <p class="font-semibold text-gray-800 dark:text-white text-xs leading-tight">${p.nama_part}</p>
@@ -10026,6 +11300,17 @@ const BULAN_PANJANG = [
         <td class="px-3 py-2.5 text-xs text-gray-500 dark:text-gray-400 max-w-[140px] truncate" title="${p.supplier || ""}">${p.supplier || "—"}</td>
       </tr>`;
     }).join("");
+
+    // Edit handlers — PUT /inventaris/parts/{id} was implemented server-side
+    // but had no way to be triggered from the UI.
+    tbody.querySelectorAll(".inv-part-edit").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const part = _partsRows.find(
+          (p) => String(p.id_part) === String(btn.dataset.id),
+        );
+        if (part) openAddModal(part);
+      });
+    });
 
     // Delete handlers
     tbody.querySelectorAll(".inv-part-delete").forEach(btn => {
@@ -10069,15 +11354,147 @@ const BULAN_PANJANG = [
   let _transferRows = [];
 
   async function loadInvTransfer() {
+    const tbody = document.getElementById("inv-transfer-body");
+    const fail = () => {
+      if (tbody)
+        tbody.innerHTML =
+          '<tr><td colspan="9" class="empty-state is-error"><i class="fas fa-triangle-exclamation"></i>Gagal memuat riwayat transfer.</td></tr>';
+    };
     const params = new URLSearchParams();
+    if (_gudangFilter) params.set("id_gudang", _gudangFilter);
     try {
       const res = await apiFetch(`/inventaris/transfer?${params}`);
-      if (!res.ok) return;
+      if (!res.ok) return fail();
       // Server-paged envelope: { total, limit, offset, items }.
       const payload = await res.json();
       _transferRows = Array.isArray(payload) ? payload : payload.items || [];
       renderInvTransferTable();
-    } catch (e) { console.warn("Transfer load failed:", e); }
+    } catch (e) {
+      console.warn("Transfer load failed:", e);
+      fail();
+    }
+  }
+
+  // ══════════════════════════════════════════════════════════════════
+  // BULK IMPORT
+  //
+  // The two dropdown buttons had no ids and no listeners: the menu opened and
+  // nothing happened. Wired directly rather than through _wireMasterBulk,
+  // which expects a per-prefix confirmation modal this view does not have.
+  // ══════════════════════════════════════════════════════════════════
+
+  el("inv-btn-bulk-toggle")?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    el("inv-bulk-dropdown")?.classList.toggle("hidden");
+  });
+  document.addEventListener("click", () =>
+    el("inv-bulk-dropdown")?.classList.add("hidden"),
+  );
+
+  el("inv-btn-sample-excel")?.addEventListener("click", () => {
+    el("inv-bulk-dropdown")?.classList.add("hidden");
+    const wb = XLSX.utils.book_new();
+    const headers = [
+      "Nama Barang", "Kode SKU", "Nomor Part", "Kategori",
+      "Kode Alat", "Satuan", "Harga Satuan", "Stok Minimum", "Supplier",
+    ];
+    const sample = [
+      ["Filter Oli GX390", "", "15410-ZE1-023", "ENGINE – GENSET", "GEN", "Pcs", 45000, 4, "PT Sumber Teknik"],
+      ["Busi NGK BPR6ES", "", "BPR6ES", "ENGINE – GENSET", "GEN", "Pcs", 22000, 10, "PT Sumber Teknik"],
+    ];
+    const ws = XLSX.utils.aoa_to_sheet([headers, ...sample]);
+    ws["!cols"] = [{ wch: 28 }, { wch: 14 }, { wch: 18 }, { wch: 24 },
+                   { wch: 12 }, { wch: 10 }, { wch: 14 }, { wch: 14 }, { wch: 22 }];
+    const instr = [
+      ["Petunjuk Pengisian"],
+      ["Nama Barang: WAJIB."],
+      ["Kode SKU: kosongkan untuk dibuat otomatis (SP00001, SP00002, …)."],
+      ["Kategori: harus PERSIS sama dengan nama kategori yang sudah terdaftar."],
+      ["Kode Alat: kode alat kerja (GEN, PBT, …), boleh kosong."],
+      ["Satuan: Pcs / Unit / Set / Box / Roll / Liter."],
+      ["Harga Satuan & Stok Minimum: angka tanpa titik atau koma."],
+      ["Stok awal TIDAK diimpor lewat file ini — catat lewat tab Transaksi Barang."],
+    ];
+    const wsI = XLSX.utils.aoa_to_sheet(instr);
+    wsI["!cols"] = [{ wch: 72 }];
+    XLSX.utils.book_append_sheet(wb, ws, "Data Suku Cadang");
+    XLSX.utils.book_append_sheet(wb, wsI, "Petunjuk");
+    XLSX.writeFile(wb, "Template_Import_SukuCadang.xlsx");
+  });
+
+  el("inv-btn-import-excel")?.addEventListener("click", () => {
+    el("inv-bulk-dropdown")?.classList.add("hidden");
+    // A detached input avoids adding yet another modal to index.html.
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".xlsx,.xls";
+    input.addEventListener("change", async () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      await _importPartsExcel(file);
+    });
+    input.click();
+  });
+
+  async function _importPartsExcel(file) {
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      let dataRows;
+      try {
+        const wb = XLSX.read(e.target.result, { type: "array" });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
+        dataRows = rows.slice(1).filter((r) => String(r[0] || "").trim());
+      } catch {
+        showToast("Gagal membaca file Excel.", "error");
+        return;
+      }
+      if (!dataRows.length) {
+        showToast("File tidak memiliki baris data.", "warning");
+        return;
+      }
+
+      // Category is matched by name against the existing master rather than
+      // created on the fly: silently inventing categories from typos is how
+      // a catalogue ends up with "ENGINE - GENSET" and "ENGINE – GENSET".
+      if (!_categories.length) await loadInvKategoriOptions();
+      const katByName = new Map(
+        _categories.map((c) => [String(c.nama).trim().toUpperCase(), c.id_kategori]),
+      );
+
+      let success = 0, failed = 0;
+      for (const row of dataRows) {
+        const namaKat = String(row[3] || "").trim().toUpperCase();
+        const body = {
+          nama_part: String(row[0]).trim(),
+          sku: String(row[1] || "").trim() || null,
+          part_number: String(row[2] || "").trim() || null,
+          id_kategori: katByName.get(namaKat) || null,
+          kode_alat: String(row[4] || "").trim().toUpperCase() || null,
+          unit: String(row[5] || "").trim() || "Pcs",
+          harga_satuan: parseInt(row[6]) || null,
+          stok_min: parseInt(row[7]) || 0,
+          supplier: String(row[8] || "").trim() || null,
+          jumlah_awal: 0,
+        };
+        if (!body.id_kategori) { failed++; continue; }
+        try {
+          const res = await apiFetch("/inventaris/parts", {
+            method: "POST",
+            body: JSON.stringify(body),
+            background: true,
+          });
+          if (res.ok) success++; else failed++;
+        } catch { failed++; }
+      }
+      showToast(
+        `Impor suku cadang selesai: ${success} berhasil${failed ? `, ${failed} gagal (kategori tidak dikenal atau SKU ganda)` : ""}.`,
+        success > 0 ? "success" : "error",
+      );
+      loadPartCatalog();
+      loadInvParts();
+    };
+    reader.readAsArrayBuffer(file);
   }
 
   function renderInvTransferTable() {
@@ -10092,8 +11509,12 @@ const BULAN_PANJANG = [
       : _transferRows;
 
     if (data.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="9" class="text-center py-12 text-sm text-gray-400">
-        <i class="fas fa-exchange-alt text-3xl mb-2 block text-gray-300"></i>Tidak ada data</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="9" class="empty-state">
+        <i class="fas fa-right-left"></i>${
+          _transferRows.length
+            ? "Tidak ada transfer yang cocok dengan pencarian ini."
+            : 'Belum ada transfer. Gunakan tombol "Transfer" di toolbar untuk memindahkan stok antar gudang.'
+        }</td></tr>`;
       return;
     }
     tbody.innerHTML = data.map(r => `

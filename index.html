@@ -572,9 +572,20 @@
                                 style="max-height: 70vh; overflow-y: auto">
                                 <canvas id="dash-chart-avail" style="max-height: 420px"></canvas>
                             </div>
-                            <!-- Panel: Trend line chart -->
+                            <!-- Panel: Trend line chart
+                                 Owns its own year picker. The chart plots twelve
+                                 months of ONE year, so "Semua Tahun" on the shared
+                                 filter bar has no meaning here — it used to fall
+                                 back silently to the current year, which read as
+                                 the filter being ignored. -->
                             <div id="dash-panel-trend" class="dash-panel hidden p-4"
                                 style="max-height: 70vh; overflow-y: auto">
+                                <div class="flex items-center justify-end gap-2 mb-3">
+                                    <label for="dash-trend-tahun"
+                                        class="text-xs font-semibold text-gray-500 dark:text-gray-400">Tahun</label>
+                                    <select id="dash-trend-tahun"
+                                        class="text-xs px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 outline-none focus:border-kai-blue transition"></select>
+                                </div>
                                 <canvas id="dash-chart-trend" style="max-height: 420px"></canvas>
                             </div>
 
@@ -1604,20 +1615,32 @@
                             </button>
                             <button id="inv-btn-parts-category"
                                 class="flex items-center gap-2 px-4 py-2 bg-white/10 hover:bg-white/20 border border-white/25 text-white font-semibold rounded-lg transition text-sm">
-                                <i class="fas fa-tags"></i> Kategori Suku Cadang
+                                <i class="fas fa-tags"></i> Kategori
+                            </button>
+                            <button id="inv-btn-gudang"
+                                class="flex items-center gap-2 px-4 py-2 bg-white/10 hover:bg-white/20 border border-white/25 text-white font-semibold rounded-lg transition text-sm">
+                                <i class="fas fa-warehouse"></i> Gudang
+                            </button>
+                            <button id="inv-btn-transfer"
+                                class="flex items-center gap-2 px-4 py-2 bg-kai-orange hover:bg-orange-600 text-white font-semibold rounded-lg transition text-sm shadow-sm">
+                                <i class="fas fa-right-left"></i> Transfer
                             </button>
                             <div class="relative">
                                 <button id="inv-btn-bulk-toggle"
-                                    class="flex items-center gap-2 px-4 py-2 bg-kai-orange hover:bg-orange-600 text-white font-semibold rounded-lg transition text-sm shadow-sm">
-                                    <i class="fas fa-cog"></i> Impor Massal
+                                    class="flex items-center gap-2 px-4 py-2 bg-white/10 hover:bg-white/20 border border-white/25 text-white font-semibold rounded-lg transition text-sm">
+                                    <i class="fas fa-file-import"></i> Impor Massal
                                     <i class="fas fa-chevron-down text-xs ml-1"></i>
                                 </button>
+                                <!-- These two used to have no ids and no listeners: the
+                                     dropdown opened and neither button did anything. -->
                                 <div id="inv-bulk-dropdown"
                                     class="hidden absolute left-0 top-full mt-1 w-48 bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-xl shadow-lg z-30 overflow-hidden">
-                                    <button class="w-full flex items-center gap-3 px-4 py-3 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 transition">
+                                    <button id="inv-btn-sample-excel"
+                                        class="w-full flex items-center gap-3 px-4 py-3 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 transition">
                                         <i class="fas fa-file-excel text-emerald-500"></i> Unduh Contoh Excel
                                     </button>
-                                    <button class="w-full flex items-center gap-3 px-4 py-3 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 transition border-t border-gray-100 dark:border-gray-700">
+                                    <button id="inv-btn-import-excel"
+                                        class="w-full flex items-center gap-3 px-4 py-3 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 transition border-t border-gray-100 dark:border-gray-700">
                                         <i class="fas fa-upload text-kai-blue"></i> Impor dari Excel
                                     </button>
                                 </div>
@@ -1627,15 +1650,66 @@
                         <div class="flex items-center gap-2 flex-1 min-w-0">
                             <div class="relative flex-1 min-w-0">
                                 <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs"></i>
-                                <input type="text" id="inv-parts-search" placeholder="Cari suku cadang…"
+                                <input type="text" id="inv-parts-search" placeholder="Cari nama, SKU, kategori, supplier…"
                                     class="w-full pl-8 pr-3 py-2 bg-white dark:bg-gray-700 border border-white/30 rounded-lg text-sm outline-none focus:border-kai-orange transition" />
                             </div>
-                            <button class="w-9 h-9 flex items-center justify-center bg-white/10 hover:bg-white/20 border border-white/20 rounded-lg text-white transition shrink-0">
+                            <button id="inv-btn-sort" title="Urutkan"
+                                class="w-9 h-9 flex items-center justify-center bg-white/10 hover:bg-white/20 border border-white/20 rounded-lg text-white transition shrink-0">
                                 <i class="fas fa-sort-amount-down text-sm"></i>
                             </button>
-                            <button class="w-9 h-9 flex items-center justify-center bg-white/10 hover:bg-white/20 border border-white/20 rounded-lg text-white transition shrink-0">
-                                <i class="fas fa-list text-sm"></i>
-                            </button>
+                        </div>
+                    </div>
+
+                    <!-- ── Inventaris Sort Modal ──
+                         The sort icon above previously had no id and no handler. -->
+                    <div id="inv-sort-modal" class="hidden modal-backdrop">
+                        <div class="modal-panel" style="max-width: 26rem">
+                            <div class="modal-head">
+                                <div>
+                                    <h3>Urutkan Suku Cadang</h3>
+                                    <p>Berlaku untuk daftar suku cadang dan riwayat transfer.</p>
+                                </div>
+                                <button id="inv-sort-close" class="btn-icon" title="Tutup">
+                                    <i class="fas fa-times text-lg"></i>
+                                </button>
+                            </div>
+                            <div class="modal-body space-y-4">
+                                <div>
+                                    <label for="inv-sort-field" class="field-label">Urutkan Berdasarkan</label>
+                                    <select id="inv-sort-field" class="field-input">
+                                        <option value="nama_part">Nama Barang</option>
+                                        <option value="sku">Kode SKU</option>
+                                        <option value="stok_sekarang">Stok Saat Ini</option>
+                                        <option value="nilai_stok">Nilai Stok</option>
+                                        <option value="harga_satuan">Harga Satuan</option>
+                                        <option value="subsistem">Subsistem</option>
+                                        <option value="nama_alat">Alat Kerja</option>
+                                        <option value="status_stok">Status Stok</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label for="inv-sort-dir" class="field-label">Arah</label>
+                                    <select id="inv-sort-dir" class="field-input">
+                                        <option value="asc">A → Z / Terkecil → Terbesar</option>
+                                        <option value="desc">Z → A / Terbesar → Terkecil</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label for="inv-sort-status" class="field-label">Saring Status Stok</label>
+                                    <select id="inv-sort-status" class="field-input">
+                                        <option value="">Semua Status</option>
+                                        <option value="AMAN">Aman</option>
+                                        <option value="DI BAWAH MIN">Di Bawah Minimum</option>
+                                        <option value="KRITIS">Kritis</option>
+                                        <option value="KOSONG">Kosong</option>
+                                        <option value="MINUS">Minus</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="modal-foot">
+                                <button id="inv-sort-reset" class="btn btn-ghost">Atur Ulang</button>
+                                <button id="inv-sort-apply" class="btn btn-primary">Terapkan</button>
+                            </div>
                         </div>
                     </div>
 
@@ -2022,6 +2096,23 @@
                                 <textarea id="kalib-keterangan" rows="3" placeholder="Hasil pengukuran, temuan, atau catatan tambahan..."
                                     class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-cyan-500 transition resize-none min-h-[80px]"></textarea>
                             </div>
+                            <!-- Certificate upload. The server has accepted these all along
+                                 (_save_certificate in main.py) but nothing ever called it —
+                                 there was no file input anywhere in the frontend. The record
+                                 is created first, then the file is POSTed against the
+                                 id_kalibrasi that comes back. -->
+                            <div>
+                                <label for="kalib-file"
+                                    class="block text-xs font-semibold mb-2 text-gray-600 dark:text-gray-400">Berkas
+                                    Sertifikat <span class="text-gray-400 font-normal">(opsional)</span></label>
+                                <div class="file-drop">
+                                    <i class="fas fa-file-arrow-up text-cyan-600 dark:text-cyan-400"></i>
+                                    <input type="file" id="kalib-file" title="Berkas sertifikat kalibrasi"
+                                        accept=".pdf,.png,.jpg,.jpeg,.webp" />
+                                </div>
+                                <p class="file-hint">PDF / JPG / PNG / WEBP, maksimal 10 MB. Berkas
+                                    dapat diunduh kembali dari tabel Riwayat Kalibrasi.</p>
+                            </div>
                             <div class="pt-2 flex gap-3">
                                 <button type="button" id="close-kalib-btn"
                                     class="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 font-semibold text-sm transition">
@@ -2153,6 +2244,7 @@
                                             <th class="p-4 font-semibold">Status</th>
                                             <th class="p-4 font-semibold">Pelaksana</th>
                                             <th class="p-4 font-semibold">No. Sertifikat</th>
+                                            <th class="p-4 font-semibold text-center">Berkas</th>
                                             <th class="p-4 font-semibold">Catatan</th>
                                         </tr>
                                     </thead>
@@ -2273,9 +2365,20 @@
                             Parameter Filter Ekspor
                         </h3>
 
-                        <!-- ── Pemeliharaan / Perbaikan filters ── -->
-                        <p class="text-[10px] font-bold tracking-widest text-kai-blue uppercase mb-2 flex items-center gap-1.5">
-                            <i class="fas fa-wrench"></i> Pemeliharaan / Perbaikan</p>
+                        <!-- ══════════════════════════════════════════════════
+                             Three collapsible groups instead of ~25 controls
+                             stacked in one card. Each summary shows a chip
+                             counting the filters active inside it, so nothing
+                             is ever hidden without a trace. Pemeliharaan opens
+                             by default because it is the common case.
+                        ══════════════════════════════════════════════════ -->
+                        <details class="filter-section" open data-filter-group="perbaikan">
+                            <summary>
+                                <i class="fas fa-wrench text-kai-blue"></i>
+                                <span>Pemeliharaan / Perbaikan</span>
+                                <span class="filter-chip hidden" data-chip="perbaikan"></span>
+                            </summary>
+                            <div class="filter-body">
                         <!-- Row 1: date fields fill full width equally -->
                         <div class="grid grid-cols-2 gap-3 mb-3">
                             <div>
@@ -2323,9 +2426,16 @@
                             </div>
                         </div>
 
-                        <!-- ── Kalibrasi filters ── -->
-                        <p class="text-[10px] font-bold tracking-widest text-cyan-600 uppercase mb-2 flex items-center gap-1.5">
-                            <i class="fas fa-ruler-combined"></i> Kalibrasi</p>
+                            </div>
+                        </details>
+
+                        <details class="filter-section" data-filter-group="kalibrasi">
+                            <summary>
+                                <i class="fas fa-ruler-combined text-cyan-600"></i>
+                                <span>Kalibrasi</span>
+                                <span class="filter-chip hidden" data-chip="kalibrasi"></span>
+                            </summary>
+                            <div class="filter-body">
                         <!-- Row 1: date fields fill full width equally -->
                         <div class="grid grid-cols-2 gap-3 mb-3">
                             <div>
@@ -2358,9 +2468,16 @@
                             </div>
                         </div>
 
-                        <!-- ── Mutasi filters ── -->
-                        <p class="text-[10px] font-bold tracking-widest text-kai-orange uppercase mb-2 flex items-center gap-1.5">
-                            <i class="fas fa-exchange-alt"></i> Mutasi</p>
+                            </div>
+                        </details>
+
+                        <details class="filter-section" data-filter-group="mutasi">
+                            <summary>
+                                <i class="fas fa-exchange-alt text-kai-orange"></i>
+                                <span>Mutasi</span>
+                                <span class="filter-chip hidden" data-chip="mutasi"></span>
+                            </summary>
+                            <div class="filter-body">
                         <!-- Row 1: date fields fill full width equally -->
                         <div class="grid grid-cols-2 gap-3 mb-3">
                             <div>
@@ -2405,6 +2522,10 @@
                                 </select>
                             </div>
                         </div>
+                            </div>
+                        </details>
+
+                        <div class="mt-4"></div>
 
                         <!-- Info strip + Export buttons -->
                         <div
@@ -2526,29 +2647,51 @@
                  VIEW: MASTER DATA (Super Admin only)
                 ───────────────────────────────────────────── -->
                 <section id="view-masterdata" class="view-section max-w-5xl mx-auto w-full space-y-6">
-                    <!-- Tab switcher -->
+                    <!-- Row-count strip: what this screen actually governs, at a glance.
+                         Pusat Data previously covered only 3 of the 12 tables and gave
+                         no indication of that. -->
+                    <div id="master-counts" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3"></div>
+
+                    <!-- Tab switcher.
+                         Gudang and Spesifikasi Teknis are new: both have complete
+                         backend CRUD that was previously unreachable, so warehouses
+                         and tool variants could only be created by running seed.py. -->
                     <div
-                        class="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm p-2 grid grid-cols-2 lg:grid-cols-4 gap-1">
-                        <button data-tab="users"
-                            class="master-tab py-2.5 text-sm rounded-lg transition text-center bg-kai-orange text-white font-semibold shadow-sm">
+                        class="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm p-2 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-1">
+                        <button data-tab="users" class="master-tab tab is-active">
                             <i class="fas fa-user-plus"></i>
                             Pengguna
                         </button>
-                        <button data-tab="alat"
-                            class="master-tab py-2.5 text-sm rounded-lg text-gray-500 transition text-center">
+                        <button data-tab="alat" class="master-tab tab">
                             <i class="fas fa-gears"></i>
                             Alat Kerja
                         </button>
-                        <button data-tab="lokasi"
-                            class="master-tab py-2.5 text-sm rounded-lg text-gray-500 transition text-center">
+                        <button data-tab="varian" class="master-tab tab">
+                            <i class="fas fa-screwdriver-wrench"></i>
+                            Spesifikasi
+                        </button>
+                        <button data-tab="lokasi" class="master-tab tab">
                             <i class="fas fa-map"></i>
                             Lokasi
                         </button>
-                        <button data-tab="upt"
-                            class="master-tab py-2.5 text-sm rounded-lg text-gray-500 transition text-center">
+                        <button data-tab="upt" class="master-tab tab">
                             <i class="fas fa-sitemap"></i>
                             UPT
                         </button>
+                        <button data-tab="gudang" class="master-tab tab">
+                            <i class="fas fa-warehouse"></i>
+                            Gudang
+                        </button>
+                    </div>
+
+                    <!-- Shared search. Applies to whichever tab is open; none of the
+                         master tables had any search at all before. -->
+                    <div class="toolbar">
+                        <div class="toolbar-search">
+                            <i class="fas fa-search toolbar-search-icon"></i>
+                            <input type="text" id="master-search" placeholder="Cari di tabel ini…" />
+                        </div>
+                        <span id="master-search-count" class="text-xs text-gray-400 shrink-0"></span>
                     </div>
 
                     <!-- Panel: Users -->
@@ -2814,6 +2957,147 @@
                             <div id="master-upt-pager" class="mt-4"></div>
                         </div>
                     </div>
+
+                    <!-- Panel: Spesifikasi Teknis (alat_varian)
+                         POST/PUT/DELETE /api/master/varian all existed with no UI;
+                         variants could only be created by seed.py, and the spec
+                         fields the public QR card renders had nowhere to be edited. -->
+                    <div id="master-panel-varian" class="master-tab-panel hidden space-y-5">
+                        <form id="form-add-varian" class="card card-body">
+                            <h4 class="card-title mb-4">Tambah / Ubah Spesifikasi Teknis</h4>
+                            <input type="hidden" id="varian-edit-id" value="" />
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+                                <div>
+                                    <label for="new-varian-alat" class="field-label"><span
+                                            class="text-red-500">*</span> Alat Kerja</label>
+                                    <select id="new-varian-alat" class="field-input"></select>
+                                </div>
+                                <div>
+                                    <label for="new-varian-nama" class="field-label"><span
+                                            class="text-red-500">*</span> Nama Varian</label>
+                                    <input type="text" id="new-varian-nama" placeholder="GX390, 2T TASCO, GEISMAR…"
+                                        class="field-input" />
+                                </div>
+                            </div>
+                            <div class="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-4">
+                                <div>
+                                    <label for="new-varian-merk" class="field-label">Merk</label>
+                                    <input type="text" id="new-varian-merk" placeholder="HONDA" class="field-input" />
+                                </div>
+                                <div>
+                                    <label for="new-varian-tipe" class="field-label">Tipe / Model</label>
+                                    <input type="text" id="new-varian-tipe" placeholder="GX390" class="field-input" />
+                                </div>
+                                <div>
+                                    <label for="new-varian-kapasitas" class="field-label">Kapasitas</label>
+                                    <input type="text" id="new-varian-kapasitas" placeholder="6,5 kVA"
+                                        class="field-input" />
+                                </div>
+                                <div>
+                                    <label for="new-varian-daya" class="field-label">Daya</label>
+                                    <input type="text" id="new-varian-daya" placeholder="13,0 HP / 9,6 kW"
+                                        class="field-input" />
+                                </div>
+                                <div>
+                                    <label for="new-varian-dimensi" class="field-label">Dimensi (P x L x T)</label>
+                                    <input type="text" id="new-varian-dimensi" placeholder="740 x 560 x 570 mm"
+                                        class="field-input" />
+                                </div>
+                                <div>
+                                    <label for="new-varian-berat" class="field-label">Berat</label>
+                                    <input type="text" id="new-varian-berat" placeholder="88 kg" class="field-input" />
+                                </div>
+                            </div>
+                            <div class="mb-4">
+                                <label for="new-varian-keterangan" class="field-label">Keterangan</label>
+                                <input type="text" id="new-varian-keterangan" class="field-input" />
+                            </div>
+                            <div class="flex gap-3 flex-wrap">
+                                <button type="submit" class="btn btn-primary">
+                                    <i class="fas fa-screwdriver-wrench"></i>
+                                    <span id="varian-submit-label">Simpan Spesifikasi</span>
+                                </button>
+                                <button type="button" id="varian-cancel-edit" class="btn btn-ghost hidden">
+                                    <i class="fas fa-times"></i> Batal Ubah
+                                </button>
+                            </div>
+                        </form>
+                        <div class="card">
+                            <div class="table-wrap">
+                                <table class="table-std">
+                                    <thead>
+                                        <tr>
+                                            <th>Alat Kerja</th>
+                                            <th>Varian</th>
+                                            <th>Merk / Tipe</th>
+                                            <th>Kapasitas</th>
+                                            <th>Daya</th>
+                                            <th class="text-right">Opsi</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="table-varian"></tbody>
+                                </table>
+                            </div>
+                            <div id="master-varian-pager" class="p-4"></div>
+                        </div>
+                    </div>
+
+                    <!-- Panel: Gudang
+                         The only master table with zero UI, and a hard blocker: on a
+                         database that had not been seeded there were no warehouses, so
+                         every stock movement was refused before it reached the server. -->
+                    <div id="master-panel-gudang" class="master-tab-panel hidden space-y-5">
+                        <form id="form-add-gudang" class="card card-body">
+                            <h4 class="card-title mb-4">Tambah / Ubah Gudang</h4>
+                            <p class="text-xs text-gray-400 mb-4">Gudang bersifat mandiri dan tidak mengikuti
+                                struktur DAOP/UPT — stok disimpan di gudang bernama, bukan di wilayah operasi.</p>
+                            <input type="hidden" id="gudang-edit-id" value="" />
+                            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+                                <div>
+                                    <label for="new-gudang-kode" class="field-label"><span
+                                            class="text-red-500">*</span> Kode</label>
+                                    <input type="text" id="new-gudang-kode" placeholder="GA"
+                                        class="field-input uppercase" />
+                                </div>
+                                <div class="sm:col-span-2">
+                                    <label for="new-gudang-nama" class="field-label"><span
+                                            class="text-red-500">*</span> Nama Gudang</label>
+                                    <input type="text" id="new-gudang-nama" placeholder="Gudang A"
+                                        class="field-input" />
+                                </div>
+                            </div>
+                            <div class="mb-4">
+                                <label for="new-gudang-keterangan" class="field-label">Keterangan</label>
+                                <input type="text" id="new-gudang-keterangan"
+                                    placeholder="mis. Gudang utama sparepart mekanik" class="field-input" />
+                            </div>
+                            <div class="flex gap-3 flex-wrap">
+                                <button type="submit" class="btn btn-primary">
+                                    <i class="fas fa-warehouse"></i>
+                                    <span id="gudang-submit-label">Simpan Gudang</span>
+                                </button>
+                                <button type="button" id="gudang-cancel-edit" class="btn btn-ghost hidden">
+                                    <i class="fas fa-times"></i> Batal Ubah
+                                </button>
+                            </div>
+                        </form>
+                        <div class="card">
+                            <div class="table-wrap">
+                                <table class="table-std">
+                                    <thead>
+                                        <tr>
+                                            <th>Kode</th>
+                                            <th>Nama Gudang</th>
+                                            <th>Keterangan</th>
+                                            <th>Status</th>
+                                            <th class="text-right">Opsi</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="table-gudang"></tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
                 </section>
 
                 <!-- ─────────────────────────────────────────────
@@ -2917,7 +3201,7 @@
                 </div>
                 <div>
                     <label class="block text-xs font-semibold mb-1.5 text-gray-500">Keterangan / BKO</label>
-                    <textarea id="mutasi-alasan" rows="2" placeholder="Alasan mutasi atau nomor BKO..."
+                    <textarea id="mutasi-alasan" rows="2" placeholder="Alasan mutasi..."
                         class="w-full p-2.5 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-orange resize-none transition"></textarea>
                 </div>
                 <button id="btn-submit-mutasi"
@@ -4780,6 +5064,137 @@
         </div>
     </div>
 
+    <!-- ══════════════════════════════════════════════════════════════════
+     Inventaris: Gudang (warehouse) Modal
+
+     Warehouses had NO user interface at all: the POST/PUT/DELETE endpoints
+     existed but were unreachable, so on a database that had not been seeded
+     the movement form's gudang dropdown read "— Belum ada gudang —" and every
+     stock movement was permanently blocked. This modal is what unblocks the
+     whole inventory flow.
+    ══════════════════════════════════════════════════════════════════ -->
+    <div id="inv-gudang-modal" class="hidden modal-backdrop">
+        <div class="modal-panel">
+            <div class="modal-head">
+                <div class="flex items-center gap-3">
+                    <div
+                        class="w-10 h-10 rounded-xl bg-kai-blue/10 dark:bg-blue-900/30 flex items-center justify-center shrink-0">
+                        <i class="fas fa-warehouse text-kai-blue text-lg"></i>
+                    </div>
+                    <div>
+                        <h3>Gudang Sparepart</h3>
+                        <p>Gudang bersifat mandiri — tidak mengikuti struktur DAOP/UPT.</p>
+                    </div>
+                </div>
+                <button id="inv-gudang-modal-close" class="btn-icon" title="Tutup">
+                    <i class="fas fa-times text-lg"></i>
+                </button>
+            </div>
+            <div class="modal-body space-y-4">
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div>
+                        <label for="inv-gudang-kode" class="field-label"><span class="text-red-500">*</span>
+                            Kode</label>
+                        <input type="text" id="inv-gudang-kode" placeholder="GA" class="field-input uppercase" />
+                    </div>
+                    <div class="sm:col-span-2">
+                        <label for="inv-gudang-nama" class="field-label"><span class="text-red-500">*</span>
+                            Nama Gudang</label>
+                        <input type="text" id="inv-gudang-nama" placeholder="Gudang A" class="field-input" />
+                    </div>
+                </div>
+                <div>
+                    <label for="inv-gudang-keterangan" class="field-label">Keterangan</label>
+                    <input type="text" id="inv-gudang-keterangan" placeholder="mis. Gudang utama sparepart mekanik"
+                        class="field-input" />
+                </div>
+                <button id="inv-gudang-save-btn" class="btn btn-primary btn-block">
+                    <i class="fas fa-plus"></i> <span id="inv-gudang-save-label">Tambah Gudang</span>
+                </button>
+                <button id="inv-gudang-cancel-edit" class="btn btn-ghost btn-block hidden">
+                    <i class="fas fa-times"></i> Batal Ubah
+                </button>
+
+                <div>
+                    <p class="section-title mb-2">Gudang Terdaftar</p>
+                    <ul id="inv-gudang-list" class="space-y-1 max-h-56 overflow-y-auto">
+                        <li class="empty-state">Belum ada gudang.</li>
+                    </ul>
+                </div>
+            </div>
+            <div class="modal-foot">
+                <button id="inv-gudang-modal-done" class="btn btn-primary">Selesai</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ══════════════════════════════════════════════════════════════════
+     Inventaris: Transfer Antar Gudang
+
+     POST /api/inventaris/transfer existed with no form anywhere, so a transfer
+     could only be created by calling the API by hand.
+    ══════════════════════════════════════════════════════════════════ -->
+    <div id="inv-transfer-modal" class="hidden modal-backdrop">
+        <div class="modal-panel">
+            <div class="modal-head">
+                <div class="flex items-center gap-3">
+                    <div
+                        class="w-10 h-10 rounded-xl bg-kai-orange/10 dark:bg-orange-900/30 flex items-center justify-center shrink-0">
+                        <i class="fas fa-right-left text-kai-orange text-lg"></i>
+                    </div>
+                    <div>
+                        <h3>Transfer Antar Gudang</h3>
+                        <p>Memindahkan stok dari satu gudang ke gudang lain.</p>
+                    </div>
+                </div>
+                <button id="inv-transfer-close" class="btn-icon" title="Tutup">
+                    <i class="fas fa-times text-lg"></i>
+                </button>
+            </div>
+            <div class="modal-body space-y-4">
+                <div>
+                    <label for="inv-tf-part" class="field-label"><span class="text-red-500">*</span> Suku Cadang</label>
+                    <input type="text" id="inv-tf-part" list="tx-part-list" placeholder="Ketik nama atau SKU…"
+                        class="field-input" autocomplete="off" />
+                    <p id="inv-tf-part-info" class="file-hint"></p>
+                </div>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                        <label for="inv-tf-asal" class="field-label"><span class="text-red-500">*</span> Gudang
+                            Asal</label>
+                        <select id="inv-tf-asal" class="field-input"></select>
+                    </div>
+                    <div>
+                        <label for="inv-tf-tujuan" class="field-label"><span class="text-red-500">*</span> Gudang
+                            Tujuan</label>
+                        <select id="inv-tf-tujuan" class="field-input"></select>
+                    </div>
+                </div>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                        <label for="inv-tf-jumlah" class="field-label"><span class="text-red-500">*</span>
+                            Jumlah</label>
+                        <input type="number" id="inv-tf-jumlah" min="1" class="field-input" />
+                    </div>
+                    <div>
+                        <label for="inv-tf-penerima" class="field-label">Diterima Oleh</label>
+                        <input type="text" id="inv-tf-penerima" class="field-input" />
+                    </div>
+                </div>
+                <div>
+                    <label for="inv-tf-catatan" class="field-label">Catatan</label>
+                    <input type="text" id="inv-tf-catatan" class="field-input" />
+                </div>
+            </div>
+            <div class="modal-foot">
+                <button id="inv-transfer-cancel" class="btn btn-ghost">Batal</button>
+                <button id="inv-transfer-submit" class="btn btn-accent">
+                    <i class="fas fa-right-left"></i> Proses Transfer
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- ── Inventaris: Add Parts Item Modal ── -->
     <div id="inv-add-modal"
         class="hidden fixed inset-0 z-[100] bg-gray-900/40 backdrop-blur-sm flex items-start justify-center p-4 overflow-y-auto">
@@ -4789,8 +5204,10 @@
                     <i class="fas fa-boxes text-kai-blue text-lg"></i>
                 </div>
                 <div class="flex-1">
-                    <h3 class="text-base font-bold text-gray-800 dark:text-white">Tambah Suku Cadang</h3>
-                    <p class="text-xs text-gray-400 mt-0.5">Add a part to your inventory.</p>
+                    <h3 id="inv-add-modal-title" class="text-base font-bold text-gray-800 dark:text-white">Tambah Suku
+                        Cadang</h3>
+                    <p class="text-xs text-gray-400 mt-0.5">Field bertanda <span class="text-red-500">*</span> wajib
+                        diisi.</p>
                 </div>
                 <button id="inv-add-modal-close"
                     class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 dark:hover:bg-gray-700">
@@ -4798,55 +5215,56 @@
                 </button>
             </div>
             <div class="p-6 grid grid-cols-1 md:grid-cols-2 gap-5">
-                <!-- Part Details -->
+                <!-- Rincian Suku Cadang -->
                 <div class="bg-gray-50 dark:bg-gray-700/40 rounded-xl border border-gray-100 dark:border-gray-700 p-5 space-y-4">
-                    <h4 class="text-sm font-bold text-kai-blue flex items-center gap-2"><i class="fas fa-truck"></i> Part Details</h4>
+                    <h4 class="text-sm font-bold text-kai-blue flex items-center gap-2"><i class="fas fa-truck"></i>
+                        Rincian Suku Cadang</h4>
                     <div>
-                        <label class="field-label">* Category</label>
+                        <label for="inv-field-category" class="field-label"><span class="text-red-500">*</span>
+                            Kategori</label>
                         <div class="flex gap-2">
                             <select id="inv-field-category" class="field-input flex-1">
-                                <option value="">— Select Category —</option>
+                                <option value="">— Pilih kategori —</option>
                             </select>
-                            <button id="inv-btn-open-category-modal" type="button" class="w-9 h-9 flex items-center justify-center bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-kai-blue hover:bg-blue-50 transition shrink-0">
+                            <button id="inv-btn-open-category-modal" type="button" title="Tambah kategori baru"
+                                class="w-9 h-9 flex items-center justify-center bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-kai-blue hover:bg-blue-50 transition shrink-0">
                                 <i class="fas fa-plus text-sm"></i>
                             </button>
                         </div>
                     </div>
                     <div class="grid grid-cols-2 gap-3">
                         <div>
-                            <label class="field-label">* SKU ID</label>
-                            <input type="text" id="inv-field-sku" placeholder="SKU117823" class="field-input" />
+                            <label for="inv-field-sku" class="field-label">Kode SKU</label>
+                            <input type="text" id="inv-field-sku" placeholder="Otomatis bila kosong"
+                                class="field-input" />
                         </div>
                         <div>
-                            <label class="field-label">* Part Number</label>
+                            <label for="inv-field-part-number" class="field-label">Nomor Part</label>
                             <input type="text" id="inv-field-part-number" class="field-input" />
                         </div>
                     </div>
-                    <div class="grid grid-cols-2 gap-3">
-                        <div>
-                            <label class="field-label">* Item Name</label>
-                            <input type="text" id="inv-field-item-name" class="field-input" />
-                        </div>
-                        <div>
-                            <label class="field-label">* Manufacturer</label>
-                            <input type="text" id="inv-field-manufacturer" class="field-input" />
-                        </div>
+                    <div>
+                        <label for="inv-field-item-name" class="field-label"><span class="text-red-500">*</span> Nama
+                            Barang</label>
+                        <input type="text" id="inv-field-item-name" class="field-input" />
                     </div>
                     <div>
-                        <label class="field-label">Item Type</label>
+                        <label for="inv-field-item-type" class="field-label">Untuk Alat Kerja</label>
                         <select id="inv-field-item-type" class="field-input">
                             <option value="">— Pilih alat kerja —</option>
                         </select>
                     </div>
                 </div>
-                <!-- Stock & Cost -->
+                <!-- Stok & Harga -->
                 <div class="bg-gray-50 dark:bg-gray-700/40 rounded-xl border border-gray-100 dark:border-gray-700 p-5 space-y-4">
-                    <h4 class="text-sm font-bold text-kai-blue flex items-center gap-2"><i class="fas fa-dollar-sign"></i> Stock &amp; Cost</h4>
+                    <h4 class="text-sm font-bold text-kai-blue flex items-center gap-2"><i
+                            class="fas fa-warehouse"></i> Stok &amp; Harga</h4>
                     <div>
-                        <label class="field-label">* Quantity</label>
+                        <label for="inv-field-quantity" class="field-label">Stok Awal</label>
                         <div class="flex gap-2">
-                            <input type="number" id="inv-field-quantity" min="0" class="field-input flex-1" />
-                            <select id="inv-field-unit" class="field-input w-28 shrink-0">
+                            <input type="number" id="inv-field-quantity" min="0" placeholder="0"
+                                class="field-input flex-1" />
+                            <select id="inv-field-unit" title="Satuan" class="field-input w-28 shrink-0">
                                 <option value="Pcs">Pcs</option>
                                 <option value="Unit">Unit</option>
                                 <option value="Set">Set</option>
@@ -4856,98 +5274,106 @@
                             </select>
                         </div>
                     </div>
+                    <!-- Warehouse, NOT the DAOP/UPT region tree. Opening stock used
+                         to be written against a lokasi while every balance query
+                         scopes by gudang, so it was invisible the moment a warehouse
+                         filter was applied and could never be issued. -->
+                    <div>
+                        <label for="inv-field-gudang" class="field-label">Gudang Penyimpanan
+                            <span class="font-normal text-gray-400">(wajib bila stok awal &gt; 0)</span></label>
+                        <div class="flex gap-2">
+                            <select id="inv-field-gudang" class="field-input flex-1">
+                                <option value="">— Pilih gudang —</option>
+                            </select>
+                            <button id="inv-btn-open-gudang-modal" type="button" title="Kelola gudang"
+                                class="w-9 h-9 flex items-center justify-center bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-kai-blue hover:bg-blue-50 transition shrink-0">
+                                <i class="fas fa-plus text-sm"></i>
+                            </button>
+                        </div>
+                    </div>
                     <div class="grid grid-cols-2 gap-3">
                         <div>
-                            <label class="field-label">* Item Cost</label>
+                            <label for="inv-field-cost" class="field-label">Harga Satuan (Rp)</label>
                             <input type="number" id="inv-field-cost" min="0" class="field-input" />
                         </div>
                         <div>
-                            <label class="field-label">Low Part Threshold</label>
+                            <label for="inv-field-threshold" class="field-label">Stok Minimum</label>
                             <input type="number" id="inv-field-threshold" min="0" class="field-input" />
                         </div>
                     </div>
                     <div>
-                        <label class="field-label">Stored Location</label>
-                        <select id="inv-field-stored-location" class="field-input">
-                            <option value="">— Pilih lokasi —</option>
-                        </select>
-                    </div>
-                    <div>
-                        <label class="field-label">Create automatic demand</label>
                         <div class="flex items-start gap-2 mt-1">
-                            <input type="checkbox" id="inv-field-auto-demand" class="w-4 h-4 mt-0.5 rounded border-gray-300 text-kai-blue focus:ring-kai-blue cursor-pointer shrink-0" />
-                            <label for="inv-field-auto-demand" class="text-xs text-gray-500 dark:text-gray-400 cursor-pointer leading-relaxed">
-                                System will send email alert when the part is lower than threshold
+                            <input type="checkbox" id="inv-field-auto-demand"
+                                class="w-4 h-4 mt-0.5 rounded border-gray-300 text-kai-blue focus:ring-kai-blue cursor-pointer shrink-0" />
+                            <label for="inv-field-auto-demand"
+                                class="text-xs text-gray-500 dark:text-gray-400 cursor-pointer leading-relaxed">
+                                Tandai untuk pengadaan otomatis saat stok di bawah minimum
                             </label>
                         </div>
                     </div>
                 </div>
-                <!-- Identification -->
+                <!-- Identifikasi -->
                 <div class="bg-gray-50 dark:bg-gray-700/40 rounded-xl border border-gray-100 dark:border-gray-700 p-5 space-y-4">
-                    <h4 class="text-sm font-bold text-kai-blue flex items-center gap-2"><i class="fas fa-barcode"></i> Identification</h4>
+                    <h4 class="text-sm font-bold text-kai-blue flex items-center gap-2"><i class="fas fa-barcode"></i>
+                        Identifikasi</h4>
                     <div>
-                        <label class="field-label">Serial Number</label>
-                        <div class="relative">
-                            <input type="text" id="inv-field-serial" placeholder="Input serial number/barcode and press enter key" class="field-input pr-10" />
-                            <button type="button" class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-kai-blue transition"><i class="fas fa-barcode text-sm"></i></button>
-                        </div>
+                        <label for="inv-field-serial" class="field-label">Nomor Seri</label>
+                        <input type="text" id="inv-field-serial" placeholder="Pisahkan dengan koma bila lebih dari satu"
+                            class="field-input" />
                     </div>
                     <div>
-                        <label class="field-label">Lookup Tag</label>
-                        <div class="relative">
-                            <input type="text" id="inv-field-tag" placeholder="Input any tag and press enter key" class="field-input pr-10" />
-                            <button type="button" class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-kai-blue transition"><i class="fas fa-tag text-sm"></i></button>
-                        </div>
+                        <label for="inv-field-tag" class="field-label">Tag Pencarian</label>
+                        <input type="text" id="inv-field-tag" placeholder="Pisahkan dengan koma" class="field-input" />
                     </div>
                     <div>
-                        <label class="field-label">Critical Part</label>
                         <div class="flex items-center gap-2 mt-1">
-                            <input type="checkbox" id="inv-field-critical" class="w-4 h-4 rounded border-gray-300 text-red-500 focus:ring-red-400 cursor-pointer" />
-                            <label for="inv-field-critical" class="text-xs text-gray-500 dark:text-gray-400 cursor-pointer">Mark as critical part</label>
+                            <input type="checkbox" id="inv-field-critical"
+                                class="w-4 h-4 rounded border-gray-300 text-red-500 focus:ring-red-400 cursor-pointer" />
+                            <label for="inv-field-critical"
+                                class="text-xs text-gray-500 dark:text-gray-400 cursor-pointer">Tandai sebagai suku
+                                cadang kritis</label>
                         </div>
                     </div>
                 </div>
-                <!-- Additional Details -->
+                <!-- Informasi Tambahan -->
                 <div class="bg-gray-50 dark:bg-gray-700/40 rounded-xl border border-gray-100 dark:border-gray-700 p-5 space-y-4">
-                    <h4 class="text-sm font-bold text-kai-blue flex items-center gap-2"><i class="fas fa-info-circle"></i> Additional Details</h4>
+                    <h4 class="text-sm font-bold text-kai-blue flex items-center gap-2"><i
+                            class="fas fa-info-circle"></i> Informasi Tambahan</h4>
                     <div>
-                        <label class="field-label">Linked Vehicle Model</label>
-                        <div class="relative">
-                            <input type="text" id="inv-field-vehicle" class="field-input pr-10" />
-                            <button type="button" class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-kai-blue transition"><i class="fas fa-link text-sm"></i></button>
-                        </div>
+                        <label for="inv-field-vehicle" class="field-label">Terpasang Pada</label>
+                        <input type="text" id="inv-field-vehicle" placeholder="Model/unit terkait"
+                            class="field-input" />
                     </div>
                     <div class="grid grid-cols-2 gap-3">
                         <div>
-                            <label class="field-label">Warranty Term (In Months)</label>
+                            <label for="inv-field-warranty" class="field-label">Garansi (bulan)</label>
                             <input type="number" id="inv-field-warranty" min="0" class="field-input" />
                         </div>
                         <div>
-                            <label class="field-label">Supplier</label>
+                            <!-- There is no `manufacturer` column; the modal used to
+                                 carry a required "Manufacturer" field that app.js
+                                 silently folded into supplier and discarded when both
+                                 were filled. One field, correctly labelled. -->
+                            <label for="inv-field-supplier" class="field-label">Supplier / Manufaktur</label>
                             <input type="text" id="inv-field-supplier" class="field-input" />
                         </div>
                     </div>
                     <div>
-                        <label class="field-label">Reference Part</label>
-                        <div class="relative">
-                            <input type="text" id="inv-field-ref-part" class="field-input pr-10" />
-                            <button type="button" class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-kai-blue transition"><i class="fas fa-link text-sm"></i></button>
-                        </div>
+                        <label for="inv-field-ref-part" class="field-label">Part Referensi</label>
+                        <input type="text" id="inv-field-ref-part" class="field-input" />
                     </div>
                     <div>
-                        <label class="field-label">Description</label>
+                        <label for="inv-field-description" class="field-label">Deskripsi</label>
                         <input type="text" id="inv-field-description" class="field-input" />
                     </div>
                 </div>
             </div>
             <div class="flex gap-3 px-6 py-4 border-t border-gray-100 dark:border-gray-700">
-                <button id="inv-add-modal-cancel"
-                    class="flex-1 flex items-center justify-center gap-2 py-2.5 border-2 border-red-400 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 font-semibold rounded-lg transition text-sm">
-                    <i class="fas fa-times"></i> Cancel
+                <button id="inv-add-modal-cancel" class="btn btn-ghost flex-1">
+                    <i class="fas fa-times"></i> Batal
                 </button>
-                <button id="inv-add-modal-submit"
-                    class="flex-1 flex items-center justify-center gap-2 py-2.5 bg-kai-blue hover:bg-blue-800 text-white font-semibold rounded-lg transition text-sm shadow-sm">
-                    <i class="fas fa-plus"></i> Add
+                <button id="inv-add-modal-submit" class="btn btn-primary flex-1">
+                    <i class="fas fa-plus"></i> <span id="inv-add-modal-submit-label">Simpan</span>
                 </button>
             </div>
         </div>
