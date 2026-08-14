@@ -4,11 +4,13 @@
 
 __pycache__
 .vscode
+.claude
 sql_backup
 temp
 
 # User-uploaded calibration certificates — runtime data, never committed
 uploads
+tools
 
 # Drops and reseeds the whole database; imports seed.py, so it is untracked too
 inject.py

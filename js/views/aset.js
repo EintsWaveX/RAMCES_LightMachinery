@@ -358,7 +358,7 @@ window.downloadSertifikat = async function downloadSertifikat(namaFile) {
 /** Detach a certificate from its calibration record. SUPER_ADMIN / ADMIN only. */
 window.hapusSertifikat = async function hapusSertifikat(idKalibrasi, uid) {
   if (!idKalibrasi) return;
-  if (!confirm("Hapus berkas sertifikat dari catatan kalibrasi ini?")) return;
+  if (!(await customConfirm("Hapus berkas sertifikat dari catatan kalibrasi ini?"))) return;
   try {
     const res = await apiFetch(`/kalibrasi/${idKalibrasi}/sertifikat`, {
       method: "DELETE",
@@ -725,26 +725,26 @@ function renderDbCards() {
       // Badge 1: SO / TSO
       const isSO = item.status_terakhir === "SO";
       const kondisiBadge = isSO
-        ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"><i class="fas fa-circle text-[6px]"></i>SO</span>`
-        : `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"><i class="fas fa-circle text-[6px]"></i>TSO</span>`;
+        ? `<span class="badge badge-so"><i class="fas fa-circle text-[6px]"></i>SO</span>`
+        : `<span class="badge badge-tso"><i class="fas fa-circle text-[6px]"></i>TSO</span>`;
 
       // Badge 2: Kalibrasi status
       const kalibStatus = summaryItem?.kalibrasi?.latest_status;
       const kalibBadge = kalibStatus === "LULUS"
-        ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"><i class="fas fa-circle text-[6px]"></i>LULUS</span>`
+        ? `<span class="badge badge-so"><i class="fas fa-circle text-[6px]"></i>LULUS</span>`
         : kalibStatus === "BERSYARAT"
-        ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400"><i class="fas fa-circle text-[6px]"></i>BERSYARAT</span>`
+        ? `<span class="badge badge-warn"><i class="fas fa-circle text-[6px]"></i>BERSYARAT</span>`
         : kalibStatus === "GAGAL"
-        ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400"><i class="fas fa-circle text-[6px]"></i>GAGAL</span>`
-        : `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-gray-100 text-gray-400 dark:bg-gray-700 dark:text-gray-500"><i class="fas fa-circle text-[6px]"></i>BLM KALIBRASI</span>`;
+        ? `<span class="badge badge-tso"><i class="fas fa-circle text-[6px]"></i>GAGAL</span>`
+        : `<span class="badge badge-neutral"><i class="fas fa-circle text-[6px]"></i>BLM KALIBRASI</span>`;
 
       // Badge 3: Mutasi status
       const mutasiInfo = summaryItem?.mutasi;
       const mutasiBadge = (mutasiInfo && mutasiInfo.count > 0)
         ? mutasiInfo.sudah_kembali
-          ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"><i class="fas fa-circle text-[6px]"></i>DI LOKASI ASAL</span>`
-          : `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400"><i class="fas fa-circle text-[6px]"></i>SEDANG TERMUTASI</span>`
-        : `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-gray-100 text-gray-400 dark:bg-gray-700 dark:text-gray-500"><i class="fas fa-circle text-[6px]"></i>TIDAK TERMUTASI</span>`;
+          ? `<span class="badge badge-so"><i class="fas fa-circle text-[6px]"></i>DI LOKASI ASAL</span>`
+          : `<span class="badge badge-move"><i class="fas fa-circle text-[6px]"></i>SEDANG TERMUTASI</span>`
+        : `<span class="badge badge-neutral"><i class="fas fa-circle text-[6px]"></i>TIDAK TERMUTASI</span>`;
 
       const statusBadgeCls =
         item.status_terakhir === "SO"

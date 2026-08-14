@@ -24,7 +24,9 @@ let _dashChartTrend = null;
 // "perbaikan" is the printed repair report, moved here from Kelola Inventaris so
 // every fleet-level dashboard lives behind one menu entry. It owns its own
 // Lokasi + Tahun filters and boots lazily — see setupRepairDashboard().
-const _DASH_TABS = ["matrix", "bar", "avail", "trend", "perbaikan"];
+// "mcf" is served by the same endpoint pair as "perbaikan", so activating
+// either tab boots the repair dashboard.
+const _DASH_TABS = ["matrix", "bar", "avail", "trend", "perbaikan", "mcf"];
 
 function _dashFilteredDb() {
   return db.filter((item) => {
@@ -168,9 +170,10 @@ function _renderDashActivePanel() {
   if (tabId === "bar") _renderBarPanel();
   if (tabId === "avail") _renderAvailPanel();
   if (tabId === "trend") _renderTrendPanel();
-  // Unlike the other four, this panel is server-driven rather than computed from
-  // the cached `db` array, so it fetches on activation instead of re-rendering.
-  if (tabId === "perbaikan") window.initRepairDashboard?.();
+  // Unlike the computed panels, these two are server-driven rather than derived
+  // from the cached `db` array, so they fetch on activation. Both are filled by
+  // the same load() inside repair-dashboard.js.
+  if (tabId === "perbaikan" || tabId === "mcf") window.initRepairDashboard?.();
 }
 
 // ── PANEL 1: Matrix ────────────────────────────────────────────────────────

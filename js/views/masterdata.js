@@ -543,7 +543,7 @@ function _resetVarianForm() {
 
 window.deleteMasterVarian = async function (id) {
   const v = _masterVarianRows.find((x) => x.id_varian === id);
-  if (!confirm(`Hapus spesifikasi "${v?.nama_varian || id}"?\n\nAset yang memakai varian ini akan kehilangan spesifikasinya (data aset itu sendiri tetap aman).`))
+  if (!(await customConfirm(`Hapus spesifikasi "${v?.nama_varian || id}"?\n\nAset yang memakai varian ini akan kehilangan spesifikasinya (data aset itu sendiri tetap aman).`)))
     return;
   try {
     const res = await apiFetch(`/master/varian/${id}`, { method: "DELETE" });
@@ -679,7 +679,7 @@ function _resetGudangMasterForm() {
 
 window.deleteMasterGudang = async function (id) {
   const g = _masterGudangRows.find((x) => x.id_gudang === id);
-  if (!confirm(`Hapus gudang "${g?.nama || id}"?\n\nJika gudang masih memiliki riwayat stok, gudang hanya akan dinonaktifkan agar riwayat tidak menjadi yatim.`))
+  if (!(await customConfirm(`Hapus gudang "${g?.nama || id}"?\n\nJika gudang masih memiliki riwayat stok, gudang hanya akan dinonaktifkan agar riwayat tidak menjadi yatim.`)))
     return;
   try {
     const res = await apiFetch(`/inventaris/gudang/${id}`, { method: "DELETE" });

@@ -45,19 +45,27 @@
     return getParentLokasiCode(raw) || "";
   }
 
+  // The Laporan Perbaikan and Kurva MCF tabs each carry their own filter row.
+  // There is still exactly one copy of the state (`_lokasiFilter`,
+  // `_tahunFilter`, `_semuaTahun`); these helpers just keep both rows showing
+  // it, so switching tabs never appears to change the filter.
+  const LOKASI_SELECTS = ["rd-lokasi", "rd-mcf-lokasi"];
+  const TAHUN_SELECTS = ["rd-tahun", "rd-mcf-tahun"];
+  const eachSel = (ids, fn) => ids.forEach((id) => { const e = el(id); if (e) fn(e); });
+
   async function loadLokasiOptions() {
-    const sel = el("rd-lokasi");
-    if (!sel) return;
+    if (!el("rd-lokasi") && !el("rd-mcf-lokasi")) return;
     try {
       const res = await apiFetch("/master/lokasi?tipe=DAOP&tipe=DIVRE&tipe=PUSAT&tipe=BALAIYASA");
       if (!res.ok) return;
       const data = await res.json();
-      sel.innerHTML = '<option value="">— Semua Lokasi —</option>' +
+      const html = '<option value="">— Semua Lokasi —</option>' +
         data.map((l) => `<option value="${l.id_lokasi}">${l.nama_lokasi}</option>`).join("");
+      eachSel(LOKASI_SELECTS, (e) => { e.innerHTML = html; });
       const preferred = await resolveDefaultRegion();
       if (preferred && data.some((l) => l.id_lokasi === preferred)) {
-        sel.value = preferred;
         _lokasiFilter = preferred;
+        eachSel(LOKASI_SELECTS, (e) => { e.value = preferred; });
       }
     } catch (_) { /* silent — the report falls back to the global view */ }
   }
@@ -69,8 +77,7 @@
   // no data stay selectable but are marked, and the current pick is re-snapped
   // if the backend resolved a different year.
   function syncTahunOptions(resolvedYear, availableYears, isAllYears) {
-    const sel = el("rd-tahun");
-    if (!sel) return;
+    if (!el("rd-tahun") && !el("rd-mcf-tahun")) return;
     const withData = new Set(availableYears || []);
     const oldest = withData.size ? Math.min(...withData) : new Date().getFullYear();
     const maxYear = Math.max(new Date().getFullYear(), resolvedYear || 0, ...withData);
@@ -85,29 +92,37 @@
         `<option value="${y}"${has ? "" : ' class="text-gray-400"'}>${y}${has ? "" : " (kosong)"}</option>`,
       );
     }
-    sel.innerHTML = opts.join("");
-    sel.value = isAllYears ? "" : String(resolvedYear ?? "");
+    const html = opts.join("");
+    const picked = isAllYears ? "" : String(resolvedYear ?? "");
+    eachSel(TAHUN_SELECTS, (e) => { e.innerHTML = html; e.value = picked; });
     _tahunFilter = isAllYears ? null : resolvedYear;
     _semuaTahun = !!isAllYears;
   }
 
-  el("rd-lokasi")?.addEventListener("change", function () {
-    _lokasiFilter = this.value;
-    // Drop the year so the backend re-resolves the newest year that actually
-    // holds data for the new region. Regions have different histories, and
-    // carrying the old year over strands the user on an empty report.
-    // "Semua Tahun" is a deliberate choice, so it survives a region change.
-    if (!_semuaTahun) _tahunFilter = null;
-    load();
+  eachSel(LOKASI_SELECTS, (sel) => {
+    sel.addEventListener("change", function () {
+      _lokasiFilter = this.value;
+      eachSel(LOKASI_SELECTS, (e) => { e.value = _lokasiFilter; });
+      // Drop the year so the backend re-resolves the newest year that actually
+      // holds data for the new region. Regions have different histories, and
+      // carrying the old year over strands the user on an empty report.
+      // "Semua Tahun" is a deliberate choice, so it survives a region change.
+      if (!_semuaTahun) _tahunFilter = null;
+      load();
+    });
   });
 
-  el("rd-tahun")?.addEventListener("change", function () {
-    _semuaTahun = this.value === "";
-    _tahunFilter = _semuaTahun ? null : parseInt(this.value, 10) || null;
-    load();
+  eachSel(TAHUN_SELECTS, (sel) => {
+    sel.addEventListener("change", function () {
+      _semuaTahun = this.value === "";
+      _tahunFilter = _semuaTahun ? null : parseInt(this.value, 10) || null;
+      eachSel(TAHUN_SELECTS, (e) => { e.value = this.value; });
+      load();
+    });
   });
 
-  el("rd-refresh")?.addEventListener("click", () => load());
+  ["rd-refresh", "rd-mcf-refresh"].forEach((id) =>
+    el(id)?.addEventListener("click", () => load()));
 
   // ── Chart handles ─────────────────────────────────────────────────
   let _chartResort = null;
@@ -515,8 +530,10 @@
   // Charts bake their light/dark colors in at construction, so a theme flip
   // needs a re-render rather than a resize.
   window.addEventListener("kai-theme-change", () => {
-    const panel = el("dash-panel-perbaikan");
-    if (panel && !panel.classList.contains("hidden")) load();
+    const visible = ["dash-panel-perbaikan", "dash-panel-mcf"]
+      .map(el)
+      .some((p) => p && !p.classList.contains("hidden"));
+    if (visible) load();
   });
 
   // ── Entry point ───────────────────────────────────────────────────

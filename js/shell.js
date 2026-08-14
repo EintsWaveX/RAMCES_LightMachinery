@@ -32,25 +32,39 @@ async function checkAuth() {
     if (topbarUsername) topbarUsername.innerText = currentUser;
     if (topbarRole) topbarRole.innerText = role.replace("_", " ");
 
-    if (role === "SUPER_ADMIN") {
-      const navMaster = document.getElementById("nav-masterdata");
-      const navAfkir = document.getElementById("nav-afkir");
-      const adminHelper = document.getElementById("admin-helper");
-      if (navMaster) navMaster.classList.remove("hidden");
-      if (navAfkir) navAfkir.classList.remove("hidden");
-      if (adminHelper) adminHelper.classList.remove("hidden");
-    }
-    if (role === "TEKNISI") {
-      const navInput = document.getElementById("nav-input");
-      if (navInput) navInput.classList.add("hidden");
-    }
+    // Set the visibility of every role-gated menu item explicitly, in both
+    // directions. This used only to REMOVE `hidden` for SUPER_ADMIN and never
+    // put it back, so a role change that did not reload the document left the
+    // previous (higher) role's menu on screen: SUPER_ADMIN, then a 401 inside
+    // apiFetch calling forceLogout(false) — which does not reload — then a
+    // TEKNISI logging in at the same workstation, and Pusat Data plus Pulihkan
+    // Aset Afkir were still there. The server answered 403 behind them, so it
+    // was never an escalation, but the menu contradicted the permissions.
+    const setNav = (id, visible) =>
+      document.getElementById(id)?.classList.toggle("hidden", !visible);
+
+    const isSuperAdmin = role === "SUPER_ADMIN";
+    setNav("nav-masterdata", isSuperAdmin);
+    setNav("nav-afkir", isSuperAdmin);
+    setNav("admin-helper", isSuperAdmin);
+    setNav("nav-input", role !== "TEKNISI");
 
     const welcomeMsg = document.getElementById("dashboard-welcome");
     if (welcomeMsg) welcomeMsg.innerText = `Selamat Datang, ${currentUser}`;
 
     switchView("dashboard");
 
-    toggleSidebar();
+    // Desktop only. This used to call toggleSidebar() unconditionally, so on a
+    // phone the drawer slid open right over the dashboard the user had just
+    // logged in to see, and every session started by dismissing it.
+    const sidebarEl = document.getElementById("sidebar");
+    if (
+      window.innerWidth >= 1024 &&
+      sidebarEl &&
+      !sidebarEl.classList.contains("open")
+    ) {
+      toggleSidebar();
+    }
     setupProfileModal();
     startTopbarClock();
 

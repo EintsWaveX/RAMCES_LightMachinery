@@ -20,8 +20,15 @@
   <link rel="stylesheet" href="/assets/style.css" />
   <script>
     // ── Theme bootstrap (before paint) ──
+    // Same precedence as js/core.js: a stored choice wins, otherwise follow the
+    // operating system. Kept identical on purpose — this page and the SPA share
+    // sessionStorage and a technician moves between them mid-task, so a theme
+    // that flipped on the way across would look like a bug.
     (function () {
-      if (localStorage.getItem("theme") === "dark")
+      const saved = localStorage.getItem("theme");
+      const prefersDark =
+        window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+      if (saved ? saved === "dark" : prefersDark)
         document.documentElement.classList.add("dark");
     })();
 
@@ -150,9 +157,24 @@
         <p class="text-[9px] uppercase tracking-widest text-blue-200/70 leading-none font-semibold">
           PT Kereta Api Indonesia
         </p>
-        <h1 class="text-xs font-bold text-white leading-tight tracking-wide">
-          RAMCES Light Machinery &mdash; Kartu Aset
+        <!-- The full lockup wrapped to three lines at 390px and pushed the
+             actions off the row. Short form on phones, full name from sm: up. -->
+        <h1 class="text-xs font-bold text-white leading-tight tracking-wide truncate">
+          <span class="sm:hidden">Kartu Aset</span>
+          <span class="hidden sm:inline">RAMCES Light Machinery &mdash; Kartu Aset</span>
         </h1>
+      </div>
+
+      <!-- Live-connection / presence indicator.
+           Only meaningful once signed in: an anonymous QR scan deliberately
+           does not register presence. When it is lit, this person shows up as
+           online in Pusat Data ▸ Pengguna with "Kartu Aset (QR)" as their
+           current screen, so the office can see who is out in the field. -->
+      <div id="ws-presence"
+        class="hidden shrink-0 items-center gap-1.5 px-2 py-1 rounded-lg bg-white/10 text-[10px] font-semibold text-blue-100"
+        title="Status sambungan langsung">
+        <span id="ws-dot" class="w-1.5 h-1.5 rounded-full bg-gray-400"></span>
+        <span id="ws-label" class="hidden sm:inline">Menghubungkan…</span>
       </div>
 
       <!-- Dark-mode toggle -->
@@ -255,12 +277,12 @@
            variant. Hidden entirely when the asset has no variant assigned,
            rather than rendering a card full of em-dashes. -->
       <div id="spec-card"
-        class="hidden bg-white dark:bg-gray-800 rounded-2xl shadow-sm border-2 border-red-500 dark:border-red-500/70 overflow-hidden anim-fade-up delay-1">
-        <div class="px-5 py-3 bg-red-50 dark:bg-red-900/20 border-b border-red-200 dark:border-red-900/40 flex items-center gap-2">
-          <i class="fas fa-screwdriver-wrench text-red-600 dark:text-red-400 text-sm"></i>
-          <h3 class="text-sm font-bold text-red-700 dark:text-red-300">Spesifikasi Alat Kerja</h3>
+        class="hidden bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden anim-fade-up delay-1">
+        <div class="px-5 py-3 bg-blue-50/70 dark:bg-gray-700/40 border-b border-gray-100 dark:border-gray-700 flex items-center gap-2">
+          <i class="fas fa-screwdriver-wrench text-kai-blue dark:text-blue-400 text-sm"></i>
+          <h3 class="text-sm font-bold text-kai-blue dark:text-blue-300">Spesifikasi Alat Kerja</h3>
           <span id="spec-varian"
-            class="ml-auto text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300"></span>
+            class="badge badge-info ml-auto"></span>
         </div>
         <dl id="spec-grid" class="p-5 grid grid-cols-2 sm:grid-cols-3 gap-y-3 gap-x-4 text-xs"></dl>
       </div>
@@ -1047,7 +1069,7 @@
     const rows = FIELDS
       .filter(([key]) => spec[key])
       .map(([key, label]) =>
-        `<div><dt class="text-[9px] uppercase font-bold text-red-400 dark:text-red-500 tracking-wider mb-0.5">${label}</dt>
+        `<div><dt class="text-[9px] uppercase font-bold text-gray-400 dark:text-gray-500 tracking-wider mb-0.5">${label}</dt>
          <dd class="font-semibold text-gray-800 dark:text-gray-100 text-sm">${spec[key]}</dd></div>`);
 
     if (!rows.length && !spec.nama_varian) { card.classList.add("hidden"); return; }
@@ -1071,7 +1093,7 @@
       bkal.className = "anim-badge-pop delay-1 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400";
       bkal.innerHTML = `<i class="fas fa-circle text-[6px]"></i> BERSYARAT`;
     } else if (ks === "GAGAL") {
-      bkal.className = "anim-badge-pop delay-1 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400";
+      bkal.className = "anim-badge-pop delay-1 badge badge-tso";
       bkal.innerHTML = `<i class="fas fa-circle text-[6px]"></i> GAGAL KALIBRASI`;
     } else {
       bkal.className = "anim-badge-pop delay-1 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-gray-100 text-gray-400 dark:bg-gray-700 dark:text-gray-500";
@@ -1646,6 +1668,8 @@
         userRole = p?.role || "";
         document.getElementById("login-gate-overlay").remove();
         showToast(`Berhasil masuk sebagai ${username}!`, "success");
+        // Register presence now that there is an identity to register.
+        setupLandingSocket();
         await fetchMasterData();
         await fetchSummaryForAsset(UID);
         unlockForms();
@@ -1664,11 +1688,95 @@
     });
   }
 
+  // ── LIVE CONNECTION / PRESENCE ───────────────────────────────────────────
+  //
+  // This page is reached by scanning the QR sticker on a machine, so the person
+  // using it is the one actually standing in front of the alat kerja. Without
+  // this they were invisible to the office: presence is keyed off the WebSocket
+  // in ConnectionManager, and this page never opened one, so a technician
+  // filing a report from the field showed as offline the whole time.
+  //
+  // Anonymous scans stay anonymous — the socket is only opened once signed in.
+  let _ws = null, _wsBeat = null, _wsRetry = 0, _wsTimer = null;
+
+  function setWsDot(state) {
+    const wrap = document.getElementById("ws-presence");
+    const dot = document.getElementById("ws-dot");
+    const label = document.getElementById("ws-label");
+    if (!wrap || !dot || !label) return;
+    wrap.classList.toggle("hidden", !isLoggedIn());
+    wrap.classList.toggle("flex", isLoggedIn());
+    const map = {
+      open: ["bg-green-400", "Terhubung"],
+      connecting: ["bg-amber-300", "Menghubungkan…"],
+      closed: ["bg-red-400", "Terputus"],
+    };
+    const [cls, text] = map[state] || map.closed;
+    dot.className = "w-1.5 h-1.5 rounded-full " + cls;
+    label.textContent = text;
+  }
+
+  function setupLandingSocket() {
+    if (!isLoggedIn()) { setWsDot("closed"); return; }
+    if (_ws && (_ws.readyState === WebSocket.OPEN || _ws.readyState === WebSocket.CONNECTING)) return;
+    clearInterval(_wsBeat);
+    clearTimeout(_wsTimer);
+    setWsDot("connecting");
+
+    // Scheme from the PAGE, never from tunnel config: behind a TLS-terminating
+    // tunnel the page is https and a ws:// socket is blocked as mixed content.
+    const proto = window.location.protocol === "https:" ? "wss" : "ws";
+    try {
+      _ws = new WebSocket(
+        `${proto}://${window.location.host}/ws/updates?token=${encodeURIComponent(authToken)}`,
+      );
+    } catch (_) { setWsDot("closed"); return; }
+
+    _ws.onopen = () => {
+      _wsRetry = 0;
+      setWsDot("open");
+      // Tell the office which screen this is; the server keeps it per-user and
+      // Pusat Data ▸ Pengguna renders it beside the online dot.
+      try { _ws.send("view:Kartu Aset (QR)"); } catch (_) {}
+      _wsBeat = setInterval(() => {
+        if (_ws && _ws.readyState === WebSocket.OPEN) _ws.send("ping");
+      }, 30000);
+    };
+
+    _ws.onmessage = (ev) => {
+      if (ev.data === "pong") return;
+      // Someone else changed this asset while it is on screen — re-read it so a
+      // technician is never looking at a stale condition.
+      if (ev.data === "REFRESH_ASSET_LIST" && UID) {
+        fetchSummaryForAsset(UID);
+        if (isLoggedIn()) loadTabData(activeTab);
+      }
+    };
+
+    _ws.onclose = () => {
+      clearInterval(_wsBeat);
+      setWsDot("closed");
+      if (!isLoggedIn()) return;
+      // Exponential backoff with jitter, capped — field signal drops a lot.
+      const wait = Math.min(30000, 1000 * Math.pow(2, _wsRetry++)) + Math.random() * 800;
+      _wsTimer = setTimeout(setupLandingSocket, wait);
+    };
+
+    _ws.onerror = () => { try { _ws.close(); } catch (_) {} };
+  }
+
+  // A backgrounded phone suspends timers; re-check the socket on return.
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") setupLandingSocket();
+  });
+  window.addEventListener("pagehide", () => { try { _ws?.close(); } catch (_) {} });
+
   // ── INIT ─────────────────────────────────────────────────────────────────
   if (authToken) {
     const p = getJwtPayload(authToken);
     userRole = p?.role || "";
   }
+  setupLandingSocket();
 
   if (!UID) {
     qs("#skeleton").classList.add("hidden");

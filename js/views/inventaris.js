@@ -1087,7 +1087,7 @@
 
   window.invDeleteGudang = async function (id) {
     const g = _gudangList.find((x) => x.id_gudang === id);
-    if (!confirm(`Hapus gudang "${g?.nama || id}"?\n\nJika gudang masih memiliki riwayat stok, gudang hanya akan dinonaktifkan.`))
+    if (!(await customConfirm(`Hapus gudang "${g?.nama || id}"?\n\nJika gudang masih memiliki riwayat stok, gudang hanya akan dinonaktifkan.`)))
       return;
     try {
       const res = await apiFetch(`/inventaris/gudang/${id}`, { method: "DELETE" });
@@ -1536,7 +1536,7 @@
     // Delete handlers
     tbody.querySelectorAll(".inv-part-delete").forEach(btn => {
       btn.addEventListener("click", async () => {
-        if (!confirm("Hapus part ini?")) return;
+        if (!(await customConfirm("Hapus part ini?"))) return;
         try {
           const res = await apiFetch(`/inventaris/parts/${btn.dataset.id}`, { method: "DELETE" });
           const payload = await res.json().catch(() => ({}));

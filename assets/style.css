@@ -830,6 +830,16 @@
   color: #dc2626;
 }
 
+/* The × in a modal header. Twenty-five identical copies of this rule used to
+   live inline in index.html; the round 1.75rem form is deliberately kept, so
+   adopting the component class changed no pixels. `.btn-icon` proper stays the
+   2rem squared-off variant used inside table rows. */
+.btn-icon-close {
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 9999px;
+}
+
 /* ── Badges ───────────────────────────────────────────────────────────── */
 
 .badge {
@@ -857,10 +867,26 @@
   color: #b91c1c;
 }
 
-.badge-afkir,
+/* AFKIR renders red everywhere in the app, not grey — it shares the TSO
+   treatment because both mean "not available". It used to be lumped in with
+   .badge-neutral here, which disagreed with what every screen actually drew. */
+.badge-afkir {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+/* The muted state ("BLM KALIBRASI", "TIDAK TERMUTASI"). #6b7280 on #f3f4f6 is
+   only 4.08:1, and these badges are 10px bold — under the 4.5:1 floor. */
 .badge-neutral {
   background: #f3f4f6;
-  color: #6b7280;
+  color: #4b5563;
+}
+
+/* In transit. Distinct from .badge-warn (amber, "conditional") on purpose:
+   these two appear side by side on the same card and must stay separable. */
+.badge-move {
+  background: #ffedd5;
+  color: #c2410c;
 }
 
 .badge-warn {
@@ -883,10 +909,21 @@
   color: #f87171;
 }
 
-.dark .badge-afkir,
+.dark .badge-afkir {
+  background: rgba(185, 28, 28, 0.25);
+  color: #f87171;
+}
+
+/* Was #9ca3af on #374151 — 3.87:1, and the inline copy this replaced was
+   #6b7280 on #374151, a barely-legible 2.31:1. */
 .dark .badge-neutral {
   background: #374151;
-  color: #9ca3af;
+  color: #d1d5db;
+}
+
+.dark .badge-move {
+  background: rgba(194, 65, 12, 0.28);
+  color: #fdba74;
 }
 
 .dark .badge-warn {

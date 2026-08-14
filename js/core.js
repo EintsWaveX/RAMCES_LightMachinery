@@ -63,13 +63,29 @@ function applyUptSelect(locCode, uptSelectEl) {
 
 window.applyUptSelect = applyUptSelect;
 
+// Theme resolution, in priority order: the user's own choice (persisted by the
+// Ganti Tema button) wins; with no stored choice, follow the operating system.
+// It previously defaulted to light regardless, so a user whose machine is in
+// dark mode got a full-brightness page on every first visit and had to toggle.
+// An explicit "light" is still honoured on a dark OS — that is the whole point
+// of storing it.
 (function () {
   const saved = localStorage.getItem("theme");
-  if (saved === "dark") {
-    document.documentElement.classList.add("dark");
-  } else {
-    document.documentElement.classList.remove("dark");
-  }
+  const prefersDark =
+    window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+  const dark = saved ? saved === "dark" : prefersDark;
+  document.documentElement.classList.toggle("dark", dark);
+
+  // Follow the OS if it changes while the tab is open, but only for users who
+  // have never expressed a preference.
+  window.matchMedia?.("(prefers-color-scheme: dark)").addEventListener?.(
+    "change",
+    (e) => {
+      if (localStorage.getItem("theme")) return;
+      document.documentElement.classList.toggle("dark", e.matches);
+      window.dispatchEvent(new Event("kai-theme-change"));
+    },
+  );
 })();
 
 // --- INISIALISASI UTAMA ---
@@ -445,7 +461,11 @@ function renderPagerBar(mountId, meta, rerender) {
         Menampilkan <span class="font-bold text-gray-700 dark:text-gray-200">${meta.from}–${meta.to}</span>
         dari <span class="font-bold text-gray-700 dark:text-gray-200">${meta.total.toLocaleString("id-ID")}</span>
       </p>
-      <div class="flex items-center gap-1.5 ml-auto">
+      <!-- flex-wrap matters on phones: with enough pages this row used to run
+           past the viewport and the later page buttons were unreachable, since
+           nothing in the chain scrolls horizontally. ml-auto only from sm: up,
+           so the wrapped rows stay left-aligned instead of ragged. -->
+      <div class="flex flex-wrap items-center gap-1.5 sm:ml-auto">
         ${btn('<i class="fas fa-angle-double-left"></i>', 1, { disabled: meta.page === 1, title: "Halaman pertama" })}
         ${btn('<i class="fas fa-angle-left"></i>', meta.page - 1, { disabled: meta.page === 1, title: "Sebelumnya" })}
         ${nums.map((n) => btn(String(n), n, { active: n === meta.page })).join("")}
@@ -453,8 +473,8 @@ function renderPagerBar(mountId, meta, rerender) {
         ${btn('<i class="fas fa-angle-double-right"></i>', meta.pages, { disabled: meta.page === meta.pages, title: "Halaman terakhir" })}
       </div>
       <div class="flex items-center gap-2">
-        <label class="text-[10px] font-bold tracking-widest text-gray-400 uppercase">Per Halaman</label>
-        <select class="pager-size text-[11px] px-2 py-1.5 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 outline-none focus:border-kai-blue transition font-semibold cursor-pointer">
+        <label class="text-[10px] font-bold tracking-widest text-gray-400 uppercase" for="${mountId}-size">Per Halaman</label>
+        <select id="${mountId}-size" aria-label="Jumlah baris per halaman" class="pager-size text-[11px] px-2 py-1.5 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 outline-none focus:border-kai-blue transition font-semibold cursor-pointer">
           ${PAGE_SIZES.map(
             (s) => `<option value="${s}"${meta.size === s ? " selected" : ""}>${s}</option>`,
           ).join("")}

@@ -131,26 +131,26 @@ function renderKdakTable() {
       // Badge 1: SO / TSO
       const isSO = a.status_terakhir === "SO";
       const kondisiBadge = isSO
-        ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"><i class="fas fa-circle text-[6px]"></i>SO</span>`
-        : `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"><i class="fas fa-circle text-[6px]"></i>TSO</span>`;
+        ? `<span class="badge badge-so"><i class="fas fa-circle text-[6px]"></i>SO</span>`
+        : `<span class="badge badge-tso"><i class="fas fa-circle text-[6px]"></i>TSO</span>`;
 
       // Badge 2: Kalibrasi status
       const kalibStatus = summaryItem?.kalibrasi?.latest_status;
       const kalibBadge = kalibStatus === "LULUS"
-        ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"><i class="fas fa-circle text-[6px]"></i>LULUS</span>`
+        ? `<span class="badge badge-so"><i class="fas fa-circle text-[6px]"></i>LULUS</span>`
         : kalibStatus === "BERSYARAT"
-        ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400"><i class="fas fa-circle text-[6px]"></i>BERSYARAT</span>`
+        ? `<span class="badge badge-warn"><i class="fas fa-circle text-[6px]"></i>BERSYARAT</span>`
         : kalibStatus === "GAGAL"
-        ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400"><i class="fas fa-circle text-[6px]"></i>GAGAL</span>`
-        : `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-gray-100 text-gray-400 dark:bg-gray-700 dark:text-gray-500"><i class="fas fa-circle text-[6px]"></i>BLM KALIBRASI</span>`;
+        ? `<span class="badge badge-tso"><i class="fas fa-circle text-[6px]"></i>GAGAL</span>`
+        : `<span class="badge badge-neutral"><i class="fas fa-circle text-[6px]"></i>BLM KALIBRASI</span>`;
 
       // Badge 3: Mutasi status
       const mutasiInfo = summaryItem?.mutasi;
       const mutasiBadge = (mutasiInfo && mutasiInfo.count > 0)
         ? mutasiInfo.sudah_kembali
-          ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"><i class="fas fa-circle text-[6px]"></i>DI LOKASI ASAL</span>`
-          : `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400"><i class="fas fa-circle text-[6px]"></i>SEDANG TERMUTASI</span>`
-        : `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-gray-100 text-gray-400 dark:bg-gray-700 dark:text-gray-500"><i class="fas fa-circle text-[6px]"></i>TIDAK TERMUTASI</span>`;
+          ? `<span class="badge badge-so"><i class="fas fa-circle text-[6px]"></i>DI LOKASI ASAL</span>`
+          : `<span class="badge badge-move"><i class="fas fa-circle text-[6px]"></i>SEDANG TERMUTASI</span>`
+        : `<span class="badge badge-neutral"><i class="fas fa-circle text-[6px]"></i>TIDAK TERMUTASI</span>`;
 
       const uptCode = a.id_lokasi_raw || a.id_lokasi || "";
       const uptEntry = uptDatabase.find((u) => u.upt === uptCode);
@@ -535,6 +535,9 @@ document.getElementById("form-kdak-edit")?.addEventListener("submit", async func
   const uptVal    = document.getElementById("kdak-edit-upt")?.value || "";
 
   if (!lokasi) { showToast("Pilih Lokasi/Wilayah terlebih dahulu.", "warning"); return; }
+  if (!peruntukan) { showToast("Pilih Unit Peruntukan terlebih dahulu.", "warning"); return; }
+  if (!pengadaan) { showToast("Pilih Sumber Pengadaan terlebih dahulu.", "warning"); return; }
+  if (!tanggal) { showToast("Isi Tanggal Pembelian terlebih dahulu.", "warning"); return; }
 
   const step1 = await customConfirm(
     `Simpan perubahan pada aset "${idAset}"?\n\nID aset mungkin berubah jika terdapat perubahan pada data utama (lokasi, alat, atau tahun).`
@@ -546,7 +549,22 @@ document.getElementById("form-kdak-edit")?.addEventListener("submit", async func
   );
   if (!step2) return;
 
-  const payload = { kode_alat: alat, id_lokasi: uptVal || lokasi, parent_lokasi: lokasi, tanggal_pembelian: tanggal, sumber_pengadaan: pengadaan, peruntukan };
+  // This form does not edit the varian or the serial number, but both are
+  // optional in AsetUpdate — omitting them used to null them out on the server,
+  // so every edit here silently destroyed the asset's specification and serial.
+  // Carry the current values through explicitly.
+  const asetSaatIni = db.find((x) => x.id_aset === idAset);
+
+  const payload = {
+    kode_alat: alat,
+    id_lokasi: uptVal || lokasi,
+    parent_lokasi: lokasi,
+    tanggal_pembelian: tanggal,
+    sumber_pengadaan: pengadaan,
+    peruntukan,
+    id_varian: asetSaatIni?.id_varian ?? null,
+    nomor_seri: asetSaatIni?.nomor_seri ?? null,
+  };
   try {
     const res = await apiFetch(`/aset/${idAset}`, { method: "PUT", body: JSON.stringify(payload) });
     if (!res.ok) { const err = await res.json(); throw new Error(err.detail || "Gagal memperbarui data."); }

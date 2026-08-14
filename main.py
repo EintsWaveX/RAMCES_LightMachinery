@@ -13,10 +13,11 @@ from fastapi import (
     WebSocket,
     WebSocketDisconnect,
     Query,
+    Request,
 )
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from fastapi.security import OAuth2PasswordBearer
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session, joinedload
@@ -341,6 +342,83 @@ def resolve_home_lokasi(db: Session, aset) -> Optional[str]:
         .first()
     )
     return (first.id_lokasi_asal if first else None) or current
+
+
+def assert_region_scope(db: Session, current_user, id_lokasi: Optional[str], pesan: str):
+    """
+    Guard a write by an ADMIN_WILAYAH against a location outside its own region.
+
+    The comparison MUST go through `resolve_lokasi_scope`, never `==`. A token
+    only ever carries a PARENT code, because the login region selector lists
+    DAOP/DIVRE/BALAIYASA rows and excludes UPTs (`fetchLoginRegions` in
+    js/api.js) — while assets live at UPT codes like `JR1.7`. An exact-equality
+    check therefore rejected an admin's own assets ('JR1.7' != 'D1') and, where
+    no check existed at all, let it write into other regions. This helper is the
+    single place that rule now lives, so both directions stay correct.
+
+    SUPER_ADMIN and any user without a region are unrestricted.
+    """
+    if current_user.role != "ADMIN_WILAYAH" or not current_user.id_lokasi:
+        return
+    scope, _, _ = resolve_lokasi_scope(db, current_user.id_lokasi)
+    if scope and id_lokasi not in scope:
+        raise HTTPException(status_code=403, detail=pesan)
+
+
+def assert_aset_region_scope(db: Session, current_user, aset, pesan: str):
+    """
+    Same guard, but for an existing asset — tested against where it BELONGS.
+
+    An asset away at a Balaiyasa carries the workshop code in `id_lokasi`, which
+    is in no DAOP's scope. Checking that raw value would lock the owning region
+    out of the very assets it has sent for repair, including recalling them.
+    """
+    assert_region_scope(
+        db, current_user, resolve_home_lokasi(db, aset) or aset.id_lokasi, pesan
+    )
+
+
+# `peruntukan` and `sumber_pengadaan` are closed sets that get baked into the
+# asset's composite primary key. Both used to fall back silently — an unknown
+# peruntukan became the literal "X" (an ID segment no decoder can map, invisible
+# to every peruntukan filter) and anything that was not exactly "PUSAT" became
+# procurement code 2, i.e. DAOP/DIVRE. An unchecked radio in the edit form was
+# enough to trigger either. Reject instead: a malformed primary key cannot be
+# corrected later without rewriting every child row.
+PERUNTUKAN_KE_KODE = {
+    "JALAN REL": "A",
+    "JEMBATAN": "B",
+    "MEKANIK": "C",
+    "BALAIYASA": "D",
+}
+KODE_KE_PERUNTUKAN = {v: k for k, v in PERUNTUKAN_KE_KODE.items()}
+SUMBER_PENGADAAN_KE_KODE = {"PUSAT": 1, "DAOP/DIVRE": 2, "DIVRE": 2, "DAOP": 2}
+
+
+def normalise_peruntukan(nilai: Optional[str]) -> tuple:
+    """('JALAN REL', 'A') for any accepted spelling; 400 for anything else."""
+    key = (nilai or "").strip().upper()
+    if key in KODE_KE_PERUNTUKAN:  # accept the single-letter form too
+        key = KODE_KE_PERUNTUKAN[key]
+    if key not in PERUNTUKAN_KE_KODE:
+        raise HTTPException(
+            status_code=400,
+            detail="Peruntukan wajib dipilih: "
+            + ", ".join(PERUNTUKAN_KE_KODE) + ".",
+        )
+    return key, PERUNTUKAN_KE_KODE[key]
+
+
+def normalise_sumber_pengadaan(nilai: Optional[str]) -> tuple:
+    """('PUSAT', 1) or ('DAOP/DIVRE', 2); 400 for anything else."""
+    key = (nilai or "").strip().upper().replace(" ", "")
+    if key not in SUMBER_PENGADAAN_KE_KODE:
+        raise HTTPException(
+            status_code=400,
+            detail="Sumber pengadaan wajib dipilih: PUSAT atau DAOP/DIVRE.",
+        )
+    kode = SUMBER_PENGADAAN_KE_KODE[key]
+    return ("PUSAT" if kode == 1 else "DAOP/DIVRE"), kode
 
 
 # DIVRE nama_lokasi holds a province ("SUMATERA UTARA"), which reads wrong in a
@@ -1129,30 +1207,43 @@ async def create_aset(
         require_role(["SUPER_ADMIN", "ADMIN_WILAYAH"])
     ),
 ):
-    # 1. Hitung urutan (Sequence) berdasarkan kode_alat
-    # Ini mencari tahu sudah ada berapa alat tipe ini di database
-    jumlah_aset_sejenis = (
-        db.query(models.Aset).filter(models.Aset.kode_alat == aset_in.kode_alat).count()
+    # An ADMIN_WILAYAH may only create assets inside its own region. Both the
+    # storage location and the parent stamped into the ID are checked, so a
+    # region cannot be laundered by sending a home UPT it does not own.
+    assert_region_scope(
+        db, current_user, aset_in.id_lokasi,
+        "Hanya bisa menambah aset di wilayah Anda.",
     )
-    nomor_urut = jumlah_aset_sejenis + 1
+    assert_region_scope(
+        db, current_user, aset_in.parent_lokasi,
+        "Hanya bisa menambah aset di wilayah Anda.",
+    )
+
+    peruntukan_norm, kode_peruntukan = normalise_peruntukan(aset_in.peruntukan)
+    sumber_norm, id_pengadaan = normalise_sumber_pengadaan(aset_in.sumber_pengadaan)
+
+    # 1. Hitung urutan (Sequence) berdasarkan kode_alat
+    #
+    # Derived from the highest sequence number in use, NOT from a row count.
+    # With count+1, deleting any asset of this type made the next create reuse a
+    # number that still belonged to a live asset, and the collision check below
+    # then rejected it — permanently, since retrying recomputed the same count.
+    urutan_terpakai = [
+        int(row[0].split(".")[0])
+        for row in db.query(models.Aset.id_aset)
+        .filter(models.Aset.kode_alat == aset_in.kode_alat)
+        .all()
+        if row[0].split(".")[0].isdigit()
+    ]
+    nomor_urut = (max(urutan_terpakai) + 1) if urutan_terpakai else 1
 
     # 2. Format komponen ID
-    id_pengadaan = 1 if aset_in.sumber_pengadaan == "PUSAT" else 2
-
     tahun = aset_in.tanggal_pembelian.year
     year_str = str(tahun)[-2:] if tahun >= 2000 else str(tahun)
 
     # 3. Rakit Final ID Aset
     # Format: nomor_urut.kode_alat.id_pengadaan.tahun.unit.parent_lokasi
     # Contoh: 6.RGM.1.24.A.D1
-    peruntukan_map = {
-        "JALAN REL": "A",
-        "JEMBATAN": "B",
-        "MEKANIK": "C",
-        "BALAIYASA": "D",
-    }
-    kode_peruntukan = peruntukan_map.get(aset_in.peruntukan.upper(), "X")
-
     generated_id_aset = f"{nomor_urut}.{aset_in.kode_alat}.{id_pengadaan}.{year_str}.{kode_peruntukan}.{aset_in.parent_lokasi}"
 
     # Pastikan tidak ada duplikasi akibat bentrok (meskipun sangat kecil kemungkinannya)
@@ -1167,9 +1258,9 @@ async def create_aset(
         kode_alat=aset_in.kode_alat,
         id_lokasi=aset_in.id_lokasi,  # Disimpan dengan kode UPT asli (e.g. JR1.1)
         tanggal_pembelian=aset_in.tanggal_pembelian,
-        sumber_pengadaan=aset_in.sumber_pengadaan,
+        sumber_pengadaan=sumber_norm,
         status_terakhir="SO",
-        peruntukan=aset_in.peruntukan.upper(),
+        peruntukan=peruntukan_norm,
         id_varian=aset_in.id_varian,
         nomor_seri=(aset_in.nomor_seri or "").strip() or None,
     )
@@ -1184,7 +1275,7 @@ async def create_aset(
         kondisi="SO",
         keterangan="Aset Baru",
         id_lokasi=aset_in.id_lokasi,
-        peruntukan=aset_in.peruntukan.upper(),
+        peruntukan=peruntukan_norm,
     )
     db.add(inisiasi_riwayat)
 
@@ -1374,6 +1465,15 @@ async def catat_perbaikan(
     if not aset:
         raise HTTPException(status_code=404, detail="Aset tidak ditemukan.")
 
+    # A condition report rewrites `aset.status_terakhir`, so it is a mutation and
+    # falls under the same regional limit as editing or transferring. TEKNISI is
+    # deliberately unscoped here — condition reporting is its whole job, and it
+    # files against whichever asset it has physically been sent to.
+    assert_aset_region_scope(
+        db, current_user, aset,
+        "Hanya bisa melaporkan kondisi aset dari wilayah Anda.",
+    )
+
     # # NORMALISASI INPUT PERUNTUKAN DI SINI
     # if laporan.peruntukan:
     #     p_val = laporan.peruntukan.strip().upper()
@@ -1445,13 +1545,10 @@ async def submit_mutasi(
     if aset.id_lokasi == mutasi.id_lokasi_tujuan:
         raise HTTPException(status_code=400, detail="Lokasi tujuan sama dengan asal.")
 
-    if (
-        current_user.role == "ADMIN_WILAYAH"
-        and aset.id_lokasi != current_user.id_lokasi
-    ):
-        raise HTTPException(
-            status_code=403, detail="Hanya bisa memindahkan aset dari wilayah sendiri."
-        )
+    assert_aset_region_scope(
+        db, current_user, aset,
+        "Hanya bisa memindahkan aset dari wilayah sendiri.",
+    )
 
     db.add(
         models.RiwayatMutasi(
@@ -1526,6 +1623,11 @@ async def create_kalibrasi(
     aset = db.query(models.Aset).filter_by(id_aset=data.id_aset).first()
     if not aset:
         raise HTTPException(status_code=404, detail="Aset tidak ditemukan.")
+
+    assert_aset_region_scope(
+        db, current_user, aset,
+        "Hanya bisa mencatat kalibrasi aset dari wilayah Anda.",
+    )
 
     if data.status not in {"LULUS", "GAGAL", "BERSYARAT"}:
         raise HTTPException(status_code=400, detail="Status kalibrasi tidak valid.")
@@ -2260,13 +2362,10 @@ async def delete_aset(
     if not aset:
         raise HTTPException(status_code=404, detail="Aset tidak ditemukan.")
 
-    if (
-        current_user.role == "ADMIN_WILAYAH"
-        and aset.id_lokasi != current_user.id_lokasi
-    ):
-        raise HTTPException(
-            status_code=403, detail="Hanya bisa menghapus aset dari wilayah Anda."
-        )
+    assert_aset_region_scope(
+        db, current_user, aset,
+        "Hanya bisa menghapus aset dari wilayah Anda.",
+    )
 
     # Cascade delete child records first
     db.query(models.RiwayatKondisi).filter_by(id_aset=id_aset).delete()
@@ -2290,18 +2389,20 @@ async def update_aset(
     if not old_aset:
         raise HTTPException(status_code=404, detail="Aset tidak ditemukan.")
 
-    if (
-        current_user.role == "ADMIN_WILAYAH"
-        and old_aset.id_lokasi != current_user.id_lokasi
-    ):
-        raise HTTPException(
-            status_code=403, detail="Hanya bisa mengedit aset dari wilayah Anda."
-        )
+    # Both the asset as it stands and where the edit would move it must be
+    # inside the admin's region, or an edit becomes a way to push an asset out.
+    assert_aset_region_scope(
+        db, current_user, old_aset,
+        "Hanya bisa mengedit aset dari wilayah Anda.",
+    )
+    assert_region_scope(
+        db, current_user, aset_in.id_lokasi,
+        "Hanya bisa memindahkan aset di dalam wilayah Anda.",
+    )
 
     # Rebuild the generated ID from updated fields
-    peruntukan_map = {"JALAN REL": "A", "JEMBATAN": "B", "MEKANIK": "C", "BALAIYASA": "D"}
-    kode_peruntukan = peruntukan_map.get(aset_in.peruntukan.upper(), "X")
-    id_pengadaan = 1 if aset_in.sumber_pengadaan == "PUSAT" else 2
+    peruntukan_norm, kode_peruntukan = normalise_peruntukan(aset_in.peruntukan)
+    sumber_norm, id_pengadaan = normalise_sumber_pengadaan(aset_in.sumber_pengadaan)
     tahun = aset_in.tanggal_pembelian.year
     year_str = str(tahun)[-2:] if tahun >= 2000 else str(tahun)
 
@@ -2311,15 +2412,28 @@ async def update_aset(
 
     new_id_aset = f"{nomor_urut}.{aset_in.kode_alat}.{id_pengadaan}.{year_str}.{kode_peruntukan}.{aset_in.parent_lokasi}"
 
+    # `id_varian` and `nomor_seri` are optional in the schema, so a payload that
+    # simply does not mention them used to null both out — the Kelola Data Alat
+    # Kerja edit form sends exactly such a payload, and every edit there quietly
+    # destroyed the asset's serial number and specification. Treat "absent" as
+    # "leave alone" and only write what the caller actually sent.
+    dikirim = aset_in.model_fields_set
+    varian_baru = aset_in.id_varian if "id_varian" in dikirim else old_aset.id_varian
+    seri_baru = (
+        ((aset_in.nomor_seri or "").strip() or None)
+        if "nomor_seri" in dikirim
+        else old_aset.nomor_seri
+    )
+
     if new_id_aset == id_aset:
         # ID unchanged — simple field update
         old_aset.kode_alat = aset_in.kode_alat
         old_aset.id_lokasi = aset_in.id_lokasi
         old_aset.tanggal_pembelian = aset_in.tanggal_pembelian
-        old_aset.sumber_pengadaan = aset_in.sumber_pengadaan
-        old_aset.peruntukan = aset_in.peruntukan.upper()
-        old_aset.id_varian = aset_in.id_varian
-        old_aset.nomor_seri = (aset_in.nomor_seri or "").strip() or None
+        old_aset.sumber_pengadaan = sumber_norm
+        old_aset.peruntukan = peruntukan_norm
+        old_aset.id_varian = varian_baru
+        old_aset.nomor_seri = seri_baru
         db.commit()
         await manager.broadcast("REFRESH_ASSET_LIST")
         return {"message": "Aset berhasil diperbarui.", "id_aset": new_id_aset}
@@ -2337,11 +2451,11 @@ async def update_aset(
         kode_alat=aset_in.kode_alat,
         id_lokasi=aset_in.id_lokasi,
         tanggal_pembelian=aset_in.tanggal_pembelian,
-        sumber_pengadaan=aset_in.sumber_pengadaan,
+        sumber_pengadaan=sumber_norm,
         status_terakhir=old_aset.status_terakhir,
-        peruntukan=aset_in.peruntukan.upper(),
-        id_varian=aset_in.id_varian,
-        nomor_seri=(aset_in.nomor_seri or "").strip() or None,
+        peruntukan=peruntukan_norm,
+        id_varian=varian_baru,
+        nomor_seri=seri_baru,
     )
     db.add(new_aset)
     db.flush()  # write new_aset row; FK target now exists in DB
@@ -3675,13 +3789,44 @@ def get_aset_perbaikan_dashboard(
     ).one()
     masuk, selesai, diafkir = int(totals[0]), int(totals[1]), int(totals[2])
 
+    # An asset's HOME region as a SQL expression: `id_lokasi` normally, but the
+    # origin of its first mutation while it is away at a Balaiyasa. This is
+    # `resolve_home_lokasi()` pushed into the query so the scope filters below
+    # can use it per row.
+    #
+    # Scoping "sedang" by the raw `id_lokasi` meant sending a broken machine to a
+    # workshop DELETED it from its own DAOP's under-repair count and moved it
+    # under the Balaiyasa — the same misattribution the repair endpoint already
+    # guards against, and the reason `masuk` (which is home-attributed) drifted
+    # from `selesai + diafkir + sedang` exactly when workshop traffic was high.
+    _by_ids = balaiyasa_lokasi_ids(db)
+    _mutasi_pertama = (
+        select(models.RiwayatMutasi.id_lokasi_asal)
+        .where(models.RiwayatMutasi.id_aset == AS.id_aset)
+        .order_by(models.RiwayatMutasi.waktu_mutasi.asc())
+        .limit(1)
+        .correlate(AS)
+        .scalar_subquery()
+    )
+    home_lokasi_expr = (
+        case(
+            (
+                AS.id_lokasi.in_(_by_ids),
+                func.coalesce(_mutasi_pertama, AS.id_lokasi),
+            ),
+            else_=AS.id_lokasi,
+        )
+        if _by_ids
+        else AS.id_lokasi
+    )
+
     # SEDANG is point-in-time (assets currently TSO), not year-scoped — it is a
     # live workshop count, and must agree with sum(workshop_list[].jumlah).
     sedang_q = select(func.count()).select_from(AS).where(
         AS.status_terakhir == "TSO"
     )
     if lokasi_ids:
-        sedang_q = sedang_q.where(AS.id_lokasi.in_(lokasi_ids))
+        sedang_q = sedang_q.where(home_lokasi_expr.in_(lokasi_ids))
     sedang = int(db.execute(sedang_q).scalar_one() or 0)
 
     persen_selesai = round(selesai / masuk * 100, 1) if masuk else 0.0
@@ -3826,7 +3971,11 @@ def get_aset_perbaikan_dashboard(
         .order_by(func.count().desc(), KA.nama_alat)
     )
     if lokasi_ids:
-        wq = wq.where(AS.id_lokasi.in_(lokasi_ids))
+        # Scoped by home so an asset away at a workshop stays in its owning
+        # region's list, but still GROUPED by its current id_lokasi so the row
+        # shows where the machine physically is ("BALAIYASA CIREBONPRUNJAKAN").
+        # Keeping both in step is what preserves sedang == sum(jumlah).
+        wq = wq.where(home_lokasi_expr.in_(lokasi_ids))
     workshop_list = [
         {
             "nama_alat": r[0],
@@ -4298,12 +4447,45 @@ async def add_cache_headers(request, call_next):
     return response
 
 
+# Starlette's FileResponse emits ETag and Last-Modified but never *reads*
+# If-None-Match, so it always returns 200 with the whole body. Paired with the
+# `no-cache` above — which asks the browser to revalidate on every load — that
+# meant index.html and all fourteen js/ files were re-sent in full every time,
+# even though the point of `no-cache` is to make revalidation cheap. Measured:
+# /assets/style.css (the StaticFiles mount, which does check) answered 304 while
+# /, /js/*.js and /landing.html all answered 200.
+#
+# StaticFiles owns the conditional-request logic; borrowing its comparison keeps
+# the catch-all byte-for-byte consistent with the /assets mount rather than
+# growing a second, subtly different implementation.
+_conditional = StaticFiles(directory=BASE_DIR)
+
+
+def file_response_conditional(request: Request, path: str, media_type: str = None):
+    """FileResponse, downgraded to a bodyless 304 when the client's copy is current.
+
+    `stat_result` must be passed explicitly: FileResponse only calls
+    `set_stat_headers()` from its constructor when it already has one, otherwise
+    it stats the file later inside `__call__`. Constructing it without one
+    therefore leaves `response.headers` with no `etag` and no `last-modified` at
+    all, and the comparison below silently has nothing to compare.
+    """
+    try:
+        stat_result = os.stat(path)
+    except OSError:
+        raise HTTPException(status_code=404, detail="File not found.")
+    response = FileResponse(path, media_type=media_type, stat_result=stat_result)
+    if _conditional.is_not_modified(response.headers, request.headers):
+        return Response(status_code=304, headers=response.headers)
+    return response
+
+
 @app.get("/")
-async def serve_index():
-    return FileResponse(os.path.join(BASE_DIR, "index.html"))
+async def serve_index(request: Request):
+    return file_response_conditional(request, os.path.join(BASE_DIR, "index.html"))
 
 @app.get("/{file_path:path}")
-async def serve_static(file_path: str):
+async def serve_static(file_path: str, request: Request):
     # Prevent directory traversal
     if ".." in file_path or file_path.startswith("/"):
         raise HTTPException(status_code=403, detail="Access denied.")
@@ -4339,6 +4521,6 @@ async def serve_static(file_path: str):
         elif ext == '.js':
             media_type = "application/javascript"
         
-        return FileResponse(real_path, media_type=media_type)
-    
+        return file_response_conditional(request, real_path, media_type=media_type)
+
     raise HTTPException(status_code=404, detail="File not found.")

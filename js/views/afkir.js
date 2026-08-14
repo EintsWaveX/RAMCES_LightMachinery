@@ -142,8 +142,8 @@ function renderAfkirCards() {
             year: "numeric",
           })
         : "—";
-      const afkirBadge = `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"><i class="fas fa-circle text-[6px]"></i>AFKIR</span>`;
-      const waktuBadge = `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400"><i class="fas fa-clock text-[8px]"></i>${
+      const afkirBadge = `<span class="badge badge-afkir"><i class="fas fa-circle text-[6px]"></i>AFKIR</span>`;
+      const waktuBadge = `<span class="badge badge-neutral"><i class="fas fa-clock text-[8px]"></i>${
         item.waktu_update ? formatUtcToLocal(item.waktu_update) : "—"
       }</span>`;
 
