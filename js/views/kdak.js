@@ -96,6 +96,24 @@ function renderKdakTable() {
     return true;
   });
 
+  // Third caller of the shared renderer. `_kdakSortFilters` is the same shape
+  // as `_sortFilters` and `_afkirSortFilters`, so all three surface identically.
+  window.renderFilterChips?.("kdak-filter-chips", _kdakSortFilters, () => {
+    resetPage("kdak");
+    renderKdakTable();
+  }, [
+    {
+      key: "__q",
+      label: "Cari",
+      value: _kdakSearch.trim(),
+      clear: () => {
+        _kdakSearch = "";
+        const box = document.getElementById("kdak-search");
+        if (box) box.value = "";
+      },
+    },
+  ]);
+
   // Sort — mirrors renderDbCards logic
   filtered = [...filtered].sort((a, b) => {
     if (_kdakSortDir === "date-desc") return new Date(b.tanggal_pembelian || 0) - new Date(a.tanggal_pembelian || 0);
@@ -472,6 +490,277 @@ document.getElementById("kdak-confirm-ok")?.addEventListener("click", async () =
 });
 
 // ── KDAK Edit ──
+// ══════════════════════════════════════════════════════════════════════════
+// STEP 1b — MODEL/TYPE
+//
+// Client request: "setelah input 1. alat kerja, tambahkan model alat kerja".
+// Both KDAK forms (Tambah and Edit) carry the same step; neither could set a
+// Model/Type before, so every asset's model came from seed.py and nowhere else.
+//
+// Reads the `_varianByAlat` index that masterdata.js already maintains — one
+// fetch of /master/varian serves the whole session.
+// ══════════════════════════════════════════════════════════════════════════
+
+const KDAK_MODEL_NEW = "__new__";
+
+/**
+ * Fill a Model/Type select with the models of `kodeAlat`.
+ * `selectedId` re-selects a value across a repopulate (the edit form).
+ */
+function fillModelSelect(selectId, kodeAlat, selectedId) {
+  const sel = document.getElementById(selectId);
+  if (!sel) return;
+
+  if (!kodeAlat) {
+    sel.innerHTML = `<option value="">— Pilih Alat Kerja terlebih dahulu... —</option>`;
+    return;
+  }
+
+  const models = (typeof _varianByAlat === "object" && _varianByAlat[kodeAlat]) || [];
+  const opts = models
+    .map((v) => {
+      const label = v.judul || v.nama_varian;
+      const sub = v.merk && v.tipe_model ? "" : " (spesifikasi belum lengkap)";
+      return `<option value="${v.id_varian}"${String(v.id_varian) === String(selectedId) ? " selected" : ""}>${window.spekEscape(label + sub)}</option>`;
+    })
+    .join("");
+
+  sel.innerHTML =
+    `<option value="">${models.length ? "— Tanpa Model/Type —" : "— Belum ada Model/Type —"}</option>` +
+    opts +
+    `<option value="${KDAK_MODEL_NEW}">+ Tambah Model/Type baru…</option>`;
+}
+
+/**
+ * "+ Tambah Model/Type baru…" — hand over to Pusat Data ▸ Model/Type with the
+ * alat kerja pre-filled. The same shortcut shape Kelola Inventaris uses for
+ * Gudang, so a missing prerequisite never dead-ends a form.
+ */
+function handleModelSelectChange(sel, kodeAlatSelectId) {
+  if (sel.value !== KDAK_MODEL_NEW) return;
+  sel.value = "";
+  const kode = document.getElementById(kodeAlatSelectId)?.value || "";
+  if (!kode) {
+    showToast("Pilih Alat Kerja terlebih dahulu.", "warning");
+    return;
+  }
+  document.getElementById("kdak-tambah-modal")?.classList.add("hidden");
+  document.getElementById("kdak-edit-modal")?.classList.add("hidden");
+  switchView("masterdata");
+  if (typeof window.openMasterVarianFor === "function")
+    window.openMasterVarianFor(kode);
+}
+
+document.getElementById("in-alat")?.addEventListener("change", (e) => {
+  fillModelSelect("in-model", e.target.value, "");
+});
+document.getElementById("in-model")?.addEventListener("change", (e) => {
+  handleModelSelectChange(e.target, "in-alat");
+});
+document.getElementById("kdak-edit-alat")?.addEventListener("change", (e) => {
+  fillModelSelect("kdak-edit-model", e.target.value, "");
+});
+document.getElementById("kdak-edit-model")?.addEventListener("change", (e) => {
+  handleModelSelectChange(e.target, "kdak-edit-alat");
+});
+
+window.fillModelSelect = fillModelSelect;
+
+// ══════════════════════════════════════════════════════════════════════════
+// LIVE id_aset PREVIEW
+// ══════════════════════════════════════════════════════════════════════════
+//
+// Format: <urutan>.<kode_alat>.<pengadaan>.<yy>.<peruntukan>.<lokasi>
+//         e.g. 6.RGM.1.24.A.D1
+//
+// Five of those six segments come from choices made in this form, and all five
+// are part of the asset's composite PRIMARY KEY — so a wrong pick is not a
+// display bug, it is a malformed key that cannot be corrected later without
+// rewriting every child row. The preview exists to put that consequence on
+// screen while the choice is still cheap.
+//
+// The rules here mirror create_aset()/update_aset() in api/aset.py exactly. If
+// those change, change these.
+// ══════════════════════════════════════════════════════════════════════════
+
+const KDAK_PERUNTUKAN_KODE = { A: "A", B: "B", C: "C", D: "D" };
+
+const KDAK_ID_SEGMENTS = [
+  ["urutan", "no. urut"],
+  ["alat", "alat kerja"],
+  ["pengadaan", "pengadaan"],
+  ["tahun", "tahun"],
+  ["peruntukan", "peruntukan"],
+  ["lokasi", "wilayah"],
+];
+
+/**
+ * The sequence number a NEW asset of this kode_alat would most likely get.
+ *
+ * create_aset() takes max(urutan) + 1 over every asset sharing the kode_alat —
+ * never a row count, because deleting one would then make the next create reuse
+ * a live number. The same max is derivable here because the client already
+ * caches the whole fleet in `db`.
+ *
+ * Returns null when it cannot be trusted: `db` holds only non-AFKIR assets, so
+ * a scrapped asset with a higher number is invisible to us and the server would
+ * pick a larger one. Rather than print a number that may be wrong, the caller
+ * renders a placeholder — the segments that are actually the user's to get
+ * right are all exact.
+ */
+function _kdakNextUrutan(kodeAlat) {
+  if (!kodeAlat || typeof db === "undefined" || !Array.isArray(db)) return null;
+  let max = 0;
+  let seen = false;
+  for (const a of db) {
+    if (a.kode_alat !== kodeAlat) continue;
+    const n = parseInt(String(a.id_aset || "").split(".")[0], 10);
+    if (Number.isFinite(n)) {
+      seen = true;
+      if (n > max) max = n;
+    }
+  }
+  return seen ? max + 1 : 1;
+}
+
+/**
+ * Read the six ID segments out of one of the two forms.
+ * `cfg.urutan` is supplied by the caller: known exactly on edit, estimated on
+ * create.
+ */
+function _kdakReadSegments(cfg) {
+  const val = (id) => document.getElementById(id)?.value || "";
+  const radio = (name) =>
+    document.querySelector(`input[name="${name}"]:checked`)?.value || "";
+
+  const tanggal = val(cfg.tanggal);
+  let tahun = "";
+  if (tanggal) {
+    const y = parseInt(tanggal.slice(0, 4), 10);
+    // Matches the server: last two digits from 2000 on, the bare year before.
+    if (Number.isFinite(y)) tahun = y >= 2000 ? String(y).slice(-2) : String(y);
+  }
+
+  const pengadaanRaw = radio(cfg.pengadaan);
+  return {
+    urutan: cfg.urutan,
+    alat: val(cfg.alat),
+    // 1 = PUSAT, 2 = DAOP/DIVRE — normalise_sumber_pengadaan() in api/deps.py.
+    pengadaan: pengadaanRaw ? (pengadaanRaw === "PUSAT" ? "1" : "2") : "",
+    tahun,
+    peruntukan: KDAK_PERUNTUKAN_KODE[radio(cfg.unit)] || "",
+    // The PARENT wilayah code, never the UPT — the UPT is stored on the row.
+    lokasi: val(cfg.lokasi),
+  };
+}
+
+/**
+ * Repaint the preview and the step markers for one form.
+ * `mode` is "create" or "edit".
+ */
+function renderIdPreview(cfg) {
+  const out = document.getElementById(cfg.preview);
+  if (!out) return;
+
+  const segs = _kdakReadSegments(cfg);
+
+  out.innerHTML = KDAK_ID_SEGMENTS.map(([key], i) => {
+    const dot = i ? '<span class="id-seg-empty">.</span>' : "";
+    const v = segs[key];
+    return v
+      ? `${dot}<span>${window.spekEscape(String(v))}</span>`
+      : `${dot}<span class="id-seg-empty">&lt;${KDAK_ID_SEGMENTS[i][1]}&gt;</span>`;
+  }).join("");
+
+  const legend = document.getElementById(cfg.legend);
+  if (legend) {
+    legend.textContent = KDAK_ID_SEGMENTS.map(([, label]) => label).join(" · ");
+  }
+
+  // Step completion. `.is-done` for a step that has a value, `.is-active` for
+  // the first that does not — so the form always says where to go next.
+  let activeMarked = false;
+  for (const step of cfg.steps) {
+    const el = document.getElementById(step.id);
+    if (!el) continue;
+    const filled = step.optional || Boolean(segs[step.seg] || (step.value && step.value()));
+    el.classList.toggle("is-done", filled);
+    const active = !filled && !activeMarked;
+    el.classList.toggle("is-active", active);
+    if (active) activeMarked = true;
+  }
+
+  return segs;
+}
+
+const KDAK_TAMBAH_PREVIEW = {
+  alat: "in-alat", pengadaan: "in-pengadaan", tanggal: "in-tanggal",
+  unit: "in-unit", lokasi: "in-lokasi",
+  preview: "in-preview", legend: "in-preview-legend",
+  steps: [
+    { id: "step-in-alat", seg: "alat" },
+    { id: "step-in-model", optional: true },
+    { id: "step-in-pengadaan", seg: "pengadaan" },
+    { id: "step-in-tanggal", seg: "tahun" },
+    { id: "step-in-unit", seg: "peruntukan" },
+    { id: "step-in-lokasi", seg: "lokasi" },
+    { id: "step-in-upt", optional: true },
+  ],
+};
+
+const KDAK_EDIT_PREVIEW = {
+  alat: "kdak-edit-alat", pengadaan: "kdak-edit-pengadaan",
+  tanggal: "kdak-edit-tanggal", unit: "kdak-edit-unit", lokasi: "kdak-edit-lokasi",
+  preview: "kdak-edit-preview", legend: "kdak-edit-preview-legend",
+  steps: [
+    { id: "step-kdak-edit-alat", seg: "alat" },
+    { id: "step-kdak-edit-model", optional: true },
+    { id: "step-kdak-edit-pengadaan", seg: "pengadaan" },
+    { id: "step-kdak-edit-tanggal", seg: "tahun" },
+    { id: "step-kdak-edit-unit", seg: "peruntukan" },
+    { id: "step-kdak-edit-lokasi", seg: "lokasi" },
+    { id: "step-kdak-edit-upt", optional: true },
+  ],
+};
+
+function refreshTambahPreview() {
+  const kode = document.getElementById("in-alat")?.value || "";
+  const next = _kdakNextUrutan(kode);
+  renderIdPreview({ ...KDAK_TAMBAH_PREVIEW, urutan: kode && next ? String(next) : "" });
+}
+
+function refreshEditPreview() {
+  // update_aset() PRESERVES the original sequence number, so on edit this
+  // segment is known exactly rather than estimated.
+  const current = document.getElementById("kdak-edit-id")?.value || "";
+  const urutan = current.split(".")[0];
+  const segs = renderIdPreview({
+    ...KDAK_EDIT_PREVIEW,
+    urutan: /^\d+$/.test(urutan) ? urutan : "",
+  });
+
+  // Changing alat / pengadaan / tahun / peruntukan / parent lokasi regenerates
+  // the primary key and re-parents every child row. Say so before they submit.
+  const warn = document.getElementById("kdak-edit-preview-warn");
+  if (warn && segs) {
+    const rebuilt = [
+      segs.urutan, segs.alat, segs.pengadaan, segs.tahun, segs.peruntukan, segs.lokasi,
+    ];
+    const complete = rebuilt.every(Boolean);
+    warn.classList.toggle("hidden", !(complete && rebuilt.join(".") !== current));
+  }
+}
+
+// Both forms repaint on any change to a field that feeds a segment. Delegated
+// on the form so a re-rendered select cannot multiply listeners.
+document.getElementById("form-input-baru")?.addEventListener("change", refreshTambahPreview);
+document.getElementById("form-input-baru")?.addEventListener("input", refreshTambahPreview);
+document.getElementById("form-kdak-edit")?.addEventListener("change", refreshEditPreview);
+document.getElementById("form-kdak-edit")?.addEventListener("input", refreshEditPreview);
+
+window.refreshTambahPreview = refreshTambahPreview;
+window.refreshEditPreview = refreshEditPreview;
+
 window.openKdakEdit = function(idAset) {
   const a = db.find((x) => x.id_aset === idAset);
   if (!a) { showToast("Data aset tidak ditemukan.", "error"); return; }
@@ -488,6 +777,11 @@ window.openKdakEdit = function(idAset) {
         alatKerjaData.map((ak) => `<option value="${ak.code}">${ak.code} — ${ak.name}</option>`).join("");
     alatSel.value = a.kode_alat || "";
   }
+
+  // Step 1b — Model/Type and the per-unit serial
+  fillModelSelect("kdak-edit-model", a.kode_alat, a.id_varian);
+  const seriEl = document.getElementById("kdak-edit-seri");
+  if (seriEl) seriEl.value = a.nomor_seri || "";
 
   // Sumber Pengadaan
   const pengVal = a.sumber_pengadaan || "";
@@ -512,6 +806,11 @@ window.openKdakEdit = function(idAset) {
   }
   const uptSel = document.getElementById("kdak-edit-upt");
   if (uptSel) { applyUptSelect(parentCode, uptSel); uptSel.value = uptCode; }
+
+  // Paint the preview from the asset's CURRENT values, so the starting state
+  // shows the existing ID and every step reads as done. Any edit from here is
+  // then visibly a change to that ID rather than a fresh construction.
+  refreshEditPreview();
 
   document.getElementById("kdak-edit-modal")?.classList.remove("hidden");
 };
@@ -549,11 +848,13 @@ document.getElementById("form-kdak-edit")?.addEventListener("submit", async func
   );
   if (!step2) return;
 
-  // This form does not edit the varian or the serial number, but both are
-  // optional in AsetUpdate — omitting them used to null them out on the server,
-  // so every edit here silently destroyed the asset's specification and serial.
-  // Carry the current values through explicitly.
-  const asetSaatIni = db.find((x) => x.id_aset === idAset);
+  // Both fields are now edited by this form (step 1b above). They are still
+  // sent EXPLICITLY on every submit rather than omitted: `AsetUpdate` leaves
+  // them optional and `update_aset()` distinguishes absent from null, so a
+  // payload that skipped them would leave a cleared field unchanged instead of
+  // clearing it.
+  const modelRaw = document.getElementById("kdak-edit-model")?.value || "";
+  const seriRaw = document.getElementById("kdak-edit-seri")?.value?.trim() || "";
 
   const payload = {
     kode_alat: alat,
@@ -562,8 +863,8 @@ document.getElementById("form-kdak-edit")?.addEventListener("submit", async func
     tanggal_pembelian: tanggal,
     sumber_pengadaan: pengadaan,
     peruntukan,
-    id_varian: asetSaatIni?.id_varian ?? null,
-    nomor_seri: asetSaatIni?.nomor_seri ?? null,
+    id_varian: modelRaw ? parseInt(modelRaw, 10) : null,
+    nomor_seri: seriRaw || null,
   };
   try {
     const res = await apiFetch(`/aset/${idAset}`, { method: "PUT", body: JSON.stringify(payload) });
@@ -610,6 +911,9 @@ function setupKdakListeners() {
   // Toolbar buttons
   document.getElementById("kdak-btn-tambah")?.addEventListener("click", () => {
     document.getElementById("kdak-tambah-modal")?.classList.remove("hidden");
+    // Paint the empty preview and mark step 1 active, so the form opens saying
+    // what it is going to build and where to start.
+    refreshTambahPreview();
   });
 
   document.getElementById("close-kdak-tambah-modal")?.addEventListener("click", () => {

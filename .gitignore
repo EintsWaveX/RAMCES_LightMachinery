@@ -1,20 +1,107 @@
-*.json
+# ══════════════════════════════════════════════════════════════════════
+# RAMCES / SIMA-KAI — .gitignore
+# ══════════════════════════════════════════════════════════════════════
+#
+# Every line of this file used to be commented out, which means NOTHING was
+# ignored — including `.env`, which holds the real SECRET_KEY, the database
+# password and the bootstrap admin password. A single `git add -A` would have
+# committed all three. (Checked: `.env` never entered history, so this is a near
+# miss and not a cleanup.)
+#
+# Two things a .gitignore cannot do, so they are done by hand:
+#   * it does NOT untrack a file that is already tracked — use
+#     `git rm --cached <path>` for that;
+#   * it does NOT scrub history — if a secret is ever committed, rotate it.
+
+
+# ── Secrets ───────────────────────────────────────────────────────────
+# `.env` is required to boot: DATABASE_URL and SECRET_KEY have no fallbacks and
+# the app refuses to start without them. `.env.example` documents every key
+# with no values and IS tracked, so the negation below must stay after the glob.
+.env
+.env.*
+!.env.example
+
+
+# ── Python ────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+
+
+# ── Runtime data ──────────────────────────────────────────────────────
+# Calibration certificates, Model/Type photos and reference documents uploaded
+# through the app, plus the copies the `dokumen` seed step writes. ~64 MB today
+# and it only grows. Regenerate with `py -3.10 seed.py --only dokumen`.
+uploads/
+
+
+# ── The client's source drop ──────────────────────────────────────────
+# `modules/` is ~41 MB: the katalog spreadsheets, the asset import workbook and
+# roughly 40 MB of manual/spektek PDFs.
+#
+# ⚠️ IT IS A HARD DEPENDENCY, NOT AN OPTIONAL EXTRA. Since rev0.5.2,
+# `seed_katalog_sfm.py` reads `KATALOG SFM.xlsx` directly and `seed_katalog.py`
+# RAISES on import without it — deliberately, because the previous behaviour
+# was to import cleanly and silently produce an empty catalogue, which made the
+# asset import skip all 1,121 rows while reporting success.
+#
+# A fresh checkout can serve the app (the API and SPA do not import these
+# modules) but cannot seed or reset until `modules/` is copied in.
+modules/
+
+
+# ── Database dumps and scratch ────────────────────────────────────────
+sql_backup/
+temp/
 *.sql
+*.dump
 *.bak
 
-__pycache__
-.vscode
-.claude
-sql_backup
-temp
+# Route/OpenAPI snapshots written by tools/verify/snap.py. The harness itself is
+# tracked (see tools/verify/README.md); its output is not — a snapshot is a
+# before/after comparison artefact, meaningful only within one run.
+tools/verify/_snapshots/
+*.snapshot.json
 
-# User-uploaded calibration certificates — runtime data, never committed
-uploads
-tools
+# Belt and braces: a headless-Chrome profile is ~300 files of caches, cookies and
+# shader blobs. cdp.py now writes them to the system temp dir, but one earlier
+# run put a full profile inside tools/verify/ and it very nearly got committed.
+chrome-profile-*/
 
-# Drops and reseeds the whole database; imports seed.py, so it is untracked too
-inject.py
-seed.py
-reset.py
 
-CLAUDE.md
+# ── Editors, tooling, OS ──────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+.claude/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+
+# ══════════════════════════════════════════════════════════════════════
+# DELIBERATELY NOT IGNORED
+# ══════════════════════════════════════════════════════════════════════
+#
+# The seeding pipeline — `seed.py`, `reset.py`, `seeds/`, `seed_katalog.py`,
+# `seed_katalog_sfm.py`, `seed_aset_real.py` — is TRACKED.
+#
+# It used to be ignored. That was a mistake and it cost real review coverage:
+# `seed_katalog.py` is tracked while `seeds/katalog.py` was not, so gutting the
+# first and rewiring the second showed up in git as exactly half a change. It is
+# ~2,300 lines of ordinary source with no secrets in it (the only `secrets`
+# import is the stdlib module used to generate the bootstrap password), it
+# decides whether 1,121 real assets import correctly, and `reset.py` is the most
+# destructive command in the project. All three are reasons to review it, not
+# reasons to hide it.
+#
+# `api/`, `tools/`, `CLAUDE.md` and `.env.example` are also tracked and were
+# simply never `git add`ed — see the notes for the next session.

@@ -69,6 +69,11 @@ async function checkAuth() {
     startTopbarClock();
 
     await fetchMasterData();
+    // Model/Type index, keyed by kode_alat. Loaded at boot rather than lazily
+    // by Pusat Data: the KDAK Tambah/Edit forms populate their "1b. Model/Type"
+    // select from it, and a user who goes straight to Kelola Data Alat Kerja
+    // without ever opening Pusat Data would otherwise find that select empty.
+    if (typeof loadAlatVarian === "function") await loadAlatVarian();
     setupWebSocket();
     await fetchAsetFromServer();
   } else {
@@ -80,25 +85,39 @@ async function checkAuth() {
   }
 }
 
+// Inline error under the login form. Kept separate from showToast() because a
+// toast auto-dismisses: a user who mistyped a password and looked at the
+// keyboard would otherwise find the screen unchanged and no reason given.
+function _setLoginError(message) {
+  const box = document.getElementById("login-error");
+  if (!box) return;
+  box.textContent = message || "";
+  box.classList.toggle("hidden", !message);
+}
+
 async function handleLogin() {
-  const user = document.getElementById("login-username").value.trim();
-  const role = document.getElementById("login-role")?.value || "TEKNISI";
-  const region = document.getElementById("login-region")?.value || "";
-  const regionText =
-    document.getElementById("login-region")?.selectedOptions[0]?.text || region;
-  const roleText =
-    document.getElementById("auth-display-role")?.textContent || role;
+  const userEl = document.getElementById("login-username");
+  const passEl = document.getElementById("login-password");
+  const user = userEl?.value.trim() || "";
+  const password = passEl?.value || "";
+
+  _setLoginError("");
 
   if (!user) {
-    showToast("Username tidak boleh kosong!", "warning");
+    _setLoginError("Nama pengguna tidak boleh kosong.");
+    userEl?.focus();
+    return;
+  }
+  if (!password) {
+    _setLoginError("Password tidak boleh kosong.");
+    passEl?.focus();
     return;
   }
 
-  const confirmed = await customConfirm(
-    `Masuk sebagai "${user}"?\nRole: ${roleText}\nRegion: ${regionText}`,
-  );
-  if (!confirmed) return;
-
+  // Role and region are NOT sent: the server reads both from the stored row and
+  // ignores the body. Sending them would suggest they are still negotiable.
+  const btn = document.getElementById("btn-login");
+  if (btn) btn.disabled = true;
   beginLoading("Memverifikasi akun");
   try {
     const response = await fetch(`${API_BASE_URL}/login`, {
@@ -107,16 +126,17 @@ async function handleLogin() {
         "Content-Type": "application/json",
         "ngrok-skip-browser-warning": "true",
       },
-      body: JSON.stringify({
-        username: user,
-        role: role,
-        id_lokasi: region || null,
-      }),
+      body: JSON.stringify({ username: user, password }),
     });
 
     if (!response.ok) {
-      const err = await response.json();
-      throw new Error(err.detail || "Login gagal.");
+      let detail = "Login gagal.";
+      try {
+        detail = (await response.json()).detail || detail;
+      } catch (_) {
+        /* non-JSON error body (proxy page, 502) — keep the generic message */
+      }
+      throw new Error(detail);
     }
 
     const data = await response.json();
@@ -125,24 +145,18 @@ async function handleLogin() {
     sessionStorage.setItem("activeUser", user);
     sessionStorage.setItem("authToken", authToken);
 
-    showToast(
-      data.already_existed
-        ? `Berhasil masuk sebagai ${user}!`
-        : `Berhasil membuat akun dan masuk sebagai "${user}"!`,
-      "success",
-    );
-    document.getElementById("login-username").value = "";
-    document.getElementById("auth-step-1")?.classList.remove("hidden");
-    document.getElementById("auth-step-2")?.classList.add("hidden");
-    document.getElementById("auth-step-3")?.classList.add("hidden");
-    if (document.getElementById("login-role"))
-      document.getElementById("login-role").value = "";
+    showToast(`Berhasil masuk sebagai ${user}.`, "success");
+    if (userEl) userEl.value = "";
+    if (passEl) passEl.value = "";
 
     await checkAuth();
     fetchAsetFromServer();
   } catch (error) {
-    showToast(error.message, "error");
+    _setLoginError(error.message);
+    passEl?.focus();
+    passEl?.select();
   } finally {
+    if (btn) btn.disabled = false;
     endLoading();
   }
 }
@@ -176,12 +190,22 @@ function forceLogout(reloadPage = false) {
 
   const u = document.getElementById("login-username");
   if (u) u.value = "";
-
-  document.getElementById("auth-step-1")?.classList.remove("hidden");
-  document.getElementById("auth-step-2")?.classList.add("hidden");
-  document.getElementById("auth-step-3")?.classList.add("hidden");
-  document.getElementById("login-role") &&
-    (document.getElementById("login-role").value = "");
+  const p = document.getElementById("login-password");
+  if (p) {
+    p.value = "";
+    // Reset the reveal toggle too, or the next person at this workstation sees
+    // their password in clear text as they type it.
+    p.type = "password";
+  }
+  const revealBtn = document.getElementById("btn-toggle-password");
+  if (revealBtn) {
+    revealBtn.setAttribute("aria-pressed", "false");
+    revealBtn.setAttribute("aria-label", "Tampilkan password");
+    const icon = document.getElementById("icon-toggle-password");
+    icon?.classList.add("fa-eye");
+    icon?.classList.remove("fa-eye-slash");
+  }
+  _setLoginError("");
 
   activeHistoryUid = null;
 
@@ -322,6 +346,11 @@ function switchView(viewId) {
     else btn.classList.remove("is-active");
   });
 
+  // Driven from here rather than from the bottom-nav click handler, so
+  // arriving at a screen any other way — a card link, the breadcrumb, a
+  // post-save redirect — still lights the right slot.
+  syncBottomNav?.(viewId);
+
   const pageMeta = {
     dashboard: {
       title: "Dashboard",
@@ -421,69 +450,35 @@ function setupEventListeners() {
     btn.addEventListener("click", () => switchView(btn.dataset.view));
   });
 
-  // Auth — multi-step login
-  document.getElementById("btn-next-step")?.addEventListener("click", () => {
-    const username = document.getElementById("login-username").value.trim();
-    if (!username) {
-      showToast("Username tidak boleh kosong!", "warning");
-      return;
-    }
-    document.getElementById("auth-display-username").innerText = username;
-    document.getElementById("auth-step-1").classList.add("hidden");
-    document.getElementById("auth-step-2").classList.remove("hidden");
+  // Auth — one step. A real <form> so Enter submits from either field and
+  // password managers recognise the pair; the three-step wizard that used to
+  // live here asked the user to choose their own role, which the server now
+  // ignores entirely.
+  document.getElementById("form-login")?.addEventListener("submit", (e) => {
+    e.preventDefault();
+    handleLogin();
   });
 
   document
-    .getElementById("login-username")
-    ?.addEventListener("keypress", (e) => {
-      if (e.key === "Enter") document.getElementById("btn-next-step")?.click();
+    .getElementById("btn-toggle-password")
+    ?.addEventListener("click", function () {
+      const input = document.getElementById("login-password");
+      const icon = document.getElementById("icon-toggle-password");
+      if (!input) return;
+      const reveal = input.type === "password";
+      input.type = reveal ? "text" : "password";
+      this.setAttribute("aria-pressed", String(reveal));
+      this.setAttribute(
+        "aria-label",
+        reveal ? "Sembunyikan password" : "Tampilkan password",
+      );
+      icon?.classList.toggle("fa-eye", !reveal);
+      icon?.classList.toggle("fa-eye-slash", reveal);
+      // Keep the caret where it was; changing `type` moves it to the end.
+      const pos = input.value.length;
+      input.focus();
+      input.setSelectionRange(pos, pos);
     });
-
-  document.getElementById("btn-back-step1")?.addEventListener("click", () => {
-    document.getElementById("auth-step-2").classList.add("hidden");
-    document.getElementById("auth-step-1").classList.remove("hidden");
-  });
-
-  document.getElementById("btn-back-step2")?.addEventListener("click", () => {
-    document.getElementById("auth-step-3").classList.add("hidden");
-    document.getElementById("auth-step-2").classList.remove("hidden");
-  });
-
-  document.querySelectorAll(".division-card").forEach((card) => {
-    card.addEventListener("click", () => {
-      const division = card.dataset.division;
-      const labels = {
-        TEKNISI: "Teknisi (TraKSI)",
-        ADMIN_WILAYAH: "Admin Wilayah",
-        SUPER_ADMIN: "Super Admin (RAMCES)",
-      };
-
-      // Normalize legacy values to the backend role contract.
-      const roleVal = division === "ADMIN_DAOP" ? "ADMIN_WILAYAH" : division;
-
-      document.getElementById("login-role").value = roleVal;
-      document.getElementById("auth-display-role").innerText =
-        labels[roleVal] || labels[division] || division;
-
-      const regionSel = document.getElementById("login-region");
-      if (roleVal === "SUPER_ADMIN") {
-        regionSel.disabled = true;
-        regionSel.innerHTML =
-          '<option value="">Semua Region (tidak diperlukan)</option>';
-      } else {
-        regionSel.disabled = false;
-        fetchLoginRegions();
-      }
-
-      document.getElementById("auth-step-2").classList.add("hidden");
-      document.getElementById("auth-step-3").classList.remove("hidden");
-    });
-  });
-
-  document.getElementById("btn-login")?.addEventListener("click", handleLogin);
-  document.getElementById("login-region")?.addEventListener("keypress", (e) => {
-    if (e.key === "Enter") handleLogin();
-  });
 
   // Sidebar & Theme
   document
@@ -1079,6 +1074,12 @@ function setupEventListeners() {
       }
       // UPT is optional — aset can be assigned to a parent lokasi without a specific UPT
 
+      // Step 1b. Optional — an alat kerja with no Model/Type rows yet must
+      // still be registrable, or adding the first asset of a new tool becomes
+      // impossible until someone visits Pusat Data.
+      const modelRaw = document.getElementById("in-model")?.value || "";
+      const seri = document.getElementById("in-seri")?.value?.trim() || null;
+
       // Payload mentah. Tidak ada pembuatan id_aset di sini.
       const payload = {
         kode_alat: alat,
@@ -1087,6 +1088,8 @@ function setupEventListeners() {
         tanggal_pembelian: tanggal,
         sumber_pengadaan: pengadaan,
         peruntukan: peruntukanVal,
+        id_varian: modelRaw ? parseInt(modelRaw, 10) : null,
+        nomor_seri: seri,
       };
 
       try {
@@ -1114,6 +1117,15 @@ function setupEventListeners() {
           inUpt.innerHTML = `<option value="">— Pilih Lokasi terlebih dahulu —</option>`;
           inUpt.disabled = true;
         }
+        // form.reset() clears the value but not the option list, which would
+        // leave the previous tool's models listed under a blank Alat Kerja.
+        const inModel = document.getElementById("in-model");
+        if (inModel)
+          inModel.innerHTML = `<option value="">— Pilih Alat Kerja terlebih dahulu... —</option>`;
+        // reset() fires no change event, so the id_aset preview and the step
+        // markers would keep showing the asset that was just saved.
+        if (typeof window.refreshTambahPreview === "function")
+          window.refreshTambahPreview();
         fetchAsetFromServer();
       } catch (error) {
         if (error.message !== "Unauthorized") showToast(error.message, "error");
@@ -1140,12 +1152,18 @@ function setupEventListeners() {
       if (!peruntukan)
         return showToast("Pilih Unit Peruntukan terlebih dahulu!", "warning");
 
+      // Spareparts consumed, if any. They ride on this same request so the
+      // condition report and the stock movements commit together — see
+      // catat_perbaikan() in main.py.
+      const pemakaian = window.collectPemakaian ? window.collectPemakaian() : [];
+
       const payload = {
         id_aset:    document.getElementById("edit-uid").value,
         kondisi,
         keterangan,
         peruntukan,
         id_lokasi:  uptVal || lokasiVal || "",
+        ...(pemakaian.length ? { pemakaian } : {}),
       };
 
       try {
@@ -1153,9 +1171,22 @@ function setupEventListeners() {
           method: "POST",
           body: JSON.stringify(payload),
         });
-        if (!response.ok) throw new Error("Gagal menyimpan riwayat perbaikan.");
+        // The server's `detail` is the whole message here — "Stok <part> tidak
+        // mencukupi. Tersedia 3 Piece, diminta 5" tells the technician exactly
+        // what to change. The old fixed string threw all of that away.
+        if (!response.ok) {
+          const err = await response.json().catch(() => ({}));
+          throw new Error(err.detail || "Gagal menyimpan riwayat perbaikan.");
+        }
 
-        showToast("Berhasil memperbarui kondisi", "success");
+        const result = await response.json().catch(() => ({}));
+        const dipakai = result.pemakaian || [];
+        showToast(
+          dipakai.length
+            ? `Kondisi diperbarui — ${dipakai.length} sparepart tercatat keluar.`
+            : "Berhasil memperbarui kondisi",
+          "success",
+        );
         switchView("database");
         fetchAsetFromServer();
       } catch (error) {
@@ -1286,27 +1317,12 @@ function setupEventListeners() {
   });
 
   function _setHistoryTab(active) {
-    const ACTIVE_REPAIR   = ["bg-kai-blue", "text-white", "font-semibold", "shadow-sm"];
-    const INACTIVE_REPAIR = ["text-gray-500", "dark:text-gray-400", "font-medium", "hover:bg-blue-100", "hover:text-kai-blue", "dark:hover:bg-blue-900/20", "dark:hover:text-blue-300"];
-    const ACTIVE_KALIB    = ["bg-cyan-600", "text-white", "font-semibold", "shadow-sm"];
-    const INACTIVE_KALIB  = ["text-gray-500", "dark:text-gray-400", "font-medium", "hover:bg-cyan-100", "hover:text-cyan-700", "dark:hover:bg-cyan-900/20", "dark:hover:text-cyan-300"];
-    const ACTIVE_MUTASI   = ["bg-kai-orange", "text-white", "font-semibold", "shadow-sm"];
-    const INACTIVE_MUTASI = ["text-gray-500", "dark:text-gray-400", "font-medium", "hover:bg-orange-100", "hover:text-kai-orange", "dark:hover:bg-orange-900/20", "dark:hover:text-orange-300"];
-
-    const ALL = [...ACTIVE_REPAIR, ...INACTIVE_REPAIR, ...ACTIVE_KALIB, ...INACTIVE_KALIB, ...ACTIVE_MUTASI, ...INACTIVE_MUTASI];
-
-    const tabCfg = {
-      repair:    { active: ACTIVE_REPAIR,  inactive: INACTIVE_REPAIR  },
-      kalibrasi: { active: ACTIVE_KALIB,   inactive: INACTIVE_KALIB   },
-      mutasi:    { active: ACTIVE_MUTASI,  inactive: INACTIVE_MUTASI  },
-    };
-
-    ["repair", "kalibrasi", "mutasi"].forEach((t) => {
-      const btn = document.getElementById(`hist-tab-${t}`);
-      if (!btn) return;
-      ALL.forEach((c) => btn.classList.remove(c));
-      (t === active ? tabCfg[t].active : tabCfg[t].inactive).forEach((c) => btn.classList.add(c));
-    });
+    // Was six hand-maintained Tailwind class arrays and the swapping logic to
+    // go with them. `.segmented` in assets/style.css owns the appearance now.
+    setSegmented(
+      ["hist-tab-repair", "hist-tab-kalibrasi", "hist-tab-mutasi"],
+      `hist-tab-${active}`,
+    );
 
     document.getElementById("history-repair-container")?.classList.toggle("hidden", active !== "repair");
     document.getElementById("history-kalibrasi-container")?.classList.toggle("hidden", active !== "kalibrasi");
@@ -1431,10 +1447,21 @@ function setupWebSocket() {
 
   ws.onmessage = (event) => {
     if (event.data === "pong") return; // heartbeat ack
+    // Every broadcast is also an event worth telling the user about. The app
+    // was already acting on all three silently; the bell used to imply news
+    // with a permanent red dot and no way to see what it was.
+    pushActivity(event.data);
     if (event.data === "REFRESH_ASSET_LIST") {
       fetchAsetFromServer();
       if (typeof window.refreshAfkirIfVisible === "function")
         window.refreshAfkirIfVisible();
+      // Model/Type rows are cached client-side twice — the spec-card payload
+      // cache in aset.js and the per-alat index the KDAK selects read. Every
+      // mutation to a model broadcasts this, so refresh both rather than serve
+      // a stale photo, spec row or dropdown until the next reload.
+      if (typeof window.invalidateVarianCache === "function")
+        window.invalidateVarianCache();
+      if (typeof loadAlatVarian === "function") loadAlatVarian();
     } else if (event.data === "REFRESH_PRESENCE") {
       if (typeof window.refreshPresenceIfVisible === "function")
         window.refreshPresenceIfVisible();
@@ -1555,3 +1582,184 @@ window.addEventListener("resize", () => {
     }
   }
 });
+
+// ══════════════════════════════════════════════════════════════════════
+// ACTIVITY FEED
+// ══════════════════════════════════════════════════════════════════════
+//
+// The bell in the topbar carried a hardcoded red dot and no click handler: it
+// permanently claimed unread news that did not exist and could not be
+// dismissed. Rather than delete the affordance, it now shows something true —
+// the WebSocket broadcasts this session has received, which the app was
+// already reacting to invisibly.
+//
+// Session-scoped on purpose. There is no notifications table and inventing one
+// would mean deciding what counts as "read" per user across devices; the
+// durable record of what happened is Pantau Riwayat Aset, which the panel
+// footer points at.
+
+const ACTIVITY_MAX = 20;
+let _activity = [];
+let _activityUnread = 0;
+
+const ACTIVITY_META = {
+  REFRESH_ASSET_LIST: {
+    icon: "fa-screwdriver-wrench",
+    tone: "text-kai-blue dark:text-blue-400",
+    text: "Data aset diperbarui (kondisi, mutasi, atau kalibrasi).",
+  },
+  REFRESH_INVENTARIS: {
+    icon: "fa-boxes",
+    tone: "text-emerald-600 dark:text-emerald-400",
+    text: "Stok sparepart berubah.",
+  },
+  REFRESH_PRESENCE: {
+    icon: "fa-user-group",
+    tone: "text-gray-400",
+    text: "Pengguna lain masuk atau keluar.",
+  },
+};
+
+function pushActivity(kind) {
+  const meta = ACTIVITY_META[kind];
+  if (!meta) return; // unknown broadcast: acted on, but nothing to announce
+
+  _activity.unshift({ kind, at: new Date() });
+  if (_activity.length > ACTIVITY_MAX) _activity.length = ACTIVITY_MAX;
+
+  // Only count it as unread while the panel is closed — otherwise the badge
+  // reappears over a list the user is looking at.
+  const open = !document
+    .getElementById("activity-panel")
+    ?.classList.contains("hidden");
+  if (!open) _activityUnread++;
+  else renderActivity();
+  paintActivityDot();
+}
+window.pushActivity = pushActivity;
+
+function paintActivityDot() {
+  const dot = document.getElementById("activity-dot");
+  if (!dot) return;
+  dot.classList.toggle("hidden", _activityUnread === 0);
+  dot.textContent = _activityUnread > 9 ? "9+" : String(_activityUnread);
+}
+
+function renderActivity() {
+  const list = document.getElementById("activity-list");
+  if (!list) return;
+  if (!_activity.length) {
+    list.innerHTML =
+      '<li class="px-4 py-8 text-center text-xs text-gray-400 italic">' +
+      "Belum ada aktivitas pada sesi ini.</li>";
+    return;
+  }
+  list.innerHTML = _activity
+    .map((a) => {
+      const m = ACTIVITY_META[a.kind];
+      const jam = a.at.toLocaleTimeString("id-ID", {
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+      return `<li class="px-4 py-2.5 flex items-start gap-3">
+          <i class="fas ${m.icon} ${m.tone} mt-0.5 text-sm w-4 text-center"></i>
+          <div class="min-w-0 flex-1">
+            <p class="text-xs text-gray-700 dark:text-gray-200 leading-snug">${m.text}</p>
+            <p class="text-[10px] text-gray-400 mt-0.5">${jam}</p>
+          </div>
+        </li>`;
+    })
+    .join("");
+}
+
+function toggleActivityPanel(force) {
+  const panel = document.getElementById("activity-panel");
+  const btn = document.getElementById("btn-activity");
+  if (!panel) return;
+  const open = force ?? panel.classList.contains("hidden");
+  panel.classList.toggle("hidden", !open);
+  btn?.setAttribute("aria-expanded", String(open));
+  if (open) {
+    _activityUnread = 0;
+    paintActivityDot();
+    renderActivity();
+  }
+}
+
+document
+  .getElementById("btn-activity")
+  ?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    toggleActivityPanel();
+  });
+
+document.getElementById("activity-clear")?.addEventListener("click", () => {
+  _activity = [];
+  _activityUnread = 0;
+  paintActivityDot();
+  renderActivity();
+});
+
+// Click-away and Esc, matching the modal conventions in js/a11y-modal.js —
+// this panel is a popover, not a dialog, so it does not go through that file.
+document.addEventListener("click", (e) => {
+  const panel = document.getElementById("activity-panel");
+  if (!panel || panel.classList.contains("hidden")) return;
+  if (!panel.contains(e.target) && e.target.closest("#btn-activity") === null) {
+    toggleActivityPanel(false);
+  }
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") toggleActivityPanel(false);
+});
+
+
+// ══════════════════════════════════════════════════════════════════════
+// MOBILE BOTTOM NAVIGATION
+// ══════════════════════════════════════════════════════════════════════
+//
+// Under lg: the drawer was the only way to change screen. These five slots sit
+// in thumb reach; the drawer stays for everything that does not fit.
+//
+// The active state is driven from switchView() rather than from the click, so
+// arriving at a screen any other way (a card link, the breadcrumb, a deep
+// link) still lights the right slot.
+
+function syncBottomNav(viewId) {
+  document.querySelectorAll("#mobile-bottom-nav .bnav-btn").forEach((btn) => {
+    btn.classList.toggle(
+      "is-active",
+      !!btn.dataset.view && btn.dataset.view === viewId,
+    );
+  });
+}
+window.syncBottomNav = syncBottomNav;
+
+document.querySelectorAll("#mobile-bottom-nav .bnav-btn[data-view]").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    switchView(btn.dataset.view);
+    // The drawer may be open over the top of the destination on a phone.
+    if (window.innerWidth < 1024) closeSidebarIfOpen();
+  });
+});
+
+document.getElementById("bnav-menu")?.addEventListener("click", toggleSidebar);
+
+// "Lapor" lands on Kelola Data Aset with the search box focused, because the
+// first thing a technician does is find the machine in front of them. It is
+// the same destination as the Data Aset slot, so the hint is what differs.
+document.getElementById("bnav-lapor")?.addEventListener("click", () => {
+  setTimeout(() => {
+    const box = document.getElementById("search-db");
+    if (box) {
+      box.focus();
+      box.select?.();
+    }
+    showToast("Cari alat kerjanya, lalu buka untuk melaporkan kondisi.", "info");
+  }, 350);
+});
+
+function closeSidebarIfOpen() {
+  const sb = document.getElementById("sidebar");
+  if (sb?.classList.contains("open")) toggleSidebar();
+}

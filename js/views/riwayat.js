@@ -7,6 +7,38 @@
 // across two files is a fatal SyntaxError; see CLAUDE.md.
 // ═══════════════════════════════════════════════════════════════════════
 
+// Per-mode empty states. All three used to print the same grey inline block,
+// which said only that the grid was empty — never whether that is because
+// nothing has been recorded or because a filter excluded everything. Those
+// call for different next actions, so they get different copy.
+const HISTORY_EMPTY = {
+  repair: {
+    icon: "fa-inbox",
+    none: "Belum ada riwayat perbaikan. Laporan kondisi aset akan muncul di sini.",
+  },
+  kalibrasi: {
+    icon: "fa-ruler-combined",
+    none:
+      "Belum ada riwayat kalibrasi. Hanya alat kerja yang ditandai perlu " +
+      "kalibrasi di katalog yang punya form ini.",
+  },
+  mutasi: {
+    icon: "fa-exchange-alt",
+    none: "Belum ada riwayat mutasi. Perpindahan aset antarwilayah akan tercatat di sini.",
+  },
+};
+
+function _historyEmptyState(mode, searchQ, filters) {
+  const cfg = HISTORY_EMPTY[mode] || HISTORY_EMPTY.repair;
+  const filtered =
+    Boolean((searchQ || "").trim()) ||
+    Object.values(filters || {}).some((v) => v !== "" && v !== null && v !== undefined);
+  const msg = filtered
+    ? "Tidak ada yang cocok dengan pencarian atau filter yang aktif."
+    : cfg.none;
+  return `<div class="empty-state col-span-2"><i class="fas ${cfg.icon}"></i>${msg}</div>`;
+}
+
 function renderHistoryCards() {
   const container = document.getElementById("history-repair-container");
   const searchInput = document.getElementById("search-history");
@@ -25,7 +57,9 @@ function renderHistoryCards() {
 
   if (!filtered.length) {
     renderPagerBar("history-repair-pager", paginateList("history-repair", filtered), renderHistoryCards);
-    container.innerHTML = `<div class="col-span-2 text-center text-gray-400 py-12"><i class="fas fa-inbox text-3xl mb-2 block"></i>Belum ada riwayat perbaikan.</div>`;
+    // Per-mode wording, and it distinguishes "nothing recorded yet" from
+    // "nothing matches your filter" — those need different next actions.
+    container.innerHTML = _historyEmptyState("repair", searchQ, _histSortFilters);
     return;
   }
 
@@ -204,7 +238,7 @@ function renderKalibrasiCards() {
 
   if (!filtered.length) {
     renderPagerBar("history-kalibrasi-pager", paginateList("history-kalibrasi", filtered), renderKalibrasiCards);
-    container.innerHTML = `<div class="col-span-2 text-center text-gray-400 py-12"><i class="fas fa-ruler-combined text-3xl mb-2 block"></i>Belum ada riwayat kalibrasi.</div>`;
+    container.innerHTML = _historyEmptyState("kalibrasi", searchQ, _histSortFilters);
     return;
   }
 
@@ -276,7 +310,7 @@ function renderMutasiCards() {
 
   if (!filtered.length) {
     renderPagerBar("history-mutasi-pager", paginateList("history-mutasi", filtered), renderMutasiCards);
-    container.innerHTML = `<div class="col-span-2 text-center text-gray-400 py-12"><i class="fas fa-exchange-alt text-3xl mb-2 block"></i>Belum ada riwayat mutasi.</div>`;
+    container.innerHTML = _historyEmptyState("mutasi", searchQ, _histSortFilters);
     return;
   }
 

@@ -8,12 +8,17 @@ load_dotenv()
 
 # Format: postgresql://<username>:<password>@<host>:<port>/<database_name>
 #
-# The credentials are read from DATABASE_URL when it is set (put it in .env),
-# falling back to the local development database so an existing checkout keeps
-# working with no setup. Committing a real password is a liability the moment
-# this repo leaves one machine — see the deployment notes in CLAUDE.md.
-_DEFAULT_URL = "postgresql://postgres:Nue23072005*@localhost:5000/warehouse_monitoring"
-SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL", _DEFAULT_URL)
+# Read from DATABASE_URL, with NO fallback. There used to be a hardcoded local
+# development URL here so a fresh checkout booted with no setup — but it carried
+# a real password in a tracked file, which is a liability the moment the repo
+# leaves one machine. Copy `.env.example` to `.env` instead; the error below
+# says exactly that.
+SQLALCHEMY_DATABASE_URL = (os.getenv("DATABASE_URL") or "").strip()
+if not SQLALCHEMY_DATABASE_URL:
+    raise RuntimeError(
+        "DATABASE_URL belum diset. Salin .env.example menjadi .env, lalu isi:\n\n"
+        "    DATABASE_URL=postgresql://postgres:<password>@localhost:5000/warehouse_monitoring\n"
+    )
 
 # ── Engine ────────────────────────────────────────────────────────────────
 #

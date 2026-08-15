@@ -88,6 +88,144 @@
   ALL_TABS.forEach(({ btn, id }) => btn?.addEventListener("click", () => setInvTab(id)));
 
   // ══════════════════════════════════════════════════════════════════
+  // FLOW HEADER — the ordered prerequisite chain
+  // ══════════════════════════════════════════════════════════════════
+  //
+  // gudang → kategori → sparepart → pergerakan → stok. The four tabs above
+  // present this as four peers, so the ordering was invisible; the concrete
+  // failure is that with NO warehouse the movement form has nothing to write
+  // `id_gudang` to and refuses every submit without saying why.
+  //
+  // This marks the first incomplete step and links straight to the control that
+  // completes it. Once every step is satisfied the whole strip hides itself —
+  // it is scaffolding for an empty system, not permanent chrome.
+  //
+  // Nodes are looked up lazily, NOT cached at eval time like the tab elements
+  // above: the strip is re-rendered on every REFRESH_INVENTARIS.
+
+  const INV_FLOW_DISMISSED = "invFlowDismissed";
+
+  const INV_FLOW_STEPS = [
+    {
+      key: "gudang",
+      label: "Gudang",
+      count: () => _gudangList.length,
+      hint: "Buat minimal satu gudang — tanpa itu, form pergerakan tidak punya tujuan dan setiap simpan akan ditolak.",
+      go: () => openGudangModal(),
+      cta: "Buka Kelola Gudang",
+    },
+    {
+      key: "kategori",
+      label: "Kategori",
+      count: () => _categories.length,
+      hint: "Tambahkan kategori suku cadang agar katalog bisa dikelompokkan.",
+      go: () => { setInvTab("parts"); el("inv-btn-parts-category")?.click(); },
+      cta: "Buka Kelola Kategori",
+    },
+    {
+      key: "sparepart",
+      label: "Suku Cadang",
+      count: () => _partsRows.length,
+      hint: "Daftarkan suku cadang beserta stok awalnya pada sebuah gudang.",
+      go: () => { setInvTab("parts"); el("inv-btn-add-part")?.click(); },
+      cta: "Tambah Suku Cadang",
+    },
+    {
+      key: "pergerakan",
+      // `_ledgerTotal` is only populated once the Transaksi tab has been
+      // opened, so reading it alone made a fully-stocked system report its
+      // last step as incomplete on every first visit. `_flowLedgerTotal` is
+      // fetched once at boot for exactly this, and the larger of the two wins
+      // so a later real load always takes precedence.
+      label: "Pergerakan",
+      count: () => Math.max(_ledgerTotal || 0, _flowLedgerTotal || 0),
+      hint: "Catat pergerakan masuk/keluar; saldo stok dihitung dari catatan ini, bukan disimpan sebagai angka.",
+      go: () => setInvTab("transaksi"),
+      cta: "Buka Transaksi Barang",
+    },
+  ];
+
+  // Ledger row count, for the flow header only. `limit=1` because the envelope
+  // carries `total` and the rows themselves are not wanted here.
+  let _flowLedgerTotal = 0;
+
+  async function loadFlowLedgerCount() {
+    try {
+      const res = await apiFetch("/inventaris/stok?limit=1", { background: true });
+      if (!res.ok) return;
+      const payload = await res.json();
+      _flowLedgerTotal = payload.total || 0;
+    } catch (_) {
+      /* the flow header degrades to "step incomplete", which is safe */
+    }
+  }
+
+  function renderInvFlow() {
+    const wrap = el("inv-flow");
+    const list = el("inv-flow-steps");
+    if (!wrap || !list) return;
+
+    if (localStorage.getItem(INV_FLOW_DISMISSED) === "1") {
+      wrap.hidden = true;
+      return;
+    }
+
+    const states = INV_FLOW_STEPS.map((s) => ({ ...s, n: s.count() || 0 }));
+    const firstIncomplete = states.findIndex((s) => s.n === 0);
+
+    // Nothing to guide once the chain is complete.
+    if (firstIncomplete === -1) {
+      wrap.hidden = true;
+      return;
+    }
+    wrap.hidden = false;
+
+    list.innerHTML = states
+      .map((s, i) => {
+        const done = s.n > 0;
+        const active = i === firstIncomplete;
+        const tone = done
+          ? "bg-emerald-500 text-white border-emerald-500"
+          : active
+            ? "bg-kai-orange text-white border-kai-orange"
+            : "bg-transparent text-gray-400 border-gray-300 dark:border-gray-600";
+        const label = done
+          ? `${s.label} (${s.n})`
+          : active
+            ? `<strong>${s.label}</strong>`
+            : s.label;
+        const sep = i
+          ? '<li aria-hidden="true" class="text-gray-300 dark:text-gray-600 px-1"><i class="fas fa-chevron-right text-[9px]"></i></li>'
+          : "";
+        const mark = done ? '<i class="fas fa-check text-[9px]"></i>' : i + 1;
+        return `${sep}<li class="flex items-center gap-1.5 text-xs ${done ? "text-gray-500 dark:text-gray-400" : active ? "text-gray-800 dark:text-gray-100" : "text-gray-400"}">
+            <span class="inline-flex items-center justify-center w-4 h-4 rounded-full border text-[9px] font-bold ${tone}">${mark}</span>
+            <span>${label}</span>
+          </li>`;
+      })
+      .join("");
+
+    const step = states[firstIncomplete];
+    const hint = el("inv-flow-hint");
+    if (hint) {
+      hint.innerHTML =
+        `${window.spekEscape ? window.spekEscape(step.hint) : step.hint} ` +
+        `<button type="button" id="inv-flow-go" class="font-bold text-kai-blue dark:text-blue-400 underline">${step.cta}</button>`;
+      // Re-bound every render because the innerHTML above replaces the node,
+      // so no listener can accumulate.
+      el("inv-flow-go")?.addEventListener("click", () => step.go());
+    }
+  }
+
+  el("inv-flow-dismiss")?.addEventListener("click", () => {
+    localStorage.setItem(INV_FLOW_DISMISSED, "1");
+    const wrap = el("inv-flow");
+    if (wrap) wrap.hidden = true;
+  });
+
+  window.renderInvFlow = renderInvFlow;
+
+  // ══════════════════════════════════════════════════════════════════
   // DASBOR INVENTARIS — stock dashboard
   // ══════════════════════════════════════════════════════════════════
 
@@ -174,6 +312,7 @@
       sel.value = keep;
     });
     renderGudangList();
+    renderInvFlow();
   }
 
   el("sd-filter-gudang")?.addEventListener("change", function () {
@@ -522,7 +661,7 @@
               <td class="px-3 py-2 text-gray-400 font-mono align-top">${i + 1}</td>
               <td class="px-3 py-2">
                 <p class="font-semibold text-gray-700 dark:text-gray-200 leading-tight">${r.nama_part}</p>
-                <p class="text-[10px] text-gray-400">${r.sku}</p>
+                <p class="text-[10px] text-gray-400">${r.nama_alat || "—"}</p>
               </td>
               <td class="px-3 py-2 text-right tabular-nums text-gray-600 dark:text-gray-300">${r.stok_sekarang} <span class="text-[10px] text-gray-400">${r.unit}</span></td>
               <td class="px-3 py-2 text-right tabular-nums font-semibold text-gray-800 dark:text-white" title="${KAI_VIZ.rupiahFull(r.nilai)}">${KAI_VIZ.rupiah(r.nilai)}</td>
@@ -533,7 +672,6 @@
     // ── Ringkasan katalog ──
     if (el("sd-total-parts")) el("sd-total-parts").textContent = (d.total_parts ?? 0).toLocaleString("id-ID");
     if (el("sd-total-types")) el("sd-total-types").textContent = (d.total_types ?? 0).toLocaleString("id-ID");
-    if (el("sd-total-suppliers")) el("sd-total-suppliers").textContent = (d.total_suppliers ?? 0).toLocaleString("id-ID");
     if (el("sd-auto-demand")) el("sd-auto-demand").textContent = (d.auto_demand ?? 0).toLocaleString("id-ID");
 
     // ── Perlu segera dipesan ──
@@ -549,7 +687,7 @@
               <tr class="border-b border-gray-50 dark:border-gray-700/50 hover:bg-gray-50 dark:hover:bg-gray-700/30 transition">
                 <td class="px-4 py-2">
                   <p class="font-semibold text-gray-700 dark:text-gray-200 leading-tight">${r.nama_part}</p>
-                  <p class="text-[9px] text-gray-400">${r.sku} · ${r.nama_alat || r.kode_alat || "—"}</p>
+                  <p class="text-[9px] text-gray-400">${r.nama_alat || r.kode_alat || "—"}</p>
                 </td>
                 <td class="px-4 py-2 text-right whitespace-nowrap">
                   <span class="tabular-nums font-bold" style="color:${color}">${r.stok_sekarang}</span>
@@ -560,7 +698,7 @@
                 </td>
               </tr>`;
           }).join("")
-        : '<tr><td class="py-8 text-center text-gray-400 italic">Semua stok aman</td></tr>';
+        : '<tr><td colspan="2" class="py-8 text-center text-gray-400 italic">Semua stok aman</td></tr>';
     }
   }
 
@@ -580,7 +718,39 @@
 
   // The datalist option text doubles as the lookup key, so the two must be
   // produced by the same function — a mismatch here silently breaks selection.
-  const partKey = (p) => `${p.sku} · ${p.nama_part}`;
+  //
+  // `sku` used to guarantee uniqueness for free. Without it the key has to be
+  // built from what actually identifies a part: its name, the alat kerja it
+  // belongs to, and its Model/Type. That is exactly the triple seed.py dedupes
+  // on, so it is unique across the seeded catalogue by construction — which
+  // matters, because "BUSI" legitimately recurs once per tool and several times
+  // per tool across models, and two identical option labels would silently make
+  // one of them unselectable (Map.set keeps only the last).
+  //
+  // Nothing constrains it in the DB, though, so buildPartKeys() below still
+  // disambiguates a genuine collision rather than trusting the invariant.
+  const partLabel = (p) =>
+    [p.nama_part, p.nama_alat || p.kode_alat, p.nama_varian]
+      .filter(Boolean)
+      .join(" · ");
+
+  // Labels → parts, with `#<id_part>` appended ONLY to labels that repeat. The
+  // suffix is ugly and never appears for the seeded catalogue; it is there so a
+  // hand-created duplicate degrades into something still selectable instead of
+  // vanishing from the picker.
+  function buildPartKeys(list) {
+    const counts = new Map();
+    list.forEach((p) => {
+      const l = partLabel(p);
+      counts.set(l, (counts.get(l) || 0) + 1);
+    });
+    const keyed = new Map();
+    list.forEach((p) => {
+      const l = partLabel(p);
+      keyed.set(counts.get(l) > 1 ? `${l} #${p.id_part}` : l, p);
+    });
+    return keyed;
+  }
 
   async function loadPartCatalog() {
     // Scoped to the SELECTED warehouse. Fetching unscoped (as this used to)
@@ -598,11 +768,20 @@
     } catch (_) {
       return;
     }
-    _partByKey = new Map(_partList.map((p) => [partKey(p), p]));
+    // One pass builds both the lookup and the option list, so the datalist text
+    // and the key can never disagree.
+    //
+    // The value MUST be escaped. Part names carry inch marks — `MATA GERINDA 4"`
+    // and `MATA GERINDA 7"` are real catalogue rows — and an unescaped `"` closes
+    // the attribute early, so the browser reported the option value as
+    // `MATA GERINDA 4` while the Map key was the full string. selectedPart()
+    // then returned null and those two parts could not be issued at all: no
+    // error, no empty dropdown, just a form that refused to acknowledge them.
+    _partByKey = buildPartKeys(_partList);
     const dl = el("tx-part-list");
     if (dl) {
-      dl.innerHTML = _partList
-        .map((p) => `<option value="${partKey(p)}"></option>`)
+      dl.innerHTML = [..._partByKey.keys()]
+        .map((k) => `<option value="${window.spekEscape(k)}"></option>`)
         .join("");
     }
     syncPartFields();
@@ -731,6 +910,7 @@
       const payload = await res.json();
       _ledgerTotal = payload.total || 0;
       renderLedger(payload.items || [], reset);
+      renderInvFlow();
     } catch (e) {
       console.warn("Ledger load failed:", e);
     }
@@ -753,7 +933,7 @@
             <td class="px-4 py-2.5 text-xs text-gray-500 whitespace-nowrap">${r.waktu || "—"}</td>
             <td class="px-4 py-2.5">
               <p class="text-xs font-semibold text-gray-800 dark:text-white leading-tight">${r.nama_part}</p>
-              <p class="text-[10px] text-gray-400">${r.sku || ""}${r.jenis ? " · " + r.jenis : ""}</p>
+              <p class="text-[10px] text-gray-400">${r.jenis || "—"}</p>
             </td>
             <td class="px-4 py-2.5 whitespace-nowrap">
               <span class="inline-flex items-center gap-1.5 text-[11px] font-bold" style="color:${color}">
@@ -805,7 +985,16 @@
       _invBooted = true;
       if (el("tx-tanggal") && !el("tx-tanggal").value) el("tx-tanggal").value = isoToday();
       await loadGudangOptions();
+      // The flow header spans all four tabs, so it needs the kategori,
+      // sparepart and ledger counts even though the Dashboard tab itself uses
+      // none of them. Run in parallel, once, on first entry only.
+      await Promise.all([
+        loadInvKategoriOptions(),
+        loadInvParts(),
+        loadFlowLedgerCount(),
+      ]);
       setInvTab("dashboard");
+      renderInvFlow();
       return;
     }
     // Re-entry keeps whichever tab the user left open and refreshes only that
@@ -880,26 +1069,13 @@
   function _fillAddModal(p) {
     const set = (id, val) => { const n = el(id); if (n) n.value = val ?? ""; };
     const check = (id, val) => { const n = el(id); if (n) n.checked = !!val; };
-    set("inv-field-sku", p.sku);
-    set("inv-field-part-number", p.part_number);
     set("inv-field-item-name", p.nama_part);
     set("inv-field-item-type", p.kode_alat);
     set("inv-field-category", p.id_kategori);
     set("inv-field-unit", p.unit || UNIT_DEFAULT);
     set("inv-field-cost", p.harga_satuan);
     set("inv-field-threshold", p.stok_min);
-    set("inv-field-serial", p.serial_numbers);
-    set("inv-field-tag", p.lookup_tags);
-    set("inv-field-vehicle", p.linked_vehicle);
-    set("inv-field-warranty", p.warranty_months);
-    set("inv-field-supplier", p.supplier);
-    set("inv-field-ref-part", p.ref_part);
-    set("inv-field-description", p.deskripsi);
     check("inv-field-auto-demand", p.auto_demand);
-    check("inv-field-critical", p.is_critical);
-    // SKU is the natural key and the backend has no rename path for it.
-    const sku = el("inv-field-sku");
-    if (sku) sku.disabled = true;
   }
 
   // "Piece" was never a stored unit; the catalogue uses Pcs/Unit. Resetting the
@@ -910,12 +1086,9 @@
     addModal?.classList.add("hidden");
     _editingPartId = null;
     const fields = [
-      "inv-field-sku", "inv-field-part-number", "inv-field-item-name",
-      "inv-field-item-type", "inv-field-quantity", "inv-field-unit", "inv-field-cost",
-      "inv-field-threshold", "inv-field-gudang", "inv-field-auto-demand",
-      "inv-field-serial", "inv-field-tag", "inv-field-critical", "inv-field-vehicle",
-      "inv-field-warranty", "inv-field-supplier", "inv-field-ref-part", "inv-field-description",
-      "inv-field-category"
+      "inv-field-item-name", "inv-field-item-type", "inv-field-quantity",
+      "inv-field-unit", "inv-field-cost", "inv-field-threshold",
+      "inv-field-gudang", "inv-field-auto-demand", "inv-field-category"
     ];
     fields.forEach(id => {
       const node = document.getElementById(id);
@@ -936,26 +1109,19 @@
     const jumlahAwal = parseInt(document.getElementById("inv-field-quantity")?.value) || 0;
     const gudangAwal = parseInt(document.getElementById("inv-field-gudang")?.value) || null;
 
+    // Every field the form still carries, and nothing else. The identification
+    // and supplier blocks are gone from the markup AND from `sparepart`, so a
+    // key here that the schema no longer declares would be silently dropped by
+    // Pydantic rather than rejected — which is how a form starts lying about
+    // what it saved.
     const body = {
       nama_part: document.getElementById("inv-field-item-name")?.value.trim(),
       id_kategori: parseInt(document.getElementById("inv-field-category")?.value) || null,
       kode_alat: document.getElementById("inv-field-item-type")?.value || null,
-      part_number: document.getElementById("inv-field-part-number")?.value.trim() || null,
       unit: document.getElementById("inv-field-unit")?.value || "Pcs",
       harga_satuan: parseInt(document.getElementById("inv-field-cost")?.value) || null,
       stok_min: parseInt(document.getElementById("inv-field-threshold")?.value) || 0,
       auto_demand: document.getElementById("inv-field-auto-demand")?.checked || false,
-      // There is no `manufacturer` column. The modal used to carry a separate
-      // required Manufacturer field that was folded into supplier and silently
-      // discarded whenever supplier was also filled; now there is one field.
-      supplier: document.getElementById("inv-field-supplier")?.value.trim() || null,
-      deskripsi: document.getElementById("inv-field-description")?.value.trim() || null,
-      is_critical: document.getElementById("inv-field-critical")?.checked || false,
-      serial_numbers: document.getElementById("inv-field-serial")?.value.trim() || null,
-      lookup_tags: document.getElementById("inv-field-tag")?.value.trim() || null,
-      linked_vehicle: document.getElementById("inv-field-vehicle")?.value.trim() || null,
-      warranty_months: parseInt(document.getElementById("inv-field-warranty")?.value) || null,
-      ref_part: document.getElementById("inv-field-ref-part")?.value.trim() || null,
     };
 
     // Only the two fields the form actually stars are required, and the
@@ -988,13 +1154,12 @@
           method: "POST",
           body: JSON.stringify({
             ...body,
-            sku: document.getElementById("inv-field-sku")?.value.trim() || null,
             jumlah_awal: jumlahAwal,
             id_gudang_awal: gudangAwal,
           }),
         });
       }
-      // apiFetch only THROWS on 401. A 400 (duplicate SKU, bad FK) or a 403
+      // apiFetch only THROWS on 401. A 400 (bad FK, missing gudang) or a 403
       // arrives here as an ordinary response, so without this check every
       // rejected submit still reported success and closed the form.
       const payload = await res.json().catch(() => ({}));
@@ -1244,6 +1409,7 @@
         sel.innerHTML = '<option value="">— Pilih Kategori —</option>' +
           data.map(c => `<option value="${c.id_kategori}">${_kategoriLabel(c)}</option>`).join("");
       }
+      renderInvFlow();
       // Also sync in category modal list
       renderCategories();
     } catch (_) { /* silent */ }
@@ -1380,6 +1546,7 @@
       }
       _partsRows = await res.json();
       renderInvPartsTable();
+      renderInvFlow();
     } catch (e) {
       console.warn("Parts load failed:", e);
       if (tbody) tbody.innerHTML = _invEmptyRow("Gagal memuat daftar suku cadang.", true);
@@ -1395,8 +1562,8 @@
     }
     if (q) {
       rows = rows.filter((p) =>
-        [p.nama_part, p.sku, p.part_number, p.subsistem, p.nama_alat,
-         p.kode_alat, p.supplier, p.status_stok, p.deskripsi]
+        [p.nama_part, p.subsistem, p.nama_alat, p.kode_alat,
+         p.nama_varian, p.status_stok]
           .some((v) => (v ?? "").toString().toLowerCase().includes(q)),
       );
     }
@@ -1496,7 +1663,9 @@
         </td>
         <td class="px-3 py-2.5 min-w-[180px]">
           <p class="font-semibold text-gray-800 dark:text-white text-xs leading-tight">${p.nama_part}</p>
-          <p class="text-[10px] text-gray-400">${p.sku}${p.part_number ? " · " + p.part_number : ""}</p>
+          <p class="text-[10px] text-gray-400">${
+            p.nama_varian || '<span class="italic">semua model</span>'
+          }</p>
         </td>
         <td class="px-3 py-2.5 text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">${p.subsistem || "—"}</td>
         <td class="px-3 py-2.5 text-xs text-gray-600 dark:text-gray-300 whitespace-nowrap">${p.nama_alat || p.kode_alat || "—"}</td>
@@ -1518,7 +1687,6 @@
         </td>
         <td class="px-3 py-2.5 text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">${p.tanggal_terakhir_keluar || "—"}</td>
         <td class="px-3 py-2.5 text-xs text-right tabular-nums text-gray-500 dark:text-gray-400 whitespace-nowrap">${idle}</td>
-        <td class="px-3 py-2.5 text-xs text-gray-500 dark:text-gray-400 max-w-[140px] truncate" title="${p.supplier || ""}">${p.supplier || "—"}</td>
       </tr>`;
     }).join("");
 
@@ -1619,22 +1787,25 @@
     el("inv-bulk-dropdown")?.classList.add("hidden");
     if (!(await ensureXLSX())) return;
     const wb = XLSX.utils.book_new();
+    // Column set matches SparePartCreate exactly. Kode SKU, Nomor Part and
+    // Supplier are gone from the template because they are gone from the table;
+    // an importer that kept offering them would silently discard three columns
+    // the operator had filled in. _importPartsExcel reads these SIX positions.
     const headers = [
-      "Nama Barang", "Kode SKU", "Nomor Part", "Kategori",
-      "Kode Alat", "Satuan", "Harga Satuan", "Stok Minimum", "Supplier",
+      "Nama Barang", "Kategori", "Kode Alat", "Satuan",
+      "Harga Satuan", "Stok Minimum",
     ];
     const sample = [
-      ["Filter Oli GX390", "", "15410-ZE1-023", "ENGINE – GENSET", "GEN", "Pcs", 45000, 4, "PT Sumber Teknik"],
-      ["Busi NGK BPR6ES", "", "BPR6ES", "ENGINE – GENSET", "GEN", "Pcs", 22000, 10, "PT Sumber Teknik"],
+      ["Filter Oli GX390", "ENGINE – GENSET", "GEN", "Pcs", 45000, 4],
+      ["Busi NGK BPR6ES", "ENGINE – GENSET", "GEN", "Pcs", 22000, 10],
     ];
     const ws = XLSX.utils.aoa_to_sheet([headers, ...sample]);
-    ws["!cols"] = [{ wch: 28 }, { wch: 14 }, { wch: 18 }, { wch: 24 },
-                   { wch: 12 }, { wch: 10 }, { wch: 14 }, { wch: 14 }, { wch: 22 }];
+    ws["!cols"] = [{ wch: 28 }, { wch: 24 }, { wch: 12 },
+                   { wch: 10 }, { wch: 14 }, { wch: 14 }];
     const instr = [
       ["Petunjuk Pengisian"],
       ["Nama Barang: WAJIB."],
-      ["Kode SKU: kosongkan untuk dibuat otomatis (SP00001, SP00002, …)."],
-      ["Kategori: harus PERSIS sama dengan nama kategori yang sudah terdaftar."],
+      ["Kategori: WAJIB, harus PERSIS sama dengan nama kategori yang sudah terdaftar."],
       ["Kode Alat: kode alat kerja (GEN, PBT, …), boleh kosong."],
       ["Satuan: Pcs / Unit / Set / Box / Roll / Liter."],
       ["Harga Satuan & Stok Minimum: angka tanpa titik atau koma."],
@@ -1689,18 +1860,17 @@
       );
 
       let success = 0, failed = 0;
+      // Positions must track the template's `headers` above — six columns now
+      // that SKU, Nomor Part and Supplier are gone.
       for (const row of dataRows) {
-        const namaKat = String(row[3] || "").trim().toUpperCase();
+        const namaKat = String(row[1] || "").trim().toUpperCase();
         const body = {
           nama_part: String(row[0]).trim(),
-          sku: String(row[1] || "").trim() || null,
-          part_number: String(row[2] || "").trim() || null,
           id_kategori: katByName.get(namaKat) || null,
-          kode_alat: String(row[4] || "").trim().toUpperCase() || null,
-          unit: String(row[5] || "").trim() || "Pcs",
-          harga_satuan: parseInt(row[6]) || null,
-          stok_min: parseInt(row[7]) || 0,
-          supplier: String(row[8] || "").trim() || null,
+          kode_alat: String(row[2] || "").trim().toUpperCase() || null,
+          unit: String(row[3] || "").trim() || "Pcs",
+          harga_satuan: parseInt(row[4]) || null,
+          stok_min: parseInt(row[5]) || 0,
           jumlah_awal: 0,
         };
         if (!body.id_kategori) { failed++; continue; }
@@ -1714,7 +1884,7 @@
         } catch { failed++; }
       }
       showToast(
-        `Impor suku cadang selesai: ${success} berhasil${failed ? `, ${failed} gagal (kategori tidak dikenal atau SKU ganda)` : ""}.`,
+        `Impor suku cadang selesai: ${success} berhasil${failed ? `, ${failed} gagal (kategori tidak dikenal)` : ""}.`,
         success > 0 ? "success" : "error",
       );
       loadPartCatalog();

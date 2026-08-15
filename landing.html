@@ -273,18 +273,14 @@
       </div>
 
       <!-- ── 1b. SPESIFIKASI ALAT KERJA ───────────────
-           Red-accented panel carrying the technical spec of the asset's
-           variant. Hidden entirely when the asset has no variant assigned,
-           rather than rendering a card full of em-dashes. -->
+           Photo, Merk, Model/Type and the five specification rows from the
+           client's Rekap Spek template. Contents are written entirely by
+           `renderSpekCard()` in js/views/spektek.js, which index.html shares —
+           this element is only the shell, so do not add inner markup here.
+           Hidden when the asset has no Model/Type rather than rendering a card
+           full of em-dashes. -->
       <div id="spec-card"
         class="hidden bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden anim-fade-up delay-1">
-        <div class="px-5 py-3 bg-blue-50/70 dark:bg-gray-700/40 border-b border-gray-100 dark:border-gray-700 flex items-center gap-2">
-          <i class="fas fa-screwdriver-wrench text-kai-blue dark:text-blue-400 text-sm"></i>
-          <h3 class="text-sm font-bold text-kai-blue dark:text-blue-300">Spesifikasi Alat Kerja</h3>
-          <span id="spec-varian"
-            class="badge badge-info ml-auto"></span>
-        </div>
-        <dl id="spec-grid" class="p-5 grid grid-cols-2 sm:grid-cols-3 gap-y-3 gap-x-4 text-xs"></dl>
       </div>
 
       <!-- ── 2. MINI SUMMARY STATS ─────────────────── -->
@@ -460,6 +456,32 @@
             <textarea id="repair-keterangan" rows="3" placeholder="Jelaskan komponen yang diperiksa/diperbaiki..."
               class="w-full border dark:border-gray-600 rounded-xl px-3 py-3 text-sm focus:ring-2 focus:ring-kai-blue focus:outline-none resize-none transition"></textarea>
           </div>
+
+          <!-- ── Sparepart yang dipakai ──
+               The field half of the inventory loop: a technician standing at
+               the machine records the parts fitted, and the warehouse ledger
+               moves in the same transaction as the condition report. Rides on
+               the same POST /api/perbaikan body as the SPA form. -->
+          <div class="border-t border-gray-100 dark:border-gray-700 pt-4">
+            <div class="flex items-center justify-between gap-2 mb-2 flex-wrap">
+              <label class="block text-xs font-semibold text-gray-500">
+                <i class="fas fa-gears text-kai-orange mr-1"></i> Sparepart yang Dipakai
+                <span class="font-normal text-gray-400">(opsional)</span>
+              </label>
+              <select id="repair-gudang" aria-label="Gudang asal sparepart"
+                class="border dark:border-gray-600 rounded-lg px-2 py-1.5 text-[11px] focus:ring-2 focus:ring-kai-blue focus:outline-none transition"></select>
+            </div>
+            <div id="repair-pakai-rows" class="space-y-2"></div>
+            <div class="flex items-center justify-between gap-2 mt-2 flex-wrap">
+              <button type="button" id="repair-pakai-add"
+                class="text-xs font-semibold text-kai-blue dark:text-blue-400 hover:underline">
+                <i class="fas fa-plus"></i> Tambah sparepart
+              </button>
+              <span class="text-[11px] text-gray-500">Total:
+                <b id="repair-pakai-total" class="text-gray-800 dark:text-gray-100">Rp 0</b></span>
+            </div>
+          </div>
+
           <button type="submit" id="btn-submit-repair"
             class="w-full bg-kai-blue hover:bg-blue-800 active:bg-blue-900 text-white font-bold py-3 rounded-xl transition flex items-center justify-center gap-2 text-sm shadow-sm">
             <i class="fas fa-save"></i> Simpan Laporan Pemeliharaan
@@ -634,6 +656,12 @@
   <!-- ══════════════════════════════════════════════════
        SCRIPT
   ══════════════════════════════════════════════════ -->
+  <!-- The Model/Type spec card, shared verbatim with index.html. This page
+       loads no other js/ file, but the spec block is exactly the thing that
+       must not drift between the QR card and the SPA, so it is the one import.
+       It uses `authToken` and `showToast`, both declared below — every call
+       happens at render time, long after this file has evaluated. -->
+  <script src="/js/views/spektek.js"></script>
   <script>
   // ── CONFIG ──────────────────────────────────────────────────────────────
   const API = window.location.origin + "/api";
@@ -646,6 +674,11 @@
   let currentAsset = null;
   let summarySelf  = null; // history/summary entry for this asset
   let activeTab    = "repair";
+  // True when this asset's tool type is never calibrated (KATALOG SFM flag).
+  // Read by renderBadges(), which rewrites the badge's className and would
+  // otherwise resurrect a "BLM KALIBRASI" pill on a machine that is serviced
+  // rather than calibrated.
+  let kalibrasiGated = false;
   let authToken    = sessionStorage.getItem("authToken") || "";
   let activeUser   = sessionStorage.getItem("activeUser") || "";
   let userRole     = "";  // decoded from JWT
@@ -695,15 +728,36 @@
     return `${parseInt(day)} ${BULAN[parseInt(m)-1]} ${y}`;
   }
 
-  // Mirrors getParentLokasiCode in js/core.js / get_parent_lokasi_code in main.py.
-  // Keep all three in step — see the note above the Python version.
+  // The parent-derivation rule, FOURTH copy. The other three are
+  // api/deps.py::get_parent_lokasi_code, seeds/katalog.py::get_parent_lokasi_code
+  // and js/core.js::getParentLokasiCode. All four must stay in step.
+  //
+  // This copy had silently fallen behind: it was still `^JR` with a MANDATORY
+  // dot, so it never received the J[RB] fix the other three got in rev0.5.0.
+  // Two live consequences on this page, both fixed here:
+  //   * every JB asset's card printed its own resort code where the DAOP name
+  //     belongs, because resolveLokasi() falls back to this;
+  //   * `parentCur` below was never equal to the target parent for a JB asset,
+  //     so UPT Tujuan was permanently `wajib` in the Mutasi form.
+  //
+  // No checker reads this file — check_js.py scans js/ and check_html.py reads
+  // index.html — which is exactly how it drifted. Compare by hand when changing
+  // any of the four.
   function getParentLokasiCode(id) {
     if (!id) return null;
-    const arab = id.match(/^JR(\d+)\./i);
-    if (arab) return `D${arab[1]}`;
     const ROMAN = {I:"VI",II:"VII",III:"VIII",IV:"VIV",V:"VV",VI:"VVI",VII:"VVII",VIII:"VVIII",IX:"VIX"};
-    const rom = id.match(/^JR(IV|IX|VIII|VII|VI|V|I{1,3})\./i);
+    // `J[RB]`, not `JR`: the resort tree has two branches, jalan rel and jembatan.
+    const arab = id.match(/^J[RB]\s*(\d+)\./i);
+    if (arab) return `D${arab[1]}`;
+    // Dot optional: the katalog's "JBII" (JB II Padang) has no sub-number.
+    const rom = id.match(/^J[RB]\s*(IV|IX|VIII|VII|VI|V|I{1,3})(?:\.|$)/i);
     if (rom) return ROMAN[rom[1].toUpperCase()] ?? null;
+    // MEKANIK — the third branch. The `$` anchor is load-bearing: alternation
+    // is leftmost-first, so without it "MEIV" matches `I` and returns VI.
+    const mekA = id.match(/^ME\s*(\d+)(?:\.\d+)?$/i);
+    if (mekA) return `D${mekA[1]}`;
+    const mekR = id.match(/^ME\s*(IV|IX|VIII|VII|VI|V|I{1,3})$/i);
+    if (mekR) return ROMAN[mekR[1].toUpperCase()] ?? null;
     // "BY1A" → "BY1". This branch was missing here, so a Balaiyasa child
     // resolved to null and the card showed the raw code instead of the name.
     const by = id.match(/^(BY\d+)[A-Z]+$/i);
@@ -889,7 +943,11 @@
     document.querySelectorAll(".tab-btn").forEach(btn => {
       const t = btn.dataset.tab;
       const cfg = TAB_CFG[t];
-      btn.className = `tab-btn flex-1 py-3 text-xs font-semibold flex items-center justify-center gap-1.5 transition border-b-2 ${t === tab ? cfg.activeCls : INACTIVE_TAB_CLS}`;
+      // `data-gated`, not a `hidden` class: this line REPLACES className
+      // wholesale, so a class added by applyKalibrasiGate() would be wiped on
+      // the first tab switch. The dataset flag survives and is re-applied here.
+      const gated = btn.dataset.gated === "1" ? " hidden" : "";
+      btn.className = `tab-btn flex-1 py-3 text-xs font-semibold flex items-center justify-center gap-1.5 transition border-b-2 ${t === tab ? cfg.activeCls : INACTIVE_TAB_CLS}${gated}`;
     });
     Object.keys(TAB_CFG).forEach(t => {
       const p = qs("#" + TAB_CFG[t].panel);
@@ -964,7 +1022,10 @@
       // on page load plus after every repair, kalibrasi and mutasi save.
       const res = await apiAuth(`/history/summary?id_aset=${encodeURIComponent(uid)}`);
       if (!res.ok) return;
-      const all = await res.json();
+      const body = await res.json();
+      // {total, limit, offset, items} envelope; the array form is tolerated so
+      // a stale cached copy of this page cannot blank the badges.
+      const all = Array.isArray(body) ? body : (body.items || []);
       summarySelf = all.find(x => x.id_aset === uid) || null;
       if (summarySelf) renderBadges(summarySelf);
     } catch(e) { /* silent */ }
@@ -1038,6 +1099,7 @@
     ].join("");
 
     renderSpesifikasi(data.spesifikasi);
+    applyKalibrasiGate(data.perlu_kalibrasi);
 
     // Mini stats (will be enriched when summary loads)
     renderStats(null);
@@ -1046,39 +1108,38 @@
     switchTab("repair");
   }
 
+  // ── KALIBRASI GATE ──────────────────────────────────────────────────────
+  // `perlu_kalibrasi` comes from the KATALOG SFM flag on the tool type. A
+  // genset or an impact wrench is SERVICED, not calibrated, so offering the
+  // tab for one only invites records that cannot mean anything. The badge goes
+  // with it — "BLM KALIBRASI" on a machine that is never calibrated reads as
+  // an outstanding task rather than a non-applicable field.
+  function applyKalibrasiGate(perlu) {
+    kalibrasiGated = perlu === false;
+    document
+      .querySelectorAll('.tab-btn[data-tab="kalibrasi"]')
+      .forEach((b) => {
+        b.dataset.gated = kalibrasiGated ? "1" : "0";
+        b.classList.toggle("hidden", kalibrasiGated);
+      });
+    // `renderBadges()` runs later, when the summary arrives, and REPLACES this
+    // badge's className wholesale — so it re-applies the gate from
+    // `kalibrasiGated` rather than relying on the class surviving.
+    qs("#badge-kalib")?.classList.toggle("hidden", kalibrasiGated);
+    if (kalibrasiGated && activeTab === "kalibrasi") switchTab("repair");
+  }
+
   // ── SPESIFIKASI ALAT KERJA ──────────────────────────────────────────────
-  // Populates the red-accented panel. Rows with no value are dropped rather
-  // than printed as em-dashes, and the whole card stays hidden when the asset
-  // has no variant — a spec table of nothing but dashes tells the reader less
-  // than no table at all.
+  // Delegated to the shared renderer in js/views/spektek.js, which index.html
+  // uses for the same block. This used to be a local copy over a fixed
+  // Merk/Tipe/Kapasitas/Daya/Dimensi/Berat field list — a shape that fitted a
+  // genset and nothing else, and that the client's Rekap Spek template
+  // replaced with five free-form label/value rows plus a photo.
+  //
+  // The whole card still hides when the asset has no Model/Type: a spec table
+  // of nothing but dashes tells the reader less than no table at all.
   function renderSpesifikasi(spec) {
-    const card = qs("#spec-card");
-    if (!card) return;
-    if (!spec) { card.classList.add("hidden"); return; }
-
-    const FIELDS = [
-      ["merk",       "Merk"],
-      ["tipe_model", "Tipe / Model"],
-      ["kapasitas",  "Kapasitas"],
-      ["daya",       "Daya"],
-      ["dimensi",    "Dimensi (P x L x T)"],
-      ["berat",      "Berat"],
-      ["keterangan", "Keterangan"],
-    ];
-
-    const rows = FIELDS
-      .filter(([key]) => spec[key])
-      .map(([key, label]) =>
-        `<div><dt class="text-[9px] uppercase font-bold text-gray-400 dark:text-gray-500 tracking-wider mb-0.5">${label}</dt>
-         <dd class="font-semibold text-gray-800 dark:text-gray-100 text-sm">${spec[key]}</dd></div>`);
-
-    if (!rows.length && !spec.nama_varian) { card.classList.add("hidden"); return; }
-
-    qs("#spec-varian").textContent = spec.nama_varian || "";
-    qs("#spec-grid").innerHTML = rows.length
-      ? rows.join("")
-      : `<p class="col-span-full text-xs text-gray-400 italic">Spesifikasi teknis belum dilengkapi untuk varian ini.</p>`;
-    card.classList.remove("hidden");
+    window.renderSpekCard("spec-card", spec);
   }
 
   // ── BADGES from summary ─────────────────────────────────────────────────
@@ -1086,7 +1147,12 @@
     // Kalibrasi badge
     const ks = s.kalibrasi?.latest_status;
     const bkal = qs("#badge-kalib");
-    if (ks === "LULUS") {
+    // Every branch below assigns className wholesale, which would wipe the
+    // `hidden` applied by applyKalibrasiGate(). Leave the badge alone entirely
+    // for a tool type that is serviced but never calibrated.
+    if (kalibrasiGated) {
+      bkal?.classList.add("hidden");
+    } else if (ks === "LULUS") {
       bkal.className = "anim-badge-pop delay-1 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400";
       bkal.innerHTML = `<i class="fas fa-circle text-[6px]"></i> LULUS KALIBRASI`;
     } else if (ks === "BERSYARAT") {
@@ -1387,8 +1453,148 @@
       b.classList.remove("bg-green-100","bg-red-100","ring-2","ring-green-400","ring-red-400","opacity-50");
     });
     qs("#repair-kondisi").value = "";
+    initRepairPakai();
     qs("#modal-repair").classList.remove("hidden");
   }
+
+  // ── SPAREPART PICKER (field form) ───────────────────────────────────────
+  // Mirrors the picker on the SPA's Form Pemeliharaan; both post the array
+  // inside the /api/perbaikan body so the report and the stock movements
+  // commit together. Parts are filtered to this asset's alat kerja AND its
+  // Model/Type — a GX390 carburettor fits nothing else.
+  let repairParts = new Map();
+
+  async function initRepairPakai() {
+    const rows = qs("#repair-pakai-rows");
+    const gud  = qs("#repair-gudang");
+    if (!rows || !gud) return;
+    rows.innerHTML = "";
+    renderRepairPakaiTotal();
+    if (!isLoggedIn()) return;
+
+    try {
+      if (!gud.options.length) {
+        const gres = await apiAuth("/inventaris/gudang");
+        if (gres.ok) {
+          const gd = await gres.json();
+          const list = Array.isArray(gd) ? gd : (gd.items || []);
+          gud.innerHTML = list
+            .map(g => `<option value="${g.id_gudang}">${window.spekEscape(g.nama)}</option>`)
+            .join("");
+        }
+      }
+      await reloadRepairParts();
+    } catch (_) { /* the picker is optional — never block the report */ }
+  }
+
+  async function reloadRepairParts() {
+    const gud = qs("#repair-gudang");
+    const p = new URLSearchParams();
+    if (currentAsset?.kode_alat_code) p.set("kode_alat", currentAsset.kode_alat_code);
+    if (currentAsset?.spesifikasi?.id_varian)
+      p.set("id_varian", currentAsset.spesifikasi.id_varian);
+    if (gud?.value) p.set("id_gudang", gud.value);
+
+    const res = await apiAuth(`/inventaris/parts?${p}`);
+    if (!res.ok) return;
+    repairParts = new Map((await res.json()).map(x => [String(x.id_part), x]));
+    document.querySelectorAll("#repair-pakai-rows [data-pakai-row]").forEach(row => {
+      const sel = row.querySelector("[data-pakai-part]");
+      fillRepairPartOptions(sel, sel.value);
+      updateRepairRowHint(row);
+    });
+    renderRepairPakaiTotal();
+  }
+
+  function fillRepairPartOptions(select, selected) {
+    const opts = [...repairParts.values()].map(x =>
+      `<option value="${x.id_part}"${String(x.id_part) === String(selected) ? " selected" : ""}>` +
+      `${window.spekEscape(x.nama_part)} — stok ${x.stok_sekarang}</option>`).join("");
+    select.innerHTML = `<option value="">— Pilih sparepart —</option>` +
+      (opts || `<option value="" disabled>Tidak ada sparepart yang cocok</option>`);
+  }
+
+  function addRepairPakaiRow() {
+    const wrap = qs("#repair-pakai-rows");
+    if (!wrap) return;
+    const row = document.createElement("div");
+    row.dataset.pakaiRow = "1";
+    row.className = "flex items-end gap-2";
+    row.innerHTML = `
+      <div class="flex-1 min-w-0">
+        <select data-pakai-part aria-label="Pilih sparepart"
+          class="w-full border dark:border-gray-600 rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-kai-blue focus:outline-none transition"></select>
+      </div>
+      <input type="number" min="1" step="1" value="1" data-pakai-qty aria-label="Jumlah"
+        class="w-16 border dark:border-gray-600 rounded-xl px-2 py-2 text-xs focus:ring-2 focus:ring-kai-blue focus:outline-none transition" />
+      <button type="button" data-pakai-remove aria-label="Hapus baris"
+        class="w-8 h-8 shrink-0 rounded-lg text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition">
+        <i class="fas fa-trash-alt text-xs"></i></button>`;
+    wrap.appendChild(row);
+    fillRepairPartOptions(row.querySelector("[data-pakai-part]"), "");
+    const hint = document.createElement("p");
+    hint.dataset.pakaiHint = "1";
+    hint.className = "text-[10px] text-gray-400 -mt-1";
+    wrap.appendChild(hint);
+    row.dataset.hintId = "1";
+  }
+
+  function updateRepairRowHint(row) {
+    const part = repairParts.get(String(row.querySelector("[data-pakai-part]").value));
+    const hint = row.nextElementSibling?.dataset?.pakaiHint ? row.nextElementSibling : null;
+    if (!hint) return;
+    if (!part) { hint.textContent = ""; return; }
+    const n = parseInt(row.querySelector("[data-pakai-qty]").value, 10) || 0;
+    const sisa = part.stok_sekarang - n;
+    hint.className = sisa < 0
+      ? "text-[10px] text-red-500 font-semibold -mt-1"
+      : "text-[10px] text-gray-400 -mt-1";
+    hint.textContent = sisa < 0
+      ? `Stok kurang ${Math.abs(sisa)}`
+      : `Sisa ${sisa} · Rp ${((part.harga_satuan || 0) * n).toLocaleString("id-ID")}`;
+  }
+
+  function renderRepairPakaiTotal() {
+    const el = qs("#repair-pakai-total");
+    if (!el) return;
+    let total = 0;
+    document.querySelectorAll("#repair-pakai-rows [data-pakai-row]").forEach(row => {
+      const part = repairParts.get(String(row.querySelector("[data-pakai-part]").value));
+      const n = parseInt(row.querySelector("[data-pakai-qty]").value, 10) || 0;
+      if (part) total += (part.harga_satuan || 0) * n;
+    });
+    el.textContent = `Rp ${total.toLocaleString("id-ID")}`;
+  }
+
+  function collectRepairPakai() {
+    const gudang = qs("#repair-gudang")?.value;
+    const out = [];
+    document.querySelectorAll("#repair-pakai-rows [data-pakai-row]").forEach(row => {
+      const idPart = parseInt(row.querySelector("[data-pakai-part]").value, 10);
+      const jumlah = parseInt(row.querySelector("[data-pakai-qty]").value, 10);
+      if (!idPart || !jumlah || jumlah <= 0) return;
+      out.push({ id_part: idPart, jumlah, id_gudang: gudang ? parseInt(gudang, 10) : null });
+    });
+    return out;
+  }
+
+  qs("#repair-pakai-add")?.addEventListener("click", addRepairPakaiRow);
+  qs("#repair-gudang")?.addEventListener("change", reloadRepairParts);
+  ["input", "change"].forEach(evt =>
+    qs("#repair-pakai-rows")?.addEventListener(evt, e => {
+      const row = e.target.closest("[data-pakai-row]");
+      if (!row) return;
+      updateRepairRowHint(row);
+      renderRepairPakaiTotal();
+    }));
+  qs("#repair-pakai-rows")?.addEventListener("click", e => {
+    if (!e.target.closest("[data-pakai-remove]")) return;
+    const row = e.target.closest("[data-pakai-row]");
+    const hint = row?.nextElementSibling?.dataset?.pakaiHint ? row.nextElementSibling : null;
+    hint?.remove();
+    row?.remove();
+    renderRepairPakaiTotal();
+  });
 
   function openKalibModal() {
     qs("#kalib-subtitle").textContent = currentAsset?.id_aset || UID;
@@ -1461,16 +1667,27 @@
     btn.disabled = true;
 
     try {
+      const pemakaian = collectRepairPakai();
       const res = await apiAuth("/perbaikan", {
         method: "POST",
         body: JSON.stringify({
           id_aset: UID,
           kondisi,
           keterangan: upt ? `[UPT: ${upt}] ${ket}` : ket,
+          ...(pemakaian.length ? { pemakaian } : {}),
         }),
       });
+      // The server's `detail` carries the actionable message here — e.g.
+      // "Stok BUSI tidak mencukupi. Tersedia 2 Piece, diminta 5".
       if (!res.ok) throw new Error((await res.json().catch(()=>({}))).detail || "Gagal menyimpan.");
-      showToast("Laporan pemeliharaan berhasil disimpan!", "success");
+      const body = await res.json().catch(() => ({}));
+      const dipakai = (body.pemakaian || []).length;
+      showToast(
+        dipakai
+          ? `Laporan disimpan — ${dipakai} sparepart tercatat keluar.`
+          : "Laporan pemeliharaan berhasil disimpan!",
+        "success",
+      );
       qs("#modal-repair").classList.add("hidden");
       await loadRepair();
       await fetchSummaryForAsset(UID);

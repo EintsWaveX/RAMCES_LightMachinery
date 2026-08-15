@@ -23,9 +23,11 @@ let _afkirSortFilters = {};
 async function loadAfkirCards() {
   const container = document.getElementById("afkir-cards-container");
   if (!container) return;
-  container.innerHTML = `<div class="col-span-full text-center text-gray-400 py-14"><i class="fas fa-spinner fa-spin text-2xl"></i></div>`;
+  // Placeholder cards rather than the blanking overlay, so the grid keeps its
+  // shape while the list is refetched.
+  skeletonCards("afkir-cards-container", 6);
   try {
-    const res = await apiFetch("/aset/afkir");
+    const res = await apiFetch("/aset/afkir", { background: true });
     if (!res.ok) throw new Error();
     _afkirDb = await res.json();
     renderAfkirCards();
@@ -83,6 +85,23 @@ function renderAfkirCards() {
     }
     return true;
   });
+
+  // Same shared renderer and the same filter keys as Kelola Data Aset — the
+  // two views hold one shape in two variables, so surfacing it is one function.
+  window.renderFilterChips?.("afkir-filter-chips", _afkirSortFilters, () => {
+    resetPage("afkir");
+    renderAfkirCards();
+  }, [
+    {
+      key: "__q",
+      label: "Cari",
+      value: (document.getElementById("search-afkir")?.value || "").trim(),
+      clear: () => {
+        const box = document.getElementById("search-afkir");
+        if (box) box.value = "";
+      },
+    },
+  ]);
 
   // Sort
   filtered = [...filtered].sort((a, b) => {

@@ -13,10 +13,6 @@ let _benchmarkPct = (() => {
   const parsed = parseInt(raw || "59", 10);
   return isNaN(parsed) ? 59 : Math.max(0, Math.min(100, parsed));
 })();
-let _dashFilter = { alat: "", pengadaan: "", tahun: "" };
-// Tren Perbaikan's own year, kept out of _dashFilter: the shared bar's "Semua
-// Tahun" must not silently collapse to a single year here.
-let _dashTrendTahun = "";
 let _dashTabIndex = 0;
 let _dashChartBar = null;
 let _dashChartAvail = null;
@@ -28,122 +24,217 @@ let _dashChartTrend = null;
 // either tab boots the repair dashboard.
 const _DASH_TABS = ["matrix", "bar", "avail", "trend", "perbaikan", "mcf"];
 
-function _dashFilteredDb() {
+// ══════════════════════════════════════════════════════════════════════
+// PER-TAB FILTERS
+// ══════════════════════════════════════════════════════════════════════
+//
+// There used to be ONE filter bar above all six tabs, carrying Semua Alat
+// Kerja / Pengadaan / Tahun. Three of the six ignored it: Tren Perbaikan had
+// its own year picker, and Laporan Perbaikan and Kurva MCF have their own
+// Lokasi + Tahun row. A control that visibly applies to only half the screen is
+// worse than no control, because there is no way to tell which half.
+//
+// Each tab now carries its own row AND its own selection — switching to
+// Grafik Ketersediaan and narrowing to one alat kerja leaves the Matriks
+// exactly as it was. That is what "individually per tabs" means: the rows are
+// independent, not merely duplicated.
+//
+// One builder, four declarations. Adding a filter to a tab is a line in
+// _DASH_FILTER_SPEC, never another block of markup in index.html.
+let _dashFilters = {
+  matrix: { alat: "", pengadaan: "", tahun: "" },
+  bar: { alat: "", pengadaan: "", tahun: "" },
+  avail: { alat: "", pengadaan: "", tahun: "" },
+  // Trend plots twelve months of ONE year, so its `tahun` is never "" —
+  // _renderDashFilterRow seeds it with the newest year that holds data.
+  trend: { alat: "", pengadaan: "", tahun: "" },
+};
+
+// `legend` is rendered to the right of the controls. Only the matrix gets the
+// four-swatch key: it is the only panel that paints cells by status, and the
+// Chart.js panels draw their own legends from the series they actually plot.
+const _DASH_FILTER_SPEC = {
+  matrix: {
+    fields: ["alat", "pengadaan", "tahun"],
+    legend: `
+      <span class="dash-key"><span class="dash-swatch bg-green-500"></span>SO — Siap Operasi</span>
+      <span class="dash-key"><span class="dash-swatch bg-red-500"></span>TSO — Tidak Siap</span>
+      <span class="dash-key"><span class="dash-swatch bg-gradient-to-br from-green-300 to-red-300"></span>Lebih dari 1 unit</span>
+      <span class="dash-key"><span class="dash-swatch border border-gray-300 dark:border-gray-600"></span>— Tidak ada alat</span>`,
+  },
+  bar: {
+    fields: ["alat", "pengadaan", "tahun"],
+    legend: "", // Chart.js prints SO / TSO from the series themselves
+  },
+  avail: {
+    fields: ["alat", "pengadaan", "tahun"],
+    // The bar colours encode rank, which nothing on the chart said out loud.
+    legend: `
+      <span class="dash-key"><span class="dash-swatch" style="background:rgba(34,197,94,.85)"></span>Tertinggi</span>
+      <span class="dash-key"><span class="dash-swatch" style="background:rgba(59,130,246,.75)"></span>Lainnya</span>
+      <span class="dash-key"><span class="dash-swatch" style="background:rgba(239,68,68,.85)"></span>Terendah</span>
+      <span class="dash-key"><span class="dash-swatch h-0.5 self-center" style="background:rgba(239,68,68,.9)"></span>Rata-rata</span>`,
+  },
+  trend: {
+    fields: ["alat", "pengadaan", "tahun"],
+    // No "Semua Tahun": the chart is twelve months of one year, and offering an
+    // all-years option only invites a selection it cannot honour. The previous
+    // code accepted it and silently substituted the current year, which read as
+    // the filter being ignored.
+    tahunAllLabel: null,
+    legend: "",
+  },
+};
+
+function _dashFilterFor(tabId) {
+  return _dashFilters[tabId] || { alat: "", pengadaan: "", tahun: "" };
+}
+
+function _dashFilteredDb(tabId) {
+  const f = _dashFilterFor(tabId);
   return db.filter((item) => {
-    // FIX 1: Gunakan properti yang benar (kode_alat)
-    if (_dashFilter.alat && item.kode_alat !== _dashFilter.alat) return false;
+    if (f.alat && item.kode_alat !== f.alat) return false;
 
     // The dropdown's values are the ID segments "1"/"2"; canonicalPengadaan
     // maps those and every stored spelling onto the same two constants. The
     // old code mapped "2" to the literal "DAOP" and then substring-tested it,
     // so any asset stored as plain "DIVRE" was silently excluded.
-    if (!_pengadaanMatches(item.sumber_pengadaan, _dashFilter.pengadaan))
-      return false;
+    if (!_pengadaanMatches(item.sumber_pengadaan, f.pengadaan)) return false;
 
-    if (
-      _dashFilter.tahun &&
-      String(item.tanggal_pembelian ?? "").slice(0, 4) !== _dashFilter.tahun
-    )
+    if (f.tahun && String(item.tanggal_pembelian ?? "").slice(0, 4) !== f.tahun)
       return false;
 
     return true;
   });
 }
 
-function _buildDashFilterBar() {
-  // Alat dropdown
-  const alatSel = document.getElementById("dash-filter-alat");
-  if (alatSel && alatSel.options.length <= 1) {
-    alatKerjaData.forEach((a) => {
-      const o = document.createElement("option");
-      o.value = a.code;
-      o.textContent = a.name;
-      alatSel.appendChild(o);
-    });
+/**
+ * Build (or refresh) one tab's filter row.
+ *
+ * Called on every render rather than once, because the year counts change
+ * whenever the asset list is refetched — a cached row would keep reporting
+ * "2025 (623)" after a mutation made it 624.
+ *
+ * The <select> elements are recreated each time, so the change handlers are
+ * attached to the ROW via delegation instead of to each control. That also
+ * means there is exactly one listener per tab no matter how often this runs.
+ */
+function _renderDashFilterRow(tabId) {
+  const mount = document.getElementById(`dash-filters-${tabId}`);
+  const spec = _DASH_FILTER_SPEC[tabId];
+  if (!mount || !spec) return;
+
+  const f = _dashFilterFor(tabId);
+  // Counts are scoped to this tab's OTHER filters, so the year list answers
+  // "how many of what I am currently looking at", not "how many in the fleet".
+  const scoped = db.filter(
+    (item) =>
+      (!f.alat || item.kode_alat === f.alat) &&
+      _pengadaanMatches(item.sumber_pengadaan, f.pengadaan),
+  );
+  const counts = _yearCounts(scoped);
+
+  const SELECT_CLASS =
+    "text-xs px-3 py-2.5 rounded-lg border border-gray-200 dark:border-gray-600 " +
+    "bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 outline-none " +
+    "focus:border-kai-blue transition min-h-[38px]";
+
+  const controls = [];
+  if (spec.fields.includes("alat")) {
+    controls.push(
+      `<select data-dash-field="alat" aria-label="Filter alat kerja"
+               class="${SELECT_CLASS} min-w-[150px]">
+         <option value="">Semua Alat Kerja</option>
+         ${alatKerjaData
+           .map(
+             (a) =>
+               `<option value="${a.code}"${a.code === f.alat ? " selected" : ""}>${spekEscape(a.name)}</option>`,
+           )
+           .join("")}
+       </select>`,
+    );
+  }
+  if (spec.fields.includes("pengadaan")) {
+    const opt = (v, label) =>
+      `<option value="${v}"${v === f.pengadaan ? " selected" : ""}>${label}</option>`;
+    controls.push(
+      `<select data-dash-field="pengadaan" aria-label="Filter sumber pengadaan"
+               class="${SELECT_CLASS}">
+         ${opt("", "Semua Pengadaan")}${opt("1", "PUSAT")}${opt("2", "DAOP / DIVRE")}
+       </select>`,
+    );
+  }
+  if (spec.fields.includes("tahun")) {
+    controls.push(
+      `<select data-dash-field="tahun" aria-label="Filter tahun pembelian"
+               class="${SELECT_CLASS} min-w-[130px]"></select>`,
+    );
   }
 
-  // Year dropdowns. Rebuilt on every call rather than once, because the "(128)"
-  // / "(kosong)" counts change whenever the asset list is refetched.
-  const counts = _yearCounts(db);
-  const years = [...counts.keys()].map(Number).filter((n) => !isNaN(n));
-  const curYear = new Date().getFullYear();
-  const oldest = years.length ? Math.min(...years) : curYear - 10;
-  const newest = Math.max(curYear, ...(years.length ? years : [curYear]));
+  mount.className =
+    "dash-filter-row flex flex-col sm:flex-row sm:items-center gap-3 mb-4 " +
+    "pb-3 border-b border-gray-100 dark:border-gray-700/60";
+  mount.innerHTML =
+    `<div class="flex flex-wrap gap-2 flex-1 min-w-0">${controls.join("")}</div>` +
+    (spec.legend
+      ? `<div class="flex flex-wrap gap-x-4 gap-y-1 text-[11px] shrink-0
+                     text-gray-600 dark:text-gray-300">${spec.legend}</div>`
+      : "");
 
-  const fillYears = (sel, allLabel) => {
-    if (!sel) return;
-    const previous = sel.value;
-    sel.innerHTML = "";
-    if (allLabel !== null) {
-      const o = document.createElement("option");
-      o.value = "";
-      o.textContent = allLabel;
-      sel.appendChild(o);
-    }
-    for (let y = newest; y >= Math.max(1950, oldest); y--) {
-      const o = document.createElement("option");
-      o.value = String(y);
-      o.textContent = yearOptionLabel(y, counts);
-      sel.appendChild(o);
-    }
-    sel.value = previous || (allLabel !== null ? "" : String(newest));
-  };
+  // Years are filled by the shared helper so this picker obeys exactly the same
+  // rule as the five in the sort modals: only years that hold data, each with
+  // its count. See fillYearSelect() in js/views/sort-modals.js.
+  const tahunSel = mount.querySelector('[data-dash-field="tahun"]');
+  if (tahunSel) {
+    tahunSel.value = f.tahun;
+    fillYearSelect(
+      tahunSel,
+      counts,
+      spec.tahunAllLabel === null ? null : "Semua Tahun",
+    );
+    // Trend has no all-years option, so it must land on a concrete year — and
+    // that year has to be written back into the state or the chart and the box
+    // would disagree on first paint.
+    f.tahun = tahunSel.value;
+  }
 
-  fillYears(document.getElementById("dash-filter-tahun"), "Semua Tahun");
-  // Tren Perbaikan plots twelve months of a single year, so it gets no
-  // all-years option — this is the one dropdown that stays single-year.
-  fillYears(document.getElementById("dash-trend-tahun"), null);
+  if (!mount.dataset.wired) {
+    mount.dataset.wired = "1";
+    mount.addEventListener("change", (e) => {
+      const field = e.target?.dataset?.dashField;
+      if (!field) return;
+      _dashFilterFor(tabId)[field] = e.target.value;
+      // Narrowing alat or pengadaan changes which years hold anything, so the
+      // row rebuilds itself before the panel repaints.
+      _renderDashFilterRow(tabId);
+      updateDashboardStats();
+    });
+  }
+}
 
-  // Wire filter changes (only once)
-  if (!window._dashFiltersWired) {
-    window._dashFiltersWired = true;
-    ["dash-filter-alat", "dash-filter-pengadaan", "dash-filter-tahun"].forEach(
-      (id) => {
-        document.getElementById(id)?.addEventListener("change", (e) => {
-          const key = {
-            "dash-filter-alat": "alat",
-            "dash-filter-pengadaan": "pengadaan",
-            "dash-filter-tahun": "tahun",
-          }[id];
-          _dashFilter[key] = e.target.value;
-          updateDashboardStats();
-        });
-      },
+// Tab navigation. Wired once; the filter rows wire themselves per tab.
+function _wireDashChrome() {
+  if (window._dashChromeWired) return;
+  window._dashChromeWired = true;
+
+  document.querySelectorAll(".dash-tab-btn").forEach((btn, i) => {
+    btn.addEventListener("click", () => _switchDashTab(i));
+  });
+
+  document
+    .getElementById("dash-tab-prev")
+    ?.addEventListener("click", () =>
+      _switchDashTab((_dashTabIndex - 1 + _DASH_TABS.length) % _DASH_TABS.length),
+    );
+  document
+    .getElementById("dash-tab-next")
+    ?.addEventListener("click", () =>
+      _switchDashTab((_dashTabIndex + 1) % _DASH_TABS.length),
     );
 
-    document
-      .getElementById("dash-trend-tahun")
-      ?.addEventListener("change", (e) => {
-        _dashTrendTahun = e.target.value;
-        _renderTrendPanel();
-      });
-
-    // Tab clicks
-    document.querySelectorAll(".dash-tab-btn").forEach((btn, i) => {
-      btn.addEventListener("click", () => _switchDashTab(i));
-    });
-
-    // Arrow buttons
-    document
-      .getElementById("dash-tab-prev")
-      ?.addEventListener("click", () =>
-        _switchDashTab(
-          (_dashTabIndex - 1 + _DASH_TABS.length) % _DASH_TABS.length,
-        ),
-      );
-    document
-      .getElementById("dash-tab-next")
-      ?.addEventListener("click", () =>
-        _switchDashTab((_dashTabIndex + 1) % _DASH_TABS.length),
-      );
-
-    // Dot clicks
-    document.querySelectorAll(".dash-dot").forEach((dot) => {
-      dot.addEventListener("click", () =>
-        _switchDashTab(parseInt(dot.dataset.dot)),
-      );
-    });
-  }
+  document.querySelectorAll(".dash-dot").forEach((dot) => {
+    dot.addEventListener("click", () => _switchDashTab(parseInt(dot.dataset.dot)));
+  });
 }
 
 function _switchDashTab(idx) {
@@ -166,6 +257,12 @@ function _switchDashTab(idx) {
 
 function _renderDashActivePanel() {
   const tabId = _DASH_TABS[_dashTabIndex];
+  // Only the ACTIVE tab's row is rebuilt. The others keep their DOM and their
+  // selection, which is what makes the filters independent per tab rather than
+  // four copies of one shared value.
+  _renderDashFilterRow(tabId);
+  _syncDashKpiScope(tabId);
+
   if (tabId === "matrix") _renderMatrixPanel();
   if (tabId === "bar") _renderBarPanel();
   if (tabId === "avail") _renderAvailPanel();
@@ -182,7 +279,7 @@ function _renderMatrixPanel() {
   const tbody = document.getElementById("dash-matrix-tbody");
   if (!thead || !tbody) return;
 
-  const filtered = _dashFilteredDb();
+  const filtered = _dashFilteredDb("matrix");
 
   // FIX 3: Jangan membuang BALAIYASA. Gunakan seluruh lokasiData.
   let regions = lokasiData.filter(r => (r.tipe || "").toUpperCase() !== "BALAIYASA");
@@ -322,7 +419,7 @@ function _renderAvailPanel() {
   const canvas = document.getElementById("dash-chart-avail");
   if (!canvas) return;
 
-  const filtered = _dashFilteredDb();
+  const filtered = _dashFilteredDb("avail");
 
   // Use non-BALAIYASA lokasi, same as matrix
   const regions = lokasiData.filter(
@@ -465,7 +562,7 @@ function _renderBarPanel() {
   const canvas = document.getElementById("dash-chart-bar");
   if (!canvas) return;
 
-  const filtered = _dashFilteredDb();
+  const filtered = _dashFilteredDb("bar");
   const regions = lokasiData.filter((r) => (r.tipe || "").toUpperCase() !== "BALAIYASA");
 
   const assetsByLokasi = {};
@@ -545,14 +642,13 @@ function _renderTrendPanel() {
   const canvas = document.getElementById("dash-chart-trend");
   if (!canvas) return;
 
-  // This panel's own picker, falling back to the shared bar only when it holds
-  // a concrete year. Previously it read _dashFilter.tahun directly and quietly
-  // substituted the current year whenever that was "Semua Tahun".
+  // This tab's own year. It is never "" — _renderDashFilterRow seeds it with
+  // the newest year that holds data, because the chart is twelve months of ONE
+  // year and has nothing to draw for "Semua Tahun". The previous code accepted
+  // an empty value and silently substituted the current calendar year, which
+  // read as the filter being ignored.
   const selectedYear =
-    _dashTrendTahun ||
-    document.getElementById("dash-trend-tahun")?.value ||
-    _dashFilter.tahun ||
-    String(new Date().getFullYear());
+    _dashFilterFor("trend").tahun || String(new Date().getFullYear());
   const months = BULAN_PANJANG;
 
   // Count perbaikan per month from db riwayat — we derive from latest_date in history summary
@@ -562,7 +658,10 @@ function _renderTrendPanel() {
   const monthSo = new Array(12).fill(0);
   const monthTso = new Array(12).fill(0);
 
-  db.forEach((item) => {
+  // Was `db.forEach` — the panel ignored its own alat and pengadaan filters
+  // entirely, so narrowing to one tool type changed the dropdown and nothing
+  // else on the chart.
+  _dashFilteredDb("trend").forEach((item) => {
     const d = item.waktu_update || item.tanggal_pembelian;
     if (!d) return;
     // Normalize: handle "YYYY-MM-DD", "YYYY-MM-DD HH:MM:SS", ISO strings
@@ -625,8 +724,43 @@ function _renderTrendPanel() {
   });
 }
 
+/**
+ * Keep the KPI strip honest about what it is counting.
+ *
+ * The strip sits ABOVE the tabs, so with per-tab filters it has to say which
+ * tab's filter it is following — otherwise "Total 250" over a panel showing the
+ * whole fleet is simply a wrong number with no way to tell.
+ *
+ * Laporan Perbaikan and Kurva MCF filter by LOKASI, not by alat kerja, so the
+ * strip cannot follow them at all; it shows unfiltered fleet totals and says so.
+ */
+function _syncDashKpiScope(tabId) {
+  const el = document.getElementById("dash-kpi-scope");
+  if (!el) return;
+
+  if (!_DASH_FILTER_SPEC[tabId]) {
+    el.textContent = "seluruh armada — tab ini memakai filter Lokasi sendiri";
+    return;
+  }
+  const f = _dashFilterFor(tabId);
+  const bits = [];
+  if (f.alat) {
+    const nama = alatKerjaData.find((a) => a.code === f.alat)?.name || f.alat;
+    bits.push(nama);
+  }
+  if (f.pengadaan) bits.push(f.pengadaan === "1" ? "PUSAT" : "DAOP / DIVRE");
+  if (f.tahun) bits.push(`tahun ${f.tahun}`);
+  el.textContent = bits.length ? bits.join(" · ") : "seluruh armada";
+}
+
 function updateDashboardStats() {
-  const filtered = _dashFilteredDb();
+  _wireDashChrome();
+
+  // The headline follows the ACTIVE tab's filter, so the numbers above the
+  // panel and the panel itself can never disagree. Tabs with no alat/pengadaan
+  // filter of their own (perbaikan, mcf) fall back to the whole fleet.
+  const tabId = _DASH_TABS[_dashTabIndex];
+  const filtered = _DASH_FILTER_SPEC[tabId] ? _dashFilteredDb(tabId) : db;
 
   const so = filtered.filter((i) => i.status_terakhir === "SO").length;
   const tso = filtered.filter((i) => i.status_terakhir === "TSO").length;
@@ -652,6 +786,5 @@ function updateDashboardStats() {
     deltaEl.className = `text-xs font-bold mb-0.5 ${delta >= 0 ? "text-green-500" : "text-red-500"}`;
   }
 
-  _buildDashFilterBar();
   _renderDashActivePanel();
 }

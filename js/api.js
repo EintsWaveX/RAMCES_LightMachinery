@@ -73,28 +73,12 @@ async function fetchMasterData() {
   }
 }
 
-async function fetchLoginRegions() {
-  beginLoading();
-  try {
-    const res = await fetch("/api/master/lokasi");
-    if (!res.ok) return;
-    const data = await res.json();
-    const sel = document.getElementById("login-region");
-    if (!sel) return;
-    // Only show parent-level locations; exclude UPTs (JR* codes)
-    const parentTypes = ["DAOP", "DIVRE", "PUSAT", "BALAIYASA"];
-    const parents = data.filter((l) =>
-      parentTypes.includes((l.tipe || "").toUpperCase()),
-    );
-    sel.innerHTML = parents
-      .map((l) => `<option value="${l.id_lokasi}">${l.nama_lokasi}</option>`)
-      .join("");
-  } catch (e) {
-    // master data not seeded yet
-  } finally {
-    endLoading();
-  }
-}
+// NOTE: fetchLoginRegions() used to live here, filling a region <select> on the
+// login screen. Both it and the selector are gone: a user's region is a property
+// of their account, read from the stored row by the server, not something chosen
+// at sign-in. Choosing it (alongside choosing a role) was the escalation hole.
+// The login screen now makes one unauthenticated call — none — and the region
+// list is fetched after login by fetchMasterData().
 
 // --- FETCH API WRAPPER ---
 // opts.background — skip the loading overlay (used by the polling fallback, so
@@ -140,31 +124,86 @@ async function apiFetch(endpoint, options = {}) {
 // --- KOMUNIKASI DATABASE ---
 // opts.silent — suppress the failure toast (used by the background poller so a
 // transient network blip doesn't spam the user).
+// How many rows to pull per request. Matches DEFAULT_PAGE in main.py.
+const ASET_PAGE_SIZE = 1000;
+
+// Normalise one server row into the shape every view reads.
+function _decorateAset(a) {
+  // Defensive: ensure id_lokasi_raw is actually a code, not a name
+  // A code is typically short (like "D1", "JR1.1"), a name is longer ("DAOP 1 Jakarta")
+  const rawLokasi = a.id_lokasi || "";
+  const isProbablyCode = rawLokasi.length <= 10 && !rawLokasi.includes(" ");
+
+  return {
+    ...a,
+    id_lokasi_raw: isProbablyCode
+      ? rawLokasi
+      : lokasiData.find((l) => l.name === rawLokasi)?.code ||
+        uptDatabase.find((u) => u.nama === rawLokasi)?.upt ||
+        rawLokasi,
+
+    // Perbaikan: tangkap "lokasi_name" dari backend
+    id_lokasi_display: a.lokasi_name || a.id_lokasi_name || rawLokasi,
+    kode_alat_name: a.kode_alat_name || a.kode_alat,
+  };
+}
+
+/**
+ * Fetch every page of an endpoint that returns {total, limit, offset, items}.
+ *
+ * The alternative — one unbounded request — was ~4.5 MB for /api/aset and
+ * ~16 MB for /api/history/summary at 10k assets, on every login AND after every
+ * mutation, with nothing on screen until the last byte arrived.
+ *
+ * `onProgress` reports (loaded, total) so the overlay can count up instead of
+ * showing an indeterminate spinner for several seconds.
+ *
+ * A hard page cap stops a server that ignores `offset` from looping forever.
+ */
+async function fetchAllPages(endpoint, { background, onProgress } = {}) {
+  const items = [];
+  let offset = 0;
+  let total = null;
+  const sep = endpoint.includes("?") ? "&" : "?";
+
+  for (let page = 0; page < 200; page++) {
+    const res = await apiFetch(
+      `${endpoint}${sep}limit=${ASET_PAGE_SIZE}&offset=${offset}`,
+      { background: !!background },
+    );
+    if (!res.ok) throw new Error(`Gagal mengambil data (${res.status})`);
+    const body = await res.json();
+
+    // Envelope expected; tolerate a bare array so an older/proxied response
+    // cannot produce a silently empty list.
+    const batch = Array.isArray(body) ? body : body.items || [];
+    total = Array.isArray(body) ? batch.length : (body.total ?? batch.length);
+    items.push(...batch);
+    onProgress?.(items.length, total);
+
+    if (Array.isArray(body) || batch.length < ASET_PAGE_SIZE) break;
+    offset += batch.length;
+    if (items.length >= total) break;
+  }
+  return items;
+}
+window.fetchAllPages = fetchAllPages;
+
 async function fetchAsetFromServer(opts = {}) {
   try {
-    const response = await apiFetch("/aset", { background: !!opts.silent });
-    if (!response.ok) throw new Error("Gagal mengambil data aset");
-
-    db = (await response.json()).map((a) => {
-      // Defensive: ensure id_lokasi_raw is actually a code, not a name
-      // A code is typically short (like "D1", "JR1.1"), a name is longer ("DAOP 1 Jakarta")
-      const rawLokasi = a.id_lokasi || "";
-      const isProbablyCode = rawLokasi.length <= 10 && !rawLokasi.includes(" ");
-
-      // Cari blok ini di dalam fetchAsetFromServer() dan ganti menjadi:
-      return {
-        ...a,
-        id_lokasi_raw: isProbablyCode
-          ? rawLokasi
-          : lokasiData.find((l) => l.name === rawLokasi)?.code ||
-            uptDatabase.find((u) => u.nama === rawLokasi)?.upt ||
-            rawLokasi,
-
-        // Perbaikan: tangkap "lokasi_name" dari backend
-        id_lokasi_display: a.lokasi_name || a.id_lokasi_name || rawLokasi,
-        kode_alat_name: a.kode_alat_name || a.kode_alat,
-      };
+    const rows = await fetchAllPages("/aset", {
+      background: !!opts.silent,
+      onProgress: (loaded, total) => {
+        if (!opts.silent && total > ASET_PAGE_SIZE)
+          setLoadingMessage(
+            `Memuat aset ${loaded.toLocaleString("id-ID")} / ${total.toLocaleString("id-ID")}`,
+          );
+      },
     });
+
+    // Replaced wholesale, not mutated: rebuildSummaryIndex() and the Map
+    // indexes in js/search.js key off the array identity being swapped.
+    db = rows.map(_decorateAset);
 
     const isVisible = (id) =>
       !!document.getElementById(id)?.classList.contains("is-visible");

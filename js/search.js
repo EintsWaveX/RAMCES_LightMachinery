@@ -287,15 +287,18 @@ let _historySummary = []; // cached from /api/history/summary
 
 async function loadHistorySummary() {
   try {
-    const res = await apiFetch("/history/summary");
-    if (res.ok) {
-      _historySummary = await res.json();
-      // Keep the id_aset index in step with the array it mirrors. Every read
-      // path goes through summaryFor(), so forgetting this would silently
-      // return stale identities rather than crash — hence it lives on the same
-      // line as the assignment.
-      rebuildSummaryIndex();
-    }
+    // Paged: this is the heaviest per-asset payload the app fetches (~493 B
+    // against ~194 B for /api/aset), so at 10k assets a single request was
+    // ~16 MB. fetchAllPages() walks the {total, limit, offset, items} envelope.
+    _historySummary = await fetchAllPages("/history/summary", {
+      background: true,
+    });
+    // Keep the id_aset index in step with the array it mirrors. Every read
+    // path goes through summaryFor(), so forgetting this would silently
+    // return stale identities rather than crash — hence it lives on the same
+    // line as the assignment. Rebuilt once, after the LAST page: doing it per
+    // page would publish a half-built index to anything rendering meanwhile.
+    rebuildSummaryIndex();
   } catch (e) {
     /* silent */
   }

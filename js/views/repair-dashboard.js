@@ -70,31 +70,50 @@
     } catch (_) { /* silent — the report falls back to the global view */ }
   }
 
-  const MIN_TAHUN = 1950;
-
   // Rebuilt on every response: `available_years` is scope-dependent, so the
-  // years that actually hold data change when the region changes. Years with
-  // no data stay selectable but are marked, and the current pick is re-snapped
-  // if the backend resolved a different year.
+  // years that hold repair events change when the region changes.
+  //
+  // Same rule as every client-side year picker (see fillYearSelect in
+  // js/views/sort-modals.js): ONLY years with data, each labelled with its
+  // count. This used to walk from the oldest year present to the current one
+  // and render every gap as a selectable "2019 (kosong)" — on a region with two
+  // active years that is a column of dead options, and picking one produced an
+  // empty report with no explanation.
+  //
+  // `availableYears` arrives as [{tahun, jumlah}] from _repair_year_counts().
   function syncTahunOptions(resolvedYear, availableYears, isAllYears) {
     if (!el("rd-tahun") && !el("rd-mcf-tahun")) return;
-    const withData = new Set(availableYears || []);
-    const oldest = withData.size ? Math.min(...withData) : new Date().getFullYear();
-    const maxYear = Math.max(new Date().getFullYear(), resolvedYear || 0, ...withData);
+
+    const rows = (availableYears || []).map((y) =>
+      // Tolerate the old bare-number shape so a cached client cannot blank the
+      // picker against a newer server, or vice versa.
+      typeof y === "number" ? { tahun: y, jumlah: 0 } : y,
+    );
+
+    // The resolved year always appears even when it holds nothing, so the box
+    // never shows a value that is missing from its own list.
+    if (resolvedYear && !rows.some((r) => r.tahun === resolvedYear)) {
+      rows.push({ tahun: resolvedYear, jumlah: 0 });
+      rows.sort((a, b) => b.tahun - a.tahun);
+    }
 
     // "Semua Tahun" aggregates every year server-side (all_years=true) rather
     // than falling back to a default year, and the trend series then carries
     // one point per year instead of per month.
     const opts = ['<option value="">Semua Tahun</option>'];
-    for (let y = maxYear; y >= Math.max(MIN_TAHUN, oldest); y--) {
-      const has = withData.has(y);
+    rows.forEach((r) => {
       opts.push(
-        `<option value="${y}"${has ? "" : ' class="text-gray-400"'}>${y}${has ? "" : " (kosong)"}</option>`,
+        `<option value="${r.tahun}">${r.tahun} (${Number(r.jumlah || 0).toLocaleString("id-ID")})</option>`,
       );
-    }
+    });
+
     const html = opts.join("");
     const picked = isAllYears ? "" : String(resolvedYear ?? "");
-    eachSel(TAHUN_SELECTS, (e) => { e.innerHTML = html; e.value = picked; });
+    eachSel(TAHUN_SELECTS, (e) => {
+      e.innerHTML = html;
+      e.value = picked;
+      if (e.selectedIndex < 0) e.selectedIndex = 0;
+    });
     _tahunFilter = isAllYears ? null : resolvedYear;
     _semuaTahun = !!isAllYears;
   }
@@ -205,6 +224,16 @@
         ? `${d.diafkir} berakhir afkir`
         : "kembali siap operasi";
     }
+    // Sparepart spend, from the parts each repair actually consumed.
+    if (el("rd-biaya")) el("rd-biaya").textContent = KAI_VIZ.rupiah(d.biaya_perbaikan || 0);
+    if (el("rd-biaya-item")) {
+      const n = d.item_terpakai || 0;
+      // Named explicitly when nothing has been recorded: a bare "Rp 0" reads as
+      // free repairs rather than as parts usage not being logged yet.
+      el("rd-biaya-item").textContent = n
+        ? `${n} item sparepart terpakai`
+        : "belum ada pemakaian tercatat";
+    }
 
     // ── Completion gauge ──
     const pct = Number(d.persen_selesai || 0);
@@ -253,6 +282,8 @@
           </tr>`).join("");
       }
     }
+
+    _renderTopSparepart(d.top_sparepart || []);
 
     // ── Top 10 Resort (grouped IN/OUT) ──
     const resortCanvas = el("rd-chart-resort");
@@ -448,6 +479,38 @@
         }
       }
     }
+  }
+
+  // ── Sparepart terbanyak dipakai ───────────────────────────────────
+  // A ranked bar list rather than a chart: eight rows with long Indonesian part
+  // names and rupiah figures read better as text with a proportional bar behind
+  // them than as an axis that would have to truncate every label.
+  function _renderTopSparepart(rows) {
+    const mount = el("rd-top-sparepart");
+    if (!mount) return;
+    if (!rows.length) {
+      mount.innerHTML =
+        '<p class="py-6 text-center text-gray-400 italic text-xs">Belum ada pemakaian sparepart</p>';
+      return;
+    }
+    const max = Math.max(...rows.map((r) => r.nilai || 0), 1);
+    const esc = window.spekEscape;
+    mount.innerHTML = rows
+      .map(
+        (r) => `
+        <div class="relative rounded-md overflow-hidden">
+          <div class="absolute inset-y-0 left-0 bg-emerald-100/70 dark:bg-emerald-900/25"
+               style="width:${Math.max(4, ((r.nilai || 0) / max) * 100)}%"></div>
+          <div class="relative flex items-center justify-between gap-2 px-2 py-1.5">
+            <span class="text-[10px] font-semibold text-gray-700 dark:text-gray-200 truncate"
+                  title="${esc(r.nama_part)}">${esc(r.nama_part)}</span>
+            <span class="text-[10px] font-bold text-emerald-700 dark:text-emerald-300 shrink-0 tabular-nums">
+              ${r.jumlah}× · ${KAI_VIZ.rupiah(r.nilai)}
+            </span>
+          </div>
+        </div>`,
+      )
+      .join("");
   }
 
   // ── MCF curve ─────────────────────────────────────────────────────

@@ -18,11 +18,118 @@ let _histSortField = "id_aset";
 let _histSortDir = "date-desc";
 let _histSortFilters = {};
 
-// ── Helper: how many rows fall in each purchase year ──
+// ══════════════════════════════════════════════════════════════════════
+// ACTIVE FILTER CHIPS
+// ══════════════════════════════════════════════════════════════════════
 //
-// Drives the "(128)" / "(kosong)" suffix on every year option, so a user can
-// see which years hold data before selecting one instead of picking a year and
-// getting an empty list.
+// Kelola Data Aset, Pulihkan Aset Afkir and Kelola Data Alat Kerja each keep
+// their entire sort/filter state behind a modal, with nothing on screen saying
+// a filter is applied. A view showing 12 of 1,121 assets looked exactly like
+// one showing all of them, and the only way to find out was to reopen the
+// modal. These are that state, surfaced and individually removable.
+//
+// All three views write the SAME filter keys — `_sortFilters`,
+// `_afkirSortFilters` and `_kdakSortFilters` are three variables holding one
+// shape — so this is one renderer rather than three, and a key added in one
+// place appears in all three.
+
+const FILTER_CHIP_LABELS = {
+  idFrom: "ID dari",
+  idTo: "ID s/d",
+  alat: "Alat kerja",
+  pengadaan: "Pengadaan",
+  tahunFrom: "Tahun dari",
+  tahunTo: "Tahun s/d",
+  peruntukan: "Peruntukan",
+  lokasi: "Wilayah",
+  upt: "UPT",
+};
+
+/**
+ * Paint the chip row for one view.
+ *
+ * @param containerId  element the chips are written into
+ * @param filters      the view's live filter object (mutated by the remover)
+ * @param onChange     called after a chip is removed, to re-render the list
+ * @param extra        optional [{key,label,value,clear}] for non-filter state
+ *                     such as an active search term
+ */
+function renderFilterChips(containerId, filters, onChange, extra) {
+  const box = document.getElementById(containerId);
+  if (!box) return;
+
+  const items = [];
+  for (const [key, label] of Object.entries(FILTER_CHIP_LABELS)) {
+    const v = filters?.[key];
+    // 0 is not a meaningful value for any of these, so falsy is "unset".
+    if (v === undefined || v === null || v === "" ) continue;
+    items.push({ key, label, value: String(v) });
+  }
+  for (const e of extra || []) {
+    if (e && e.value) items.push(e);
+  }
+
+  if (!items.length) {
+    box.innerHTML = "";
+    box.classList.add("hidden");
+    return;
+  }
+  box.classList.remove("hidden");
+
+  const esc = (s) => window.spekEscape ? window.spekEscape(s) : String(s);
+  box.innerHTML =
+    items
+      .map(
+        (it) => `<span class="chip">
+            <span class="chip-label">${esc(it.label)}</span>
+            <span class="chip-value">${esc(it.value)}</span>
+            <button type="button" class="chip-x" data-chip-key="${esc(it.key)}"
+                    aria-label="Hapus filter ${esc(it.label)}"><i class="fas fa-times"></i></button>
+          </span>`,
+      )
+      .join("") +
+    `<button type="button" class="chip-clear" data-chip-key="__all__">Hapus semua</button>`;
+
+  // Delegated on the container, which is replaced wholesale above, so
+  // re-rendering cannot multiply listeners.
+  box.onclick = (ev) => {
+    const btn = ev.target.closest("[data-chip-key]");
+    if (!btn) return;
+    const key = btn.dataset.chipKey;
+    if (key === "__all__") {
+      for (const k of Object.keys(FILTER_CHIP_LABELS)) delete filters[k];
+      (extra || []).forEach((e) => e.clear && e.clear());
+    } else {
+      const ex = (extra || []).find((e) => e.key === key);
+      if (ex && ex.clear) ex.clear();
+      else delete filters[key];
+    }
+    onChange();
+  };
+}
+
+window.renderFilterChips = renderFilterChips;
+
+// ══════════════════════════════════════════════════════════════════════
+// YEAR DROPDOWNS — one rule, eight pickers
+// ══════════════════════════════════════════════════════════════════════
+//
+// The rule, requested by the client and applied everywhere a year can be
+// chosen: **list only the years that actually hold data, and say how many.**
+//
+//     2025 (623)      2024 (245)      2026 (253)
+//
+// What this replaced walked from the oldest year present all the way to the
+// current year and printed every gap as "2019 (kosong)". On the seeded fleet
+// that is three real years buried among a column of dead ones, and the dead
+// ones are selectable — picking one empties the list with no explanation.
+//
+// The count is scoped to the CALLING MENU's own rows, not to the fleet: the
+// number beside a year in Pantau Riwayat is how many history rows fall in it,
+// and in Pulihkan Aset Afkir how many scrapped assets. That is why every call
+// site passes its own array.
+
+// How many rows fall in each year of `dateField`.
 function _yearCounts(rows = db, dateField = "tanggal_pembelian") {
   const counts = new Map();
   (rows || []).forEach((r) => {
@@ -34,52 +141,83 @@ function _yearCounts(rows = db, dateField = "tanggal_pembelian") {
 
 function yearOptionLabel(year, counts) {
   const n = counts.get(String(year)) || 0;
-  return n ? `${year} (${n.toLocaleString("id-ID")})` : `${year} (kosong)`;
+  return `${year} (${n.toLocaleString("id-ID")})`;
 }
 
 /**
- * Fill a pair of year <select>s.
+ * The years to offer, newest first.
  *
- * Two things were wrong before. The selects are authored EMPTY in index.html,
- * so option[0] was the current year and got auto-selected — choosing "Tahun
- * Beli" + a custom range then filtered to 2026 alone and emptied every list,
- * since the seeded data stops at 2023. And the reset handlers set value = ""
- * against an option that did not exist, leaving selectedIndex = -1 and a blank
- * box. A real "Semua Tahun" option at index 0 fixes both.
- *
- * The range is capped at the oldest year present (floored at 1950) rather than
- * always walking back to 1950 — 70+ dead options are noise.
+ * `keep` is the currently-selected value. It is always included even when its
+ * count has dropped to zero, so a refetch can never silently reset a filter the
+ * user set — the option stays, reading "2019 (0)", and they can see why the
+ * list is empty rather than watching their selection vanish.
  */
-function _populateYearDropdowns(fromId, toId, rows = db, dateField = "tanggal_pembelian") {
-  const counts = _yearCounts(rows, dateField);
-  const curYear = new Date().getFullYear();
+function _yearOptionsFor(counts, keep) {
   const years = [...counts.keys()].map(Number).filter((n) => !isNaN(n));
-  const oldest = years.length ? Math.min(...years) : curYear - 10;
-  const newest = Math.max(curYear, ...(years.length ? years : [curYear]));
+  if (keep && /^\d{4}$/.test(String(keep)) && !years.includes(Number(keep))) {
+    years.push(Number(keep));
+  }
+  return years.sort((a, b) => b - a);
+}
 
-  [fromId, toId].forEach((id) => {
-    const sel = document.getElementById(id);
-    if (!sel) return;
+/**
+ * Fill one year <select>.
+ *
+ * `allLabel` is the text of the leading "no filter" option, or null to omit it
+ * entirely — Tren Perbaikan plots twelve months of ONE year, so "Semua Tahun"
+ * has no meaning there and offering it only invites a selection the chart
+ * cannot honour.
+ */
+function fillYearSelect(sel, counts, allLabel = "Semua Tahun") {
+  if (!sel) return;
 
-    // Rebuild rather than bail on `options.length > 1`: the counts change every
-    // time the asset list is refetched, so a cached list would go stale.
-    const previous = sel.value;
-    sel.innerHTML = "";
+  // Rebuilt on every call rather than cached: the counts change whenever the
+  // underlying list is refetched, so a stale list would misreport them.
+  const previous = sel.value;
+  const years = _yearOptionsFor(counts, previous);
+  sel.innerHTML = "";
 
+  if (allLabel !== null) {
     const all = document.createElement("option");
     all.value = "";
-    all.textContent = "Semua Tahun";
+    all.textContent = allLabel;
     sel.appendChild(all);
+  }
 
-    for (let y = newest; y >= Math.max(1950, oldest); y--) {
-      const o = document.createElement("option");
-      o.value = String(y);
-      o.textContent = yearOptionLabel(y, counts);
-      sel.appendChild(o);
-    }
-    sel.value = previous || "";
+  years.forEach((y) => {
+    const o = document.createElement("option");
+    o.value = String(y);
+    o.textContent = yearOptionLabel(y, counts);
+    sel.appendChild(o);
   });
+
+  // Nothing to choose from and no "all" option: say so rather than render an
+  // empty box the user will click at.
+  if (!years.length && allLabel === null) {
+    const o = document.createElement("option");
+    o.value = "";
+    o.textContent = "Belum ada data";
+    o.disabled = true;
+    sel.appendChild(o);
+  }
+
+  const wanted = previous || (allLabel !== null ? "" : String(years[0] ?? ""));
+  sel.value = wanted;
+  // Guard against selectedIndex = -1, which renders as a blank box: it happens
+  // whenever `wanted` names an option that no longer exists.
+  if (sel.selectedIndex < 0) sel.selectedIndex = 0;
 }
+
+/** Fill a from/to pair. Both get the same option list. */
+function _populateYearDropdowns(fromId, toId, rows = db, dateField = "tanggal_pembelian") {
+  const counts = _yearCounts(rows, dateField);
+  [fromId, toId].forEach((id) =>
+    fillYearSelect(document.getElementById(id), counts),
+  );
+}
+
+window.fillYearSelect = fillYearSelect;
+window._yearCounts = _yearCounts;
 
 // ── Helper: populate alat+lokasi dropdowns in sort modal ──
 function _populateSortDropdowns(prefix) {

@@ -1,0 +1,806 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## What this is
+
+SIMA-KAI (UI brand name: **RAMCES**) — an asset-management system for PT Kereta Api Indonesia's light machinery (*alat kerja*): generators, tampers, rail grinders, etc. It tracks each asset's condition history, transfers between regions, calibration records, and a sparepart inventory ledger.
+
+Domain vocabulary, DB column names, and all UI strings are **Indonesian**. Keep new user-facing text and column names in Indonesian to match.
+
+## Commands
+
+There is no test suite, linter, build step, or dependency manifest in the repo.
+
+```bash
+# Run the server (serves both the API and the SPA on the same origin)
+py -3.10 -m uvicorn main:app --reload
+
+# Seed / top up (drops nothing). Every step is IDEMPOTENT: running this twice
+# changes nothing the second time, and `--verify` asserts that.
+py -3.10 seed.py
+py -3.10 seed.py --list              # the steps and what each one does
+py -3.10 seed.py --only dokumen      # re-attach the client's PDFs only
+py -3.10 seed.py --verify            # check without writing anything
+
+# DESTRUCTIVE: drop every table, recreate, and reseed from scratch.
+# Prompts for the literal word RESET; --yes skips the prompt.
+py -3.10 reset.py
+
+# ...plus 100 dummy assets and a simulated maintenance history.
+# OFF BY DEFAULT: the imported fleet is real, and inventing repair records
+# against it would be indistinguishable from fact later. Without this flag the
+# repair dashboard, the MCF curve and Laporan Perbaikan render EMPTY.
+py -3.10 reset.py --yes --with-history
+```
+
+**Only Python 3.10 has the dependencies installed** (fastapi 0.139, sqlalchemy 2.0, bcrypt, pyjwt, psycopg2, python-dotenv, openpyxl). `python` on PATH resolves to 3.14 and will fail with `ModuleNotFoundError`. Always use `py -3.10`.
+
+Requires a running PostgreSQL and a `.env`. **Copy `.env.example` to `.env` before
+first run** — there are no fallbacks any more, and both missing values fail the boot
+loudly with the line to add:
+
+- `DATABASE_URL` — required. The hardcoded local URL that used to stand in for it
+  carried a real password in a tracked file.
+- `SECRET_KEY` — required. It used to fall back to a constant published in
+  `main.py`, which means anyone holding that file could mint a `SUPER_ADMIN`
+  token without ever calling `/api/login`. Generate one with
+  `py -3.10 -c "import secrets; print(secrets.token_urlsafe(48))"`.
+- `BOOTSTRAP_ADMIN_USERNAME` / `BOOTSTRAP_ADMIN_PASSWORD` — optional. The seed's
+  `pengguna` step creates this account; with no password set it generates one and
+  prints it **once**.
+- `PUBLIC_URL` / `NGROK_URL` — optional external base URL, used *only* to build
+  QR/landing links when the page is viewed on localhost (see `/api/config`).
+
+## Layout
+
+| File | Role |
+|---|---|
+| [main.py](main.py) (~320 lines) | App construction only — GZip, the Cache-Control middleware, the WebSocket endpoint, the router includes, static serving |
+| [api/](api/) (12 modules) | The FastAPI backend, split out of main.py in rev0.5.1. See below. |
+| [models.py](models.py) | All SQLAlchemy models |
+| [js/](js/) (16 files, ~12.5k lines) | The frontend — vanilla JS, no modules, no build step. See below. |
+| [index.html](index.html) (~5.9k lines) | SPA shell; every view/modal exists in the DOM at once |
+
+Supporting: [database.py](database.py) (engine/session/pool), [landing.html](landing.html) (standalone public page reached by scanning an asset's QR code — `/landing.html?uid=<id_aset>`; `_landing.html` is the superseded previous design), [assets/](assets/) (static, mounted at `/assets` — `style.css` holds the design tokens and component layer, and is loaded by **both** index.html and landing.html).
+
+**Seeding — the `seeds/` package (gitignored, present locally).** `seed.py` is now
+only a CLI over an ordered registry of idempotent steps; each step is one module:
+
+| Step | Module | What it writes |
+|---|---|---|
+| `katalog` | `seeds/katalog.py` | 104 alat kerja, 16 lokasi, 240 UPT |
+| `dokumen` | `seeds/dokumen.py` | the client's 25 spektek/manual files → `uploads/dokumen_alat/`, attached to `kategori_alat` |
+| `model` | `seeds/model_type.py` | `alat_varian` from the Rekap + legacy + remapped codes |
+| `aset` | `seeds/aset.py` | the real 1,121-asset fleet |
+| `inventaris` | `seeds/inventaris.py` | gudang → kategori → sparepart → stok awal, in that order |
+| `pengguna` | `seeds/pengguna.py` | the bootstrap `SUPER_ADMIN` |
+| `dummy` | `seeds/dummy.py` | **off by default** — 100 demo assets + a simulated history |
+
+`seeds/verify.py` runs after every seed and after `reset.py`; a failed assertion is a
+non-zero exit. `seed_katalog.py` keeps its role as the DATA (the transcription of the
+client's spreadsheets and `Rekap Spek RAMCES.docx`) and holds no writers;
+`seed_aset_real.py` still owns READING and cleaning the workbook.
+
+`modules/` is the client's source drop (katalog spreadsheets, the import workbook,
+~40 MB of manual/spektek PDFs). The seed modules read it directly, so a checkout
+without it can still boot but cannot reseed or attach documents.
+
+The backend serves the frontend: `GET /` returns `index.html`, and a catch-all `GET /{file_path:path}` serves extension-allowlisted static files from the project root. There is no separate dev server — everything is same-origin.
+
+### The `api/` package — routers, and one invariant
+
+`main.py` was 5,901 lines. It is now twelve modules plus a ~320-line assembly
+file. **Route paths and methods did not change**, and neither did the OpenAPI
+document — that was the gate the whole move was verified against.
+
+| Module | Contents |
+|---|---|
+| `api/deps.py` | The hinge. Lokasi hierarchy + the TTL cache, `resolve_lokasi_scope`, `assert_*_region_scope`, `normalise_*`, `get_db`, `SECRET_KEY`/bcrypt/`require_role`, the paging envelope |
+| `api/files.py` | `PROJECT_ROOT`, the uploads tree, the cache-header policy, `file_response_conditional` |
+| `api/realtime.py` | `ConnectionManager` + the `manager` singleton |
+| `api/schema.py` | `_ensure_schema()` — defined here, still CALLED from main.py at import |
+| `api/schemas.py` | Every Pydantic request model, in one module |
+| `api/auth.py` · `master.py` · `aset.py` · `riwayat.py` · `inventaris.py` · `dashboard.py` | The routers |
+
+**THE INVARIANT: no module in `api/` may import `main`.** `main.py` imports every
+router to call `include_router`, so an import back is a hard cycle. That is why
+`manager` lives in `realtime.py` and `file_response_conditional` in `files.py`
+rather than beside the WebSocket route and the static routes that also use them.
+
+Other things that are load-bearing and easy to undo:
+
+- **Routers are bare `APIRouter()`** — no prefix, no tags, no router-level
+  dependencies. Paths are already absolute, and tags would change `openapi.json`,
+  which is the verification gate.
+- **`PROJECT_ROOT` is a double `dirname`** in `files.py`, with a tripwire that
+  checks `index.html` is next to it. Copied naively into `api/`, the old
+  `dirname(abspath(__file__))` silently resolves to `…/api` and `os.makedirs`
+  cheerfully creates `api/uploads/` — every existing certificate then 404s while
+  uploads appear to succeed.
+- **`_ensure_schema()`, `create_all` and `load_dotenv` stay at import time.** A
+  lifespan would be a behaviour change smuggled into a re-organisation, and
+  `_ensure_schema()`'s `UPPER()` normalisation is an implicit contract for the
+  queries that compare `status_terakhir` raw.
+- **`GET /` and `GET /{file_path:path}` are the last two routes registered.** The
+  catch-all matches everything.
+- `main.py` re-exports `get_password_hash` for `seeds/pengguna.py`, which does
+  `from main import get_password_hash`. `seeds/` is gitignored, so nothing in the
+  tracked tree points at it.
+- **`DELETE /api/users/{user_id}` is registered before `DELETE /api/users/me`**,
+  so `/me` matches the first route, fails int coercion and 422s —
+  `delete_own_account` is unreachable. Pre-existing, preserved deliberately
+  through the split, and flagged in `api/auth.py`'s docstring. Fixing it is a
+  one-line reorder that belongs in its own commit.
+
+### The `js/` split — plain scripts, fixed order
+
+`app.js` was a single 11.6k-line file. It is now sixteen **classic scripts** loaded in a fixed order by the tag list at the bottom of [index.html](index.html). No bundler, no ES modules, and the `window.foo = foo` convention is unchanged — the `onclick=` handlers these files generate inside template strings resolve against the global scope, so the exports must stay global.
+
+| Load order | File | Contents |
+|---|---|---|
+| 1 | `js/core.js` | Global state, `getParentLokasiCode`, JWT/profile/clock, loading overlay, sidebar, paginator, `showToast`/`customConfirm`, date formatters, `loadScript`/`ensureXLSX`/`ensureJsPDF`, `KAI_VIZ` |
+| 2 | `js/a11y-modal.js` | Dialog semantics, Esc, focus trap and focus return for every modal (self-contained IIFE) |
+| 3 | `js/api.js` | `apiFetch`, `fetchAsetFromServer`, `fetchMasterData` |
+| 4 | `js/search.js` | The shared matcher, the Map indexes, `decodeAsetId`, `resolveLokasi`, `_historySummary` |
+| 5 | `js/shell.js` | Auth, `switchView`, `setupEventListeners`, WebSocket/presence/polling |
+| 6–14 | `js/views/*.js` | `dashboard`, `aset`, `riwayat`, `kdak`, `afkir`, `masterdata`, `sort-modals`, `laporan`, `repair-dashboard` |
+| 15 | `js/views/spektek.js` | `renderSpekCard()` — the Model/Type spec card. **Also loaded by landing.html**, which imports no other js/ file |
+| 16 | `js/views/inventaris.js` | Kelola Inventaris — must stay last, see below |
+
+Two rules govern this:
+
+- **Order only matters for top-level code.** Function declarations hoist and every cross-file call happens at runtime, so `core.js` may call something defined in `views/inventaris.js`. What must not happen is one file's *top-level* code reading — or CALLING — something a later file declares. This is not theoretical: a `debounce()` call added at `core.js` eval time, where `debounce` lives in `search.js`, threw and killed the rest of `core.js`, blanking the whole page. **`tools/check_js.py` check 4 now catches exactly this**, including inside immediately-invoked wrappers, which is where it happened. Everything else — an event handler, a callback, a named function nobody has called yet — runs after every file is evaluated and is safe.
+- **They share one global lexical scope.** The same top-level `let`/`const` in two files is a fatal `SyntaxError` that blanks the entire page, and nothing warns you. There is no Node.js on this machine to lint with, so this is checked by a script instead (see Verification below).
+
+`js/views/inventaris.js` must stay **last**: alone among the view files it caches its DOM nodes at eval time rather than looking them up lazily.
+
+### Verification without Node.js
+
+Node is not installed, so `node --check` and every linter built on it are
+unavailable — and there is no pyflakes for `py -3.10` either. Three checkers
+stand in for all of it. Run all three after any large mechanical edit:
+
+```bash
+py -3.10 tools/check_js.py        # js/ — see the four checks below
+py -3.10 tools/check_html.py      # index.html — five checks
+py -3.10 tools/check_py_names.py  # main.py + api/ — unresolved global names
+```
+
+**`tools/check_html.py`** asserts the invariants this file describes in prose
+and that nothing else enforces: every `.view-section` is reachable from a
+`data-view` button (`view-edit` and `view-history-detail` are exempt
+drill-downs); every modal root has a close control; no duplicate `id`; every
+`<table class="table-stack">` has a `<thead>` with a non-empty `<th>`; and the
+`js/` `<script>` order matches `LOAD_ORDER` in `check_js.py` with nothing
+deferred. It identifies modal roots the way `js/a11y-modal.js` does — a `div`
+with `fixed inset-0` or `.modal-backdrop` — because 28 ids ending in `-modal`
+are *buttons*, and a naive `[id$="-modal"]` selector counts them.
+
+**`tools/check_py_names.py`** catches the one failure a large backend move
+actually causes: a function moves to a new module while a helper it CALLS stays
+behind. Python resolves globals at call time, so that imports cleanly, produces
+an identical route table and a byte-identical `openapi.json` — then raises
+`NameError` the first time that one endpoint is requested. It happened twice
+during the rev0.5.1 split (`_varian_payload`, `_net_stok_map`). The analysis is
+deliberately flat rather than scope-aware, which makes it blind to "defined in
+the wrong function" but gives it zero false positives.
+
+[tools/jslex.py](tools/jslex.py) is a small JS-aware tokenizer (it tracks strings, template literals with nested `${}`, comments and regex literals); [tools/check_js.py](tools/check_js.py) uses it for four checks:
+
+1. bracket balance per file;
+2. **no identifier declared twice across files** — a fatal `SyntaxError` that blanks the whole page and that nothing else reports;
+3. call targets declared nowhere (a function lost in a move);
+4. **eval-time calls into a file that loads later** — see the ordering rule above. `LOAD_ORDER` in that file mirrors the `<script>` tags at the bottom of index.html and must be kept in step.
+
+Checks 2 and 4 are the important ones: both blank the page, and neither produces any other signal.
+
+Its third section reports a handful of permanent false positives (object method shorthand such as `afterDatasetsDraw(chart) {…}`, and the `JR(` inside the lokasi regex) which read as calls. Only new entries there mean anything.
+
+## Authentication — implemented, and the shape of it matters
+
+`/api/login` used to verify no password at all, and *created* any unknown username
+with whatever role the request body claimed. Anyone who could reach the app typed a
+name, sent `role="SUPER_ADMIN"`, and received a full-privilege token; every
+`require_role([...])` guard behind it was decorative. That is fixed. What replaced it:
+
+- **`login()` verifies a bcrypt hash and never creates accounts.** An unknown
+  username is a 401 with the same generic message as a wrong password — a distinct
+  "user not found" tells an attacker which usernames are real. An unknown name is
+  still hashed against `_DUMMY_HASH` so both paths take the same time.
+- **`role` and `id_lokasi` on `LoginForm` are IGNORED.** They are read from the
+  stored row. The fields remain on the model only so an older client still parses.
+- **The login screen is ONE step.** It used to be three: username → *pick your own
+  role from three cards* → pick your own region. Both of those are properties of the
+  account, not choices, and asking for them WAS the escalation. Removing them also
+  removed the confirmation dialog that recited the answers back.
+- **`POST /api/users/create` requires a password** (min 8 chars, `validate_password`)
+  and validates `role` against the closed `ROLES` tuple.
+- **`POST /api/users/{id}/password`** is the recovery path: your own password with
+  the old one, or anyone's as `SUPER_ADMIN`. Every row seeded before authentication
+  has `hashed_password IS NULL`, cannot log in, and is flagged in Pusat Data ▸
+  Pengguna via `has_password` on `GET /api/users` (the hash itself is never sent).
+- **`SECRET_KEY` has no fallback and the app refuses to boot without it.**
+- **CORS middleware is gone entirely.** The SPA is same-origin so nothing needed it,
+  and the previous `allow_origins=["*"]` + `allow_credentials=True` pairing is one
+  the CORS spec requires browsers to reject — it granted nothing and only advertised
+  that any origin was welcome to try.
+
+Still open: there is no rate limiting on `/api/login`, no password expiry, and no
+audit log of failed attempts.
+
+## Architecture notes that matter
+
+### Schema migrations: `_ensure_schema()`, not Alembic
+
+`models.Base.metadata.create_all()` creates missing *tables* but never ALTERs an existing one. There is no Alembic. **`_ensure_schema()` at the top of [main.py](main.py) is the migration mechanism** — a list of idempotent, `IF NOT EXISTS`-guarded DDL statements run on every boot, each in its own transaction so one failure doesn't roll back the rest.
+
+When adding a column or index to an existing table, add it to `models.py` **and** append the matching statement to that list, or every already-populated database will silently lack it.
+
+### Alat kerja and Model/Type are two levels, and the katalog is the master
+
+There are exactly two levels of tool identity. Conflating them is the mistake
+this codebase already made once.
+
+- **Alat kerja** (`kategori_alat`) — the tool TYPE. The authoritative master is
+  the client's `modules/KATALOG SFM.xlsx ▸ KATALOG ALAT KERJA` sheet: **103
+  rows**, each carrying an `Alat Ukur` and a `Kalibrasi` flag. Three of them
+  have no code in the sheet, so `GCL` / `TRK` / `WST` are minted in
+  `seed_katalog.py`. `BKC` ("SSPC VIS 3", 39 real assets) is listed there as
+  *Tidak Ditemukan* and is seeded from a separate `KATALOG_TAMBAHAN` list —
+  104 rows in total.
+- **Model/Type** (`alat_varian`) — a specific make and model of that tool, e.g.
+  `MILWAUKEE M18 ONEFHIWF34` under `IMP IMPACT WRENCH`.
+
+`seed.py` used to carry an `EXTRA_ALAT_DATA` list of 26 invented codes so the
+sparepart catalogue had something to hang off. Most were MODELS — `HTT 220 V`,
+`HTT 3 PHASE`, `GEISMAR HTT` and `HTT PORTABLE` are four models of the single
+katalog entry `HTT HAND TIE TAMPER` — and four **collided** with a katalog code
+meaning something else (`MPR`, `AUK`, `STM`, `MBT`). `EXTRA_ALAT_REMAP` in
+`seed_katalog.py` maps every one of them to `(real kode_alat, model name)`; the
+katalog wins every collision.
+
+**`kategori_alat.perlu_kalibrasi` gates the Kalibrasi form** — in `view-edit`,
+on landing.html's tab strip, and on its "BLM KALIBRASI" badge. A genset is
+serviced, not calibrated; offering the form only invites records that cannot
+mean anything. It replaced a hardcoded `KALIBRASI_ALAT = {"TGT","TRG","USM","RFD"}`
+set, which was a guess made when the master held nine tools.
+
+### The Model/Type spec block is the Rekap template, not free columns
+
+`Rekap Spek RAMCES.docx` fixes the block at seven rows: **Merk, Model/Type, and
+five FREE-FORM `Spesifikasi Utama` rows** whose labels differ per tool — "Max.
+Torque" on an impact wrench, "Runtime" on a work light, "Cutting Wheel" on a
+rail saw. That is why `alat_varian` stores `spek1_label`/`spek1_nilai` … pairs
+rather than named columns.
+
+`kapasitas` / `daya` / `dimensi` / `berat` still exist in the table **only** so
+the one-off backfill in `_ensure_schema()` can fold them into the first four
+slots. Nothing writes or renders them. Do not add a consumer.
+
+- `_varian_payload()` in [main.py](main.py) is the ONE shape for a model: it
+  collapses the five slots into `spesifikasi: [{label, nilai}]`, precomputes
+  `judul` ("[MERK] [MODEL/TYPE]", max 50 chars — the Rekap's own rule) and
+  resolves each attachment to a single URL. `GET /api/master/varian`, the create
+  response and `get_public_aset` all go through it.
+- `renderSpekCard()` in [js/views/spektek.js](js/views/spektek.js) is the ONE
+  renderer, shared by landing.html, the Form Pemeliharaan header and the asset
+  detail screen. landing.html imports no other `js/` file specifically so this
+  block cannot drift between the QR card and the SPA.
+- **`merk` and `tipe_model` are required on create/update.** 49 of the 87
+  seeded models have no Merk — they are bare rows the asset importer created
+  from the workbook's free-text `Model` column, and they render as visibly
+  incomplete on purpose.
+
+**Photos are public; documents are not.** landing.html is reached by scanning a
+QR code with no session, so `GET /uploads/foto_alat/{file}` is unauthenticated —
+which is why photos live in their own directory. `Spek Lengkap` and `Manual
+Instruction` go to `uploads/dokumen_alat/` and are Bearer-authenticated like
+calibration certificates. Related: the catch-all static route now **refuses the
+whole `uploads/` tree**; before that, a certificate uploaded as `.jpg` was
+readable at `/uploads/sertifikat/<name>` with no token.
+
+### Documents belong to the ALAT KERJA, and models inherit them
+
+The client files its 20 spektek PDFs and 5 manual books against tool TYPES, not
+against models. Three facts follow, and none of them fit `alat_varian`:
+
+- one file covers FOUR tools (`Spektek Genset, Pompa Air, Shear Wrench dan Impact
+  Wrench.pdf`), another covers three;
+- several cover tools with no Model/Type row at all;
+- 49 of the 87 seeded models are bare rows the importer created from a free-text
+  column, so anything hanging only off a model would show nothing for them.
+
+So `kategori_alat` carries `url_spek` / `file_spek` / `url_manual` / `file_manual`
+too, and **`_varian_payload()` falls back to them** when a model has neither of its
+own, flagging the result `spek_from_katalog` / `manual_from_katalog`.
+`renderSpekCard()` labels those `(umum)` with a sentence explaining it — a document
+that describes a tool type must never be presented as the exact machine's spec.
+
+`seeds/dokumen.py` holds the one mapping table from filename → `kode_alat` list. It
+is corroborated by the katalog's own `kelompok` column: all 13 `JEMBATAN`-tagged
+codes are covered and 10 of the 11 `FASILITAS` ones (`MLP` has no file in the drop).
+33 attachments across 27 tool types; `seeds/verify.py` asserts every mapped code
+exists.
+
+`ALLOWED_DOK_EXT` is wider than `ALLOWED_CERT_EXT` because the drop includes a
+`.docx` SOP, which the certificate allowlist ingested happily and then refused to
+serve with a 400.
+
+### The `lokasi` hierarchy is encoded in IDs, not in a `parent_id` column
+
+The `lokasi` table is flat. A UPT/resort's parent is derived from its ID string: `JR1.3` → DAOP `D1`, `JRIII.7` → DIVRE `VIII` (roman numerals remap: I→VI, II→VII, III→VIII, IV→VIV), `BY1A` → Balaiyasa `BY1`.
+
+**The resort tree has TWO branches: `JR` (jalan rel) and `JB` (jembatan).** All
+three parsers matched `^JR` only, so every one of the 38 JB resorts in the
+katalog resolved to *no parent* — putting their assets (253 of them) outside
+every regional filter, scope check and dashboard bucket while looking perfectly
+fine in the master table. The regexes are now `^J[RB]`, and the dot is optional
+on the roman branch because the katalog's `JBII` ("JB II Padang") carries no
+sub-number.
+
+This rule is **duplicated in three places** that must stay in sync:
+- `get_parent_lokasi_code()` in [main.py](main.py)
+- `get_parent_lokasi_code()` in [seed.py](seed.py)
+- `getParentLokasiCode()` in [js/core.js](js/core.js)
+
+`seed_all()` asserts the whole tree on every run via `verify_upt_parents()`:
+each of the 240 katalog UPT codes must resolve to the parent the sheet names.
+That check exists because the missing JB branch was invisible for exactly as
+long as nobody compared the two.
+
+Never filter regions with `LIKE 'D1%'` — it fails to match `JR1.3` and `LIKE 'VI%'` over-matches VI/VII/VIII/VIV. Use `resolve_lokasi_scope()`, which returns the explicit set of covered `id_lokasi` values for an `IN ()`.
+
+`short_lokasi_label()` is deliberately the *only* place location display strings are formed. It stays **JR-only** on purpose: it strips the prefix, and the two branches reuse the same numbering — "JR 1.1 Jakartakota" and "JB 1.1 Tanah Abang" are different places, so a jembatan resort keeps its letter.
+
+### Balaiyasa is a workshop, never a reporting region
+
+An asset visits a Balaiyasa for repair but is never *based* at one, and a repair carried out there still belongs to the DAOP/DIVRE that owns the asset. Five things enforce this and all five must hold:
+
+- [seed.py](seed.py) writes every `RiwayatKondisi.id_lokasi` with the asset's `home_lokasi`, never the workshop it was mutated to. The `RiwayatMutasi` rows still record the physical trip.
+- `POST /api/perbaikan` in [main.py](main.py) rewrites a workshop `id_lokasi` to `resolve_home_lokasi()` before inserting.
+- `get_aset_perbaikan_dashboard()` drops `balaiyasa_lokasi_ids()` from its resort buckets unless the user explicitly scoped *to* a Balaiyasa.
+- The same function's `sedang` count and `workshop_list` scope by `home_lokasi_expr` — `resolve_home_lokasi()` expressed in SQL — not by the raw `aset.id_lokasi`. Scoping those by current position deleted a machine from its own DAOP's under-repair count the moment it was sent to a workshop. They are still *grouped* by current position, so the row shows where the machine physically is; keeping the filter and the grouping in step is what preserves `sedang == sum(workshop_list[].jumlah)`.
+- `assert_aset_region_scope()` resolves the home location before applying an `ADMIN_WILAYAH`'s regional limit, so a region is never locked out of the assets it has itself sent for repair — including recalling them.
+
+Attributing a repair to the workshop is what used to grow a "BALAIYASA …" row in Laporan Perbaikan and drop the completion outside the owning DAOP's scope. The reconciling identity is `masuk == selesai + diafkir + sedang`, and it holds exactly on "Semua Tahun"; for a single year it cannot, because `sedang` is deliberately a point-in-time count of currently-TSO assets rather than a year-scoped one.
+
+### One matcher for search, filters and card labels
+
+All searching is client-side over in-memory arrays; there is no `q=` parameter anywhere in [main.py](main.py). [js/search.js](js/search.js) is that single search block (`getParentLokasiCode` itself lives in [js/core.js](js/core.js)):
+
+- `assetLokasiIdentity(item)` — the **only** place an asset's location is decided (`{uptCode, parentCode, uptName, parentName}`), preferring the asset's *home* over its current position. Cards, search, filters, sort and grouping all call it, so a label printed on a card is by construction findable by searching that string.
+- `lokasiMatchesTerm()` — understands three term shapes: a region label (`"DAOP 1"` → exact code-set membership, so DAOP 10 is excluded), a bare code (`"D1"` → exact equality), or free text (substring over **names only**; substring over codes is what lets `D1` hit `D10`).
+- `assetMatchesSearch(item, term, extra)` — location via the above, everything else plain substring. `extra` lets a view add its own fields.
+- `canonicalPengadaan()` / `_pengadaanMatches()` — collapse every stored spelling (`DAOP/DIVRE`, `DAOP / DIVRE`, `DIVRE`, `"2"`) onto two constants and compare exactly.
+
+Do not add an unanchored `includes()` against a location name; that is the bug class this block exists to prevent.
+
+### Asset IDs are composite and parsed on both sides
+
+Format: `<urutan>.<kode_alat>.<pengadaan>.<yy>.<peruntukan>.<lokasi>` — e.g. `6.RGM.1.24.A.D1`. Generated in `create_aset()` in [main.py](main.py); decoded by `decodeAsetId()` in [js/search.js](js/search.js) and again in [landing.html](landing.html). A legacy dash-separated form (`RGM-24-A-D1`) is still parsed. `peruntukan` codes: A=JALAN REL, B=JEMBATAN, C=MEKANIK, D=BALAIYASA. The location segment may itself contain dots (`JR1.1`), so decoders re-join the tail.
+
+### `peruntukan` and `sumber_pengadaan` are closed sets, and they are load-bearing
+
+Both are baked into the asset's composite primary key, so a bad value is not a display bug — it is a malformed PK that cannot be corrected later without rewriting every child row. `normalise_peruntukan()` and `normalise_sumber_pengadaan()` in [main.py](main.py) are the only accepted way in, and both raise 400 rather than guessing.
+
+They replaced two silent fallbacks: `peruntukan_map.get(value, "X")` minted an ID segment no decoder maps and that every peruntukan filter skips, and `1 if value == "PUSAT" else 2` turned *anything* unrecognised into DAOP/DIVRE. An unchecked radio in the Kelola Data Alat Kerja edit form submitted `""` and hit both.
+
+Relatedly, `AsetUpdate` leaves `id_varian` and `nomor_seri` optional, so `update_aset()` distinguishes "absent" from "explicitly null" via `model_fields_set` — a payload that does not mention them leaves them alone. Omitting them used to null both out, and the KDAK edit form sent exactly such a payload, so every edit there destroyed the asset's specification and serial number. Both KDAK forms now EDIT those two fields (step "1b. Model/Type" plus Nomor Seri) and send them explicitly on every submit, so clearing a field actually clears it.
+
+The sequence number in the ID comes from `max(urutan) + 1`, never a row count: with `count + 1`, deleting any asset of that `kode_alat` made the next create reuse a live number and fail the collision check permanently, since each retry recomputed the same count.
+
+### Asset status
+
+`aset.status_terakhir` ∈ `SO` (siap operasi) / `TSO` (tidak siap operasi) / `AFKIR` (written off). There is no `is_afkir` boolean — afkir is a status value, and nearly every asset query filters `!= "AFKIR"`. Every status change also appends a `RiwayatKondisi` row; the asset row is a denormalized cache of the latest one.
+
+### Inventory is an append-only ledger
+
+`sparepart_stok` holds one row per movement, never a running balance. `SparePartStok.GERAKAN_MASUK` / `GERAKAN_KELUAR` in [models.py](models.py) are the single source of truth for which movement types add vs. remove stock; net stock and stock value are computed by `_net_stok_expr()` / `_nilai_stok_expr()` in [main.py](main.py). Don't compute stock any other way.
+
+`gudang` (warehouse) is intentionally flat and **independent** of the DAOP/UPT `lokasi` tree. **`id_gudang` is the pool every balance is scoped by** — the movement form, the opening balance on part creation, and both halves of a transfer all write it. `id_lokasi`/`site_from`/`site_to` are older region-tree fields kept only so existing transfer history keeps rendering; writing an opening balance against `id_lokasi` alone makes the stock invisible to every warehouse-scoped screen and impossible to issue.
+
+The end-to-end flow is **gudang → kategori → sparepart → pergerakan → stok**, and it is ordered: with no warehouse, the movement form has nothing to write to and refuses every submit. Gudang CRUD lives in two places on purpose — **Pusat Data ▸ Gudang** for management, and a shortcut modal inside Kelola Inventaris so the flow can be completed without leaving the view.
+
+### A repair consumes parts in ONE transaction
+
+`pemakaian_sparepart` links a repair (`riwayat_kondisi`) to the parts it used.
+It is written only by `catat_perbaikan()`, from a `pemakaian: [...]` array that
+rides on the **same** `POST /api/perbaikan` body as the condition report.
+
+Everything about that is deliberate:
+
+- **One transaction, one commit.** A short stock rolls the condition report
+  back rather than recording a repair that consumed nothing — and equally, a
+  failed report cannot have already taken parts out of the warehouse. The
+  `db.flush()` inside `_record_pemakaian()` is what makes it possible:
+  `id_riwayat` is a serial and does not exist until the INSERT is issued.
+- **Quantities are summed per (part, gudang) BEFORE the check.** Two lines for
+  the same part in one submit must be checked against their combined total;
+  checking them one at a time would let 2 × 6 units pass against a stock of 10.
+- **It never computes stock.** Each row points at the `OUT` movement it wrote
+  via `id_stok`; `sparepart_stok` stays the single source of truth. Sufficiency
+  is checked with the same `_net_stok_map()` the standalone movement endpoint
+  uses, not a second implementation.
+- **Broadcast both** `REFRESH_ASSET_LIST` **and** `REFRESH_INVENTARIS` — the
+  ledger changed, and inventory clients otherwise never learn.
+
+`sparepart.id_varian` is the compatibility link. **NULL means "fits every model
+of this tool"**, which is the common case, so
+`/api/inventaris/parts?kode_alat=&id_varian=` returns model-specific parts *plus*
+the universal ones. The seed only sets `id_varian` where an old catalogue code
+named one of SEVERAL competing models of the same tool (the HTT family);
+claiming model-specificity elsewhere made the picker return nothing at all for
+almost every real asset, because real assets carry Rekap/import models while the
+catalogue was pinned to the remapped legacy ones. When the strict filter does
+match nothing, the form says so and offers an explicit "Tampilkan semua
+sparepart" — never a silent widening.
+
+`f_masuk` in `_scoped_repair_events()` counts entries INTO the down state
+(`kondisi='TSO' AND prev IS DISTINCT FROM 'TSO'`), not every TSO row. It was
+the latter, which quietly broke `masuk == selesai + diafkir + sedang` the moment
+anyone filed a second fault report on a machine that was still down — an
+ordinary thing to do, and one that recording sparepart usage makes routine.
+
+### Auth and roles
+
+JWT bearer tokens (12h expiry), bcrypt password hashes. Three roles, enforced via the `require_role([...])` dependency factory:
+
+- `SUPER_ADMIN` — everything, including master data CRUD, afkir/pulihkan, and user deletion
+- `ADMIN_WILAYAH` — scoped to its own `id_lokasi`; can only create `TEKNISI` accounts and only mutate/transfer assets in its own region. `require_role` cannot express this, so it is enforced inline by **`assert_region_scope()` / `assert_aset_region_scope()`** — use those, never a bare `==`. A token only ever carries a *parent* code (`D1`, `VIII`, `BY1`), because the login region selector lists DAOP/DIVRE/BALAIYASA rows and excludes UPTs, while assets live at UPT codes like `JR1.7`. Comparing the two directly rejected an admin's own assets **and** left the paths that had no check at all writable from any region; both directions are now one helper built on `resolve_lokasi_scope()`. It guards create/edit/delete/mutasi/kondisi/kalibrasi; `TEKNISI` is deliberately left unscoped for condition reporting.
+- `TEKNISI` — read plus condition reporting
+
+The frontend stores the token in `sessionStorage` and reads role/`id_lokasi` straight out of the JWT payload client-side (`getJwtPayload`) for UI gating — server-side checks are the real enforcement.
+
+### Live updates: WebSocket broadcast, string messages
+
+**`landing.html` opens the same socket.** Presence lives in `ConnectionManager`
+and is keyed off the WebSocket, so a page that never opens one has invisible
+users. The QR card page connects once signed in, sends `view:Kartu Aset (QR)`,
+and shows a dot in its header; an anonymous scan deliberately does not connect,
+so it never registers presence. Any future page that a logged-in user can sit on
+needs the same treatment or its users read as offline.
+
+
+`/ws/updates?token=<jwt>` (token rides as a query param because the browser WebSocket API can't set headers). The `ConnectionManager` also doubles as the presence registry — sockets keyed by username, a set per user so multiple tabs count as one online user. `pengguna.last_seen`/`last_view` is what remains after the socket closes.
+
+Broadcasts are three bare strings: `REFRESH_ASSET_LIST`, `REFRESH_INVENTARIS`, `REFRESH_PRESENCE`. **Any endpoint that mutates data must `await manager.broadcast(...)` after commit** — that is the only way connected clients learn about the change. Handlers that broadcast must be `async def`.
+
+The client reconnects with exponential backoff + jitter and falls back to periodic polling while the socket is down (`startPollingFallback`); the WS scheme is derived from `window.location.protocol`, never from tunnel config, so it works behind TLS-terminating tunnels.
+
+### Frontend conventions
+
+No modules, no bundler. The fourteen files in [js/](js/) share one global scope and hold top-level functions plus mutable state (`db`, `lokasiData`, `uptDatabase`, `authToken`, …) declared in [js/core.js](js/core.js); the `onclick=` handlers generated inside template strings resolve against the global scope, so cross-file callers reach functions via explicit `window.foo = foo` exports. Libraries come from CDN `<script>` tags in [index.html](index.html): Tailwind (config inline in the head), Chart.js, SheetJS (`xlsx`), jsPDF + autotable, qrcodejs, Font Awesome. Excel/PDF export is done **client-side**; the `/api/export/*` endpoints only return JSON rows.
+
+Views are `.view-section` divs toggled by `switchView(viewId)` via an `is-visible` class — all views live in the DOM simultaneously, so code frequently guards work with `document.getElementById(id)?.classList.contains("is-visible")`. Dark mode is a `dark` class on `<html>` persisted in `localStorage`.
+
+All authenticated calls go through `apiFetch(endpoint, options)`, which injects the bearer token, drives the global loading overlay (skip it with `{ background: true }`), and force-logs-out on 401. Unauthenticated master-data calls use raw `fetch`. `apiAuth()` in [landing.html](landing.html) is the same contract for that page.
+
+**`apiFetch` only *throws* on 401.** A 400/403/404 arrives as an ordinary response, so every mutation must check `if (!res.ok)` explicitly — otherwise a rejected submit reports success and closes the form.
+
+Both `apiFetch` and `apiAuth` deliberately skip the JSON `Content-Type` for `FormData` and `URLSearchParams` bodies, because only the browser knows a multipart boundary. Certificate uploads depend on that.
+
+### Modal accessibility lives in one file, not in the markup
+
+There are **34** modal roots in [index.html](index.html) — a full-screen backdrop `div` whose id ends `-modal` and which carries `fixed inset-0`, shown by removing a `hidden` class. (A `[id$="-modal"]` selector counts 60; the other 27 are `close-*-modal` and `inv-btn-open-*-modal` **buttons**. Filter on the classes, not the id alone.)
+
+[js/a11y-modal.js](js/a11y-modal.js) gives all of them dialog semantics at runtime: `role="dialog"`, `aria-modal`, and an `aria-labelledby` pointed at the panel's own heading; Esc to close; a Tab/Shift-Tab trap plus a `focusin` backstop; focus moved into the dialog on open and handed back to the opener on close. A `MutationObserver` on `class` drives open/close detection and picks up modals that views build from template strings later.
+
+Two things must not be undone:
+
+- **Esc closes through the dialog's own close control** (`#close-<id>`, then `[data-modal-close]`, then a `button[id$="-cancel"]`), never by setting `hidden` directly. `customConfirm()` resolves its promise from the button handler, so hiding the panel behind its back leaves every awaiting caller hanging forever.
+- **Closing a stacked dialog returns focus to the dialog underneath**, not to the original opener — `customConfirm()` over an open form is the common case, and hiding the panel that held focus otherwise drops the user on `<body>`, which fires no `focusin` for the trap to correct.
+
+The whole file is an IIFE, so it adds no top-level identifier to the shared global scope beyond `window.closeModalA11y` and `window.a11yModalCount()`.
+
+### Dashboard filters live PER TAB, not above the tabs
+
+There used to be one filter bar (`Semua Alat Kerja / Pengadaan / Tahun`) above all
+six tabs, and three of them ignored it: Tren Perbaikan had its own year picker, and
+Laporan Perbaikan and Kurva MCF have their own Lokasi + Tahun row. A control that
+visibly applies to half the screen is worse than none, because nothing says which
+half. The four-swatch *Keterangan* legend beside it described MATRIX CELL colours, so
+on five of six panels it explained something that was not on screen.
+
+Both now live per panel:
+
+- `_dashFilters[tabId]` — each tab holds its **own** selection. Narrowing Grafik
+  Ketersediaan to one tool leaves Matriks Kesiapan untouched.
+- `_DASH_FILTER_SPEC` — one declarative entry per tab (`fields`, `legend`,
+  `tahunAllLabel`). Adding a filter is a line here, never markup in index.html.
+- `_renderDashFilterRow(tabId)` — the single builder, mounted into
+  `#dash-filters-<tab>`. It rebuilds on every render because the year counts change
+  whenever the asset list is refetched, and it wires its handlers by delegation on
+  the row so re-rendering cannot multiply listeners.
+- Only the **active** tab's row is rebuilt; the others keep their DOM and selection.
+- `trend` sets `tahunAllLabel: null` — the chart plots twelve months of ONE year, so
+  an all-years option is a selection it cannot honour. It used to accept one and
+  silently substitute the current calendar year, which read as the filter being
+  ignored.
+- The KPI strip sits above the tabs but follows the **active** tab's filter, so
+  `#dash-kpi-scope` states what it is counting. On `perbaikan` / `mcf` — which filter
+  by Lokasi, not by tool — it falls back to fleet totals and says so.
+
+### Year dropdowns: only years that hold data, each with its count
+
+The client's rule, applied to all eight year pickers in the app:
+
+    2026 (326)      2025 (729)      2024 (66)
+
+What it replaced walked from the oldest year present to the current one and printed
+every gap as a selectable `2019 (kosong)`. `fillYearSelect()` in
+[js/views/sort-modals.js](js/views/sort-modals.js) is the single implementation:
+
+- options come only from the counts map, newest first;
+- the **currently selected** value is always kept even at zero (rendered `(0)`), so a
+  refetch can never silently reset a filter the user set;
+- `selectedIndex < 0` is corrected to 0, which is what used to leave a blank box;
+- counts are scoped to the CALLING menu's rows, so the number beside a year in
+  Pantau Riwayat is history rows and in Pulihkan Aset Afkir is scrapped assets.
+
+The two server-driven pickers match: `available_years` on
+`/api/aset/dashboard/perbaikan` and `/mcf` returns `[{tahun, jumlah}]` from
+`_repair_year_counts()`, and `syncTahunOptions()` prints the same shape.
+
+### The dashboard tab strip is a fixed list in two places
+
+`_DASH_TABS` in [js/views/dashboard.js](js/views/dashboard.js) is index-aligned
+with the `.dash-tab-btn` buttons, the `.dash-panel` ids (`dash-panel-<id>`) and
+the `.dash-dot` markers in [index.html](index.html). Adding a tab means touching
+all four, plus the dispatch in `_renderDashActivePanel()`.
+
+`perbaikan` and `mcf` are both filled by the single `load()` in
+[js/views/repair-dashboard.js](js/views/repair-dashboard.js), so activating
+either one calls `initRepairDashboard()`. They carry separate Lokasi/Tahun rows
+(`rd-*` and `rd-mcf-*`) but **one copy of the state** — `LOKASI_SELECTS` /
+`TAHUN_SELECTS` keep both rows displaying it. Never give a second row its own
+state variable; switching tabs would then appear to change the filter.
+
+### Mobile is a first-class target now
+
+The app was designed at desktop width and allowed to shrink. The audit found 24
+tables, 20 horizontal scrollers and not one column-priority rule anywhere in
+index.html: a technician on a phone got a 240-column matrix to pan across and a
+drawer as the only way to change screen. Four primitives fixed that; all live in
+[assets/style.css](assets/style.css) under `MOBILE FIRST`.
+
+- **`.table-stack`** — under 640px each `<tr>` becomes a card and each `<td>` prints
+  its caption from `data-label`. **Do not write `data-label` by hand.**
+  `stampTableLabels()` in [js/core.js](js/core.js) copies the captions down from the
+  table's own `<thead>` at runtime and a `MutationObserver` re-runs it whenever a
+  view replaces its rows — 23 tables, several hundred cells built inside template
+  strings, and no second copy to keep in step. A table with no header row opts itself
+  back out, because an unlabelled stack is less readable than the scrolling table it
+  replaced. The dashboard matrix is deliberately excluded: its columns ARE the data.
+  Scroll wrappers carry `.table-stack-wrap` so they stop scrolling once stacked.
+- **`#mobile-bottom-nav`** — five slots under `lg:`. The middle one is a raised
+  primary action rather than a fifth destination, because reporting a machine's
+  condition is the one thing a technician does standing next to it and it was four
+  taps deep behind the drawer. `syncBottomNav()` is driven from `switchView()`, not
+  from the click, so arriving any other way still lights the right slot.
+  `#view-container` gets bottom padding to clear the bar plus the safe-area inset.
+- **Touch targets** — a `@media (pointer: coarse)` block gives buttons, selects and
+  tabs a 44px minimum. Dense table-row buttons get an expanded transparent hit area
+  instead, so a list does not double in height.
+- **Contrast** — `text-gray-400` on white is 2.8:1 and was the app's default for
+  field labels. It is remapped onto a token that passes 4.5:1.
+
+### The bell is a real feed, not decoration
+
+It carried a hardcoded red dot and no click handler — it permanently claimed unread
+news that did not exist and could not be dismissed. It now shows the WebSocket
+broadcasts this session received (`REFRESH_ASSET_LIST` / `REFRESH_INVENTARIS` /
+`REFRESH_PRESENCE`), which the app was already acting on invisibly. `pushActivity()`
+in [js/shell.js](js/shell.js) is called from `ws.onmessage` before the dispatch.
+
+Session-scoped on purpose: there is no notifications table, and inventing one means
+deciding what "read" means per user across devices. The durable record is Pantau
+Riwayat Aset, which the panel footer points at.
+
+### Styling: use the component layer
+
+[assets/style.css](assets/style.css) defines design tokens (`--surface`, `--border`, `--text`, …, redefined under `.dark`) and a component layer: `.card` / `.card-head` / `.card-body`, `.stat-card`, `.btn` + `.btn-primary|accent|ghost|danger|success`, `.btn-icon`, `.badge` + `.badge-so|tso|afkir|move|warn|info|neutral`, `.modal-backdrop` / `.modal-panel` / `.modal-head|body|foot`, `.toolbar`, `.table-std`, `.tab`, `.empty-state`, `.def-grid`, `.filter-section`, `.file-drop`.
+
+Added in rev0.5.1, each replacing something that had been hand-rolled two or
+three times:
+
+- **`.segmented` / `.segmented-btn` / `.is-active`** — the mode switches. Drive
+  it with `setSegmented(ids, activeId)` in [js/core.js](js/core.js); it keeps
+  `aria-selected` in step, which the Tailwind-array versions never did.
+- **`.chip-row` / `.chip` / `.chip-x` / `.chip-clear`** — active filter state.
+  Distinct from `.filter-chip`, which is the "N filter aktif" counter on a
+  collapsed `<details>` in Laporan and stays as it is.
+- **`.step` / `.step-title` / `.id-preview`** — the KDAK stepper. The step number
+  comes from `data-step`, so `1b` works.
+- **`.skeleton-text|-sm|-lg` / `.skeleton-card` / `.skeleton-row`** — sized
+  variants over the existing `.skeleton`.
+- **`.table-timeline`** — turns `.table-stack` rows into a timeline under 640px.
+- **`#exp-actions`** (sticky export bar) and the `#view-database.is-compact` /
+  `#view-masterdata.is-drilled` view-scoped state classes.
+
+**Status badges go through `.badge` — never inline Tailwind.** Twenty spans in [js/views/aset.js](js/views/aset.js), [js/views/kdak.js](js/views/kdak.js) and [js/views/afkir.js](js/views/afkir.js) hand-rolled the same six colour pairs, and the muted one drifted to `#6b7280` on `#374151` — 2.31:1, unreadable in dark mode at 10px bold. `.badge` is a pixel-exact match for the string they used, so the conversion moved nothing visually. `.badge-afkir` is red (the app has always drawn AFKIR red; it used to share the grey `.badge-neutral` rule, which disagreed with every screen) and `.badge-move` is the orange "SEDANG TERMUTASI" state, kept distinct from amber `.badge-warn` because the two appear on the same card.
+
+Prefer these over hand-written inline Tailwind for new markup. The pre-existing screens are still largely inline Tailwind; that inconsistency is exactly what the layer exists to retire, and SO/TSO colours in particular are now defined **once** here rather than in three drifting copies.
+
+### Role gating in the UI must be set, not just cleared
+
+`checkAuth()` in [js/shell.js](js/shell.js) decides which menu items a role sees.
+It must set the state of **every** gated item in **both** directions —
+`classList.toggle("hidden", role !== …)` — never just remove `hidden` for the
+privileged role. It previously only un-hid Pusat Data / Pulihkan Aset Afkir for
+`SUPER_ADMIN` and nothing ever put them back, so any role change that did not
+reload the document left the higher role's menu on screen. `forceLogout(false)`
+— the 401 path inside `apiFetch` — is exactly that: a token expiring under a
+super admin, then a technician logging in at the same workstation, and both
+admin screens still listed. The server answered 403 behind them, so it was never
+an escalation, but the menu contradicted the permissions.
+
+The same function only opens the sidebar when `innerWidth >= 1024`. It used to
+call `toggleSidebar()` unconditionally, which on a phone slid the drawer over
+the dashboard the user had just logged in to see.
+
+### Theme resolution
+
+A stored `localStorage.theme` always wins; with nothing stored the app follows
+`prefers-color-scheme`, and keeps following it live until the user picks. The
+same block is duplicated at the top of [landing.html](landing.html) on purpose —
+the two pages share `sessionStorage` and a technician crosses between them
+mid-task, so a theme that flipped on the way across would read as a bug.
+
+### Uploads
+
+Calibration certificates are stored under `uploads/sertifikat/` with a server-generated filename (never a client-supplied path — see `_save_certificate()`), and `riwayat_kalibrasi.file_sertifikat` holds only that basename. The `uploads/` directory is gitignored runtime data.
+
+The flow is deliberately **two-step**: `POST /api/kalibrasi` creates the record and returns `id_kalibrasi`, then `POST /api/kalibrasi/{id}/sertifikat` attaches the file as `FormData`. Both `#form-kalib` handlers (index.html and landing.html) capture the create response for exactly this reason.
+
+Download is Bearer-authenticated, so a plain `<a href>` 401s — go through `apiFetch` → `res.blob()` → `URL.createObjectURL` (`window.downloadSertifikat`).
+
+### Performance decisions already made
+
+Don't undo these — each was measured.
+
+- **GZip is on** (`GZipMiddleware`, `minimum_size=1000`). It takes `js/` from ~475 KB to ~123 KB and `index.html` from 383 KB to 41 KB. Everything this app serves is text.
+- **`Cache-Control` is stamped by a middleware**, not per-route: `no-cache` (revalidate via ETag → cheap 304) for html/js/css, `max-age=31536000, immutable` for images. `/api/` and `/ws/` are excluded. The 304 half needs `file_response_conditional()`: Starlette's `FileResponse` emits an ETag but never *reads* `If-None-Match`, so `/`, `/js/*` and `/landing.html` answered a full 200 on every load while only `/assets/*` (the `StaticFiles` mount, which does check) answered 304. Any new route returning a `FileResponse` for a cacheable file wants that wrapper, which borrows `StaticFiles.is_not_modified` rather than growing a second comparison.
+- **SheetJS and jsPDF load on demand**, not in `<head>`. Together they are ~1.3 MB and are only reachable from Laporan, the bulk importers and the QR label. Use `await ensureXLSX()` / `await ensureJsPDF()` at the *entry point* of any new code path that touches them; the many synchronous `XLSX.*` calls downstream need no change. Chart.js stays eager (the dashboard is the first screen after login) but carries `defer`. Tailwind must stay eager — it is a JIT compiler that rewrites the DOM, and deferring it causes a flash of unstyled content.
+- **The hero background is WebP at 1600 px (145 KB)**, down from an 8.16 MB PNG. It sits under an 85 %-opacity gradient, so the resolution was never visible. `hero_bg.jpg` is the fallback; there is no PNG any more.
+- **`assetLokasiIdentity` and `_eventCount` read `Map` indexes**, not `Array.find`. The Maps (`_uptByCode`, `_lokasiByCode`, `_summaryById`) are rebuilt by `rebuildLokasiIndexes()` / `rebuildSummaryIndex()` wherever their source array is *replaced*. Never mutate those arrays in place without rebuilding, or identities go stale silently rather than crashing.
+- **All six search boxes are debounced** at 200 ms via `debounce()` in core.
+- **The Model/Type payloads are cached client-side twice** — `_varianCache` in [js/views/aset.js](js/views/aset.js) for the spec card, and `_varianByAlat` in [js/views/masterdata.js](js/views/masterdata.js) for the KDAK dropdowns. `loadAlatVarian()` runs at boot in `checkAuth()`, not lazily from Pusat Data, because the KDAK forms need the index whether or not that screen was ever opened. Both are refreshed on `REFRESH_ASSET_LIST`.
+- **The connection pool is configured** in [database.py](database.py) — `pool_size=20, max_overflow=30, pool_pre_ping=True`. The default bare `create_engine()` gave a ceiling of 15 and no pre-ping, which meant random 500s after every PostgreSQL restart.
+- **`broadcast()` fans out with `asyncio.gather` and a 2 s per-socket timeout**, and prunes dead sockets. It used to send sequentially with no timeout while being awaited inside every mutating endpoint.
+- **`_touch_last_seen` runs via `asyncio.to_thread` and is throttled to 60 s.** It is blocking psycopg2 called from the `async` WebSocket handler on every heartbeat.
+- **Two statements in `_ensure_schema()` are existence-guarded** (`ALTER COLUMN … TYPE` and `ADD CONSTRAINT … CHECK`). Both take an `ACCESS EXCLUSIVE` lock and rewrite/rescan the whole `sparepart_stok` table, and `_ensure_schema()` runs at *import* — so unguarded they locked the table on every restart, per worker. Any new statement of that shape needs the same treatment.
+- **`status_terakhir` is normalised to upper case by `_ensure_schema()`**, so queries compare it raw. Do not reintroduce `func.upper(...)` on it — that makes both declared indexes unusable and turns the filter into a sequential scan.
+
+## Git
+
+Branch naming is `revX.Y.Z-beta-fe-be` (fe/be suffix marks which side changed); work merges to `master`. `seed.py`, `reset.py`, `inject.py`, `*.sql`, `*.json`, `sql_backup/`, `temp/`, and `uploads/` are gitignored — `seed.py` and `reset.py` exist locally and are actively used but are not tracked.
+
+## Known gaps
+
+Ranked by what breaks first as the fleet grows.
+
+- **Pagination is transport-only so far.** `/api/aset` and `/api/history/summary` now
+  return the `{total, limit, offset, items}` envelope and accept
+  `q` / `kode_alat` / `id_lokasi` / `status` / `tahun`; `fetchAllPages()` in
+  [js/api.js](js/api.js) walks the pages into `db` with a progress caption. That
+  removes the single 4.5 MB / 16 MB response and the stall, but **not the total
+  bytes** — the frontend still caches the whole fleet and filters it client-side
+  through the one matcher in [js/search.js](js/search.js). The server filters exist
+  as a *superset gate* precisely so the deep screens (Kelola Data Aset, Pantau
+  Riwayat) can move to server-side paging later without another API change. Doing
+  that means teaching those two views to render from a page rather than from `db`.
+- **The repair-events window subquery runs four times per dashboard load**
+  (`_scoped_repair_events` is a subquery *expression*, re-executed by each of the
+  four `db.execute()` calls), and it contains a deliberately unfiltered `LAG` over
+  the whole `riwayat_kondisi` table. Wants a materialised CTE or a rollup table.
+- **`resolve_home_lokasi()` is still N+1 inside the export loops.** The lokasi table
+  itself is cached now, but the `RiwayatMutasi` lookup for an asset sitting at a
+  Balaiyasa still fires per asset. Rare in practice; batch it if workshop traffic
+  grows.
+- **`aset` has a composite string primary key** encoding
+  kode/pengadaan/year/peruntukan/lokasi, so editing any of those regenerates the PK
+  and rewrites every child row. A surrogate `BIGSERIAL` with `id_aset` as a unique
+  business key would make it a single-row update.
+- **Deleting an asset whose repair consumed spare parts returns 500.**
+  `delete_aset` removes the asset's `riwayat_kondisi` rows directly, but
+  `pemakaian_sparepart.id_riwayat` has no `ondelete`, so PostgreSQL rejects the
+  delete with a foreign-key violation. Pre-existing and unrelated to the
+  rev0.5.1 split — the `ondelete` pass that made `id_aset` FKs `CASCADE` reached
+  `pemakaian_sparepart` through `id_riwayat`, not `id_aset`, and missed it. The
+  fix is a `CASCADE` on that constraint in `models.py` plus a guarded statement
+  in `_ensure_schema()`.
+- **`index.html` is ~5.9k lines and stays one file.** Splitting it needs a build step
+  the project deliberately does not have, and would break both "every view exists in
+  the DOM at once" and `inventaris.js`'s eval-time DOM caching.
+- **No rate limiting on `/api/login`**, no password expiry, no audit log of failed
+  attempts. See the authentication section.
+- **Tailwind runs as a CDN JIT compiler in the browser.** Replacing it with a
+  compiled stylesheet needs a build step.
+- `SparePart` has no `stok_max` column, so `_stok_status()` is always called with
+  `stok_max=None`. The corresponding "DI ATAS MAX" UI tile has been removed rather
+  than left showing a permanent zero.
+- `sparepart_kategori` names are matched by exact string on bulk import; there is no
+  fuzzy match, and unknown categories are rejected rather than created.
+
+### Closed
+
+- ~~No authentication~~ — implemented; see the authentication section.
+- ~~The exports build everything in memory~~ — `export_riwayat` and `export_mutasi`
+  are `StreamingResponse` over a row-at-a-time JSON generator (`_stream_json_array` /
+  `_stream_json_rows`). The wire format is byte-identical, so no client changed.
+- ~~The `lokasi` table is re-read several times per request~~ — `lokasi_rows()` caches
+  it as plain named tuples for 60 s, with `balaiyasa_lokasi_ids()` precomputed on the
+  same pass and `invalidate_lokasi_cache()` called by the lokasi CRUD endpoints.
+  Never cache ORM instances here: they detach when their Session closes.
+- ~~Foreign keys have no `ondelete`~~ — `id_pengguna` FKs are `SET NULL` and `id_aset`
+  FKs are `CASCADE`, applied by a guarded `DO $$` block in `_ensure_schema()` that
+  looks constraint names up rather than hardcoding them.
+  `riwayat_kalibrasi.id_pengguna` was made nullable to allow it.
+- ~~The seed silently doubled the real fleet~~ — `seed_aset_real()` renumbered on
+  sequence collision instead of recognising a row it had already imported, so a
+  second `seed.py` run inserted all 1,121 assets again. The database this pass
+  started against held **2,242**. `seeds/aset.py` now keys on identity and counts
+  duplicates within a bucket; `seeds/verify.py` asserts the total against the
+  workbook. Three consecutive runs produce byte-identical counts.
+- ~~Modal accessibility~~ — all dialogs carry `role`/`aria-modal`/a label, Esc and the
+  focus trap work, and no native `confirm()` remains outside the `customConfirm()`
+  fallback.
+- ~~Mobile was never designed for~~ — see "Mobile is a first-class target now".
+
+## rev0.5.1 — what it closed
+
+rev0.5.0 left two things on its own honest list; rev0.5.1 is both of them.
+
+**The `api/` package split** and **`tools/check_html.py`** — see the sections
+above. The split was verified route-by-route: the sorted `(path, methods)` set,
+the shadowing relationships, and `openapi.json` are all identical before and
+after, which is what proves no `require_role` guard was lost on the continuation
+line of a wrapped decorator.
+
+**Per-view redesign detail**, now done across seven screens:
+
+- **KDAK** — both asset forms are a numbered stepper with a **live `id_aset`
+  preview**. The rules in `previewIdAset`/`_kdakReadSegments`
+  ([js/views/kdak.js](js/views/kdak.js)) mirror `create_aset`/`update_aset`
+  exactly, and the preview was checked against what the server actually mints.
+  The sequence number is estimated from `db` on create (`max(urutan)+1`, the
+  same rule the server uses) and known exactly on edit, where `update_aset`
+  preserves it. Changing a key segment on the edit form raises a warning, since
+  it re-parents every child row.
+- **Kelola Inventaris** — a flow header stating the ordered chain gudang →
+  kategori → sparepart → pergerakan → stok, marking the first incomplete step
+  and linking to it. It hides itself once the chain is complete: it is
+  scaffolding for an empty system, not permanent chrome. `_flowLedgerTotal` is
+  fetched at boot **because `_ledgerTotal` is only populated once the Transaksi
+  tab has been opened** — reading that alone made a fully-stocked system report
+  its last step as incomplete.
+- **Filter chips** — `renderFilterChips()` in
+  [js/views/sort-modals.js](js/views/sort-modals.js) is ONE renderer for three
+  views. `_sortFilters`, `_afkirSortFilters` and `_kdakSortFilters` are three
+  variables holding one shape, so a key added in one place surfaces in all
+  three. Plus a persisted density toggle on Kelola Data Aset.
+- **Pantau Riwayat** — `.segmented` replaced two near-identical 30-line copies
+  (`_setHistoryTab`, `switchDetailTab`) that each swapped six hand-maintained
+  Tailwind class arrays; both now call `setSegmented()` in
+  [js/core.js](js/core.js). Per-mode `.empty-state`s distinguish "nothing
+  recorded" from "nothing matches your filter". `.table-timeline` turns the
+  stacked detail rows into a timeline under 640px, matching the Mutasi panel.
+- **Proses Laporan** — the Excel/PDF buttons are a sticky bar (`#exp-actions`)
+  clearing the mobile nav and the safe-area inset, and it repeats the row count
+  because the info strip has long scrolled away by then.
+- **Pusat Data** — two-level under `lg:`: the six tabs become a list, and the
+  panel appears only once a master is chosen. One `.is-drilled` class; above
+  `lg:` the stylesheet ignores it and the desktop layout is untouched. The five
+  free-form spec pairs are framed as label/value with real Rekap examples.
+- **Skeletons** — `.skeleton` was dead CSS. `skeletonRows()`/`skeletonCards()`
+  in core.js paint in-place placeholders and the loaders pass
+  `{ background: true }`, so the blanking overlay is left for login, the paged
+  fleet bootstrap and destructive submits. A `MutationObserver` clears
+  `aria-busy` when the placeholders go, rather than relying on every loader's
+  success path remembering to.
+
+### Still not done
+
+- Server-side paging for the deep screens (see Known gaps).
+- The repair-events window subquery still runs four times per dashboard load.

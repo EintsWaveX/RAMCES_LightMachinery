@@ -6,9 +6,17 @@
 
 For the end-user manual see [PANDUAN-RAMCES.md](PANDUAN-RAMCES.md) (Indonesian).
 
-Every number below was measured against the local seeded database
-(200 assets — 83 AFKIR / 58 SO / 59 TSO — 628 mutasi, 802 kondisi, 559 kalibrasi,
-203 spareparts across 3 gudang, 955 stock movements), not estimated.
+Every number below was measured against the local seeded database, not
+estimated. **The baseline changed in the katalog round** (§1b): the fleet is now
+the REAL one imported from `modules/`, not 200 generated assets.
+
+| | before | after the katalog round |
+|---|---|---|
+| `kategori_alat` | 35 (9 real + 26 mis-modelled) | **104** from KATALOG SFM |
+| `alat_varian` | 24 | **87** |
+| `lokasi` | 219 | **259** (the JB branch was missing) |
+| `aset` | 200 generated | **1,121 real** + 100 optional dummies |
+| `sparepart` | 203 | 203, zero orphan `kode_alat` |
 
 ---
 
@@ -22,6 +30,7 @@ Branch `rev0.4.0-beta`. Four rounds of work have landed:
 | Design pass | `assets/style.css` component layer (`.card`, `.btn`, `.badge`, `.modal-*`, `.table-std`) |
 | Performance pass | GZip, cache headers, lazy XLSX/jsPDF, WebP hero, `Map` indexes, debounced search, connection pool, `asyncio.gather` broadcast — and the split of `app.js` into 14 ordered classic scripts |
 | Defect + a11y pass | The seven fixes in §3, plus `js/a11y-modal.js` |
+| Katalog + inventory loop | §1b below — the real master data, the Rekap spec block, and spareparts consumed by repairs |
 
 ### Measured baseline — keep these honest
 
@@ -43,6 +52,54 @@ Static assets: `index.html` 385.8 KB raw, `js/` ~475 KB raw / ~123 KB gzipped,
 Conditional requests now work on every static route — `/`, `/js/*.js`,
 `/landing.html` and `/assets/*` all answer **304 with a zero-byte body** when the
 client's ETag still matches.
+
+---
+
+## 1b. The katalog round — what it changed
+
+Driven by the client's `modules/` drop. Verified live: **68 API checks and 60
+browser checks, all green**, with the seeded baseline restored afterwards.
+
+### Master data now matches the business
+
+`KATALOG SFM.xlsx` is the authoritative alat kerja master. Adopting it exposed
+that 26 of the 35 codes in `kategori_alat` were **models, not tool types** —
+`HTT 220 V`, `HTT 3 PHASE`, `GEISMAR HTT` and `HTT PORTABLE` are four models of
+one katalog entry — and that four of them **collided** with a katalog code
+meaning something else (`MPR`, `AUK`, `STM`, `MBT`). They are now `alat_varian`
+rows under their true parent, and the katalog wins every collision.
+
+### Three things found on the way that the plan did not cover
+
+| Found | Consequence | Done |
+|---|---|---|
+| **The entire JB (jembatan) resort branch was missing.** All three copies of `get_parent_lokasi_code()` matched `^JR` only. | 38 resorts resolved to *no parent*, putting 253 assets outside every regional filter, scope check and dashboard bucket — while looking fine in the master table. | Regexes widened to `^J[RB]` in main.py, seed.py and js/core.js; `seed_all()` now asserts all 240 katalog UPT codes resolve to the parent the sheet names. |
+| **`uploads/` was reachable through the catch-all static route.** | A calibration certificate uploaded as `.jpg`/`.png` was readable at `/uploads/sertifikat/<name>` with **no token**, straight past `download_sertifikat`'s auth. | The catch-all refuses the whole tree; `/uploads/foto_alat/{file}` is the single sanctioned public path, and it serves images only. |
+| **`f_masuk` counted every TSO row, not every entry into the down state.** | `masuk == selesai + diafkir + sedang` broke the moment anyone filed a second fault report on a machine still down. Zero occurrences in seeded data, so it had never shown. | `kondisi='TSO' AND prev IS DISTINCT FROM 'TSO'`, matching `selesai`/`diafkir`, which were already transition-based. No existing figure moved. |
+
+### Two judgement calls worth knowing
+
+- **160 assets carry a provisional purchase date.** The 2026 sheet has the
+  literal string `PROSES` where procurement is still running, and
+  `tanggal_pembelian` is NOT NULL with its year baked into the asset ID. They
+  are imported at 1 January of the sheet's year, and the opening
+  `RiwayatKondisi` says *"tanggal pembelian belum final (PROSES saat impor)"* so
+  the date is never mistaken for fact.
+- **`BKC` is not in the katalog.** 39 real assets carry it, and the katalog's
+  own side-list marks it *Tidak Ditemukan*. Seeded from a separate
+  `KATALOG_TAMBAHAN` list as "STANDAR VISUAL SSPC VIS 3", inferred from the
+  model column and the matching PDF. **Confirm the name with the client.**
+
+### Left deliberately
+
+- **Synthetic history is opt-in** (`reset.py --with-history`). The imported
+  fleet is real; inventing repair records against it would be indistinguishable
+  from fact later. The cost is that the repair dashboard, the MCF curve and
+  Laporan Perbaikan are **empty** on a default reset.
+- **49 of 87 models have no Merk.** They are bare rows the importer created
+  from the workbook's free-text `Model` column. `merk`/`tipe_model` are required
+  on create/update, so editing one of them now demands a Merk — which is the
+  point: the gaps are visible work, not hidden defaults.
 
 ---
 

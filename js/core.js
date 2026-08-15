@@ -93,7 +93,8 @@ document.addEventListener("DOMContentLoaded", async () => {
   await fetchConfig();
   populateSelects();
   setupEventListeners();
-  fetchLoginRegions();
+  // No master-data fetch before login any more: the login screen asks only for
+  // a username and a password, so there is nothing on it to populate.
 
   if (currentUser && authToken) {
     document.getElementById("auth-view").style.display = "none";
@@ -132,8 +133,13 @@ function getPublicBaseUrl() {
 
 function getParentLokasiCode(idLokasi) {
   if (!idLokasi) return null;
-  // "JR1.3" → "D1", "JR9.2" → "D9"
-  const arabMatch = idLokasi.match(/^JR(\d+)\./i);
+  // "JR1.3" → "D1", "JB1.1" → "D1", "JR9.2" → "D9"
+  //
+  // `J[RB]`, not `JR`: the resort tree has two branches — JR (jalan rel) and
+  // JB (jembatan) — and only JR was matched here, so every jembatan resort
+  // resolved to no parent and its assets fell outside every regional filter.
+  // Byte-identical to _RE_UPT_ARAB in main.py and seed.py.
+  const arabMatch = idLokasi.match(/^J[RB]\s*(\d+)\./i);
   if (arabMatch) return `D${arabMatch[1]}`;
 
   // "JRI.2" → "VI", "JRIII.1" → "VIII", "JRIV.1" → "VIV" etc.
@@ -148,8 +154,27 @@ function getParentLokasiCode(idLokasi) {
     VIII: "VVIII",
     IX: "VIX",
   };
-  const romanMatch = idLokasi.match(/^JR(IV|IX|VIII|VII|VI|V|I{1,3})\./i);
+  // Dot optional: the katalog's "JBII" (JB II Padang) has no sub-number.
+  const romanMatch = idLokasi.match(
+    /^J[RB]\s*(IV|IX|VIII|VII|VI|V|I{1,3})(?:\.|$)/i,
+  );
   if (romanMatch) return romanMap[romanMatch[1].toUpperCase()] ?? null;
+
+  // "ME1.1" → "D1", "ME2" → "D2", "MEIII" → "VIII". The THIRD branch of the
+  // resort tree — 14 MEKANIK resorts that RAMCES had no rows for at all until
+  // rev0.5.2, the same hole JB was in.
+  //
+  // THE `$` ANCHOR IS LOAD-BEARING. Alternation is leftmost-first, not
+  // longest-first, so `I{1,3}` is tried before `IV`. With the anchor "MEIV"
+  // backtracks to the right branch; without it, it matches `I` and returns VI,
+  // putting MEKANIK DIVRE IV's assets silently in DIVRE I.
+  //
+  // Byte-identical to _RE_UPT_MEKANIK_* in api/deps.py, seeds/katalog.py and
+  // landing.html. All four must stay in step.
+  const mekArabMatch = idLokasi.match(/^ME\s*(\d+)(?:\.\d+)?$/i);
+  if (mekArabMatch) return `D${mekArabMatch[1]}`;
+  const mekRomanMatch = idLokasi.match(/^ME\s*(IV|IX|VIII|VII|VI|V|I{1,3})$/i);
+  if (mekRomanMatch) return romanMap[mekRomanMatch[1].toUpperCase()] ?? null;
 
   // "BY1A" → "BY1". Without this a Balaiyasa child resolves to null and gets
   // treated as its own parent, so region filters never match it.
@@ -244,6 +269,115 @@ function startTopbarClock() {
   setInterval(tick, 1000);
 }
 
+// ══════════════════════════════════════════════════════════════════════════
+// SKELETON PLACEHOLDERS
+// ══════════════════════════════════════════════════════════════════════════
+//
+// `beginLoading()` puts a full-screen overlay up for EVERY apiFetch, which for
+// a list refresh is heavier than the change deserves: the screen blanks, the
+// scroll position is lost, and the user cannot see what is being replaced.
+//
+// These paint an in-place placeholder instead. The caller pairs them with
+// `apiFetch(..., { background: true })` — the escape hatch api.js already
+// documents — so the overlay stays for the things it is actually right for:
+// login, the paged fleet bootstrap, and destructive submits.
+//
+// `aria-busy` is the part that matters for assistive tech; a shimmer conveys
+// nothing to a screen reader.
+
+/**
+ * Fill a <tbody> with placeholder rows.
+ * `cols` must match the table's real column count or the layout jumps when the
+ * data lands.
+ */
+function skeletonRows(tbodyId, cols, rows = 5) {
+  const tbody = document.getElementById(tbodyId);
+  if (!tbody) return;
+  tbody.setAttribute("aria-busy", "true");
+  // Widths vary so a block of rows does not read as a solid rectangle.
+  const widths = ["70%", "45%", "85%", "55%", "65%", "40%"];
+  tbody.innerHTML = Array.from({ length: rows })
+    .map(
+      (_, r) =>
+        `<tr>${Array.from({ length: cols })
+          .map(
+            (__, c) =>
+              `<td class="px-4 py-3"><span class="skeleton skeleton-text" style="width:${
+                widths[(r + c) % widths.length]
+              }"></span></td>`,
+          )
+          .join("")}</tr>`,
+    )
+    .join("");
+}
+
+/** Fill a grid/list container with placeholder cards. */
+function skeletonCards(containerId, count = 6) {
+  const box = document.getElementById(containerId);
+  if (!box) return;
+  box.setAttribute("aria-busy", "true");
+  box.innerHTML = Array.from({ length: count })
+    .map(
+      () =>
+        `<div class="card"><div class="card-body">
+           <span class="skeleton skeleton-text-lg" style="width:55%"></span>
+           <span class="skeleton skeleton-text" style="width:80%"></span>
+           <span class="skeleton skeleton-text-sm" style="width:40%"></span>
+         </div></div>`,
+    )
+    .join("");
+}
+
+/** Clear the busy flag once real content has replaced the placeholder. */
+function skeletonDone(id) {
+  document.getElementById(id)?.removeAttribute("aria-busy");
+}
+
+// Clearing `aria-busy` by hand means finding every success path in every
+// loader, and the one that gets forgotten leaves a container permanently
+// announced as loading. Watch instead: when an element marked busy no longer
+// contains a `.skeleton`, its real content has landed.
+//
+// Same approach as stampTableLabels() below, and for the same reason — the
+// rows are built from template strings in nine different files.
+(function watchSkeletons() {
+  const observer = new MutationObserver((records) => {
+    for (const rec of records) {
+      const el = rec.target.closest?.("[aria-busy='true']");
+      if (el && !el.querySelector(".skeleton")) el.removeAttribute("aria-busy");
+    }
+  });
+  observer.observe(document.documentElement, {
+    childList: true,
+    subtree: true,
+  });
+})();
+
+// ══════════════════════════════════════════════════════════════════════════
+// SEGMENTED CONTROL
+// ══════════════════════════════════════════════════════════════════════════
+//
+// Three mode switches in this app were the same control drawn three different
+// ways. Two of them — Pantau Riwayat's and the asset detail's — each carried
+// six hand-maintained Tailwind class arrays and a ~30-line function to swap
+// them, in near-identical copies that had already drifted apart.
+//
+// `.segmented` / `.segmented-btn` / `.is-active` in assets/style.css owns the
+// appearance now, so switching a tab is one class and one aria attribute.
+//
+// `ids` is the full set of button ids in the group; `activeId` the one to mark.
+function setSegmented(ids, activeId) {
+  ids.forEach((id) => {
+    const btn = document.getElementById(id);
+    if (!btn) return;
+    const on = id === activeId;
+    btn.classList.toggle("is-active", on);
+    // role="tab" is on the markup, so keep the state that goes with it: a
+    // screen reader otherwise reads three tabs with no indication which is open.
+    btn.setAttribute("aria-selected", on ? "true" : "false");
+  });
+}
+
 function getJwtPayload(token) {
   try {
     const base64Url = token.split(".")[1];
@@ -288,6 +422,15 @@ function beginLoading(detail) {
     }, LOADING_SHOW_DELAY_MS);
   }
 }
+
+// Update the overlay's caption without touching the request counter. Used by
+// the paged bootstrap in js/api.js to count "1.000 / 1.121" up as pages land,
+// so a multi-second fleet load reads as progress rather than as a hang.
+function setLoadingMessage(detail) {
+  const d = document.getElementById("global-loading-detail");
+  if (d) d.textContent = detail || "";
+}
+window.setLoadingMessage = setLoadingMessage;
 
 function endLoading() {
   _pendingRequests = Math.max(0, _pendingRequests - 1);
@@ -885,3 +1028,84 @@ const BULAN_PANJANG = [
   "Januari", "Februari", "Maret", "April", "Mei", "Juni",
   "Juli", "Agustus", "September", "Oktober", "November", "Desember",
 ];
+
+// ══════════════════════════════════════════════════════════════════════
+// RESPONSIVE TABLES — one observer, every table
+// ══════════════════════════════════════════════════════════════════════
+//
+// `.table-stack` in assets/style.css turns each <tr> into a card under 640px
+// and prints each <td>'s caption from its `data-label`. Writing that attribute
+// by hand would mean touching every renderer in js/views/*.js — 24 tables,
+// several hundred <td>s built inside template strings — and every future one
+// would have to remember.
+//
+// So it is done at RUNTIME instead: the caption is already in the table's own
+// <thead>, and the column index of a <td> is already its position. This walks
+// each table once, copies header text down onto the cells, and re-runs when a
+// view re-renders its rows.
+//
+// Consequences worth knowing:
+//   * A renderer that changes its <th> text automatically changes the mobile
+//     captions. There is no second copy to keep in step.
+//   * Tables are opted IN by `.table-stack` on the <table>, so a genuine grid
+//     (the dashboard matrix, where the columns ARE the data) keeps scrolling.
+//   * `colspan` cells — empty states, spinners — are skipped by the CSS.
+
+function stampTableLabels(root = document) {
+  root.querySelectorAll("table.table-stack").forEach((table) => {
+    const heads = [...table.querySelectorAll("thead th")].map((th) =>
+      th.textContent.trim(),
+    );
+    // No header row means no captions to copy down, and a stacked card whose
+    // cells have no labels is LESS readable than the scrolling table it
+    // replaced — the reader loses the column positions and gains nothing. Such
+    // a table opts itself back out rather than degrading.
+    if (!heads.some(Boolean)) {
+      table.classList.remove("table-stack");
+      table.closest(".table-stack-wrap")?.classList.remove("table-stack-wrap");
+      return;
+    }
+    table.querySelectorAll("tbody tr").forEach((tr) => {
+      [...tr.children].forEach((td, i) => {
+        if (td.hasAttribute("colspan")) return;
+        const label = heads[i];
+        // A blank header means a control column (checkbox, actions); those
+        // render full-width with no caption, which is what we want.
+        if (label) td.setAttribute("data-label", label);
+        else td.removeAttribute("data-label");
+      });
+    });
+  });
+}
+window.stampTableLabels = stampTableLabels;
+
+// Re-stamp whenever a tbody's rows are replaced. Views render from template
+// strings into innerHTML, so there is no single hook to call — the observer is
+// what makes this work without editing 24 renderers.
+(function watchTables() {
+  // A LOCAL throttle, not the shared `debounce()` from js/search.js.
+  //
+  // This IIFE runs at core.js EVAL time, and search.js is loaded after it — so
+  // calling debounce() here threw "debounce is not defined" and killed the rest
+  // of core.js, taking the whole page with it. That is precisely the ordering
+  // rule CLAUDE.md states: function declarations hoist WITHIN a file, but one
+  // file's top-level code cannot reach into a file that has not run yet.
+  // tools/check_js.py cannot catch it — the identifier does exist, just not yet.
+  let timer = null;
+  const restamp = () => {
+    clearTimeout(timer);
+    timer = setTimeout(() => stampTableLabels(), 60);
+  };
+  const observer = new MutationObserver((records) => {
+    for (const r of records) {
+      if (r.target.closest?.("table.table-stack")) {
+        restamp();
+        return;
+      }
+    }
+  });
+  document.addEventListener("DOMContentLoaded", () => {
+    stampTableLabels();
+    observer.observe(document.body, { childList: true, subtree: true });
+  });
+})();

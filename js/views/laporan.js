@@ -311,6 +311,19 @@ function applyExportFilters() {
       `Mutasi: <strong>${filteredMutasi.length}</strong> baris · ` +
       `Afkir: <strong>${filteredAfkir.length}</strong> — akan diekspor sesuai tab aktif.`;
   }
+  // The sticky bar repeats the count, because by the time the user reaches the
+  // buttons the info strip above the preview has long scrolled away.
+  const actionsCount = document.getElementById("exp-actions-count");
+  if (actionsCount) {
+    const per = {
+      pemeliharaan: filteredActive.length,
+      kalibrasi: filteredKalib.length,
+      mutasi: filteredMutasi.length,
+    };
+    actionsCount.innerHTML =
+      `Akan diekspor: <strong>${per[_expActiveTab] ?? 0}</strong> baris ` +
+      `<span class="text-gray-400">(tab ${_expActiveTab})</span>`;
+  }
 
   // ── Populate lokasi dropdowns once ──
   _populateExpLokasiDropdowns();
@@ -446,6 +459,18 @@ function renderExpTabPreview(tab) {
     const rows = _exportFiltered?.mutasi || [];
     if (countEl) countEl.textContent = `${rows.length} baris`;
     _renderExpMutasi(rows);
+  }
+
+  // The sticky bar says which tab it is about to export, so switching tabs is
+  // reflected there without re-running the whole filter pass.
+  const actionsCount = document.getElementById("exp-actions-count");
+  if (actionsCount) {
+    const n =
+      tab === "pemeliharaan" ? (_exportFiltered?.active || []).length
+      : tab === "kalibrasi" ? (_exportFiltered?.kalibrasi || []).length
+      : (_exportFiltered?.mutasi || []).length;
+    actionsCount.innerHTML =
+      `Akan diekspor: <strong>${n}</strong> baris <span class="text-gray-400">(tab ${tab})</span>`;
   }
 }
 

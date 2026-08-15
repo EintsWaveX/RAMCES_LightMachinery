@@ -15,6 +15,12 @@ opened and by then present as a blank screen:
      is a fatal SyntaxError that kills the whole page — and nothing warns you.
   3. A call to something that is declared nowhere, i.e. a function lost in a
      move.
+  4. TOP-LEVEL code calling a function that a LATER file declares. Function
+     declarations hoist within their own file, but the files are evaluated in
+     the order index.html lists them — so `debounce()` called at core.js eval
+     time, when it lives in search.js, throws and kills the rest of core.js and
+     with it the whole page. Check 3 cannot see this: the identifier does
+     exist, just not yet.
 
 Exit code is non-zero if anything fails, so it can gate a commit hook.
 """
@@ -108,6 +114,106 @@ def strip_literals(src):
     return "".join(out)
 
 
+# The order index.html loads these in. Anything not listed is checked last,
+# which is the safe assumption. Keep in step with the <script> tags — the
+# comment block at the bottom of index.html is the source of truth.
+LOAD_ORDER = [
+    "core.js",
+    "a11y-modal.js",
+    "api.js",
+    "search.js",
+    "shell.js",
+    "views/dashboard.js",
+    "views/aset.js",
+    "views/riwayat.js",
+    "views/kdak.js",
+    "views/afkir.js",
+    "views/masterdata.js",
+    "views/sort-modals.js",
+    "views/laporan.js",
+    "views/repair-dashboard.js",
+    "views/spektek.js",
+    "views/inventaris.js",
+]
+
+
+def load_index(relpath):
+    """Position of a file in the evaluation order; unknown files sort last."""
+    key = relpath.split("js/", 1)[-1]
+    return LOAD_ORDER.index(key) if key in LOAD_ORDER else len(LOAD_ORDER)
+
+
+def _matching_brace(text, open_at):
+    """Index of the `}` that closes the `{` at open_at, or -1."""
+    depth = 0
+    for i in range(open_at, len(text)):
+        if text[i] == "{":
+            depth += 1
+        elif text[i] == "}":
+            depth -= 1
+            if depth == 0:
+                return i
+    return -1
+
+
+# A function body opens at one of these. `function foo(...) {`, `function (…) {`,
+# `(a, b) => {`, `a => {`, and object-method shorthand `foo(...) {`.
+_BODY_OPEN = re.compile(
+    r"(?:\bfunction\b[^(){}]*\([^()]*\)\s*\{)"      # function decl / expression
+    r"|(?:\)\s*=>\s*\{)"                              # (a, b) => {
+    r"|(?:\b[\w$]+\s*=>\s*\{)"                        # a => {
+)
+
+_IIFE_AFTER = re.compile(r"^\s*\)?\s*\(")
+
+
+def _defer_bodies(text):
+    """
+    Blank out every function body that does NOT run at evaluation time.
+
+    A body is kept when it is immediately invoked — `(function(){...})()` and
+    `(() => {...})()` both execute as the file is parsed, so a call inside one
+    is every bit as early as a call at the top level. That is exactly where the
+    bug this check exists for lived: an IIFE in core.js reaching for debounce()
+    from search.js.
+
+    Everything else — an event handler, a callback, a named function nobody has
+    called yet — runs later, by which time every file has been evaluated.
+    """
+    out = list(text)
+    i = 0
+    while i < len(text):
+        m = _BODY_OPEN.search(text, i)
+        if not m:
+            break
+        open_at = text.index("{", m.end() - 1)
+        close_at = _matching_brace(text, open_at)
+        if close_at < 0:
+            break
+        # Immediately invoked? Look at what follows the closing brace.
+        if _IIFE_AFTER.match(text[close_at + 1 : close_at + 8]):
+            i = open_at + 1          # descend into it: this body IS eval-time
+            continue
+        for k in range(open_at, close_at + 1):
+            if out[k] != "\n":
+                out[k] = " "
+        i = close_at + 1
+    return "".join(out)
+
+
+def top_level_calls(text):
+    """
+    Function names called from code that runs at EVAL time.
+
+    Everything reachable while the <script> tag is still executing: the file's
+    own top level, plus the body of any immediately-invoked wrapper. Calls
+    inside a deferred body are excluded, because by the time those run every
+    file in the list has been evaluated.
+    """
+    stripped = _defer_bodies(text)
+    return [(m.group(1), m.start()) for m in CALL.finditer(stripped)]
+
+
 def js_files():
     found = []
     for dirpath, _, names in os.walk(JS_DIR):
@@ -186,6 +292,37 @@ def main():
         print("   review (method shorthand and regex literals are false positives):")
         for nm in sorted(missing):
             print(f"     {nm:<28} {', '.join(sorted(missing[nm]))}")
+    else:
+        print("   none")
+
+    print("\n4. Eval-time calls into a later file")
+    # Where each top-level name is declared, and how early that file runs.
+    decl_file = {}
+    for path in files:
+        text = strip_literals(open(path, encoding="utf-8").read())
+        for m in TOP_LEVEL_DECL.finditer(text):
+            nm = m.group(1) or m.group(2)
+            decl_file.setdefault(nm, rel(path))
+
+    early = []
+    for path in files:
+        here = load_index(rel(path))
+        text = strip_literals(open(path, encoding="utf-8").read())
+        for nm, _pos in top_level_calls(text):
+            owner_path = decl_file.get(nm)
+            if not owner_path:
+                continue
+            if owner_path == rel(path):
+                continue
+            if load_index(owner_path) > here:
+                early.append(
+                    f"{rel(path)} calls {nm}() at eval time, but it is declared "
+                    f"in {owner_path} which loads later"
+                )
+    if early:
+        for e in sorted(set(early)):
+            print(f"   FATAL {e}")
+        failures.extend(early)
     else:
         print("   none")
 

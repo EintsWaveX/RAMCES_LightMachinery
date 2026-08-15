@@ -84,19 +84,21 @@ RAMCES memakai istilah yang sama dengan yang dipakai di lapangan.
 
 ## 2. Masuk ke RAMCES
 
-Masuk ke RAMCES dilakukan dalam **tiga langkah**.
+Masuk ke RAMCES sekarang **satu langkah**: nama pengguna dan password.
 
-### Langkah 1 — isi nama pengguna
+![Layar masuk](panduan/img/01-login-nama.webp)
 
-![Layar masuk, langkah 1](panduan/img/01-login-nama.webp)
+1. Ketik **nama pengguna** Anda.
+2. Ketik **password**. Tekan ikon mata di ujung kolom untuk memastikan ketikan
+   Anda benar — berguna saat mengetik di layar ponsel di bawah sinar matahari.
+3. Tekan **Masuk**.
 
-Ketik nama pengguna Anda, lalu tekan lanjut.
+> **Peran dan wilayah tidak lagi dipilih saat masuk.** Keduanya melekat pada akun
+> Anda dan dibaca sistem dari data pengguna. Sebelumnya Anda diminta memilih
+> sendiri peran dan wilayah di layar masuk — itulah lubang keamanan yang kini
+> sudah ditutup.
 
-### Langkah 2 — pilih peran Anda
-
-![Layar masuk, langkah 2 — pilih peran](panduan/img/02-login-peran.webp)
-
-Pilih salah satu dari tiga peran:
+### Peran yang mungkin Anda miliki
 
 | Peran | Untuk siapa | Bisa apa saja |
 |---|---|---|
@@ -104,24 +106,32 @@ Pilih salah satu dari tiga peran:
 | **ADMIN WILAYAH** | Admin DAOP/DIVRE | Semua di atas, **ditambah** menambah, mengubah, dan memutasi aset — **hanya di wilayahnya sendiri** |
 | **SUPER ADMIN** | Pengelola pusat | Semua di atas, **ditambah** Pusat Data dan Pulihkan Aset Afkir, tanpa batasan wilayah |
 
-### Langkah 3 — pilih wilayah
+### Belum punya akun?
 
-![Layar masuk, langkah 3 — pilih wilayah](panduan/img/03-login-wilayah.webp)
+RAMCES **tidak lagi membuatkan akun secara otomatis**. Hubungi SUPER ADMIN (atau
+Admin Wilayah Anda, yang dapat membuat akun TEKNISI) untuk dibuatkan. Mereka akan
+memberi Anda password awal — catat dan segera ganti.
 
-Pilih DAOP/DIVRE tempat Anda bertugas, lalu tekan **Masuk**.
+### Lupa password, atau akun lama tidak bisa masuk?
 
-> ### ⚠️ Catatan penting soal keamanan
+Akun yang dibuat sebelum sistem password diberlakukan tidak memiliki password dan
+**tidak dapat masuk**. Pesannya akan berbunyi *"Akun ini belum memiliki
+password."* Minta SUPER ADMIN membukanya lewat:
+
+**Pusat Data ▸ Pengguna ▸** tombol **Password** (atau **Belum ada password** yang
+berwarna kuning) **▸ Simpan Password**
+
+Password baru hanya ditampilkan **satu kali**, karena sistem hanya menyimpan
+versi teracaknya dan tidak bisa menampilkannya lagi. Catat sebelum menutup.
+
+> ### 🔒 Yang berubah demi keamanan
 >
-> Versi RAMCES yang Anda pakai sekarang adalah **versi demo**. Saat ini sistem
-> **belum meminta kata sandi**, dan kalau nama yang Anda ketik belum terdaftar,
-> nama itu akan **langsung dibuatkan akun** dengan peran apa pun yang Anda pilih.
->
-> Artinya: siapa pun yang bisa membuka alamat RAMCES dapat masuk sebagai SUPER
-> ADMIN hanya dengan mengetik sebuah nama. **Jangan menganggap pembatasan peran
-> dan wilayah di sistem ini sebagai pengaman.** Selama masih versi demo, jaga
-> agar alamat RAMCES tidak dibagikan ke luar lingkungan yang Anda percaya.
->
-> Perbaikannya sudah tercatat sebagai pekerjaan prioritas untuk tim pengembang.
+> - Password kini **wajib** dan diperiksa setiap kali masuk (minimal 8 karakter).
+> - Nama pengguna yang tidak terdaftar **ditolak**, tidak lagi dibuatkan akun.
+> - Pesan kesalahan sengaja dibuat sama untuk "nama salah" dan "password salah",
+>   supaya tidak ada yang bisa menebak nama pengguna mana yang benar-benar ada.
+> - Pembatasan peran dan wilayah kini **benar-benar mengikat**, bukan sekadar
+>   tampilan.
 
 ---
 
@@ -168,6 +178,32 @@ karena teknisi tidak mendaftarkan aset baru:
 
 ---
 
+### Menggunakan RAMCES di ponsel
+
+Di layar ponsel, RAMCES menampilkan **bilah navigasi di bagian bawah** yang bisa
+dijangkau ibu jari:
+
+| Tombol | Membuka |
+|---|---|
+| **Dashboard** | Ringkasan kesiapan armada |
+| **Data Aset** | Daftar seluruh alat kerja |
+| **Lapor** (tombol oranye di tengah) | Daftar aset dengan kolom pencarian langsung aktif — cari alat yang ada di depan Anda, lalu buka untuk melaporkan kondisinya |
+| **Riwayat** | Riwayat perbaikan, mutasi, dan kalibrasi |
+| **Menu** | Membuka menu samping untuk halaman lainnya |
+
+Tabel yang lebar juga otomatis berubah bentuk di ponsel: setiap baris menjadi
+satu kartu dengan nama kolom tercetak di sebelah kiri nilainya, sehingga Anda
+tidak perlu menggeser layar ke samping untuk membaca kolom yang tersembunyi.
+
+### Lonceng aktivitas
+
+Ikon lonceng di kanan atas menampilkan perubahan yang terjadi selama Anda masuk —
+misalnya ada rekan yang melaporkan kondisi alat atau mengubah stok sparepart.
+Angka merah menunjukkan berapa kejadian yang belum Anda lihat. Daftar ini hanya
+berlaku selama satu sesi; catatan lengkapnya ada di **Pantau Riwayat Aset**.
+
+---
+
 ## 4. Dashboard — membaca kondisi armada
 
 Dashboard adalah halaman pertama setelah Anda masuk.
@@ -184,8 +220,33 @@ Dashboard adalah halaman pertama setelah Anda masuk.
 | **KETERSEDIAAN** | Persentase SO dibagi total — makin tinggi makin baik |
 | **BENCHMARK** | Target pembanding, beserta selisih Anda terhadap target |
 
-Tiga kotak pilihan di bawahnya (**Semua Alat Kerja**, **Semua Pengadaan**,
-**Semua Tahun**) menyaring seluruh isi dashboard sekaligus.
+Di bawah kotak angka ada keterangan **"Menghitung: …"** yang menyebutkan
+saringan apa yang sedang dipakai untuk angka-angka tersebut.
+
+### Saringan ada di dalam setiap tab, bukan di atasnya
+
+Sebelumnya ada satu baris saringan di atas seluruh tab, padahal tiga dari enam
+tab tidak mengikutinya sama sekali. Sekarang **setiap tab memiliki barisan
+saringannya sendiri**, tepat di atas isi tab tersebut:
+
+| Tab | Saringan |
+|---|---|
+| Matriks Kesiapan, Grafik Ketersediaan, Ketersediaan per Lokasi | Alat Kerja · Pengadaan · Tahun |
+| Tren Perbaikan | Alat Kerja · Pengadaan · Tahun (satu tahun saja — grafiknya memang 12 bulan dalam satu tahun) |
+| Laporan Perbaikan, Kurva MCF | Lokasi · Tahun |
+
+**Saringan tiap tab berdiri sendiri.** Menyaring Grafik Ketersediaan ke satu
+jenis alat tidak mengubah Matriks Kesiapan. Keterangan warna (hijau SO, merah
+TSO, dan seterusnya) juga ikut pindah ke tab yang benar-benar memakainya.
+
+### Pilihan Tahun hanya menampilkan tahun yang ada datanya
+
+Setiap kotak pilihan tahun di seluruh RAMCES kini hanya memuat tahun yang
+benar-benar berisi data, lengkap dengan jumlahnya dalam kurung — misalnya
+`2025 (729)`. Tahun kosong tidak lagi ditampilkan, jadi Anda tidak akan memilih
+tahun yang ternyata tidak berisi apa-apa. Angka dalam kurung selalu mengikuti
+menu tempat Anda berada: di Pantau Riwayat itu jumlah baris riwayat, di Pulihkan
+Aset Afkir itu jumlah aset afkir.
 
 ### Matriks Kesiapan
 
@@ -264,11 +325,13 @@ Tekan tombol **Tambah Aset**.
 
 ![Formulir Tambah Aset Alat Kerja](panduan/img/11-kdak-tambah-aset.webp)
 
-Isi keenam kolom berurutan:
+Isi kolom berurutan:
 
 | No. | Kolom | Keterangan |
 |---|---|---|
 | 1 | **Alat Kerja** | Jenis alat, dipilih dari daftar |
+| 1b | **Model / Type** | Merk dan tipe alat tersebut. Daftarnya ikut berubah setiap kali kolom 1 diganti |
+| — | **Nomor Seri** | Nomor pada pelat nama alat (opsional) |
 | 2 | **Sumber Pengadaan** | **PUSAT** atau **DAOP / DIVRE** |
 | 3 | **Tanggal Pembelian** | Tanggal alat dibeli |
 | 4 | **Unit Peruntukan** | JALAN REL, JEMBATAN, MEKANIK, atau BALAIYASA |
@@ -276,6 +339,13 @@ Isi keenam kolom berurutan:
 | 6 | **UPT / Sub-Lokasi** | Resort tempat alat ditempatkan (opsional) |
 
 Lalu tekan **Simpan Aset**.
+
+> **Model/Type belum ada di daftar?** Pilih **"+ Tambah Model/Type baru…"** di
+> paling bawah. RAMCES akan membawa Anda ke **Pusat Data ▸ Model/Type** dengan
+> Alat Kerja sudah terisi, sehingga Anda tinggal melengkapi speknya lalu
+> kembali ke sini. Kolom ini boleh dikosongkan untuk sementara, tetapi aset
+> tanpa Model/Type tidak akan menampilkan spesifikasi maupun foto, dan daftar
+> suku cadang yang cocok untuknya juga tidak bisa disaring.
 
 > **Semua kolom bertanda wajib harus dipilih.** Kalau ada yang terlewat, sistem
 > akan menolak dan menampilkan pesan seperti *"Peruntukan wajib dipilih"*.
@@ -391,9 +461,14 @@ Kalibrasi** pada kartu aset.
 
 ![Formulir Pembaruan Kondisi Aset](panduan/img/18-detail-pemeliharaan.webp)
 
-Di bagian atas ditampilkan identitas aset: ID, status, jenis alat, lokasi, UPT,
-tanggal beli, peruntukan, dan spesifikasi teknis. Di bawahnya ada dua tab:
-**Kondisi Pemeliharaan** dan **Pelaporan Kalibrasi**.
+Bagian atas layar ini kini tampil **sama persis seperti Kartu Aset QR**: kartu
+identitas (ID, status, jenis alat, nomor seri, Model/Type, pengadaan, tanggal
+beli, lokasi, UPT, peruntukan) berdampingan dengan kartu **Spesifikasi Alat
+Kerja** berikut fotonya. Petugas yang berpindah dari ponsel ke layar ini melihat
+mesin yang sama, digambarkan dengan cara yang sama.
+
+Di bawahnya ada tab **Kondisi Pemeliharaan** dan — bila jenis alatnya memang
+dikalibrasi — **Pelaporan Kalibrasi**.
 
 ### Melaporkan kondisi (SO / TSO)
 
@@ -406,6 +481,7 @@ Pada tab **Kondisi Pemeliharaan**, isi:
 5. **Status Kondisi Terkini** — pilih **SO — Siap Operasi** atau
    **TSO — Tidak Siap**.
 6. **Catatan Teknisi (Perbaikan)** — tuliskan tindakan yang dilakukan.
+7. **Sparepart yang Dipakai** *(opsional)* — lihat di bawah.
 
 Tekan **Simpan Pembaruan**.
 
@@ -417,11 +493,49 @@ bisa ditelusuri dari awal.
 > atas nama DAOP/DIVRE pemilik alat, bukan atas nama bengkel. Anda tidak perlu
 > melakukan apa pun — sistem mengurusnya sendiri.
 
+#### Mencatat sparepart yang dipakai
+
+Di bagian bawah formulir ada **Sparepart yang Dipakai**. Bagian ini
+menghubungkan pemeliharaan dengan Kelola Inventaris: begitu laporan disimpan,
+**stok gudang otomatis berkurang** dan tidak perlu dicatat ulang.
+
+1. Pilih **Gudang** asal barang.
+2. Tekan **+ Tambah Sparepart**, lalu pilih barangnya dan isi jumlahnya.
+3. Di sebelah kanan tiap baris muncul **sisa stok** dan **nilainya**. Kalau
+   jumlah yang Anda minta melebihi stok, tulisannya berubah merah — perbaiki
+   dulu sebelum menyimpan.
+4. **Total biaya** di kanan bawah menjumlahkan seluruh baris.
+
+Daftar barangnya sudah **disaring** ke alat kerja dan Model/Type aset ini,
+supaya Anda tidak perlu mencari di antara ratusan suku cadang. Kalau alat
+tersebut memang belum punya suku cadang terdaftar, RAMCES memberi tahu dan Anda
+bisa mencentang **Tampilkan semua sparepart** untuk memilih dari seluruh
+katalog.
+
+> **Semuanya tersimpan sekaligus atau tidak sama sekali.** Kalau stok salah satu
+> barang ternyata kurang, laporan kondisinya pun **tidak jadi tersimpan**, dan
+> muncul pesan seperti *"Stok BUSI tidak mencukupi. Tersedia 2 Piece, diminta
+> 5"*. Ini disengaja: tidak boleh ada perbaikan yang tercatat memakai barang
+> yang sebenarnya tidak pernah keluar dari gudang.
+
+Sparepart yang sudah tercatat muncul kembali sebagai label kecil di tab
+**Pemeliharaan** pada Detail Aset, lengkap dengan biayanya, dan ikut terhitung
+di kotak **Biaya Sparepart** pada Dashboard ▸ Laporan Perbaikan.
+
+Formulir yang sama juga tersedia di **Kartu Aset lewat QR**, sehingga petugas
+di lapangan bisa langsung mencatat dari ponsel.
+
 ### Mencatat kalibrasi
 
 ![Formulir Pelaporan Kalibrasi](panduan/img/19-detail-kalibrasi.webp)
 
 Pindah ke tab **Pelaporan Kalibrasi**, lalu isi:
+
+> **Tab ini tidak selalu ada.** RAMCES hanya menampilkannya untuk jenis alat
+> yang memang dikalibrasi menurut katalog — misalnya Track Gauge atau Rail Flaw
+> Detector. Genset atau impact wrench *dirawat*, bukan dikalibrasi, jadi tabnya
+> disembunyikan supaya tidak ada catatan kalibrasi yang sebenarnya tidak berarti.
+
 
 | Kolom | Keterangan |
 |---|---|
@@ -691,7 +805,7 @@ Ada enam tab:
 |---|---|
 | **Pengguna** | Daftar akun, perannya, dan wilayahnya |
 | **Alat Kerja** | Jenis alat beserta kodenya (GEN, RGM, TGT, …) |
-| **Spesifikasi** | Spesifikasi teknis per varian alat |
+| **Model/Type** | Merk, model, foto, dan lima baris spesifikasi tiap model alat |
 | **Lokasi** | DAOP, DIVRE, PUSAT, BALAIYASA |
 | **UPT** | Resort di bawah tiap lokasi |
 | **Gudang** | Daftar gudang penyimpanan suku cadang |
@@ -711,12 +825,39 @@ Untuk **UPT** isi Kode UPT, Nama UPT, dan **Induk Lokasi**.
 > Kode UPT harus mengikuti pola yang sudah ada (`JR1.7`, `JRIII.15`), karena dari
 > kode itulah sistem menentukan UPT tersebut milik DAOP/DIVRE yang mana.
 
-### Spesifikasi Teknis
+### Model/Type
 
-![Pusat Data — Spesifikasi](panduan/img/35-pusatdata-spesifikasi.webp)
+![Pusat Data — Model/Type](panduan/img/35-pusatdata-spesifikasi.webp)
 
-Isi Nama Varian, Merk, Tipe/Model, Kapasitas, Daya, Dimensi (P x L x T), Berat,
-dan Keterangan. Spesifikasi inilah yang muncul di kartu aset dan di kartu QR.
+Satu **Alat Kerja** (misalnya IMPACT WRENCH) bisa punya beberapa **Model/Type**
+(misalnya MILWAUKEE M18 ONEFHIWF34). Di sinilah Model/Type didaftarkan, dan
+isinya persis mengikuti format **Rekap Spek**:
+
+| Baris | Kolom | Wajib |
+|---|---|---|
+| 1 | **Merk** | Ya |
+| 2 | **Model/Type** | Ya |
+| 3–7 | **Spesifikasi Utama** — lima baris berpasangan *Parameter* dan *Nilai* | Dua baris pertama sebaiknya diisi |
+
+Nama tampilan terisi otomatis dari Merk + Model/Type (maksimal 50 karakter);
+Anda tetap boleh menyuntingnya.
+
+Label spesifikasi sengaja **bebas**, karena tiap jenis alat berbeda: sebuah
+impact wrench butuh *Max. Torque*, lampu kerja butuh *Runtime*, mesin potong rel
+butuh *Cutting Wheel*.
+
+Selain itu ada tiga lampiran:
+
+- **Foto Alat Kerja** — unggah berkas gambar, atau tempel URL gambar. Foto ini
+  tampil di kartu aset, di Form Pemeliharaan, dan di kartu QR yang bisa dibuka
+  siapa saja tanpa login.
+- **Spek Lengkap** dan **Manual Instruction** — unggah PDF, atau tempel URL.
+  Berbeda dengan foto, kedua dokumen ini **hanya bisa dibuka setelah login**.
+
+> Sebagian Model/Type hasil impor baru berisi nama saja dan belum punya Merk
+> maupun spesifikasi. Itu memang sengaja terlihat: daftarnya menunjukkan mana
+> yang masih perlu dilengkapi. Begitu Anda menyuntingnya, Merk dan Model/Type
+> menjadi wajib diisi.
 
 ### Gudang
 
@@ -756,7 +897,9 @@ Tanpa perlu masuk, siapa pun yang memindai langsung melihat:
   mutasi)
 - **Jenis Alat**, **Nomor Seri**, **Pengadaan**, **Tanggal Beli**
 - **Lokasi**, **UPT**, **Peruntukan**, **No. Urut**
-- **Spesifikasi Alat Kerja** — merk, tipe, kapasitas, daya, dimensi, berat
+- **Spesifikasi Alat Kerja** — foto alat, Merk, Model/Type, dan lima baris
+  spesifikasi utama, ditambah tautan **Spek Lengkap** dan **Manual Instruction**
+  bila tersedia
 - **Umur Aset** dan **Pemeliharaan Terakhir**
 
 ![Riwayat pada Kartu Aset](panduan/img/40-kartu-qr-riwayat.webp)
@@ -868,10 +1011,12 @@ terlanjur berjalan hanya karena Anda menutup jendelanya.
 | **Kalibrasi** | Pemeriksaan ketepatan alat oleh lembaga berwenang |
 | **Ketersediaan** | Persentase aset berstatus SO terhadap total |
 | **MCF** | *Mean Cumulative Function* — rata-rata perbaikan kumulatif per unit |
+| **Model/Type** | Merk dan tipe spesifik sebuah alat kerja, contoh `MILWAUKEE M18 ONEFHIWF34` di bawah `IMPACT WRENCH`. Dulu disebut *Varian* atau *Spesifikasi Teknis* |
 | **Mutasi** | Perpindahan aset dari satu lokasi ke lokasi lain |
 | **Pemeliharaan** | Pemeriksaan/perbaikan yang menghasilkan status SO atau TSO |
 | **Pengadaan** | Sumber pembelian aset: PUSAT atau DAOP/DIVRE |
 | **Peruntukan** | Unit pengguna alat: Jalan Rel, Jembatan, Mekanik, atau Balaiyasa |
+| **Pemakaian Sparepart** | Suku cadang yang tercatat dipakai pada satu perbaikan; stok gudang otomatis berkurang |
 | **SKU** | Kode katalog suku cadang |
 | **SO** | Siap Operasi — alat sehat dan boleh dipakai |
 | **Stok minimum** | Batas bawah stok; di bawahnya muncul peringatan |
@@ -879,7 +1024,6 @@ terlanjur berjalan hanya karena Anda menutup jendelanya.
 | **Suku Cadang** | Onderdil habis pakai; dihitung per gudang |
 | **TSO** | Tidak Siap Operasi — alat rusak atau sedang diperbaiki |
 | **UPT / Resort** | Unit kerja di bawah DAOP/DIVRE, contoh `JR 1.7 Rangkasbitung` |
-| **Varian** | Spesifikasi teknis sebuah model alat |
 
 ---
 

@@ -589,6 +589,35 @@
   background: #60a5fa;
 }
 
+/* ── Per-tab filter row legend ──
+   The four-swatch key used to sit once above ALL the tabs, where it described
+   matrix cell colours on five panels that had no such cells. It now renders
+   only where it means something — see _DASH_FILTER_SPEC in
+   js/views/dashboard.js. */
+.dash-key {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  white-space: nowrap;
+}
+
+.dash-swatch {
+  width: 0.75rem;
+  height: 0.75rem;
+  border-radius: 0.125rem;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+/* The filter rows stack under the panel header on a phone; the controls get a
+   full-width row of their own so a 150px-wide <select> is not squeezed to
+   nothing beside a four-item legend. */
+@media (max-width: 639px) {
+  .dash-filter-row > div:first-child > select {
+    flex: 1 1 100%;
+  }
+}
+
 /* ── Matrix table ── */
 #dash-matrix-table th,
 #dash-matrix-table td {
@@ -1119,6 +1148,412 @@
   box-shadow: 0 2px 8px rgba(243, 134, 27, 0.3);
 }
 
+/* ── Segmented control ────────────────────────────────────────────────── */
+/*
+   Three groups in this app are the same control drawn three different ways:
+   the Pantau Riwayat mode switch, the asset-detail mode switch, and the Pusat
+   Data master tabs. The first two each hand-maintained six Tailwind class
+   arrays in JS and swapped them on click, in near-identical 30-line copies
+   (`_setHistoryTab` and `switchDetailTab`). This is that control, once.
+
+   Mark the active button with `.is-active`; nothing else changes.
+*/
+
+.segmented {
+  display: inline-flex;
+  gap: 0.125rem;
+  padding: 0.1875rem;
+  border-radius: 0.625rem;
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+}
+
+.segmented-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+  padding: 0.4375rem 0.875rem;
+  border-radius: 0.4375rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 0.15s, color 0.15s, box-shadow 0.15s;
+}
+
+.segmented-btn:hover:not(.is-active) {
+  color: var(--text);
+  background: var(--surface-2);
+}
+
+.segmented-btn.is-active {
+  background: var(--surface);
+  color: var(--kai-blue);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+}
+
+.dark .segmented-btn.is-active {
+  background: var(--surface-2);
+  color: #93c5fd;
+}
+
+/* Full width on a phone: three modes across a 390px viewport need the room,
+   and a segmented control that wraps reads as three separate buttons. */
+@media (max-width: 480px) {
+  .segmented {
+    display: flex;
+    width: 100%;
+  }
+
+  .segmented-btn {
+    flex: 1 1 0;
+    padding-left: 0.375rem;
+    padding-right: 0.375rem;
+  }
+}
+
+/* ── Chips (active filter summary) ────────────────────────────────────── */
+/*
+   Kelola Data Aset, Pulihkan Aset Afkir and Kelola Data Alat Kerja each keep
+   their whole sort/filter state behind a modal, with nothing on the screen
+   saying a filter is applied — so a view showing 12 of 1,121 assets looked
+   identical to one showing all of them. These are that state, made visible and
+   individually removable.
+
+   `.filter-chip` above is a different thing and stays: it is the "N filter
+   aktif" counter on a collapsed <details> in Laporan.
+*/
+
+.chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  max-width: 100%;
+  padding: 0.1875rem 0.5rem 0.1875rem 0.625rem;
+  border-radius: 9999px;
+  border: 1px solid var(--border-strong);
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.chip-label {
+  color: var(--text-faint);
+  font-weight: 700;
+  text-transform: uppercase;
+  font-size: 0.5625rem;
+  letter-spacing: 0.03em;
+}
+
+.chip-value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The remove affordance. 16px visually, but `pointer: coarse` below grows the
+   hit area to 44px without changing the layout — a row of chips that doubled
+   in height on a phone would defeat the point. */
+.chip-x {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  width: 1rem;
+  height: 1rem;
+  border-radius: 9999px;
+  color: var(--text-faint);
+  font-size: 0.625rem;
+  cursor: pointer;
+  transition: background-color 0.15s, color 0.15s;
+}
+
+.chip-x:hover {
+  background: var(--kai-red, #dc2626);
+  color: #ffffff;
+}
+
+.chip-clear {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  color: var(--kai-blue);
+  text-decoration: underline;
+  cursor: pointer;
+  padding: 0.1875rem 0.25rem;
+}
+
+.dark .chip-clear {
+  color: #93c5fd;
+}
+
+/* ── Stepper (Kelola Data Alat Kerja asset forms) ─────────────────────── */
+/*
+   `peruntukan` and `sumber_pengadaan` are baked into the asset's composite
+   primary key, so a wrong pick is not a display bug — it is a malformed PK
+   that cannot be corrected later without rewriting every child row. The
+   stepper exists to make that consequence visible WHILE choosing, which is
+   also why the form is paired with a live preview of the id_aset being minted.
+*/
+
+.step {
+  position: relative;
+  padding-left: 2rem;
+}
+
+.step::before {
+  content: attr(data-step);
+  position: absolute;
+  left: 0;
+  top: -0.125rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* min-width, not width: the Model/Type step is numbered "1b" because it is a
+     sub-step of choosing the alat kerja, and a fixed 22px circle clips it. */
+  min-width: 1.375rem;
+  padding: 0 0.1875rem;
+  height: 1.375rem;
+  border-radius: 9999px;
+  background: var(--surface-sunken);
+  border: 1px solid var(--border-strong);
+  color: var(--text-faint);
+  font-size: 0.625rem;
+  font-weight: 700;
+  transition: background-color 0.2s, color 0.2s, border-color 0.2s;
+}
+
+/* The connecting rail. Stops short of the next marker so it reads as a track
+   rather than a border. */
+.step::after {
+  content: "";
+  position: absolute;
+  left: 0.6875rem;
+  top: 1.5rem;
+  bottom: -1.25rem;
+  width: 1px;
+  background: var(--border);
+}
+
+.step:last-of-type::after {
+  display: none;
+}
+
+.step.is-done::before {
+  content: "\f00c";           /* fa-check */
+  font-family: "Font Awesome 6 Free";
+  font-weight: 900;
+  background: var(--kai-blue);
+  border-color: var(--kai-blue);
+  color: #ffffff;
+}
+
+.step.is-active::before {
+  background: var(--kai-orange);
+  border-color: var(--kai-orange);
+  color: #ffffff;
+}
+
+.step-title {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-bottom: 0.5rem;
+}
+
+/* The live id_aset preview. Monospace and segment-annotated: the whole point is
+   that the user can see which choice produced which segment. */
+.id-preview {
+  border: 1px dashed var(--border-strong);
+  border-radius: 0.5rem;
+  background: var(--surface-sunken);
+  padding: 0.625rem 0.75rem;
+}
+
+.id-preview-caption {
+  font-size: 0.5625rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-faint);
+  margin-bottom: 0.375rem;
+}
+
+.id-preview-value {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.9375rem;
+  font-weight: 700;
+  color: var(--kai-blue);
+  word-break: break-all;
+  line-height: 1.5;
+}
+
+.dark .id-preview-value {
+  color: #93c5fd;
+}
+
+/* A segment the user has not chosen yet. */
+.id-seg-empty {
+  color: var(--text-faint);
+  font-weight: 400;
+}
+
+.id-preview-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.75rem;
+  margin-top: 0.375rem;
+  font-size: 0.5625rem;
+  color: var(--text-faint);
+}
+
+/* ── Pusat Data: two-level layout under lg: ───────────────────────────── */
+/*
+   Six master tabs, plus a create form, plus a data table, all stacked on one
+   390px screen. Above lg: that is a tab strip and a panel, which is fine.
+   Below it, the tabs become a LIST and the panel only appears once a master is
+   chosen — one level of content at a time, with a way back.
+
+   The whole thing is one class on the view, toggled by switchMasterTab() and
+   #master-back. Above lg: none of it applies, so the desktop layout is
+   untouched by construction.
+*/
+
+#master-detail-head {
+  display: none;
+}
+
+@media (max-width: 1023px) {
+  /* The tab strip becomes a list of rows. */
+  #master-tabs {
+    display: block;
+  }
+
+  #master-tabs .master-tab {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    width: 100%;
+    text-align: left;
+    justify-content: flex-start;
+    border-radius: 0.5rem;
+  }
+
+  /* A chevron, so the row reads as "opens something". */
+  #master-tabs .master-tab::after {
+    content: "\f054";              /* fa-chevron-right */
+    font-family: "Font Awesome 6 Free";
+    font-weight: 900;
+    margin-left: auto;
+    font-size: 0.625rem;
+    opacity: 0.5;
+  }
+
+  /* In the list, nothing is "current" — the active tab is only meaningful
+     once the panel is on screen. */
+  #view-masterdata:not(.is-drilled) #master-tabs .master-tab.is-active {
+    background: transparent;
+    color: var(--text);
+    box-shadow: none;
+    font-weight: 500;
+  }
+
+  /* Level 1: the list only. */
+  #view-masterdata:not(.is-drilled) #master-toolbar,
+  #view-masterdata:not(.is-drilled) .master-tab-panel {
+    display: none !important;
+  }
+
+  /* Level 2: the panel only. */
+  #view-masterdata.is-drilled #master-tabs,
+  #view-masterdata.is-drilled #master-counts {
+    display: none;
+  }
+
+  #view-masterdata.is-drilled #master-detail-head {
+    display: flex;
+  }
+}
+
+/* ── Sticky export bar (Proses Laporan) ───────────────────────────────── */
+/*
+   The Excel and PDF buttons used to sit ABOVE the preview table. Any real
+   export meant scrolling past up to 600 rows to check the data and then all
+   the way back up to press a button — so the two things the screen exists for
+   were never on screen together.
+
+   `bottom` clears #mobile-bottom-nav (which is only present under lg:) plus the
+   iOS safe-area inset, so the bar never sits under the nav or under the home
+   indicator.
+*/
+
+#exp-actions {
+  position: sticky;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 4.5rem);
+  z-index: 20;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 1rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  background: var(--surface);
+  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.08);
+}
+
+@media (min-width: 1024px) {
+  /* No bottom nav at this width, so the bar can sit lower. */
+  #exp-actions {
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 1rem);
+  }
+}
+
+/* ── Density ──────────────────────────────────────────────────────────── */
+/*
+   Kelola Data Aset shows 1,121 assets as cards. At "nyaman" spacing that is a
+   lot of scrolling for someone who knows what they are looking for, so the
+   toolbar carries a toggle and the choice is remembered.
+
+   Scoped to the view, not global: the dashboard and the master tables are
+   designed at one density and gain nothing from being squeezed.
+*/
+
+#view-database.is-compact #db-cards-container {
+  gap: 0.5rem;
+}
+
+#view-database.is-compact #db-cards-container > * {
+  font-size: 0.75rem;
+}
+
+#view-database.is-compact #db-cards-container .p-4,
+#view-database.is-compact #db-cards-container .p-5 {
+  padding: 0.625rem;
+}
+
+#view-database.is-compact #db-cards-container .py-3 {
+  padding-top: 0.25rem;
+  padding-bottom: 0.25rem;
+}
+
+/* Secondary detail is the first thing to go when the user asks for density. */
+#view-database.is-compact #db-cards-container .density-hide {
+  display: none;
+}
+
 /* ── Empty state ──────────────────────────────────────────────────────── */
 
 .empty-state {
@@ -1259,4 +1694,362 @@
   font-size: 0.6875rem;
   color: var(--text-faint);
   margin-top: 0.375rem;
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   MOBILE FIRST — the primitives added in the rev0.5.0 UX pass
+   ══════════════════════════════════════════════════════════════════════
+
+   These exist because the app was designed at desktop width and then simply
+   allowed to shrink. The audit found 24 tables, 20 horizontal scrollers and
+   not one column-priority rule anywhere in index.html: a technician on a phone
+   at a resort got a 240-column matrix to pan across and a drawer as the only
+   way to change screen. */
+
+/* ── 1. Stacked tables ────────────────────────────────────────────────
+   Under 640px each <tr> becomes a card and each <td> prints its own caption
+   from `data-label`. Horizontal scrolling is a desktop affordance: on a phone
+   it hides columns behind a gesture with nothing to suggest they are there.
+
+   Usage: add `.table-stack` to the <table> and `data-label="Kode"` to each
+   <td>. Cells with no data-label (an actions column) render full width. */
+@media (max-width: 639px) {
+  .table-stack,
+  .table-stack thead,
+  .table-stack tbody,
+  .table-stack tr,
+  .table-stack td {
+    display: block;
+    width: 100%;
+  }
+
+  /* Visually hidden, not display:none — the header text is still the accessible
+     name for each cell, and screen readers follow the table semantics. */
+  .table-stack thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .table-stack tbody tr {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 0.25rem 0;
+    margin-bottom: 0.625rem;
+    white-space: normal;
+  }
+
+  .table-stack tbody tr + tr {
+    border-top: 1px solid var(--border);
+  }
+
+  .table-stack td {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.4375rem 0.875rem;
+    white-space: normal;
+    text-align: right;
+  }
+
+  .table-stack td::before {
+    content: attr(data-label);
+    flex: 0 0 auto;
+    font-size: 0.6875rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-muted);
+    text-align: left;
+  }
+
+  /* A cell with no caption (buttons, checkboxes) spans the row. */
+  .table-stack td:not([data-label]) {
+    justify-content: flex-end;
+    text-align: right;
+  }
+  .table-stack td:not([data-label])::before {
+    content: none;
+  }
+
+  /* Empty states and spinners keep their own centred layout. */
+  .table-stack td[colspan]::before {
+    content: none;
+  }
+  .table-stack td[colspan] {
+    justify-content: center;
+    text-align: center;
+  }
+
+  /* The wrapper no longer needs to scroll once the table stacks. */
+  .table-stack-wrap {
+    overflow-x: visible !important;
+  }
+}
+
+/* ── 2. Mobile bottom navigation ──────────────────────────────────────
+   Five destinations within thumb reach. The middle slot is the primary
+   action — reporting a machine's condition is the one thing a technician
+   does in the field, and it used to be four taps deep behind the drawer. */
+#mobile-bottom-nav {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 60;
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  align-items: end;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  /* Clears the iOS home indicator and Android gesture bar. */
+  padding-bottom: env(safe-area-inset-bottom, 0);
+  box-shadow: 0 -2px 12px rgba(15, 23, 42, 0.08);
+}
+
+@media (min-width: 1024px) {
+  #mobile-bottom-nav {
+    display: none;
+  }
+}
+
+.bnav-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.1875rem;
+  /* 56px: comfortably above the 44px minimum touch target. */
+  min-height: 56px;
+  padding: 0.5rem 0.25rem;
+  font-size: 0.625rem;
+  font-weight: 600;
+  line-height: 1.1;
+  color: var(--text-muted);
+  background: none;
+  border: 0;
+  transition: color 0.15s;
+}
+
+.bnav-btn i {
+  font-size: 1.0625rem;
+}
+
+.bnav-btn.is-active {
+  color: var(--kai-blue);
+}
+
+.dark .bnav-btn.is-active {
+  color: #60a5fa;
+}
+
+.bnav-btn:active {
+  background: var(--surface-2);
+}
+
+/* The raised primary action. */
+.bnav-btn.bnav-primary {
+  color: #fff;
+}
+
+.bnav-btn.bnav-primary i {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  margin-top: -1.125rem;
+  border-radius: 9999px;
+  background: var(--kai-orange);
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(243, 134, 27, 0.4);
+}
+
+.bnav-btn.bnav-primary span {
+  color: var(--text-muted);
+}
+
+/* The scroll container must clear the bar, or the last row of every list sits
+   permanently underneath it. */
+@media (max-width: 1023px) {
+  #view-container {
+    padding-bottom: calc(5.5rem + env(safe-area-inset-bottom, 0px)) !important;
+  }
+}
+
+/* ── 3. Touch targets ─────────────────────────────────────────────────
+   Interactive controls get a 44px minimum hit area on touch devices without
+   growing visually — the padding does the work. Applied via `pointer: coarse`
+   so a mouse-driven desktop keeps its compact density. */
+@media (pointer: coarse) {
+  button,
+  [role="button"],
+  select,
+  a.btn,
+  .nav-btn,
+  .tab,
+  .dash-tab-btn {
+    min-height: 44px;
+  }
+
+  .btn-icon {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  /* Inline table-row buttons are the exception that proves the rule: they sit
+     in a dense list where 44px each would double every row's height. They get
+     a transparent expanded hit area instead. */
+  td button {
+    position: relative;
+  }
+  td button::after {
+    content: "";
+    position: absolute;
+    inset: -0.5rem;
+  }
+
+  /* Same treatment for a chip's remove control: a row of filter chips that
+     doubled in height on a phone would cost more than the chips are worth. */
+  .chip-x::after {
+    content: "";
+    position: absolute;
+    inset: -0.75rem;
+  }
+
+  /* The chips themselves stay compact, but the row gets breathing room so
+     adjacent hit areas do not overlap. */
+  .chip-row {
+    gap: 0.5rem;
+  }
+}
+
+/* ── 4. Skeleton rows ─────────────────────────────────────────────────
+   The global overlay blanks the whole screen on every apiFetch. For a list
+   refresh that is heavier than the change deserves; a skeleton keeps the page
+   readable and the scroll position intact. */
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--surface-2) 25%,
+    var(--surface-sunken) 37%,
+    var(--surface-2) 63%
+  );
+  background-size: 400% 100%;
+  animation: skeleton-sweep 1.4s ease-in-out infinite;
+  border-radius: 0.375rem;
+  color: transparent !important;
+}
+
+@keyframes skeleton-sweep {
+  0% { background-position: 100% 50%; }
+  100% { background-position: 0 50%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton {
+    animation: none;
+  }
+}
+
+/* Sized variants, so a placeholder can be written as one class rather than an
+   inline style at every call site. `.skeleton-text` is a line of body copy;
+   the `-sm`/`-lg` variants are a caption and a heading. Widths are varied at
+   the call site so a block of them does not read as a solid rectangle. */
+.skeleton-text,
+.skeleton-text-sm,
+.skeleton-text-lg {
+  display: block;
+  height: 0.875rem;
+  margin: 0.375rem 0;
+}
+
+.skeleton-text-sm {
+  height: 0.625rem;
+}
+
+.skeleton-text-lg {
+  height: 1.25rem;
+}
+
+/* A stand-in for one card in a grid, or one row in a list. */
+.skeleton-card {
+  height: 5.5rem;
+  border-radius: 0.75rem;
+}
+
+.skeleton-row {
+  height: 2.5rem;
+  border-radius: 0.5rem;
+  margin-bottom: 0.375rem;
+}
+
+/* Wrapper that marks a region as loading. `aria-busy` is the real signal for
+   assistive tech — a shimmer means nothing to a screen reader — so the
+   helpers in js/core.js set it alongside the placeholder markup. */
+.is-loading {
+  pointer-events: none;
+}
+
+/* ── 6. Detail history as a timeline under sm: ────────────────────────
+   The asset-detail Perbaikan and Kalibrasi panels are `.table-stack`, so under
+   640px each row already becomes a card. History is a SEQUENCE, though, and a
+   stack of disconnected cards does not say so — the Mutasi panel next to them
+   has been a real timeline all along, and the three read as unrelated screens.
+
+   This adds the rail and the node to the stacked rows, so all three detail
+   panels tell the same visual story. Above 640px nothing changes: the tables
+   stay tables, where the columns line up and comparison is the point. */
+@media (max-width: 639px) {
+  .table-timeline.table-stack tbody tr {
+    position: relative;
+    padding-left: 1.5rem;
+  }
+
+  /* The rail. Runs the full height of the row and joins to the next one. */
+  .table-timeline.table-stack tbody tr::before {
+    content: "";
+    position: absolute;
+    left: 0.3125rem;
+    top: 0;
+    bottom: -0.75rem;
+    width: 1px;
+    background: var(--border);
+  }
+
+  .table-timeline.table-stack tbody tr:last-child::before {
+    bottom: auto;
+    height: 0.75rem;
+  }
+
+  /* The node. */
+  .table-timeline.table-stack tbody tr::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 0.625rem;
+    width: 0.6875rem;
+    height: 0.6875rem;
+    border-radius: 9999px;
+    background: var(--surface);
+    border: 2px solid var(--kai-blue);
+  }
+}
+
+/* ── 5. Readable muted text ───────────────────────────────────────────
+   `text-gray-400` on white is 2.8:1 — below the 4.5:1 minimum, and it was the
+   app's default for field labels and captions. These map the two Tailwind
+   classes the codebase reaches for onto tokens that actually pass. */
+:root:not(.dark) .text-gray-400 {
+  color: #6b7280;
+}
+
+:root:not(.dark) .text-gray-300 {
+  color: #9ca3af;
 }

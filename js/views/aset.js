@@ -68,28 +68,63 @@ window.openEdit = (uid) => {
         year: "numeric",
       })
     : "—";
-  const statusBadgeCls =
-    item.status_terakhir === "SO"
-      ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-      : item.status_terakhir === "TSO"
-        ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
-        : "bg-blue-100 text-blue-700";
-
   if (_v("edit-card-id")) _v("edit-card-id").textContent = item.id_aset;
   if (_v("edit-card-nama"))
     _v("edit-card-nama").textContent = item.kode_alat_name || item.kode_alat;
-  if (_v("edit-card-lokasi")) _v("edit-card-lokasi").textContent = lokasiName;
-  if (_v("edit-card-upt")) _v("edit-card-upt").textContent = uptDisplayForCard;
-  if (_v("edit-card-tgl")) _v("edit-card-tgl").textContent = tanggalBeli;
-  if (_v("edit-card-peruntukan"))
-    _v("edit-card-peruntukan").textContent = peruntukanName;
-  if (_v("edit-card-varian"))
-    _v("edit-card-varian").textContent = item.nama_varian || "—";
+
+  // Status badge + the colour strip along the top of the card. Both go through
+  // the .badge component layer rather than hand-rolled Tailwind — this was one
+  // of the twenty drifting copies assets/style.css exists to retire.
   const statusEl = _v("edit-card-status");
   if (statusEl) {
-    statusEl.textContent = item.status_terakhir;
-    statusEl.className = `text-[10px] font-bold px-2 py-0.5 rounded-full ${statusBadgeCls}`;
+    const mod =
+      { SO: "badge-so", TSO: "badge-tso", AFKIR: "badge-afkir" }[
+        item.status_terakhir
+      ] || "badge-neutral";
+    statusEl.textContent = item.status_terakhir || "—";
+    statusEl.className = `badge ${mod}`;
   }
+  const strip = _v("edit-status-strip");
+  if (strip) {
+    const tone =
+      { SO: "bg-green-500", TSO: "bg-red-500", AFKIR: "bg-red-700" }[
+        item.status_terakhir
+      ] || "bg-gray-300";
+    strip.className = `h-1.5 w-full transition-colors duration-500 ${tone}`;
+  }
+
+  // "WAJIB KALIBRASI" only for tool types the katalog flags as needing it.
+  _v("edit-card-kalib-badge")?.classList.toggle(
+    "hidden",
+    item.perlu_kalibrasi !== true,
+  );
+
+  // ── Informasi Alat Kerja ──
+  // The same eight rows landing.html prints, built the same way, so the QR
+  // card and this form describe the machine identically.
+  const grid = _v("edit-detail-grid");
+  if (grid) {
+    const row = (label, val) =>
+      `<div><dt class="text-[9px] uppercase font-bold text-gray-400 dark:text-gray-500 tracking-wider mb-0.5">${label}</dt>
+       <dd class="font-semibold text-gray-800 dark:text-gray-100 text-sm break-words">${window.spekEscape(val ?? "—")}</dd></div>`;
+    grid.innerHTML = [
+      row("Jenis Alat", item.kode_alat_name || item.kode_alat),
+      row("Nomor Seri", item.nomor_seri || "—"),
+      row("Model/Type", item.nama_varian || "—"),
+      row("Pengadaan", item.sumber_pengadaan || "—"),
+      row("Tanggal Beli", tanggalBeli),
+      row("Lokasi", lokasiName || "—"),
+      row("UPT", uptDisplayForCard),
+      row("Peruntukan", peruntukanName),
+    ].join("");
+  }
+
+  // ── Model/Type spec card ──
+  // Fetched rather than read from `db`: the cached asset list carries only the
+  // model's NAME, not its photo or spec rows, and duplicating the whole spec
+  // block into /api/aset would add it to every one of 1,200 rows on a payload
+  // that is already the app's largest.
+  _loadEditSpecCard(item.id_varian);
 
   // ── "Sebelumnya di" labels ──
   const lokasiLabelEl = document.getElementById("edit-lokasi-label");
@@ -129,10 +164,258 @@ window.openEdit = (uid) => {
     btn.classList.remove("is-so", "is-tso", "is-idle");
     btn.classList.add("is-idle");
   });
+
+  // A genset is serviced, not calibrated. Hiding the tab for tool types the
+  // katalog does not flag keeps the form from producing records that cannot
+  // mean anything — same rule as landing.html's tab strip.
+  const kalibBtn = document.getElementById("edit-tab-kalibrasi");
+  kalibBtn?.classList.toggle("hidden", item.perlu_kalibrasi !== true);
   _switchEditFormTab("perbaikan");
+
+  // Parts picker: reset to one empty row, scoped to this machine's model.
+  initPemakaianPicker(item);
 
   switchView("edit");
 };
+
+// Model/Type payloads, keyed by id_varian. `/api/master/varian` is ~90 rows
+// and changes rarely, so one fetch serves every asset opened this session.
+let _varianCache = null;
+
+async function _loadEditSpecCard(idVarian) {
+  const card = document.getElementById("edit-spec-card");
+  if (!card) return;
+  if (!idVarian) {
+    window.renderSpekCard(card, null);
+    return;
+  }
+  try {
+    if (!_varianCache) {
+      const res = await apiFetch("/master/varian", { background: true });
+      if (!res.ok) throw new Error();
+      _varianCache = new Map((await res.json()).map((v) => [v.id_varian, v]));
+    }
+    window.renderSpekCard(card, _varianCache.get(idVarian) || null, {
+      fotoHeight: "h-40",
+    });
+  } catch (e) {
+    window.renderSpekCard(card, null);
+  }
+}
+
+// Invalidated by the WebSocket refresh so an edited Model/Type shows up
+// without a reload — see handleSocketMessage in js/shell.js.
+window.invalidateVarianCache = function () {
+  _varianCache = null;
+};
+
+// ══════════════════════════════════════════════════════════════════════════
+// PARTS PICKER — spareparts consumed by the repair being reported
+//
+// Submits inside the /api/perbaikan body, so the condition report and the
+// stock movements land in one transaction. See catat_perbaikan() in main.py.
+// ══════════════════════════════════════════════════════════════════════════
+
+// Compatible parts for the asset currently open, indexed by id_part.
+let _pakaiParts = new Map();
+
+async function initPemakaianPicker(item) {
+  const rows = document.getElementById("pakai-rows");
+  const gudangSel = document.getElementById("pakai-gudang");
+  if (!rows || !gudangSel) return;
+
+  rows.innerHTML = "";
+  _pakaiParts = new Map();
+  _renderPakaiTotal();
+
+  const semua = document.getElementById("pakai-semua");
+  if (semua) semua.checked = false;
+
+  const note = document.getElementById("pakai-scope-note");
+  if (note) {
+    note.textContent = item.nama_varian
+      ? `Hanya sparepart yang cocok untuk ${item.kode_alat_name || item.kode_alat} — ${item.nama_varian}.`
+      : `Hanya sparepart untuk ${item.kode_alat_name || item.kode_alat}.`;
+  }
+
+  try {
+    if (!gudangSel.options.length) {
+      const gres = await apiFetch("/inventaris/gudang", { background: true });
+      if (gres.ok) {
+        const gd = await gres.json();
+        const list = Array.isArray(gd) ? gd : gd.items || [];
+        gudangSel.innerHTML = list
+          .map((g) => `<option value="${g.id_gudang}">${window.spekEscape(g.nama)}</option>`)
+          .join("");
+      }
+    }
+    await _reloadPakaiParts(item);
+  } catch (e) {
+    /* the picker is optional; a failure must not block the condition report */
+  }
+}
+
+async function _reloadPakaiParts(item) {
+  const gudangSel = document.getElementById("pakai-gudang");
+  const semua = document.getElementById("pakai-semua")?.checked;
+  const params = new URLSearchParams();
+  // "Tampilkan semua" drops BOTH scoping filters, because a technician who
+  // reaches for it is usually fitting something the catalogue never associated
+  // with this tool at all — a generic bolt, a length of cable.
+  if (!semua) {
+    if (item.kode_alat) params.set("kode_alat", item.kode_alat);
+    if (item.id_varian) params.set("id_varian", item.id_varian);
+  }
+  // Stock is scoped to the chosen warehouse, so the "sisa" the technician sees
+  // is the number the server will check against on submit.
+  if (gudangSel?.value) params.set("id_gudang", gudangSel.value);
+
+  const res = await apiFetch(`/inventaris/parts?${params}`, { background: true });
+  if (!res.ok) return;
+  _pakaiParts = new Map((await res.json()).map((p) => [String(p.id_part), p]));
+
+  // Say so when the strict filter matched nothing, rather than presenting an
+  // empty dropdown that looks like a loading failure.
+  const note = document.getElementById("pakai-scope-note");
+  if (note && !semua && _pakaiParts.size === 0) {
+    note.innerHTML =
+      `<span class="text-amber-600 dark:text-amber-400 font-semibold">
+         Tidak ada sparepart terdaftar untuk alat/model ini.</span>
+       Centang "Tampilkan semua sparepart" untuk memilih dari seluruh katalog.`;
+  }
+  // Re-render existing rows so their option lists and stock hints follow the
+  // warehouse switch instead of showing another store's numbers.
+  document.querySelectorAll("#pakai-rows [data-pakai-row]").forEach((row) => {
+    const keep = row.querySelector("[data-pakai-part]").value;
+    _fillPakaiOptions(row.querySelector("[data-pakai-part]"), keep);
+    _updatePakaiRowHint(row);
+  });
+  _renderPakaiTotal();
+}
+
+function _fillPakaiOptions(select, selected) {
+  const opts = [...
+    _pakaiParts.values()]
+    .map(
+      (p) =>
+        `<option value="${p.id_part}" ${String(p.id_part) === String(selected) ? "selected" : ""}>` +
+        `${window.spekEscape(p.nama_part)} — stok ${p.stok_sekarang} ${window.spekEscape(p.unit || "")}` +
+        `</option>`,
+    )
+    .join("");
+  select.innerHTML =
+    `<option value="">— Pilih sparepart —</option>` +
+    (opts || `<option value="" disabled>Tidak ada sparepart yang cocok</option>`);
+}
+
+function _addPakaiRow() {
+  const wrap = document.getElementById("pakai-rows");
+  if (!wrap) return;
+  const row = document.createElement("div");
+  row.dataset.pakaiRow = "1";
+  row.className =
+    "flex flex-wrap items-end gap-2 bg-gray-50 dark:bg-gray-700/40 border border-gray-100 dark:border-gray-600 rounded-lg p-3";
+  row.innerHTML = `
+    <div class="flex-1 min-w-[12rem]">
+      <label class="block text-[10px] font-semibold text-gray-500 mb-1">Sparepart</label>
+      <select data-pakai-part aria-label="Pilih sparepart"
+        class="w-full p-2 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition"></select>
+    </div>
+    <div class="w-24">
+      <label class="block text-[10px] font-semibold text-gray-500 mb-1">Jumlah</label>
+      <input type="number" min="1" step="1" value="1" data-pakai-qty aria-label="Jumlah dipakai"
+        class="w-full p-2 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition" />
+    </div>
+    <div class="text-xs text-gray-500 dark:text-gray-400 min-w-[9rem]" data-pakai-hint>—</div>
+    <button type="button" class="btn-icon btn-icon-danger" data-pakai-remove aria-label="Hapus baris sparepart">
+      <i class="fas fa-trash-alt text-[11px]"></i>
+    </button>`;
+  wrap.appendChild(row);
+  _fillPakaiOptions(row.querySelector("[data-pakai-part]"), "");
+}
+
+function _updatePakaiRowHint(row) {
+  const sel = row.querySelector("[data-pakai-part]");
+  const qty = row.querySelector("[data-pakai-qty]");
+  const hint = row.querySelector("[data-pakai-hint]");
+  const part = _pakaiParts.get(String(sel.value));
+  if (!part) {
+    hint.textContent = "—";
+    hint.className = "text-xs text-gray-500 dark:text-gray-400 min-w-[9rem]";
+    return;
+  }
+  const n = parseInt(qty.value, 10) || 0;
+  const sisa = part.stok_sekarang - n;
+  const harga = (part.harga_satuan || 0) * n;
+  // Warn before the server has to: the submit is rejected wholesale, so
+  // catching it here saves the technician re-entering the whole report.
+  const over = sisa < 0;
+  hint.className = `text-xs min-w-[9rem] ${over ? "text-red-500 font-semibold" : "text-gray-500 dark:text-gray-400"}`;
+  hint.textContent = over
+    ? `Stok kurang ${Math.abs(sisa)} ${part.unit || ""}`
+    : `Sisa ${sisa} · ${KAI_VIZ.rupiahFull(harga)}`;
+}
+
+function _renderPakaiTotal() {
+  const el = document.getElementById("pakai-total");
+  if (!el) return;
+  let total = 0;
+  document.querySelectorAll("#pakai-rows [data-pakai-row]").forEach((row) => {
+    const part = _pakaiParts.get(String(row.querySelector("[data-pakai-part]").value));
+    const n = parseInt(row.querySelector("[data-pakai-qty]").value, 10) || 0;
+    if (part) total += (part.harga_satuan || 0) * n;
+  });
+  el.textContent = KAI_VIZ.rupiahFull(total);
+}
+
+/** → [{id_part, id_gudang, jumlah}] for the /api/perbaikan body, or [] when
+ *  nothing was picked. Rows with no part selected are silently skipped, so an
+ *  accidentally-added empty row never blocks the submit. */
+function collectPemakaian() {
+  const gudang = document.getElementById("pakai-gudang")?.value;
+  const out = [];
+  document.querySelectorAll("#pakai-rows [data-pakai-row]").forEach((row) => {
+    const idPart = parseInt(row.querySelector("[data-pakai-part]").value, 10);
+    const jumlah = parseInt(row.querySelector("[data-pakai-qty]").value, 10);
+    if (!idPart || !jumlah || jumlah <= 0) return;
+    out.push({
+      id_part: idPart,
+      jumlah,
+      id_gudang: gudang ? parseInt(gudang, 10) : null,
+    });
+  });
+  return out;
+}
+
+// Delegated: rows are created after this file evaluates, so per-row listeners
+// would have to be re-bound on every add.
+document.getElementById("pakai-rows")?.addEventListener("input", (e) => {
+  const row = e.target.closest("[data-pakai-row]");
+  if (!row) return;
+  _updatePakaiRowHint(row);
+  _renderPakaiTotal();
+});
+document.getElementById("pakai-rows")?.addEventListener("change", (e) => {
+  const row = e.target.closest("[data-pakai-row]");
+  if (!row) return;
+  _updatePakaiRowHint(row);
+  _renderPakaiTotal();
+});
+document.getElementById("pakai-rows")?.addEventListener("click", (e) => {
+  if (!e.target.closest("[data-pakai-remove]")) return;
+  e.target.closest("[data-pakai-row]")?.remove();
+  _renderPakaiTotal();
+});
+document.getElementById("pakai-add-row")?.addEventListener("click", _addPakaiRow);
+function _reloadPakaiForCurrentAsset() {
+  const item = db.find((x) => x.id_aset === document.getElementById("edit-uid")?.value);
+  if (item) _reloadPakaiParts(item);
+}
+document.getElementById("pakai-gudang")?.addEventListener("change", _reloadPakaiForCurrentAsset);
+document.getElementById("pakai-semua")?.addEventListener("change", _reloadPakaiForCurrentAsset);
+
+window.initPemakaianPicker = initPemakaianPicker;
+window.collectPemakaian = collectPemakaian;
 
 function _switchEditFormTab(tab) {
   const ACTIVE_REPAIR = [
@@ -225,27 +508,13 @@ window.deleteAset = async (uid) => {
 };
 
 function switchDetailTab(tab, uid) {
-  const ACTIVE_REPAIR   = ["bg-kai-blue", "text-white", "font-semibold", "shadow-sm"];
-  const INACTIVE_REPAIR = ["text-gray-500", "dark:text-gray-400", "font-medium", "hover:bg-blue-100", "hover:text-kai-blue", "dark:hover:bg-blue-900/20", "dark:hover:text-blue-300"];
-  const ACTIVE_KALIB    = ["bg-cyan-600", "text-white", "font-semibold", "shadow-sm"];
-  const INACTIVE_KALIB  = ["text-gray-500", "dark:text-gray-400", "font-medium", "hover:bg-cyan-100", "hover:text-cyan-700", "dark:hover:bg-cyan-900/20", "dark:hover:text-cyan-300"];
-  const ACTIVE_MUTASI   = ["bg-kai-orange", "text-white", "font-semibold", "shadow-sm"];
-  const INACTIVE_MUTASI = ["text-gray-500", "dark:text-gray-400", "font-medium", "hover:bg-orange-100", "hover:text-kai-orange", "dark:hover:bg-orange-900/20", "dark:hover:text-orange-300"];
-
-  const ALL = [...ACTIVE_REPAIR, ...INACTIVE_REPAIR, ...ACTIVE_KALIB, ...INACTIVE_KALIB, ...ACTIVE_MUTASI, ...INACTIVE_MUTASI];
-
-  const tabCfg = {
-    repair:    { active: ACTIVE_REPAIR,  inactive: INACTIVE_REPAIR  },
-    kalibrasi: { active: ACTIVE_KALIB,   inactive: INACTIVE_KALIB   },
-    mutasi:    { active: ACTIVE_MUTASI,  inactive: INACTIVE_MUTASI  },
-  };
-
-  ["repair", "kalibrasi", "mutasi"].forEach((t) => {
-    const btn = document.getElementById(`detail-tab-${t}`);
-    if (!btn) return;
-    ALL.forEach((c) => btn.classList.remove(c));
-    (t === tab ? tabCfg[t].active : tabCfg[t].inactive).forEach((c) => btn.classList.add(c));
-  });
+  // This was a near-identical copy of _setHistoryTab in shell.js — the same six
+  // class arrays, the same swap, already drifting apart. Both go through the
+  // one segmented-control helper now.
+  setSegmented(
+    ["detail-tab-repair", "detail-tab-kalibrasi", "detail-tab-mutasi"],
+    `detail-tab-${tab}`,
+  );
 
   document.getElementById("detail-panel-repair")?.classList.toggle("hidden", tab !== "repair");
   document.getElementById("detail-panel-kalibrasi")?.classList.toggle("hidden", tab !== "kalibrasi");
@@ -258,9 +527,9 @@ function switchDetailTab(tab, uid) {
 
 async function loadDetailRepair(uid) {
   const tbody = document.getElementById("hist-repair-tbody");
-  tbody.innerHTML = `<tr><td colspan="6" class="p-4 text-center text-gray-500"><i class="fas fa-spinner fa-spin mr-2"></i>Mengambil data...</td></tr>`;
+  skeletonRows("hist-repair-tbody", 8, 4);
   try {
-    const res = await apiFetch(`/riwayat-kondisi/${uid}`);
+    const res = await apiFetch(`/riwayat-kondisi/${uid}`, { background: true });
     if (!res.ok) throw new Error("Gagal mengambil riwayat.");
     const history = await res.json();
     if (!history.length) {
@@ -277,6 +546,15 @@ async function loadDetailRepair(uid) {
     }
 
     const asetTerkait = db.find((x) => x.id_aset === uid);
+
+    // Spareparts consumed, grouped by the repair that consumed them. Fetched
+    // alongside rather than joined into /api/riwayat-kondisi: most assets have
+    // none, and this keeps that endpoint's shape unchanged.
+    let pakaiByRiwayat = {};
+    try {
+      const pres = await apiFetch(`/aset/${uid}/pemakaian`, { background: true });
+      if (pres.ok) pakaiByRiwayat = (await pres.json()).per_riwayat || {};
+    } catch (_) { /* the table is still useful without the parts */ }
 
     const resolveLokasiCode = (kode) => {
       if (!kode) return { parentName: "—", uptName: "—" };
@@ -314,7 +592,7 @@ async function loadDetailRepair(uid) {
                 <td class="p-3 text-center">
                     <span class="text-xs font-bold px-2 py-0.5 rounded ${h.kondisi === "SO" ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"}">${h.kondisi}</span>
                 </td>
-                <td class="p-3 text-xs text-gray-500 whitespace-pre-wrap">${h.keterangan || "—"}</td>
+                <td class="p-3 text-xs text-gray-500 whitespace-pre-wrap">${h.keterangan || "—"}${_pakaiChips(pakaiByRiwayat[String(h.id_riwayat)])}</td>
             </tr>`;
       })
       .join("");
@@ -322,6 +600,27 @@ async function loadDetailRepair(uid) {
     if (e.message !== "Unauthorized")
       tbody.innerHTML = `<tr><td colspan="8" class="p-4 text-center text-red-500">${e.message}</td></tr>`;
   }
+}
+
+/** The parts consumed by one repair, as chips under its Keterangan cell. */
+function _pakaiChips(items) {
+  if (!items || !items.length) return "";
+  const esc = window.spekEscape;
+  const total = items.reduce((s, i) => s + (i.subtotal || 0), 0);
+  const chips = items
+    .map(
+      (i) =>
+        `<span class="inline-block text-[10px] bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-300
+           border border-amber-200 dark:border-amber-800/60 px-1.5 py-0.5 rounded mr-1 mb-1"
+           title="${esc(i.nama_part)} — ${esc(String(i.jumlah))} ${esc(i.unit || "")} @ ${KAI_VIZ.rupiahFull(i.harga_satuan)}">
+           <i class="fas fa-gear text-[8px]"></i> ${esc(i.nama_part)} ×${esc(String(i.jumlah))}</span>`,
+    )
+    .join("");
+  return `<div class="mt-1.5 pt-1.5 border-t border-dashed border-gray-200 dark:border-gray-600">
+            ${chips}
+            <span class="block text-[10px] font-semibold text-gray-600 dark:text-gray-300 mt-0.5">
+              Biaya sparepart: ${KAI_VIZ.rupiahFull(total)}</span>
+          </div>`;
 }
 
 /**
@@ -379,9 +678,9 @@ async function loadDetailKalibrasi(uid) {
   const tbody = document.getElementById("hist-kalibrasi-tbody");
   if (!tbody) return;
   const COLS = 9;
-  tbody.innerHTML = `<tr><td colspan="${COLS}" class="p-4 text-center text-gray-500"><i class="fas fa-spinner fa-spin mr-2"></i>Mengambil data...</td></tr>`;
+  skeletonRows("hist-kalibrasi-tbody", COLS, 4);
   try {
-    const res = await apiFetch(`/kalibrasi/${uid}`);
+    const res = await apiFetch(`/kalibrasi/${uid}`, { background: true });
     if (!res.ok) throw new Error("Gagal mengambil riwayat kalibrasi.");
     const history = await res.json();
     if (!history.length) {
@@ -443,11 +742,18 @@ async function loadDetailKalibrasi(uid) {
 async function loadDetailMutasi(uid) {
   const timeline = document.getElementById("mutasi-timeline");
   const originBar = document.getElementById("mutasi-origin-bar");
-  timeline.innerHTML = `<div class="text-center text-gray-400 py-6"><i class="fas fa-spinner fa-spin mr-2"></i>Mengambil data...</div>`;
+  timeline.setAttribute("aria-busy", "true");
+  timeline.innerHTML = Array.from({ length: 3 })
+    .map(
+      () =>
+        `<div class="mb-3"><span class="skeleton skeleton-text" style="width:60%"></span>
+           <span class="skeleton skeleton-text-sm" style="width:35%"></span></div>`,
+    )
+    .join("");
   originBar.innerHTML = "";
 
   try {
-    const res = await apiFetch(`/mutasi/${uid}`);
+    const res = await apiFetch(`/mutasi/${uid}`, { background: true });
     if (!res.ok) throw new Error("Gagal mengambil riwayat mutasi.");
     const data = await res.json();
 
@@ -581,11 +887,42 @@ function _renderDbStats(items, mode, myRegion) {
   );
 }
 
+// ══════════════════════════════════════════════════════════════════════
+// DENSITY TOGGLE (Kelola Data Aset)
+// ══════════════════════════════════════════════════════════════════════
+//
+// 1,121 assets as cards is a lot of scrolling for someone who already knows
+// what they are looking for. Scoped to this view and remembered, because a
+// density preference that resets on every visit is worse than none.
+
+const DB_DENSITY_KEY = "dbDensity";
+
+function applyDbDensity() {
+  const compact = localStorage.getItem(DB_DENSITY_KEY) === "compact";
+  document.getElementById("view-database")?.classList.toggle("is-compact", compact);
+  const btn = document.getElementById("btn-db-density");
+  const label = document.getElementById("btn-db-density-label");
+  if (label) label.textContent = compact ? "Rapat" : "Nyaman";
+  if (btn) {
+    btn.setAttribute("aria-pressed", compact ? "true" : "false");
+    const icon = btn.querySelector("i");
+    if (icon) icon.className = compact ? "fas fa-grip-lines" : "fas fa-bars";
+  }
+}
+
+document.getElementById("btn-db-density")?.addEventListener("click", () => {
+  const compact = localStorage.getItem(DB_DENSITY_KEY) === "compact";
+  localStorage.setItem(DB_DENSITY_KEY, compact ? "comfortable" : "compact");
+  applyDbDensity();
+});
+
 function renderDbCards() {
   const container = document.getElementById("db-cards-container");
   const searchInput = document.getElementById("search-db");
   const modeSelect = document.getElementById("filter-mode");
   if (!container) return;
+
+  applyDbDensity();
 
   container.innerHTML = "";
 
@@ -648,9 +985,26 @@ function renderDbCards() {
   // previous filter's numbers standing.
   _renderDbStats(filteredItems, mode, myRegion);
 
+  // The active sort/filter state used to be visible nowhere outside the modal,
+  // so a view showing 12 of 1,121 assets looked like one showing all of them.
+  window.renderFilterChips?.("db-filter-chips", _sortFilters, () => {
+    resetPage("db");
+    renderDbCards();
+  }, [
+    {
+      key: "__q",
+      label: "Cari",
+      value: (document.getElementById("search-db")?.value || "").trim(),
+      clear: () => {
+        const box = document.getElementById("search-db");
+        if (box) box.value = "";
+      },
+    },
+  ]);
+
   if (!filteredItems.length) {
     renderPagerBar("db-pager", paginateList("db", filteredItems), renderDbCards);
-    container.innerHTML = `<div class="col-span-full text-center text-gray-400 py-12"><i class="fas fa-inbox text-3xl mb-2 block"></i>Tidak ada aset alat kerja yang cocok dengan filter ini.</div>`;
+    container.innerHTML = `<div class="empty-state col-span-full"><i class="fas fa-inbox"></i>Tidak ada aset alat kerja yang cocok dengan filter ini.</div>`;
     return;
   }
 
@@ -789,7 +1143,7 @@ function renderDbCards() {
                     ${row("Lokasi", lokasiName)}
                     ${row("UPT", uptDisplay)}
                     ${row("Peruntukan", peruntukanName)}
-                    ${row("Spesifikasi Teknis", item.nama_varian || "—")}
+                    ${row("Model/Type", item.nama_varian || "—")}
                 </div>
             </div>
             <div class="mt-4 space-y-2">

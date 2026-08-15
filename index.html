@@ -123,106 +123,65 @@
                     </div>
                 </div>
 
-                <!-- Step 1: Username -->
-                <div id="auth-step-1" class="space-y-4">
+                <!-- ══════════════════════════════════════════════════
+                     LOGIN — one step: username + password.
+
+                     This replaced a three-step wizard whose middle step asked
+                     the user to PICK THEIR OWN ROLE from three cards, and whose
+                     third step asked them to pick their own region. Both are
+                     properties of the account, not choices, and the server now
+                     reads them from the stored row and ignores whatever the
+                     request body claims. Asking for them was the privilege
+                     escalation: anyone could choose SUPER ADMIN.
+
+                     Removing the two steps also removed the confirmation dialog
+                     that used to recite the answers back, so signing in is now
+                     two fields and one button.
+                ══════════════════════════════════════════════════════ -->
+                <form id="form-login" class="space-y-4" novalidate>
                     <div>
-                        <label for="login-username" class="block text-xs font-semibold mb-1.5 text-gray-600 dark:text-gray-300">Nama Pengguna</label>
-                        <input type="text" id="login-username" autocomplete="username"
+                        <label for="login-username"
+                            class="block text-xs font-semibold mb-1.5 text-gray-600 dark:text-gray-300">Nama
+                            Pengguna</label>
+                        <input type="text" id="login-username" name="username" autocomplete="username"
+                            autocapitalize="none" autocorrect="off" spellcheck="false" required
                             class="w-full p-3 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-kai-blue outline-none text-sm transition" />
                     </div>
-                    <button id="btn-next-step"
-                        class="w-full bg-kai-blue hover:bg-blue-800 active:bg-blue-900 text-white font-semibold py-3 rounded-lg transition-colors shadow-md text-sm">
-                        Lanjutkan <i class="fas fa-arrow-right ml-2 opacity-70"></i>
-                    </button>
-                </div>
 
-                <!-- Step 2: Division Role Cards -->
-                <div id="auth-step-2" class="hidden space-y-4">
-                    <div class="flex items-center gap-3 mb-2">
-                        <button id="btn-back-step1"
-                            class="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 font-semibold text-sm transition">
-                            <i class="fas fa-arrow-left"></i> Kembali
-                        </button>
-                        <div>
-                            <p class="text-xs text-gray-400">Masuk sebagai</p>
-                            <p class="text-sm font-bold text-gray-700 dark:text-gray-200" id="auth-display-username">
-                                —
-                            </p>
-                        </div>
-                    </div>
-                    <p class="text-xs font-semibold text-gray-500 uppercase tracking-widest">
-                        Pilih Divisi
-                    </p>
-                    <div class="grid grid-cols-3 gap-3">
-                        <!-- TraKSI -->
-                        <button data-division="TEKNISI"
-                            class="division-card flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-gray-200 dark:border-gray-600 hover:border-kai-blue hover:bg-blue-50 dark:hover:bg-blue-900/20 transition group">
-                            <div
-                                class="w-10 h-10 rounded-lg bg-gray-100 dark:bg-gray-700 flex items-center justify-center group-hover:bg-kai-blue transition">
-                                <!-- [REPLACE: TraKSI Logo] -->
-                                <span
-                                    class="text-[10px] font-black text-kai-blue group-hover:text-white transition leading-none text-center">Tra<br />KSI</span>
-                            </div>
-                            <span
-                                class="text-[10px] font-bold text-gray-500 dark:text-gray-400 group-hover:text-kai-blue dark:group-hover:text-blue-400 transition text-center leading-tight">TEKNISI</span>
-                        </button>
-                        <!-- Admin Wilayah -->
-                        <button data-division="ADMIN_WILAYAH"
-                            class="division-card flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-gray-200 dark:border-gray-600 hover:border-kai-orange hover:bg-orange-50 dark:hover:bg-orange-900/20 transition group">
-                            <div
-                                class="w-10 h-10 rounded-lg bg-gray-100 dark:bg-gray-700 flex items-center justify-center group-hover:bg-kai-orange transition">
-                                <!-- [REPLACE: Admin DAOP Logo] -->
-                                <span
-                                    class="text-[10px] font-black text-kai-orange group-hover:text-white transition leading-none text-center">ADM<br />DAOP</span>
-                            </div>
-                            <span
-                                class="text-[10px] font-bold text-gray-500 dark:text-gray-400 group-hover:text-kai-orange dark:group-hover:text-orange-400 transition text-center leading-tight">ADMIN
-                                WILAYAH</span>
-                        </button>
-                        <!-- RAMCES -->
-                        <button data-division="SUPER_ADMIN"
-                            class="division-card flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-gray-200 dark:border-gray-600 hover:border-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 transition group">
-                            <div
-                                class="w-10 h-10 rounded-lg bg-gray-100 dark:bg-gray-700 flex items-center justify-center group-hover:bg-emerald-500 transition">
-                                <!-- [REPLACE: RAMCES Logo] -->
-                                <span
-                                    class="text-[10px] font-black text-emerald-600 group-hover:text-white transition leading-none text-center">RAM<br />CES</span>
-                            </div>
-                            <span
-                                class="text-[10px] font-bold text-gray-500 dark:text-gray-400 group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition text-center leading-tight">SUPER
-                                ADMIN</span>
-                        </button>
-                    </div>
-                </div>
-
-                <!-- Step 3: Region + Login -->
-                <div id="auth-step-3" class="hidden space-y-4">
-                    <div class="flex items-center gap-3 mb-2">
-                        <button id="btn-back-step2"
-                            class="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 font-semibold text-sm transition">
-                            <i class="fas fa-arrow-left"></i> Kembali
-                        </button>
-                        <div>
-                            <p class="text-xs text-gray-400">Masuk sebagai</p>
-                            <p class="text-sm font-bold text-gray-700 dark:text-gray-200" id="auth-display-role">
-                                —
-                            </p>
-                        </div>
-                    </div>
                     <div>
-                        <label for="login-region" class="block text-xs font-semibold mb-1.5 text-gray-600 dark:text-gray-300">Wilayah / Region</label>
-                        <select id="login-region"
-                            class="w-full p-3 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg outline-none focus:ring-2 focus:ring-kai-blue text-sm transition">
-                            <option value="">Memuat...</option>
-                        </select>
+                        <label for="login-password"
+                            class="block text-xs font-semibold mb-1.5 text-gray-600 dark:text-gray-300">Password</label>
+                        <div class="relative">
+                            <input type="password" id="login-password" name="password"
+                                autocomplete="current-password" required
+                                class="w-full p-3 pr-12 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-kai-blue outline-none text-sm transition" />
+                            <!-- Reveal toggle: technicians type these on a phone
+                                 in daylight, and a mistyped password with no way
+                                 to check it is the most common login failure. -->
+                            <button type="button" id="btn-toggle-password" aria-pressed="false"
+                                aria-label="Tampilkan password"
+                                class="absolute inset-y-0 right-0 w-12 flex items-center justify-center text-gray-400 hover:text-kai-blue dark:hover:text-blue-400 transition rounded-r-lg">
+                                <i class="fas fa-eye" id="icon-toggle-password"></i>
+                            </button>
+                        </div>
                     </div>
-                    <!-- Hidden role field carried from step 2 -->
-                    <input type="hidden" id="login-role" value="" />
-                    <button id="btn-login"
-                        class="w-full bg-kai-blue hover:bg-blue-800 active:bg-blue-900 text-white font-semibold py-3 rounded-lg transition-colors shadow-md text-sm">
+
+                    <!-- Live region: login errors must reach a screen reader,
+                         and a toast alone does not. -->
+                    <p id="login-error" role="alert" aria-live="polite"
+                        class="hidden text-xs font-semibold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800/50 rounded-lg px-3 py-2">
+                    </p>
+
+                    <button type="submit" id="btn-login"
+                        class="w-full bg-kai-blue hover:bg-blue-800 active:bg-blue-900 text-white font-semibold py-3 rounded-lg transition-colors shadow-md text-sm disabled:opacity-60 disabled:cursor-not-allowed">
                         Masuk <i class="fas fa-arrow-right ml-2 opacity-70"></i>
                     </button>
-                </div>
+
+                    <p class="text-[11px] text-center text-gray-400 dark:text-gray-500 leading-relaxed pt-1">
+                        Belum punya akun? Hubungi SUPER ADMIN atau Admin Wilayah Anda.<br />
+                        Peran dan wilayah mengikuti akun Anda, tidak dipilih saat masuk.
+                    </p>
+                </form>
             </div>
         </div>
     </div>
@@ -365,13 +324,47 @@
                             id="ws-status-label">Menghubungkan...</span>
                     </div>
 
-                    <!-- Bell -->
-                    <button aria-label="Notifikasi"
-                        class="relative w-8 h-8 flex items-center justify-center rounded-lg text-gray-400 hover:text-kai-blue hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+                    <!-- Aktivitas (bell)
+                         This used to be decoration: a permanent red dot and no
+                         click handler at all, so it promised unread news that
+                         did not exist and could not be dismissed. A control
+                         that lies is worse than no control.
+
+                         It now opens a feed of the WebSocket broadcasts this
+                         session has actually received (REFRESH_ASSET_LIST,
+                         REFRESH_INVENTARIS, REFRESH_PRESENCE) — which the app
+                         was already handling silently — and the dot reflects a
+                         real unread count. See js/shell.js ▸ pushActivity(). -->
+                    <button id="btn-activity" aria-label="Aktivitas terbaru" aria-expanded="false"
+                        class="relative w-9 h-9 flex items-center justify-center rounded-lg text-gray-400 hover:text-kai-blue hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
                         <i class="fas fa-bell text-xl"></i>
-                        <span
-                            class="absolute top-1 right-1 w-2 h-2 bg-red-600 rounded-full border-2 border-white dark:border-gray-800"></span>
+                        <span id="activity-dot"
+                            class="hidden absolute top-0.5 right-0.5 min-w-[16px] h-4 px-1 flex items-center justify-center
+                                   text-[9px] font-bold text-white bg-red-600 rounded-full
+                                   border-2 border-white dark:border-gray-800"></span>
                     </button>
+
+                    <!-- Activity panel. Anchored to the bell on desktop, a
+                         full-width sheet under sm: where a 320px popover would
+                         hang off the edge. -->
+                    <div id="activity-panel"
+                        class="hidden fixed sm:absolute inset-x-2 sm:inset-x-auto top-16 sm:top-14 sm:right-4 z-[70]
+                               sm:w-80 max-h-[60vh] flex flex-col
+                               bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-xl">
+                        <div
+                            class="flex items-center justify-between px-4 py-2.5 border-b border-gray-100 dark:border-gray-700">
+                            <h3 class="text-sm font-bold text-gray-800 dark:text-white">Aktivitas</h3>
+                            <button id="activity-clear"
+                                class="text-[11px] font-semibold text-kai-blue dark:text-blue-400 hover:underline">
+                                Tandai dibaca
+                            </button>
+                        </div>
+                        <ul id="activity-list" class="flex-1 overflow-y-auto divide-y divide-gray-100 dark:divide-gray-700/50">
+                        </ul>
+                        <p class="px-4 py-2 text-[10px] text-gray-400 border-t border-gray-100 dark:border-gray-700">
+                            Hanya kejadian selama sesi ini. Riwayat lengkap ada di Pantau Riwayat Aset.
+                        </p>
+                    </div>
 
                     <!-- User profile button -->
                     <button id="profile-btn"
@@ -426,6 +419,17 @@
                         <i
                             class="fas fa-chart-line text-2xl text-kai-blue/30 dark:text-gray-600 hidden sm:block shrink-0"></i>
                     </div>
+
+                    <!-- What the KPI strip is currently counting.
+                         The strip sits ABOVE the tab bar but follows the ACTIVE
+                         tab's filter, so it has to say so: "Total 250" over a
+                         panel showing the whole fleet is just a wrong number
+                         with no way to tell. Filled by _syncDashKpiScope(). -->
+                    <p class="text-[11px] text-gray-500 dark:text-gray-400 -mt-1 flex items-center gap-1.5">
+                        <i class="fas fa-filter text-[9px] opacity-60"></i>
+                        Menghitung: <span class="font-semibold text-gray-700 dark:text-gray-200"
+                            id="dash-kpi-scope">seluruh armada</span>
+                    </p>
 
                     <!-- KPI cards: 2 col mobile → 3 col sm → 5 col lg -->
                     <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
@@ -490,41 +494,25 @@
                     <!-- ── Separator ── -->
                     <hr class="border-gray-200 dark:border-gray-700" />
 
-                    <!-- ── Zone 3: Filter bar + Keterangan legend ── -->
-                    <div class="flex flex-col sm:flex-row gap-4 items-start sm:items-end">
-                        <!-- Left: filters -->
-                        <div class="flex flex-wrap gap-2 flex-1">
-                            <select id="dash-filter-alat"
-                                class="text-xs px-3 py-2.5 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 outline-none focus:border-kai-blue transition min-w-[140px]">
-                                <option value="">Semua Alat Kerja</option>
-                            </select>
-                            <select id="dash-filter-pengadaan"
-                                class="text-xs px-3 py-2.5 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 outline-none focus:border-kai-blue transition">
-                                <option value="">Semua Pengadaan</option>
-                                <option value="1">PUSAT</option>
-                                <option value="2">DAOP / DIVRE</option>
-                            </select>
-                            <select id="dash-filter-tahun"
-                                class="text-xs px-3 py-2.5 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 outline-none focus:border-kai-blue transition">
-                                <option value="">Semua Tahun</option>
-                            </select>
-                        </div>
-                        <!-- Right: Keterangan legend -->
-                        <div class="flex flex-wrap gap-x-4 gap-y-1 text-xs shrink-0">
-                            <span class="flex items-center gap-1.5"><span
-                                    class="w-3 h-3 rounded-sm bg-green-500 inline-block"></span>
-                                SO — Siap Operasi</span>
-                            <span class="flex items-center gap-1.5"><span
-                                    class="w-3 h-3 rounded-sm bg-red-500 inline-block"></span>
-                                TSO — Tidak Siap</span>
-                            <span class="flex items-center gap-1.5"><span
-                                    class="w-3 h-3 rounded-sm bg-gradient-to-br from-green-300 to-red-300 inline-block"></span>
-                                Lebih dari 1 Unit</span>
-                            <span class="flex items-center gap-1.5"><span
-                                    class="w-3 h-3 rounded-sm border border-gray-300 dark:border-gray-600 inline-block"></span>
-                                — Tidak ada Alat Kerja</span>
-                        </div>
-                    </div>
+                    <!-- ── Zone 3 REMOVED: the global filter bar and the
+                         Keterangan legend used to sit here.
+
+                         The bar carried Semua Alat Kerja / Pengadaan / Tahun
+                         above SIX tabs, and three of them ignored it outright:
+                         Tren Perbaikan had its own year picker, and Laporan
+                         Perbaikan and Kurva MCF have their own Lokasi + Tahun
+                         row. A filter that visibly applies to half the screen
+                         is worse than no filter.
+
+                         The legend described MATRIX CELL colours and nothing
+                         else, so on five of six tabs it explained a thing that
+                         was not on screen.
+
+                         Both now live per panel, built by
+                         _renderDashFilterRow() in js/views/dashboard.js from
+                         one declarative spec — see _DASH_FILTER_SPEC there.
+                         Each tab keeps its OWN selection.
+                    ── -->
 
                     <!-- ── Zone 4+5: Tab switcher + panels ── -->
                     <div
@@ -572,6 +560,7 @@
                             <!-- Panel: Matrix -->
                             <div id="dash-panel-matrix" class="dash-panel p-2 overflow-x-auto overflow-y-auto"
                                 style="max-height: 70vh">
+                                <div id="dash-filters-matrix" class="dash-filter-row"></div>
                                 <table id="dash-matrix-table" class="w-full border-collapse text-xs">
                                     <thead id="dash-matrix-thead"></thead>
                                     <tbody id="dash-matrix-tbody"></tbody>
@@ -580,11 +569,13 @@
                             <!-- Panel: Bar chart -->
                             <div id="dash-panel-bar" class="dash-panel hidden p-4"
                                 style="max-height: 70vh; overflow-y: auto">
+                                <div id="dash-filters-bar" class="dash-filter-row"></div>
                                 <canvas id="dash-chart-bar" style="max-height: 420px"></canvas>
                             </div>
                             <!-- Panel: Availability rate chart -->
                             <div id="dash-panel-avail" class="dash-panel hidden p-4"
                                 style="max-height: 70vh; overflow-y: auto">
+                                <div id="dash-filters-avail" class="dash-filter-row"></div>
                                 <canvas id="dash-chart-avail" style="max-height: 420px"></canvas>
                             </div>
                             <!-- Panel: Trend line chart
@@ -595,12 +586,7 @@
                                  the filter being ignored. -->
                             <div id="dash-panel-trend" class="dash-panel hidden p-4"
                                 style="max-height: 70vh; overflow-y: auto">
-                                <div class="flex items-center justify-end gap-2 mb-3">
-                                    <label for="dash-trend-tahun"
-                                        class="text-xs font-semibold text-gray-500 dark:text-gray-400">Tahun</label>
-                                    <select id="dash-trend-tahun"
-                                        class="text-xs px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 outline-none focus:border-kai-blue transition"></select>
-                                </div>
+                                <div id="dash-filters-trend" class="dash-filter-row"></div>
                                 <canvas id="dash-chart-trend" style="max-height: 420px"></canvas>
                             </div>
 
@@ -680,7 +666,7 @@
                                                 </p>
                                             </div>
                                             <div
-                                                class="grid grid-cols-1 sm:grid-cols-4 divide-y sm:divide-y-0 sm:divide-x divide-gray-100 dark:divide-gray-700">
+                                                class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 divide-y sm:divide-y-0 sm:divide-x divide-gray-100 dark:divide-gray-700">
                                                 <div class="p-5 text-center">
                                                     <p
                                                         class="text-[10px] font-bold tracking-widest text-gray-400 uppercase mb-1">
@@ -713,6 +699,18 @@
                                                     <p class="text-4xl font-black text-gray-800 dark:text-white"
                                                         id="rd-selesai">—</p>
                                                     <p class="text-[10px] text-gray-400 mt-1" id="rd-diafkir">—</p>
+                                                </div>
+                                                <!-- Cost of the spareparts actually consumed by these repairs,
+                                                     attributed to the region that OWNS each machine — a Balaiyasa
+                                                     visit does not move the spend out of the owning DAOP. -->
+                                                <div class="p-5 text-center"
+                                                    title="Total nilai sparepart yang dipakai pada perbaikan dalam cakupan ini.">
+                                                    <p
+                                                        class="text-[10px] font-bold tracking-widest text-gray-400 uppercase mb-1">
+                                                        Biaya Sparepart</p>
+                                                    <p class="text-3xl font-black text-emerald-600 dark:text-emerald-400"
+                                                        id="rd-biaya">—</p>
+                                                    <p class="text-[10px] text-gray-400 mt-1" id="rd-biaya-item">—</p>
                                                 </div>
                                                 <div class="p-4 flex items-center justify-center gap-3">
                                                     <div class="relative w-24 h-24 shrink-0">
@@ -823,7 +821,7 @@
                                                 class="bg-amber-100 dark:bg-amber-900/40 text-amber-600 text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0">0</span>
                                         </div>
                                         <div class="overflow-y-auto flex-1 max-h-[560px]">
-                                            <table class="w-full text-[10px]">
+                                            <table class="table-stack w-full text-[10px]">
                                                 <thead class="sticky top-0 bg-gray-50 dark:bg-gray-700/60 z-10">
                                                     <tr class="border-b border-gray-100 dark:border-gray-700">
                                                         <th
@@ -845,6 +843,22 @@
                                                     </tr>
                                                 </tbody>
                                             </table>
+                                        </div>
+
+                                        <!-- Which parts this scope burned the most
+                                             money on. Sits under the workshop list
+                                             because the two answer the same question
+                                             from opposite ends: what is down, and
+                                             what it is costing to bring back. -->
+                                        <div class="border-t border-gray-100 dark:border-gray-700">
+                                            <div class="px-4 py-3 border-b border-gray-100 dark:border-gray-700">
+                                                <p
+                                                    class="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-widest leading-tight">
+                                                    Sparepart Terbanyak Dipakai</p>
+                                            </div>
+                                            <div id="rd-top-sparepart" class="p-3 space-y-1.5 max-h-[280px] overflow-y-auto">
+                                                <p class="py-6 text-center text-gray-400 italic text-xs">Tidak ada data</p>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
@@ -1122,9 +1136,12 @@
                                 <span class="text-xs text-white/60 shrink-0 font-mono" id="kdak-table-count"></span>
                             </div>
                         </div>
+                        <!-- Active sort/filter state. Third caller of the shared
+                             renderFilterChips() — same keys as the two card views. -->
+                        <div id="kdak-filter-chips" class="chip-row hidden px-4 py-2.5 border-b border-gray-100 dark:border-gray-700"></div>
                         <!-- Table -->
-                        <div class="overflow-x-auto">
-                            <table class="w-full text-sm">
+                        <div class="overflow-x-auto table-stack-wrap">
+                            <table class="table-stack w-full text-sm">
                                 <thead>
                                     <tr
                                         class="border-b border-gray-100 dark:border-gray-700 bg-gray-50/60 dark:bg-gray-700/40">
@@ -1158,6 +1175,34 @@
                  VIEW: INVENTARIS → Kelola Inventaris (Parts)
                 ───────────────────────────────────────────── -->
                 <section id="view-inventaris" class="view-section space-y-5">
+
+                    <!-- ── Flow header ──
+                         The inventory flow IS ordered — gudang → kategori → sparepart
+                         → pergerakan → stok — but the four tabs below present it as
+                         four peers, so nothing said so. The concrete failure: with no
+                         warehouse, the movement form has nothing to write `id_gudang`
+                         to and silently refuses every submit, and the user has no way
+                         to know why.
+
+                         This strip marks the first INCOMPLETE step and links to it.
+                         It is filled by renderInvFlow() in js/views/inventaris.js from
+                         the counts the panel loaders already fetch; the markup here is
+                         only the shell, because the step states change on every
+                         REFRESH_INVENTARIS. -->
+                    <div id="inv-flow" class="card" hidden>
+                        <div class="card-body py-3">
+                            <div class="flex items-start justify-between gap-3 mb-2">
+                                <p class="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-widest">
+                                    Alur Kelola Inventaris</p>
+                                <button type="button" id="inv-flow-dismiss"
+                                    class="btn btn-icon btn-icon-close shrink-0" aria-label="Sembunyikan alur">
+                                    <i class="fas fa-times"></i>
+                                </button>
+                            </div>
+                            <ol id="inv-flow-steps" class="flex flex-wrap items-center gap-x-1 gap-y-2"></ol>
+                            <p id="inv-flow-hint" class="text-xs text-gray-500 dark:text-gray-400 mt-2"></p>
+                        </div>
+                    </div>
 
                     <!-- ── Tab Switcher ── -->
                     <div class="flex gap-0 border-b border-gray-200 dark:border-gray-700">
@@ -1367,8 +1412,8 @@
                                         Nilai Persediaan Tertinggi</p>
                                     <p class="text-[10px] text-gray-400">15 teratas</p>
                                 </div>
-                                <div class="overflow-x-auto">
-                                    <table class="w-full text-xs">
+                                <div class="overflow-x-auto table-stack-wrap">
+                                    <table class="table-stack w-full text-xs">
                                         <thead class="bg-gray-50 dark:bg-gray-700/40">
                                             <tr class="border-b border-gray-100 dark:border-gray-700">
                                                 <th
@@ -1415,12 +1460,12 @@
                                             <dd class="text-lg font-bold text-gray-800 dark:text-white" id="sd-total-types">
                                                 —</dd>
                                         </div>
-                                        <div>
-                                            <dt class="text-[9px] font-bold tracking-widest text-gray-400 uppercase mb-0.5">
-                                                Pemasok</dt>
-                                            <dd class="text-lg font-bold text-gray-800 dark:text-white"
-                                                id="sd-total-suppliers">—</dd>
-                                        </div>
+                                        <!-- The "Pemasok" tile stood here. It counted
+                                             DISTINCT sparepart.supplier, a column dropped
+                                             with the form's "Informasi Tambahan" block, so
+                                             it would now be a permanent zero — the same
+                                             reason the "DI ATAS MAX" tile was removed
+                                             rather than left showing one. -->
                                         <div>
                                             <dt class="text-[9px] font-bold tracking-widest text-gray-400 uppercase mb-0.5">
                                                 Permintaan Otomatis</dt>
@@ -1440,11 +1485,29 @@
                                         <span id="sd-critical-badge"
                                             class="bg-red-100 dark:bg-red-900/40 text-red-600 text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0">0</span>
                                     </div>
-                                    <div class="overflow-y-auto max-h-[320px]">
-                                        <table class="w-full text-[11px]">
+                                    <!-- The <thead> is required, not decoration:
+                                         stampTableLabels() copies these captions into
+                                         data-label so .table-stack can render each row
+                                         as a card under 640px. Without it the table
+                                         opts itself back out and silently reverts to a
+                                         horizontal scroller. tools/check_html.py
+                                         check 4 enforces this. -->
+                                    <div class="overflow-y-auto max-h-[320px] table-stack-wrap">
+                                        <table class="table-stack w-full text-[11px]">
+                                            <thead>
+                                                <tr class="border-b border-gray-100 dark:border-gray-700">
+                                                    <th
+                                                        class="px-4 py-2 text-left text-[9px] font-bold text-gray-400 uppercase tracking-wider">
+                                                        Sparepart</th>
+                                                    <th
+                                                        class="px-4 py-2 text-right text-[9px] font-bold text-gray-400 uppercase tracking-wider">
+                                                        Stok / Min</th>
+                                                </tr>
+                                            </thead>
                                             <tbody id="sd-critical-body">
                                                 <tr>
-                                                    <td class="py-8 text-center text-gray-400 italic">Semua stok aman</td>
+                                                    <td colspan="2" class="py-8 text-center text-gray-400 italic">Semua
+                                                        stok aman</td>
                                                 </tr>
                                             </tbody>
                                         </table>
@@ -1607,8 +1670,8 @@
                                     <option value="">Semua Gudang</option>
                                 </select>
                             </div>
-                            <div class="overflow-x-auto">
-                                <table class="w-full text-sm">
+                            <div class="overflow-x-auto table-stack-wrap">
+                                <table class="table-stack w-full text-sm">
                                     <thead>
                                         <tr
                                             class="border-b border-gray-100 dark:border-gray-700 bg-gray-50/60 dark:bg-gray-700/40">
@@ -1708,8 +1771,8 @@
                         <div class="flex items-center gap-2 flex-1 min-w-0">
                             <div class="relative flex-1 min-w-0">
                                 <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs"></i>
-                                <input type="text" id="inv-parts-search" placeholder="Cari nama, SKU, kategori, supplier…"
-                                    class="w-full pl-8 pr-3 py-2 bg-white dark:bg-gray-700 border border-white/30 rounded-lg text-sm outline-none focus:border-kai-orange transition" / aria-label="Cari nama, SKU, kategori, supplier">
+                                <input type="text" id="inv-parts-search" placeholder="Cari nama, kategori, alat kerja…"
+                                    class="w-full pl-8 pr-3 py-2 bg-white dark:bg-gray-700 border border-white/30 rounded-lg text-sm outline-none focus:border-kai-orange transition" / aria-label="Cari nama, kategori, alat kerja">
                             </div>
                             <button id="inv-btn-sort" title="Urutkan"
                                 class="w-9 h-9 flex items-center justify-center bg-white/10 hover:bg-white/20 border border-white/20 rounded-lg text-white transition shrink-0">
@@ -1736,7 +1799,6 @@
                                     <label for="inv-sort-field" class="field-label">Urutkan Berdasarkan</label>
                                     <select id="inv-sort-field" class="field-input">
                                         <option value="nama_part">Nama Barang</option>
-                                        <option value="sku">Kode SKU</option>
                                         <option value="stok_sekarang">Stok Saat Ini</option>
                                         <option value="nilai_stok">Nilai Stok</option>
                                         <option value="harga_satuan">Harga Satuan</option>
@@ -1773,8 +1835,8 @@
 
                     <!-- ── Tab Panel: Parts ── -->
                     <div id="inv-panel-parts">
-                        <div class="bg-white dark:bg-gray-800 rounded-b-xl border border-t-0 border-gray-100 dark:border-gray-700 shadow-sm overflow-x-auto">
-                            <table class="w-full text-sm">
+                        <div class="bg-white dark:bg-gray-800 rounded-b-xl border border-t-0 border-gray-100 dark:border-gray-700 shadow-sm overflow-x-auto table-stack-wrap">
+                            <table class="table-stack w-full text-sm">
                                 <thead>
                                     <!-- Items Master column set. Movement columns (Masuk…Penyesuaian)
                                          are lifetime totals from the ledger, not windowed — the
@@ -1795,12 +1857,13 @@
                                         <th class="px-3 py-3 text-left text-[10px] font-bold tracking-widest text-gray-400 uppercase">Status</th>
                                         <th class="px-3 py-3 text-left text-[10px] font-bold tracking-widest text-gray-400 uppercase">Terakhir Keluar</th>
                                         <th class="px-3 py-3 text-right text-[10px] font-bold tracking-widest text-gray-400 uppercase" title="Hari sejak barang terakhir keluar">Idle</th>
-                                        <th class="px-3 py-3 text-left text-[10px] font-bold tracking-widest text-gray-400 uppercase">Pemasok</th>
+                                        <!-- "Pemasok" was the 16th column; sparepart.supplier
+                                             is gone, so the column went with it. -->
                                     </tr>
                                 </thead>
                                 <tbody id="inv-parts-body">
                                     <tr>
-                                        <td colspan="16" class="text-center py-12 text-sm text-gray-400">
+                                        <td colspan="15" class="text-center py-12 text-sm text-gray-400">
                                             <i class="fas fa-box-open text-3xl mb-2 block text-gray-300"></i>
                                             Tidak ada data
                                         </td>
@@ -1813,8 +1876,8 @@
 
                     <!-- ── Tab Panel: Parts Transfer History ── -->
                     <div id="inv-panel-transfer" class="hidden">
-                        <div class="bg-white dark:bg-gray-800 rounded-b-xl border border-t-0 border-gray-100 dark:border-gray-700 shadow-sm overflow-x-auto">
-                            <table class="w-full text-sm">
+                        <div class="bg-white dark:bg-gray-800 rounded-b-xl border border-t-0 border-gray-100 dark:border-gray-700 shadow-sm overflow-x-auto table-stack-wrap">
+                            <table class="table-stack w-full text-sm">
                                 <thead>
                                     <tr class="border-b border-gray-100 dark:border-gray-700 bg-gray-50/60 dark:bg-gray-700/40">
                                         <th class="px-4 py-3 text-left text-[10px] font-bold tracking-widest text-gray-400 uppercase">Tanggal Transfer</th>
@@ -1891,6 +1954,14 @@
                                     class="flex items-center gap-2 px-3 py-2 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 hover:border-kai-blue text-gray-600 dark:text-gray-300 rounded-lg transition text-xs font-semibold">
                                     <i class="fas fa-sort-amount-down"></i> Urutkan
                                 </button>
+                                <!-- Density toggle. Persisted in localStorage: a
+                                     technician who prefers compact rows should not
+                                     have to re-choose on every visit. -->
+                                <button id="btn-db-density" type="button" aria-pressed="false"
+                                    title="Ubah kerapatan baris"
+                                    class="flex items-center gap-2 px-3 py-2 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 hover:border-kai-blue text-gray-600 dark:text-gray-300 rounded-lg transition text-xs font-semibold">
+                                    <i class="fas fa-bars"></i> <span id="btn-db-density-label">Nyaman</span>
+                                </button>
                                 <div class="flex gap-2 ml-auto">
                                     <button id="btn-db-download-xlsx"
                                         class="flex items-center gap-2 px-3 py-2 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 hover:border-emerald-500 text-gray-600 dark:text-gray-300 rounded-lg transition text-xs font-semibold">
@@ -1902,6 +1973,9 @@
                                     </button>
                                 </div>
                             </div>
+                            <!-- Active sort/filter state, surfaced. Filled by
+                                 renderFilterChips() in js/views/sort-modals.js. -->
+                            <div id="db-filter-chips" class="chip-row hidden px-5 py-2.5 border-b border-gray-100 dark:border-gray-700"></div>
                         </div>
 
                         <!-- ══ KPI tiles — reflect the FILTERED set, not the whole fleet ══ -->
@@ -1955,44 +2029,50 @@
                 <section id="view-edit" class="view-section w-full">
                     <input type="hidden" id="edit-uid" />
 
-                    <!-- ── Asset Summary Card ── -->
-                    <div id="edit-asset-card"
-                        class="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm p-5 mb-4 flex flex-col sm:flex-row sm:items-center gap-4">
-                        <div class="flex-1 min-w-0">
-                            <div class="flex flex-wrap items-center gap-2 mb-1">
-                                <span id="edit-card-id"
-                                    class="text-base font-bold font-mono text-kai-blue dark:text-blue-400">—</span>
-                                <span id="edit-card-status"
-                                    class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">—</span>
+                    <!-- ══ Asset presentation ══════════════════════════════
+                         Deliberately the same two cards landing.html shows for
+                         the same machine: the status-strip identity card with
+                         its "Informasi Alat Kerja" grid, then the Model/Type
+                         spec card with the photo and the five spec rows.
+                         A technician crosses between the QR card and this form
+                         mid-task, and the machine should look identical on both.
+
+                         The spec block matters on THIS form specifically: the
+                         repair log records which model was worked on, and
+                         spareparts are not interchangeable across models
+                         (GX270 vs GX390) — which is what the parts picker below
+                         filters on. -->
+                    <div class="grid grid-cols-1 xl:grid-cols-3 gap-4 mb-4">
+                        <!-- ── Identity card ── -->
+                        <div id="edit-asset-card"
+                            class="xl:col-span-2 bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm overflow-hidden">
+                            <div id="edit-status-strip" class="h-1.5 w-full bg-gray-300 transition-colors duration-500"></div>
+                            <div class="p-5">
+                                <div class="flex justify-between items-start gap-3">
+                                    <div class="min-w-0">
+                                        <p class="text-[10px] uppercase tracking-widest text-gray-400 font-semibold">ID Aset</p>
+                                        <h2 id="edit-card-id"
+                                            class="text-xl sm:text-2xl font-black font-mono text-kai-blue dark:text-blue-400 break-all leading-tight mt-0.5">—</h2>
+                                        <p id="edit-card-nama"
+                                            class="text-sm font-semibold text-gray-700 dark:text-gray-300 mt-1 uppercase tracking-wide">—</p>
+                                    </div>
+                                    <div class="flex flex-col items-end gap-1 shrink-0 mt-1">
+                                        <span id="edit-card-status" class="badge badge-neutral">—</span>
+                                        <span id="edit-card-kalib-badge" class="badge badge-neutral hidden">
+                                            <i class="fas fa-ruler-combined text-[8px]"></i> WAJIB KALIBRASI
+                                        </span>
+                                    </div>
+                                </div>
+                                <!-- One datum, one place — mirrors #detail-grid on landing.html. -->
+                                <dl id="edit-detail-grid"
+                                    class="mt-4 pt-4 border-t border-gray-100 dark:border-gray-700 grid grid-cols-2 sm:grid-cols-4 gap-y-3 gap-x-4 text-xs">
+                                </dl>
                             </div>
-                            <p id="edit-card-nama" class="text-sm font-semibold text-gray-700 dark:text-gray-200">—</p>
                         </div>
-                        <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-x-6 gap-y-1 text-xs shrink-0">
-                            <div>
-                                <p class="text-gray-400 font-medium">Lokasi</p>
-                                <p id="edit-card-lokasi" class="font-semibold text-gray-700 dark:text-gray-200">—</p>
-                            </div>
-                            <div>
-                                <p class="text-gray-400 font-medium">UPT</p>
-                                <p id="edit-card-upt" class="font-semibold text-gray-700 dark:text-gray-200">—</p>
-                            </div>
-                            <div>
-                                <p class="text-gray-400 font-medium">Tanggal Beli</p>
-                                <p id="edit-card-tgl" class="font-semibold text-gray-700 dark:text-gray-200">—</p>
-                            </div>
-                            <div>
-                                <p class="text-gray-400 font-medium">Peruntukan</p>
-                                <p id="edit-card-peruntukan" class="font-semibold text-gray-700 dark:text-gray-200">—
-                                </p>
-                            </div>
-                            <div>
-                                <!-- Spektek matters on this form specifically: the
-                                     repair log records which variant was worked on,
-                                     and spareparts are not interchangeable across
-                                     variants (GX270 vs GX390). -->
-                                <p class="text-gray-400 font-medium">Spesifikasi Teknis</p>
-                                <p id="edit-card-varian" class="font-semibold text-gray-700 dark:text-gray-200">—</p>
-                            </div>
+
+                        <!-- ── Model/Type spec card (filled by renderSpekCard) ── -->
+                        <div id="edit-spec-card"
+                            class="hidden bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm overflow-hidden">
                         </div>
                     </div>
 
@@ -2083,6 +2163,57 @@
                                     Teknisi (Perbaikan)</label>
                                 <textarea id="edit-keterangan" rows="3" placeholder="Tindakan yang dilakukan..."
                                     class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition resize-none min-h-[80px]"></textarea>
+                            </div>
+
+                            <!-- ══ Sparepart yang Dipakai ═══════════════════════
+                                 Rides on the SAME submit as the condition report:
+                                 POST /api/perbaikan writes the RiwayatKondisi row,
+                                 the OUT movements and the pemakaian rows in one
+                                 transaction, so a short stock rolls the whole
+                                 report back rather than recording a repair that
+                                 consumed nothing.
+
+                                 The part list is filtered to this asset's alat
+                                 kerja AND its Model/Type — a GX390 carburettor
+                                 fits nothing else. -->
+                            <div class="border-t border-gray-100 dark:border-gray-700 pt-5">
+                                <div class="flex items-center justify-between gap-3 mb-3 flex-wrap">
+                                    <div>
+                                        <h3 class="text-sm font-bold text-gray-800 dark:text-white flex items-center gap-2">
+                                            <i class="fas fa-gears text-kai-orange"></i> Sparepart yang Dipakai
+                                        </h3>
+                                        <p class="text-xs text-gray-400 mt-0.5" id="pakai-scope-note">
+                                            Opsional — stok akan otomatis berkurang saat disimpan.
+                                        </p>
+                                    </div>
+                                    <div class="flex items-center gap-3 flex-wrap">
+                                        <!-- The compatibility filter is strict by
+                                             design. When it matches nothing the
+                                             widening is EXPLICIT rather than
+                                             automatic, so "no compatible parts"
+                                             stays a visible fact. -->
+                                        <label class="flex items-center gap-1.5 text-xs text-gray-600 dark:text-gray-400 cursor-pointer">
+                                            <input type="checkbox" id="pakai-semua" class="accent-kai-orange w-3.5 h-3.5" />
+                                            Tampilkan semua sparepart
+                                        </label>
+                                        <label for="pakai-gudang" class="text-xs font-semibold text-gray-600 dark:text-gray-400">Gudang</label>
+                                        <select id="pakai-gudang"
+                                            class="p-2 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-xs outline-none focus:border-kai-blue transition">
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <div id="pakai-rows" class="space-y-2"></div>
+
+                                <div class="flex items-center justify-between gap-3 mt-3 flex-wrap">
+                                    <button type="button" id="pakai-add-row" class="btn btn-ghost text-xs">
+                                        <i class="fas fa-plus"></i> Tambah Sparepart
+                                    </button>
+                                    <div class="text-xs text-gray-500 dark:text-gray-400">
+                                        Total biaya:
+                                        <span id="pakai-total" class="font-bold text-gray-800 dark:text-white">Rp 0</span>
+                                    </div>
+                                </div>
                             </div>
                             <div class="pt-2 flex gap-3">
                                 <button type="button" id="close-edit-btn"
@@ -2197,17 +2328,21 @@
                             <input type="text" id="search-history" placeholder="Cari UID atau Kode ID..."
                                 class="w-full pl-8 pr-3 py-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue font-mono transition" / aria-label="Cari UID atau Kode ID">
                         </div>
-                        <div class="flex bg-gray-100 dark:bg-gray-700 rounded-lg p-1 shrink-0 min-w-0 overflow-x-auto">
-                            <button id="hist-tab-repair"
-                                class="hist-tab px-3 sm:px-5 py-2 text-xs sm:text-sm font-semibold rounded-md bg-kai-blue text-white shadow-sm transition flex items-center gap-1.5 whitespace-nowrap">
+                        <!-- Segmented control. Was three hand-maintained Tailwind
+                             class arrays swapped in JS; now `.segmented` + one
+                             `.is-active` class, shared with the detail switch below
+                             and driven by setSegmented() in js/core.js. -->
+                        <div class="segmented shrink-0" role="tablist" aria-label="Mode riwayat">
+                            <button id="hist-tab-repair" role="tab" aria-selected="true"
+                                class="segmented-btn is-active">
                                 <i class="fas fa-inbox"></i> Perbaikan
                             </button>
-                            <button id="hist-tab-kalibrasi"
-                                class="hist-tab px-3 sm:px-5 py-2 text-xs sm:text-sm font-semibold rounded-md text-gray-500 dark:text-gray-400 hover:bg-cyan-100 hover:text-cyan-700 dark:hover:bg-cyan-900/20 dark:hover:text-cyan-300 transition flex items-center gap-1.5 whitespace-nowrap">
+                            <button id="hist-tab-kalibrasi" role="tab" aria-selected="false"
+                                class="segmented-btn">
                                 <i class="fas fa-ruler-combined"></i> Kalibrasi
                             </button>
-                            <button id="hist-tab-mutasi"
-                                class="hist-tab px-3 sm:px-5 py-2 text-xs sm:text-sm font-semibold rounded-md text-gray-500 dark:text-gray-400 hover:bg-orange-100 hover:text-kai-orange dark:hover:bg-orange-900/20 dark:hover:text-orange-300 transition flex items-center gap-1.5 whitespace-nowrap">
+                            <button id="hist-tab-mutasi" role="tab" aria-selected="false"
+                                class="segmented-btn">
                                 <i class="fas fa-exchange-alt"></i> Mutasi
                             </button>
                         </div>
@@ -2250,26 +2385,32 @@
                             </button>
                         </div>
 
-                        <!-- Sub-tabs -->
-                        <div class="flex bg-gray-100 dark:bg-gray-700 rounded-lg p-1 mb-6 w-fit flex-wrap gap-1">
-                            <button id="detail-tab-repair"
-                                class="detail-tab-btn px-5 py-2.5 text-sm font-semibold rounded-md bg-kai-blue text-white shadow-sm transition flex items-center gap-2">
-                                <i class="fas fa-wrench text-sm"></i> Riwayat Perbaikan
+                        <!-- Sub-tabs — the same segmented control as the list view
+                             above, so the two mode switches stop being two different
+                             widgets that do the same thing. -->
+                        <div class="segmented mb-6" role="tablist" aria-label="Mode riwayat aset">
+                            <button id="detail-tab-repair" role="tab" aria-selected="true"
+                                class="detail-tab-btn segmented-btn is-active">
+                                <i class="fas fa-wrench"></i> Riwayat Perbaikan
                             </button>
-                            <button id="detail-tab-kalibrasi"
-                                class="detail-tab-btn px-5 py-2.5 text-sm font-medium rounded-md text-gray-500 dark:text-gray-400 hover:bg-cyan-100 hover:text-cyan-700 dark:hover:bg-cyan-900/20 dark:hover:text-cyan-300 transition flex items-center gap-2">
-                                <i class="fas fa-ruler-combined text-sm"></i> Riwayat Kalibrasi
+                            <button id="detail-tab-kalibrasi" role="tab" aria-selected="false"
+                                class="detail-tab-btn segmented-btn">
+                                <i class="fas fa-ruler-combined"></i> Riwayat Kalibrasi
                             </button>
-                            <button id="detail-tab-mutasi"
-                                class="detail-tab-btn px-5 py-2.5 text-sm font-medium rounded-md text-gray-500 dark:text-gray-400 hover:bg-orange-100 hover:text-kai-orange dark:hover:bg-orange-900/20 dark:hover:text-orange-300 transition flex items-center gap-2">
-                                <i class="fas fa-exchange-alt text-sm"></i> Jalur Mutasi
+                            <button id="detail-tab-mutasi" role="tab" aria-selected="false"
+                                class="detail-tab-btn segmented-btn">
+                                <i class="fas fa-exchange-alt"></i> Jalur Mutasi
                             </button>
                         </div>
 
-                        <!-- Panel: Repair -->
+                        <!-- Panel: Repair.
+                             `.table-timeline` adds the rail and node to the stacked
+                             rows under 640px, so this reads as the sequence it is —
+                             matching the Mutasi panel below, which has always been a
+                             timeline. Above 640px it stays a table. -->
                         <div id="detail-panel-repair">
-                            <div class="overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-700">
-                                <table class="w-full text-left text-sm whitespace-nowrap">
+                            <div class="overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-700 table-stack-wrap">
+                                <table class="table-stack table-timeline w-full text-left text-sm whitespace-nowrap">
                                     <thead class="bg-gray-50 dark:bg-gray-700/50 text-gray-500 text-xs">
                                         <tr>
                                             <th class="p-4 font-semibold w-10">No.</th>
@@ -2290,8 +2431,8 @@
 
                         <!-- Panel: Kalibrasi -->
                         <div id="detail-panel-kalibrasi" class="hidden">
-                            <div class="overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-700">
-                                <table class="w-full text-left text-sm whitespace-nowrap">
+                            <div class="overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-700 table-stack-wrap">
+                                <table class="table-stack table-timeline w-full text-left text-sm whitespace-nowrap">
                                     <thead
                                         class="bg-gray-50 dark:bg-gray-700/50 text-gray-500 dark:text-gray-400 text-xs">
                                         <tr>
@@ -2592,16 +2733,9 @@
                             <p class="text-xs text-kai-blue dark:text-blue-300 font-medium" id="exp-preview-count">
                                 Memuat data...</p>
                         </div>
-                        <div class="flex flex-col sm:flex-row gap-3">
-                            <button id="btn-export-excel"
-                                class="flex-1 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-semibold py-2.5 rounded-lg transition text-sm flex items-center justify-center gap-2 shadow-sm">
-                                <i class="fas fa-file-excel"></i> Unduh Excel (.xlsx)
-                            </button>
-                            <button id="btn-export-pdf"
-                                class="flex-1 bg-red-600 hover:bg-red-700 active:bg-red-800 text-white font-semibold py-2.5 rounded-lg transition text-sm flex items-center justify-center gap-2 shadow-sm">
-                                <i class="fas fa-file-pdf"></i> Unduh PDF
-                            </button>
-                        </div>
+                        <!-- The two export buttons now live in the sticky bar at the
+                             bottom of this view (#exp-actions), so they stay reachable
+                             past a 600-row preview instead of scrolling away above it. -->
                     </div>
 
                     <!-- ── Preview Tables with tab switching ── -->
@@ -2630,7 +2764,7 @@
                         <!-- Panel: Pemeliharaan -->
                         <div id="exp-panel-pemeliharaan" class="exp-preview-panel overflow-x-auto"
                             style="max-height:60vh;overflow-y:auto">
-                            <table class="w-full text-left text-xs whitespace-nowrap">
+                            <table class="table-stack w-full text-left text-xs whitespace-nowrap">
                                 <thead class="bg-gray-50 dark:bg-gray-700/50 text-gray-400 sticky top-0 z-10">
                                     <tr>
                                         <th class="px-3 py-3 font-semibold w-8">No.</th>
@@ -2654,7 +2788,7 @@
                         <!-- Panel: Kalibrasi -->
                         <div id="exp-panel-kalibrasi" class="exp-preview-panel hidden overflow-x-auto"
                             style="max-height:60vh;overflow-y:auto">
-                            <table class="w-full text-left text-xs whitespace-nowrap">
+                            <table class="table-stack w-full text-left text-xs whitespace-nowrap">
                                 <thead class="bg-gray-50 dark:bg-gray-700/50 text-gray-400 sticky top-0 z-10">
                                     <tr>
                                         <th class="px-3 py-3 font-semibold w-8">No.</th>
@@ -2678,7 +2812,7 @@
                         <!-- Panel: Mutasi -->
                         <div id="exp-panel-mutasi" class="exp-preview-panel hidden overflow-x-auto"
                             style="max-height:60vh;overflow-y:auto">
-                            <table class="w-full text-left text-xs whitespace-nowrap">
+                            <table class="table-stack w-full text-left text-xs whitespace-nowrap">
                                 <thead class="bg-gray-50 dark:bg-gray-700/50 text-gray-400 sticky top-0 z-10">
                                     <tr>
                                         <th class="px-3 py-3 font-semibold w-8">No.</th>
@@ -2699,6 +2833,25 @@
                             </table>
                         </div>
                     </div>
+
+                    <!-- ── Sticky export bar ──
+                         These two buttons used to sit above the preview, so on any
+                         real export the user scrolled past 600 rows and then had to
+                         scroll all the way back to press one. `bottom` clears the
+                         mobile bottom nav plus the safe-area inset; see #exp-actions
+                         in assets/style.css. -->
+                    <div id="exp-actions">
+                        <p class="text-[11px] text-gray-500 dark:text-gray-400 mb-2 sm:mb-0 sm:mr-auto"
+                            id="exp-actions-count">—</p>
+                        <button id="btn-export-excel"
+                            class="flex-1 sm:flex-none sm:min-w-[190px] bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-semibold py-2.5 px-4 rounded-lg transition text-sm flex items-center justify-center gap-2 shadow-sm">
+                            <i class="fas fa-file-excel"></i> Unduh Excel (.xlsx)
+                        </button>
+                        <button id="btn-export-pdf"
+                            class="flex-1 sm:flex-none sm:min-w-[150px] bg-red-600 hover:bg-red-700 active:bg-red-800 text-white font-semibold py-2.5 px-4 rounded-lg transition text-sm flex items-center justify-center gap-2 shadow-sm">
+                            <i class="fas fa-file-pdf"></i> Unduh PDF
+                        </button>
+                    </div>
                 </section>
 
                 <!-- ─────────────────────────────────────────────
@@ -2711,10 +2864,16 @@
                     <div id="master-counts" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3"></div>
 
                     <!-- Tab switcher.
-                         Gudang and Spesifikasi Teknis are new: both have complete
-                         backend CRUD that was previously unreachable, so warehouses
-                         and tool variants could only be created by running seed.py. -->
-                    <div
+                         Gudang and Model/Type are new: both have complete backend
+                         CRUD that was previously unreachable, so warehouses and tool
+                         models could only be created by running seed.py. -->
+                    <!-- Under lg: this grid becomes a LIST of masters and the panels
+                         are hidden until one is chosen — six tabs plus a form plus a
+                         table on a 390px screen is three levels of content competing
+                         for one viewport. Above lg: it stays exactly the tab strip it
+                         has always been. The drill state is a single `.is-drilled`
+                         class on #view-masterdata; see assets/style.css. -->
+                    <div id="master-tabs"
                         class="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm p-2 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-1">
                         <button data-tab="users" class="master-tab tab is-active">
                             <i class="fas fa-user-plus"></i>
@@ -2726,7 +2885,7 @@
                         </button>
                         <button data-tab="varian" class="master-tab tab">
                             <i class="fas fa-screwdriver-wrench"></i>
-                            Spesifikasi
+                            Model/Type
                         </button>
                         <button data-tab="lokasi" class="master-tab tab">
                             <i class="fas fa-map"></i>
@@ -2742,9 +2901,18 @@
                         </button>
                     </div>
 
+                    <!-- Second level: only rendered under lg:, and only once a master
+                         has been chosen. -->
+                    <div id="master-detail-head" class="flex items-center gap-3">
+                        <button type="button" id="master-back" class="btn btn-ghost btn-sm">
+                            <i class="fas fa-arrow-left"></i> Semua Master
+                        </button>
+                        <span id="master-detail-title" class="text-sm font-bold text-gray-800 dark:text-white"></span>
+                    </div>
+
                     <!-- Shared search. Applies to whichever tab is open; none of the
                          master tables had any search at all before. -->
-                    <div class="toolbar">
+                    <div class="toolbar" id="master-toolbar">
                         <div class="toolbar-search">
                             <i class="fas fa-search toolbar-search-icon"></i>
                             <input type="text" id="master-search" placeholder="Cari di tabel ini…" / aria-label="Cari di tabel ini">
@@ -2759,11 +2927,24 @@
                             <h4 class="text-sm font-bold mb-4 text-gray-800 dark:text-white">
                                 Registrasi Pengguna Baru
                             </h4>
-                            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
                                 <div>
                                     <label for="new-user-username" class="block text-xs text-gray-500 mb-1">Nama Pengguna</label>
-                                    <input type="text" id="new-user-username"
+                                    <input type="text" id="new-user-username" autocomplete="off"
+                                        autocapitalize="none" spellcheck="false" required
                                         class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition" />
+                                </div>
+                                <div>
+                                    <label for="new-user-password" class="block text-xs text-gray-500 mb-1">Password
+                                        awal</label>
+                                    <input type="text" id="new-user-password" autocomplete="new-password"
+                                        minlength="8" required placeholder="minimal 8 karakter"
+                                        class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition font-mono" />
+                                    <!-- Deliberately type="text": the admin has to read this
+                                         value out to the technician, and a masked field they
+                                         cannot see is how wrong passwords get handed over. -->
+                                    <p class="text-[10px] text-gray-400 mt-1">Catat dan sampaikan ke pengguna —
+                                        tidak dapat dilihat lagi setelah disimpan.</p>
                                 </div>
                                 <div>
                                     <label for="new-user-role" class="block text-xs text-gray-500 mb-1">Peran</label>
@@ -2780,15 +2961,21 @@
                                         class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition"></select>
                                 </div>
                             </div>
-                            <button type="submit" id="btn-add-user"
-                                class="btn btn-primary shrink-0">
-                                <i class="fas fa-user-plus"></i> Tambah Pengguna
-                            </button>
+                            <div class="flex flex-wrap items-center gap-2">
+                                <button type="submit" id="btn-add-user"
+                                    class="btn btn-primary shrink-0">
+                                    <i class="fas fa-user-plus"></i> Tambah Pengguna
+                                </button>
+                                <button type="button" id="btn-gen-password"
+                                    class="btn btn-ghost shrink-0">
+                                    <i class="fas fa-dice"></i> Buatkan password acak
+                                </button>
+                            </div>
                         </form>
                         <div
                             class="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm">
-                            <div class="overflow-x-auto">
-                                <table class="w-full text-left text-sm whitespace-nowrap">
+                            <div class="overflow-x-auto table-stack-wrap">
+                                <table class="table-stack w-full text-left text-sm whitespace-nowrap">
                                     <thead
                                         class="bg-gray-50 dark:bg-gray-700/50 text-gray-500 text-xs border-b border-gray-100 dark:border-gray-700">
                                         <tr>
@@ -2854,14 +3041,18 @@
                         </form>
                         <div
                             class="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm">
-                            <div class="overflow-x-auto">
-                                <table class="w-full text-left text-sm whitespace-nowrap">
+                            <div class="overflow-x-auto table-stack-wrap">
+                                <table class="table-stack w-full text-left text-sm whitespace-nowrap">
                                     <thead
                                         class="bg-gray-50 dark:bg-gray-700/50 text-gray-500 text-xs border-b border-gray-100 dark:border-gray-700">
                                         <tr>
                                             <th class="px-4 py-3 font-semibold">Kode</th>
                                             <th class="px-4 py-3 font-semibold">Nama Alat</th>
-                                            <th class="px-4 py-3 font-semibold">Spesifikasi Teknis</th>
+                                            <th class="px-4 py-3 font-semibold">Model/Type</th>
+                                            <!-- Documents belong to the tool TYPE: one client PDF covers
+                                                 four tools, and every model with no sheet of its own
+                                                 inherits from here. -->
+                                            <th class="px-4 py-3 font-semibold">Dokumen Umum</th>
                                             <th class="px-4 py-3 font-semibold text-right">Opsi</th>
                                         </tr>
                                     </thead>
@@ -2928,8 +3119,8 @@
                         </form>
                         <div
                             class="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm">
-                            <div class="overflow-x-auto">
-                                <table class="w-full text-left text-sm whitespace-nowrap">
+                            <div class="overflow-x-auto table-stack-wrap">
+                                <table class="table-stack w-full text-left text-sm whitespace-nowrap">
                                     <thead
                                         class="bg-gray-50 dark:bg-gray-700/50 text-gray-500 text-xs border-b border-gray-100 dark:border-gray-700">
                                         <tr>
@@ -2997,8 +3188,8 @@
                         </form>
                         <div
                             class="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm">
-                            <div class="overflow-x-auto">
-                                <table class="w-full text-left text-sm whitespace-nowrap">
+                            <div class="overflow-x-auto table-stack-wrap">
+                                <table class="table-stack w-full text-left text-sm whitespace-nowrap">
                                     <thead
                                         class="bg-gray-50 dark:bg-gray-700/50 text-gray-500 text-xs border-b border-gray-100 dark:border-gray-700">
                                         <tr>
@@ -3016,56 +3207,147 @@
                         </div>
                     </div>
 
-                    <!-- Panel: Spesifikasi Teknis (alat_varian)
-                         POST/PUT/DELETE /api/master/varian all existed with no UI;
-                         variants could only be created by seed.py, and the spec
-                         fields the public QR card renders had nowhere to be edited. -->
+                    <!-- Panel: Model/Type (alat_varian)
+                         Shaped by the client's `Rekap Spek RAMCES.docx`: Merk,
+                         Model/Type, and five FREE-FORM spec rows whose labels
+                         differ per tool ("Max. Torque" on an impact wrench,
+                         "Runtime" on a work light). The old fixed
+                         Kapasitas/Daya/Dimensi/Berat quartet fitted a genset
+                         and nothing else, and has been retired. -->
                     <div id="master-panel-varian" class="master-tab-panel hidden space-y-5">
                         <form id="form-add-varian" class="card card-body">
-                            <h4 class="card-title mb-4">Tambah / Ubah Spesifikasi Teknis</h4>
+                            <h4 class="card-title mb-4">Tambah / Ubah Model/Type</h4>
                             <input type="hidden" id="varian-edit-id" value="" />
-                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+                            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
                                 <div>
                                     <label for="new-varian-alat" class="field-label"><span
                                             class="text-red-500">*</span> Alat Kerja</label>
                                     <select id="new-varian-alat" class="field-input"></select>
                                 </div>
                                 <div>
-                                    <label for="new-varian-nama" class="field-label"><span
-                                            class="text-red-500">*</span> Nama Varian</label>
-                                    <input type="text" id="new-varian-nama" placeholder="GX390, 2T TASCO, GEISMAR…"
+                                    <label for="new-varian-merk" class="field-label"><span
+                                            class="text-red-500">*</span> Merk</label>
+                                    <input type="text" id="new-varian-merk" placeholder="MILWAUKEE"
+                                        class="field-input" />
+                                </div>
+                                <div>
+                                    <label for="new-varian-tipe" class="field-label"><span
+                                            class="text-red-500">*</span> Model/Type</label>
+                                    <input type="text" id="new-varian-tipe"
+                                        placeholder="M18 ONEFHIWF34 High Torque Impact Wrench"
                                         class="field-input" />
                                 </div>
                             </div>
-                            <div class="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-4">
-                                <div>
-                                    <label for="new-varian-merk" class="field-label">Merk</label>
-                                    <input type="text" id="new-varian-merk" placeholder="HONDA" class="field-input" />
+                            <div class="mb-4">
+                                <label for="new-varian-nama" class="field-label"><span
+                                        class="text-red-500">*</span> Nama Tampilan
+                                    <span class="text-gray-400 font-normal">(maks 50 karakter — terisi otomatis dari
+                                        Merk + Model/Type)</span></label>
+                                <input type="text" id="new-varian-nama" maxlength="50"
+                                    placeholder="MILWAUKEE M18 ONEFHIWF34" class="field-input" />
+                            </div>
+
+                            <!-- Rows 3–7 of the Rekap template. The labels are FREE-FORM
+                                 on purpose: "Max. Torque" on an impact wrench, "Runtime"
+                                 on a work light, "Cutting Wheel" on a rail saw — no two
+                                 tool types share the same five, which is why alat_varian
+                                 stores label/value PAIRS rather than named columns.
+
+                                 That is not obvious from five identical boxes, so each
+                                 row now names its two halves and the placeholders carry
+                                 real examples from the Rekap rather than "Parameter 4". -->
+                            <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-3 mb-4">
+                                <p class="field-label mb-1">Spesifikasi Utama</p>
+                                <p class="file-hint mb-3">
+                                    Lima baris bebas. Isi <strong>label</strong> di kiri dan <strong>nilai</strong> di
+                                    kanan — nama parameter berbeda tiap jenis alat, jadi tidak ada daftar tetap.
+                                    Baris kosong tidak ditampilkan pada kartu spesifikasi.
+                                </p>
+                                <div class="hidden sm:grid grid-cols-[1.25rem_minmax(0,1fr)_minmax(0,2fr)] gap-2 mb-1">
+                                    <span></span>
+                                    <span class="text-[10px] font-bold uppercase tracking-wider text-gray-400">Label
+                                        parameter</span>
+                                    <span class="text-[10px] font-bold uppercase tracking-wider text-gray-400">Nilai</span>
                                 </div>
-                                <div>
-                                    <label for="new-varian-tipe" class="field-label">Tipe / Model</label>
-                                    <input type="text" id="new-varian-tipe" placeholder="GX390" class="field-input" />
-                                </div>
-                                <div>
-                                    <label for="new-varian-kapasitas" class="field-label">Kapasitas</label>
-                                    <input type="text" id="new-varian-kapasitas" placeholder="6,5 kVA"
-                                        class="field-input" />
-                                </div>
-                                <div>
-                                    <label for="new-varian-daya" class="field-label">Daya</label>
-                                    <input type="text" id="new-varian-daya" placeholder="13,0 HP / 9,6 kW"
-                                        class="field-input" />
-                                </div>
-                                <div>
-                                    <label for="new-varian-dimensi" class="field-label">Dimensi (P x L x T)</label>
-                                    <input type="text" id="new-varian-dimensi" placeholder="740 x 560 x 570 mm"
-                                        class="field-input" />
-                                </div>
-                                <div>
-                                    <label for="new-varian-berat" class="field-label">Berat</label>
-                                    <input type="text" id="new-varian-berat" placeholder="88 kg" class="field-input" />
+                                <div id="varian-spek-rows" class="space-y-2">
+                                    <div class="grid grid-cols-1 sm:grid-cols-[1.25rem_minmax(0,1fr)_minmax(0,2fr)] gap-2 sm:items-center">
+                                        <span class="hidden sm:block text-[10px] font-bold text-gray-300 text-center">1</span>
+                                        <input type="text" id="new-varian-spek1-label" placeholder="mis. Max. Torque"
+                                            class="field-input" aria-label="Label spesifikasi 1" />
+                                        <input type="text" id="new-varian-spek1-nilai" placeholder="mis. 1.898 Nm"
+                                            class="field-input" aria-label="Nilai spesifikasi 1" />
+                                    </div>
+                                    <div class="grid grid-cols-1 sm:grid-cols-[1.25rem_minmax(0,1fr)_minmax(0,2fr)] gap-2 sm:items-center">
+                                        <span class="hidden sm:block text-[10px] font-bold text-gray-300 text-center">2</span>
+                                        <input type="text" id="new-varian-spek2-label" placeholder="mis. Power"
+                                            class="field-input" aria-label="Label spesifikasi 2" />
+                                        <input type="text" id="new-varian-spek2-nilai" placeholder="mis. 18 V M18 Battery"
+                                            class="field-input" aria-label="Nilai spesifikasi 2" />
+                                    </div>
+                                    <div class="grid grid-cols-1 sm:grid-cols-[1.25rem_minmax(0,1fr)_minmax(0,2fr)] gap-2 sm:items-center">
+                                        <span class="hidden sm:block text-[10px] font-bold text-gray-300 text-center">3</span>
+                                        <input type="text" id="new-varian-spek3-label" placeholder="mis. Runtime"
+                                            class="field-input" aria-label="Label spesifikasi 3" />
+                                        <input type="text" id="new-varian-spek3-nilai" placeholder="mis. 4 jam"
+                                            class="field-input" aria-label="Nilai spesifikasi 3" />
+                                    </div>
+                                    <div class="grid grid-cols-1 sm:grid-cols-[1.25rem_minmax(0,1fr)_minmax(0,2fr)] gap-2 sm:items-center">
+                                        <span class="hidden sm:block text-[10px] font-bold text-gray-300 text-center">4</span>
+                                        <input type="text" id="new-varian-spek4-label" placeholder="mis. Berat"
+                                            class="field-input" aria-label="Label spesifikasi 4" />
+                                        <input type="text" id="new-varian-spek4-nilai" placeholder="mis. 12,5 kg"
+                                            class="field-input" aria-label="Nilai spesifikasi 4" />
+                                    </div>
+                                    <div class="grid grid-cols-1 sm:grid-cols-[1.25rem_minmax(0,1fr)_minmax(0,2fr)] gap-2 sm:items-center">
+                                        <span class="hidden sm:block text-[10px] font-bold text-gray-300 text-center">5</span>
+                                        <input type="text" id="new-varian-spek5-label" placeholder="mis. Cutting Wheel"
+                                            class="field-input" aria-label="Label spesifikasi 5" />
+                                        <input type="text" id="new-varian-spek5-nilai" placeholder="mis. Ø 400 mm"
+                                            class="field-input" aria-label="Nilai spesifikasi 5" />
+                                    </div>
                                 </div>
                             </div>
+
+                            <!-- Photo: upload OR link. The Rekap cites manufacturer
+                                 CDN URLs, and modules/ carries the PDFs. -->
+                            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+                                <div>
+                                    <label class="field-label">Foto Alat Kerja</label>
+                                    <div class="flex items-start gap-3">
+                                        <img id="varian-foto-preview" alt="Pratinjau foto Model/Type"
+                                            class="hidden w-24 h-24 object-contain rounded-lg border border-gray-200 dark:border-gray-600 bg-white" />
+                                        <div class="flex-1 space-y-2">
+                                            <input type="file" id="new-varian-foto-file" accept="image/*"
+                                                class="field-input text-xs" aria-label="Unggah foto Model/Type" />
+                                            <input type="url" id="new-varian-foto-url"
+                                                placeholder="atau tempel URL gambar…" class="field-input text-xs" />
+                                            <button type="button" id="varian-foto-hapus"
+                                                class="btn btn-ghost text-xs hidden">
+                                                <i class="fas fa-trash-alt"></i> Hapus foto tersimpan
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="space-y-3">
+                                    <div>
+                                        <label for="new-varian-spek-file" class="field-label">Spek Lengkap
+                                            <span class="text-gray-400 font-normal">(PDF/gambar atau URL)</span></label>
+                                        <input type="file" id="new-varian-spek-file" accept=".pdf,image/*"
+                                            class="field-input text-xs mb-2" />
+                                        <input type="url" id="new-varian-url-spek" placeholder="atau tempel URL…"
+                                            class="field-input text-xs" />
+                                    </div>
+                                    <div>
+                                        <label for="new-varian-manual-file" class="field-label">Manual Instruction
+                                            <span class="text-gray-400 font-normal">(PDF/gambar atau URL)</span></label>
+                                        <input type="file" id="new-varian-manual-file" accept=".pdf,image/*"
+                                            class="field-input text-xs mb-2" />
+                                        <input type="url" id="new-varian-url-manual" placeholder="atau tempel URL…"
+                                            class="field-input text-xs" />
+                                    </div>
+                                </div>
+                            </div>
+
                             <div class="mb-4">
                                 <label for="new-varian-keterangan" class="field-label">Keterangan</label>
                                 <input type="text" id="new-varian-keterangan" class="field-input" />
@@ -3073,7 +3355,7 @@
                             <div class="flex gap-3 flex-wrap">
                                 <button type="submit" class="btn btn-primary">
                                     <i class="fas fa-screwdriver-wrench"></i>
-                                    <span id="varian-submit-label">Simpan Spesifikasi</span>
+                                    <span id="varian-submit-label">Simpan Model/Type</span>
                                 </button>
                                 <button type="button" id="varian-cancel-edit" class="btn btn-ghost hidden">
                                     <i class="fas fa-times"></i> Batal Ubah
@@ -3082,14 +3364,14 @@
                         </form>
                         <div class="card">
                             <div class="table-wrap">
-                                <table class="table-std">
+                                <table class="table-stack table-std">
                                     <thead>
                                         <tr>
+                                            <th>Foto</th>
                                             <th>Alat Kerja</th>
-                                            <th>Varian</th>
-                                            <th>Merk / Tipe</th>
-                                            <th>Kapasitas</th>
-                                            <th>Daya</th>
+                                            <th>Model/Type</th>
+                                            <th>Merk</th>
+                                            <th>Spesifikasi</th>
                                             <th class="text-right">Opsi</th>
                                         </tr>
                                     </thead>
@@ -3141,7 +3423,7 @@
                         </form>
                         <div class="card">
                             <div class="table-wrap">
-                                <table class="table-std">
+                                <table class="table-stack table-std">
                                     <thead>
                                         <tr>
                                             <th>Kode</th>
@@ -3177,6 +3459,9 @@
                             </button>
                             <span class="text-xs text-gray-400 shrink-0" id="afkir-table-count"></span>
                         </div>
+                        <!-- Active sort/filter state. Same renderer and same filter
+                             keys as Kelola Data Aset — see renderFilterChips(). -->
+                        <div id="afkir-filter-chips" class="chip-row hidden"></div>
                     </div>
                     <!-- Breakpoints match #db-cards-container so both card grids reflow identically -->
                     <div id="afkir-cards-container" class="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4 flex-1">
@@ -3194,11 +3479,90 @@
             </div>
         </main>
     </div>
+        <!-- ══════════════════════════════════════════════════════════════
+             MOBILE BOTTOM NAVIGATION
+
+             Under lg: the drawer was the ONLY way to change screen — three
+             taps and a full-screen overlay to reach anything. These five sit
+             in thumb reach permanently.
+
+             The middle slot is deliberately the primary action rather than a
+             fifth destination: reporting a machine's condition is the one
+             thing a technician actually does standing next to it, and it was
+             buried behind Kelola Data Aset → find the asset → open → report.
+
+             `data-view` matches the sidebar buttons, so switchView() drives
+             both and checkAuth() can gate them with the same rule.
+        ══════════════════════════════════════════════════════════════ -->
+        <nav id="mobile-bottom-nav" aria-label="Navigasi utama">
+            <button class="bnav-btn" data-view="dashboard">
+                <i class="fas fa-th-large"></i><span>Dashboard</span>
+            </button>
+            <button class="bnav-btn" data-view="database">
+                <i class="fas fa-database"></i><span>Data Aset</span>
+            </button>
+            <button class="bnav-btn bnav-primary" id="bnav-lapor" data-view="database">
+                <i class="fas fa-screwdriver-wrench"></i><span>Lapor</span>
+            </button>
+            <button class="bnav-btn" data-view="history">
+                <i class="fas fa-history"></i><span>Riwayat</span>
+            </button>
+            <button class="bnav-btn" id="bnav-menu">
+                <i class="fas fa-bars"></i><span>Menu</span>
+            </button>
+        </nav>
+
     <!-- end #main-app -->
 
     <!-- ══════════════════════════════════════════════════════════════════
      MODALS
     ═══════════════════════════════════════════════════════════════════ -->
+
+    <!-- ── Reset Password Modal ──
+         The recovery path for the "akun belum memiliki password" state that
+         every seeded and pre-migration row starts in. SUPER_ADMIN only; the
+         server enforces that in POST /api/users/{id}/password.
+
+         The new password is shown ONCE, in a copyable field, because the
+         server stores only a bcrypt hash and nothing can read it back. -->
+    <div id="reset-password-modal" class="hidden modal-backdrop">
+        <div class="modal-panel" style="max-width: 26rem">
+            <div class="modal-head">
+                <h3 id="reset-password-title">Setel Ulang Password</h3>
+                <button id="close-reset-password-modal" class="btn-icon" aria-label="Tutup">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body space-y-4">
+                <p class="text-sm text-gray-600 dark:text-gray-300">
+                    Password baru untuk
+                    <span class="font-bold font-mono" id="reset-password-username">—</span>.
+                </p>
+                <div>
+                    <label for="reset-password-value"
+                        class="block text-xs font-semibold text-gray-500 mb-1">Password baru</label>
+                    <div class="flex gap-2">
+                        <input type="text" id="reset-password-value" minlength="8"
+                            class="flex-1 p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm font-mono outline-none focus:border-kai-blue transition" />
+                        <button type="button" id="reset-password-gen" class="btn btn-ghost shrink-0"
+                            aria-label="Buatkan password acak">
+                            <i class="fas fa-dice"></i>
+                        </button>
+                    </div>
+                    <p class="text-[11px] text-gray-400 mt-1.5">
+                        Minimal 8 karakter. Catat sekarang — sistem hanya menyimpan versi
+                        teracak dan tidak dapat menampilkannya lagi.
+                    </p>
+                </div>
+            </div>
+            <div class="modal-foot">
+                <button type="button" id="reset-password-cancel" class="btn btn-ghost">Batal</button>
+                <button type="button" id="reset-password-submit" class="btn btn-primary">
+                    <i class="fas fa-key"></i> Simpan Password
+                </button>
+            </div>
+        </div>
+    </div>
 
     <!-- ── Mutasi Modal ── -->
     <div id="mutasi-modal"
@@ -4313,42 +4677,70 @@
                 </button>
             </div>
             <div class="p-5 overflow-y-auto">
-                <form id="form-input-baru" class="space-y-5">
-                    <div class="md:col-span-2">
-                        <label for="in-alat" class="block text-xs font-semibold mb-2 text-gray-600 dark:text-gray-400">1. Alat
-                            Kerja</label>
+                <!-- Numbered stepper. The order below is not cosmetic: it walks the
+                     composite primary key from left to right, so the live preview at
+                     the bottom fills in as the user descends the form.
+                     `peruntukan` and `sumber_pengadaan` are baked into that key, so a
+                     wrong pick here is a malformed PK that cannot be corrected later
+                     without rewriting every child row — making the consequence visible
+                     while choosing is the whole point of the preview. -->
+                <form id="form-input-baru" class="space-y-6">
+                    <div class="step" data-step="1" id="step-in-alat">
+                        <label for="in-alat" class="step-title">Alat Kerja</label>
                         <select id="in-alat" required
                             class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition"></select>
                     </div>
 
-                    <div class="grid grid-cols-2 gap-4">
-                        <div>
-                            <label class="block text-xs font-semibold mb-2 text-gray-600 dark:text-gray-400">2. Sumber
-                                Pengadaan</label>
-                            <div class="space-y-2 text-sm">
-                                <label class="flex items-center gap-2 cursor-pointer">
-                                    <input type="radio" name="in-pengadaan" value="PUSAT" required
-                                        class="accent-kai-orange w-4 h-4" />
-                                    <span>PUSAT</span>
-                                </label>
-                                <label class="flex items-center gap-2 cursor-pointer">
-                                    <input type="radio" name="in-pengadaan" value="DAOP/DIVRE"
-                                        class="accent-kai-orange w-4 h-4" />
-                                    <span>DAOP / DIVRE</span>
-                                </label>
+                    <!-- Step 1b — the Model/Type of the alat kerja chosen above.
+                         Repopulates whenever step 1 changes; "+ Tambah Model/Type
+                         baru" jumps to Pusat Data with the alat kerja pre-filled,
+                         so the flow completes without abandoning this form.
+                         Nomor Seri rides alongside: it identifies the individual
+                         machine, not its model, and appears in no ID segment. -->
+                    <div class="step" data-step="1b" id="step-in-model">
+                        <span class="step-title">Model / Type <span
+                                class="text-gray-400 font-normal normal-case">(opsional)</span></span>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div>
+                                <label for="in-model" class="sr-only">Model / Type</label>
+                                <select id="in-model"
+                                    class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition disabled:opacity-50">
+                                    <option value="">— Pilih Alat Kerja terlebih dahulu... —</option>
+                                </select>
                             </div>
-                        </div>
-                        <div>
-                            <label for="in-tanggal" class="block text-xs font-semibold mb-2 text-gray-600 dark:text-gray-400">3. Tanggal
-                                Pembelian</label>
-                            <input type="date" id="in-tanggal" required
-                                class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition" />
+                            <div>
+                                <label for="in-seri"
+                                    class="block text-[11px] font-medium mb-1 text-gray-400">Nomor Seri</label>
+                                <input type="text" id="in-seri" placeholder="Nomor pada pelat nama"
+                                    class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition" />
+                            </div>
                         </div>
                     </div>
 
-                    <div>
-                        <label class="block text-xs font-semibold mb-2 text-gray-600 dark:text-gray-400">4. Unit
-                            Peruntukan</label>
+                    <div class="step" data-step="2" id="step-in-pengadaan">
+                        <span class="step-title">Sumber Pengadaan</span>
+                        <div class="flex flex-wrap gap-4 text-sm">
+                            <label class="flex items-center gap-2 cursor-pointer">
+                                <input type="radio" name="in-pengadaan" value="PUSAT" required
+                                    class="accent-kai-orange w-4 h-4" />
+                                <span>PUSAT</span>
+                            </label>
+                            <label class="flex items-center gap-2 cursor-pointer">
+                                <input type="radio" name="in-pengadaan" value="DAOP/DIVRE"
+                                    class="accent-kai-orange w-4 h-4" />
+                                <span>DAOP / DIVRE</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="step" data-step="3" id="step-in-tanggal">
+                        <label for="in-tanggal" class="step-title">Tanggal Pembelian</label>
+                        <input type="date" id="in-tanggal" required
+                            class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition" />
+                    </div>
+
+                    <div class="step" data-step="4" id="step-in-unit">
+                        <span class="step-title">Unit Peruntukan</span>
                         <div
                             class="flex flex-wrap gap-3 bg-gray-50 dark:bg-gray-700/50 p-3 rounded-lg border border-gray-100 dark:border-gray-600 text-sm">
                             <label class="flex items-center gap-2 cursor-pointer"><input type="radio" name="in-unit"
@@ -4363,22 +4755,28 @@
                         </div>
                     </div>
 
-                    <div>
-                        <label for="in-lokasi" class="block text-xs font-semibold mb-2 text-gray-600 dark:text-gray-400">5. Lokasi
-                            Penempatan</label>
+                    <div class="step" data-step="5" id="step-in-lokasi">
+                        <label for="in-lokasi" class="step-title">Lokasi Penempatan</label>
                         <select id="in-lokasi" required
                             class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition">
                             <option value="">— Pilih Lokasi/Wilayah —</option>
                         </select>
                     </div>
 
-                    <div>
-                        <label for="in-upt" class="block text-xs font-semibold mb-2 text-gray-600 dark:text-gray-400">6. UPT /
-                            Sub-Lokasi <span class="text-gray-400 font-normal">(opsional)</span></label>
+                    <div class="step" data-step="6" id="step-in-upt">
+                        <label for="in-upt" class="step-title">UPT / Sub-Lokasi <span
+                                class="text-gray-400 font-normal normal-case">(opsional)</span></label>
                         <select id="in-upt" disabled
                             class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition disabled:opacity-50 disabled:cursor-not-allowed">
                             <option value="">— Pilih Lokasi terlebih dahulu... —</option>
                         </select>
+                        <p class="file-hint">Disimpan pada aset; tidak muncul di ID — ID memakai kode wilayah induk.</p>
+                    </div>
+
+                    <div class="id-preview" id="in-preview-wrap">
+                        <p class="id-preview-caption">ID Aset yang akan dibuat</p>
+                        <p class="id-preview-value" id="in-preview">—</p>
+                        <p class="id-preview-legend" id="in-preview-legend"></p>
                     </div>
 
                     <div class="flex gap-3 pt-1">
@@ -4413,37 +4811,62 @@
                 </button>
             </div>
             <div class="p-5 overflow-y-auto">
-                <form id="form-kdak-edit" class="space-y-5">
+                <!-- The same stepper as the Tambah form, and for the same reason —
+                     but here it also warns: changing alat kerja, pengadaan, tahun,
+                     peruntukan or the parent lokasi REGENERATES the primary key and
+                     rewrites every child row. The preview shows the resulting ID
+                     before the user commits to it. -->
+                <form id="form-kdak-edit" class="space-y-6">
                     <input type="hidden" id="kdak-edit-id" />
-                    <div>
-                        <label for="kdak-edit-alat" class="block text-xs font-semibold mb-2 text-gray-600 dark:text-gray-400">1. Alat
-                            Kerja</label>
+                    <div class="step" data-step="1" id="step-kdak-edit-alat">
+                        <label for="kdak-edit-alat" class="step-title">Alat Kerja</label>
                         <select id="kdak-edit-alat" required
+                            data-has-model-step="1"
                             class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition"></select>
                     </div>
-                    <div class="grid grid-cols-2 gap-4">
-                        <div>
-                            <label class="block text-xs font-semibold mb-2 text-gray-600 dark:text-gray-400">2. Sumber
-                                Pengadaan</label>
-                            <div class="space-y-2 text-sm">
-                                <label class="flex items-center gap-2 cursor-pointer"><input type="radio"
-                                        name="kdak-edit-pengadaan" value="PUSAT"
-                                        class="accent-kai-orange w-4 h-4" /><span>PUSAT</span></label>
-                                <label class="flex items-center gap-2 cursor-pointer"><input type="radio"
-                                        name="kdak-edit-pengadaan" value="DAOP/DIVRE"
-                                        class="accent-kai-orange w-4 h-4" /><span>DAOP / DIVRE</span></label>
+
+                    <!-- Step 1b, mirroring the Tambah form. Before this existed
+                         the edit form could not set a Model/Type at all and had
+                         to re-send the asset's current id_varian just to stop the
+                         server nulling it. -->
+                    <div class="step" data-step="1b" id="step-kdak-edit-model">
+                        <span class="step-title">Model / Type <span
+                                class="text-gray-400 font-normal normal-case">(opsional)</span></span>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div>
+                                <label for="kdak-edit-model" class="sr-only">Model / Type</label>
+                                <select id="kdak-edit-model"
+                                    class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition"></select>
+                            </div>
+                            <div>
+                                <label for="kdak-edit-seri"
+                                    class="block text-[11px] font-medium mb-1 text-gray-400">Nomor Seri</label>
+                                <input type="text" id="kdak-edit-seri" placeholder="Nomor pada pelat nama"
+                                    class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition" />
                             </div>
                         </div>
-                        <div>
-                            <label for="kdak-edit-tanggal" class="block text-xs font-semibold mb-2 text-gray-600 dark:text-gray-400">3. Tanggal
-                                Pembelian</label>
-                            <input type="date" id="kdak-edit-tanggal" required
-                                class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition" />
+                    </div>
+
+                    <div class="step" data-step="2" id="step-kdak-edit-pengadaan">
+                        <span class="step-title">Sumber Pengadaan</span>
+                        <div class="flex flex-wrap gap-4 text-sm">
+                            <label class="flex items-center gap-2 cursor-pointer"><input type="radio"
+                                    name="kdak-edit-pengadaan" value="PUSAT"
+                                    class="accent-kai-orange w-4 h-4" /><span>PUSAT</span></label>
+                            <label class="flex items-center gap-2 cursor-pointer"><input type="radio"
+                                    name="kdak-edit-pengadaan" value="DAOP/DIVRE"
+                                    class="accent-kai-orange w-4 h-4" /><span>DAOP / DIVRE</span></label>
                         </div>
                     </div>
-                    <div>
-                        <label class="block text-xs font-semibold mb-2 text-gray-600 dark:text-gray-400">4. Unit
-                            Peruntukan</label>
+
+                    <div class="step" data-step="3" id="step-kdak-edit-tanggal">
+                        <label for="kdak-edit-tanggal" class="step-title">Tanggal Pembelian</label>
+                        <input type="date" id="kdak-edit-tanggal" required
+                            class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition" />
+                    </div>
+
+                    <div class="step" data-step="4" id="step-kdak-edit-unit">
+                        <span class="step-title">Unit Peruntukan</span>
                         <div
                             class="flex flex-wrap gap-3 bg-gray-50 dark:bg-gray-700/50 p-3 rounded-lg border border-gray-100 dark:border-gray-600 text-sm">
                             <label class="flex items-center gap-2 cursor-pointer"><input type="radio"
@@ -4460,22 +4883,36 @@
                                     class="accent-kai-orange w-4 h-4" /><span>BALAIYASA</span></label>
                         </div>
                     </div>
-                    <div>
-                        <label for="kdak-edit-lokasi" class="block text-xs font-semibold mb-2 text-gray-600 dark:text-gray-400">5. Lokasi
-                            Penempatan</label>
+
+                    <div class="step" data-step="5" id="step-kdak-edit-lokasi">
+                        <label for="kdak-edit-lokasi" class="step-title">Lokasi Penempatan</label>
                         <select id="kdak-edit-lokasi" required
                             class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition">
                             <option value="">— Pilih Lokasi/Wilayah —</option>
                         </select>
                     </div>
-                    <div>
-                        <label for="kdak-edit-upt" class="block text-xs font-semibold mb-2 text-gray-600 dark:text-gray-400">6. UPT /
-                            Sub-Lokasi <span class="text-gray-400 font-normal">(opsional)</span></label>
+
+                    <div class="step" data-step="6" id="step-kdak-edit-upt">
+                        <label for="kdak-edit-upt" class="step-title">UPT / Sub-Lokasi <span
+                                class="text-gray-400 font-normal normal-case">(opsional)</span></label>
                         <select id="kdak-edit-upt"
                             class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition">
                             <option value="">— Tanpa UPT —</option>
                         </select>
+                        <p class="file-hint">Disimpan pada aset; tidak muncul di ID — ID memakai kode wilayah induk.</p>
                     </div>
+
+                    <div class="id-preview" id="kdak-edit-preview-wrap">
+                        <p class="id-preview-caption">ID Aset setelah perubahan</p>
+                        <p class="id-preview-value" id="kdak-edit-preview">—</p>
+                        <p class="id-preview-legend" id="kdak-edit-preview-legend"></p>
+                        <p class="hidden mt-2 text-[11px] font-semibold text-amber-600 dark:text-amber-400"
+                            id="kdak-edit-preview-warn">
+                            <i class="fas fa-triangle-exclamation mr-1"></i>ID berubah — seluruh riwayat aset ini akan
+                            dipindahkan ke ID baru.
+                        </p>
+                    </div>
+
                     <div class="flex gap-3 pt-1">
                         <button type="button" id="kdak-edit-cancel"
                             class="btn btn-ghost flex-1">
@@ -4894,7 +5331,7 @@
                 </button>
             </div>
             <div class="overflow-y-auto flex-1">
-                <table class="w-full text-sm">
+                <table class="table-stack w-full text-sm">
                     <thead class="sticky top-0 bg-gray-50 dark:bg-gray-700/80">
                         <tr class="border-b border-gray-100 dark:border-gray-700">
                             <th
@@ -4943,7 +5380,7 @@
             </div>
             <div class="overflow-y-auto flex-1">
                 <!-- Lokasi table -->
-                <table id="kdak-lokasi-info-panel-lokasi" class="w-full text-sm">
+                <table id="kdak-lokasi-info-panel-lokasi" class="table-stack w-full text-sm">
                     <thead class="sticky top-0 bg-gray-50 dark:bg-gray-700/80">
                         <tr class="border-b border-gray-100 dark:border-gray-700">
                             <th
@@ -4960,7 +5397,7 @@
                     <tbody id="kdak-lokasi-info-body-lokasi"></tbody>
                 </table>
                 <!-- UPT table -->
-                <table id="kdak-lokasi-info-panel-upt" class="w-full text-sm hidden">
+                <table id="kdak-lokasi-info-panel-upt" class="table-stack w-full text-sm hidden">
                     <thead class="sticky top-0 bg-gray-50 dark:bg-gray-700/80">
                         <tr class="border-b border-gray-100 dark:border-gray-700">
                             <th
@@ -5000,7 +5437,7 @@
                 </button>
             </div>
             <div class="overflow-y-auto flex-1">
-                <table class="w-full text-sm">
+                <table class="table-stack w-full text-sm">
                     <thead class="sticky top-0 bg-gray-50 dark:bg-gray-700/80">
                         <tr class="border-b border-gray-100 dark:border-gray-700">
                             <th
@@ -5037,7 +5474,7 @@
                 </button>
             </div>
             <div class="overflow-y-auto flex-1">
-                <table class="w-full text-sm">
+                <table class="table-stack w-full text-sm">
                     <thead class="sticky top-0 bg-gray-50 dark:bg-gray-700/80">
                         <tr class="border-b border-gray-100 dark:border-gray-700">
                             <th
@@ -5272,7 +5709,11 @@
                     <i class="fas fa-times text-lg"></i>
                 </button>
             </div>
-            <div class="p-6 grid grid-cols-1 md:grid-cols-2 gap-5">
+            <!-- `items-start` because the two panels no longer hold the same
+                 number of fields. Grid items stretch by default, which left the
+                 shorter panel padded with dead space that read as a truncated
+                 form rather than a deliberately short one. -->
+            <div class="p-6 grid grid-cols-1 md:grid-cols-2 gap-5 items-start">
                 <!-- Rincian Suku Cadang -->
                 <div class="bg-gray-50 dark:bg-gray-700/40 rounded-xl border border-gray-100 dark:border-gray-700 p-5 space-y-4">
                     <h4 class="text-sm font-bold text-kai-blue flex items-center gap-2"><i class="fas fa-truck"></i>
@@ -5290,17 +5731,11 @@
                             </button>
                         </div>
                     </div>
-                    <div class="grid grid-cols-2 gap-3">
-                        <div>
-                            <label for="inv-field-sku" class="field-label">Kode SKU</label>
-                            <input type="text" id="inv-field-sku" placeholder="Otomatis bila kosong"
-                                class="field-input" />
-                        </div>
-                        <div>
-                            <label for="inv-field-part-number" class="field-label">Nomor Part</label>
-                            <input type="text" id="inv-field-part-number" class="field-input" />
-                        </div>
-                    </div>
+                    <!-- No Kode SKU and no Nomor Part. Both were internal codes
+                         nobody in the field quoted, and SKU was auto-minted as
+                         SP00001… on create, so it carried nothing the row did
+                         not already say. A part is WHAT IT IS (Nama Barang,
+                         Kategori) plus WHAT IT FITS (Alat Kerja). -->
                     <div>
                         <label for="inv-field-item-name" class="field-label"><span class="text-red-500">*</span> Nama
                             Barang</label>
@@ -5370,61 +5805,15 @@
                         </div>
                     </div>
                 </div>
-                <!-- Identifikasi -->
-                <div class="bg-gray-50 dark:bg-gray-700/40 rounded-xl border border-gray-100 dark:border-gray-700 p-5 space-y-4">
-                    <h4 class="text-sm font-bold text-kai-blue flex items-center gap-2"><i class="fas fa-barcode"></i>
-                        Identifikasi</h4>
-                    <div>
-                        <label for="inv-field-serial" class="field-label">Nomor Seri</label>
-                        <input type="text" id="inv-field-serial" placeholder="Pisahkan dengan koma bila lebih dari satu"
-                            class="field-input" />
-                    </div>
-                    <div>
-                        <label for="inv-field-tag" class="field-label">Tag Pencarian</label>
-                        <input type="text" id="inv-field-tag" placeholder="Pisahkan dengan koma" class="field-input" />
-                    </div>
-                    <div>
-                        <div class="flex items-center gap-2 mt-1">
-                            <input type="checkbox" id="inv-field-critical"
-                                class="w-4 h-4 rounded border-gray-300 text-red-500 focus:ring-red-400 cursor-pointer" />
-                            <label for="inv-field-critical"
-                                class="text-xs text-gray-500 dark:text-gray-400 cursor-pointer">Tandai sebagai suku
-                                cadang kritis</label>
-                        </div>
-                    </div>
-                </div>
-                <!-- Informasi Tambahan -->
-                <div class="bg-gray-50 dark:bg-gray-700/40 rounded-xl border border-gray-100 dark:border-gray-700 p-5 space-y-4">
-                    <h4 class="text-sm font-bold text-kai-blue flex items-center gap-2"><i
-                            class="fas fa-info-circle"></i> Informasi Tambahan</h4>
-                    <div>
-                        <label for="inv-field-vehicle" class="field-label">Terpasang Pada</label>
-                        <input type="text" id="inv-field-vehicle" placeholder="Model/unit terkait"
-                            class="field-input" />
-                    </div>
-                    <div class="grid grid-cols-2 gap-3">
-                        <div>
-                            <label for="inv-field-warranty" class="field-label">Garansi (bulan)</label>
-                            <input type="number" id="inv-field-warranty" min="0" class="field-input" />
-                        </div>
-                        <div>
-                            <!-- There is no `manufacturer` column; the modal used to
-                                 carry a required "Manufacturer" field that app.js
-                                 silently folded into supplier and discarded when both
-                                 were filled. One field, correctly labelled. -->
-                            <label for="inv-field-supplier" class="field-label">Supplier / Manufaktur</label>
-                            <input type="text" id="inv-field-supplier" class="field-input" />
-                        </div>
-                    </div>
-                    <div>
-                        <label for="inv-field-ref-part" class="field-label">Part Referensi</label>
-                        <input type="text" id="inv-field-ref-part" class="field-input" />
-                    </div>
-                    <div>
-                        <label for="inv-field-description" class="field-label">Deskripsi</label>
-                        <input type="text" id="inv-field-description" class="field-input" />
-                    </div>
-                </div>
+                <!-- The "Identifikasi" and "Informasi Tambahan" panels that used
+                     to sit here are gone, and so are their ten columns on
+                     `sparepart` (see models.SparePart). Nomor Seri, Tag
+                     Pencarian, Terpasang Pada, Garansi, Supplier, Part
+                     Referensi and Deskripsi had no reader anywhere in the app
+                     beyond the row that wrote them; "Tandai sebagai suku cadang
+                     kritis" is now DERIVED from stok <= stok_min, which is the
+                     only definition the status badges and the "Perlu segera
+                     dipesan" table ever used. Two panels, both load-bearing. -->
             </div>
             <div class="flex gap-3 px-6 py-4 border-t border-gray-100 dark:border-gray-700">
                 <button id="inv-add-modal-cancel" class="btn btn-ghost flex-1">
@@ -5487,6 +5876,9 @@
     <script src="js/views/sort-modals.js"></script>
     <script src="js/views/laporan.js"></script>
     <script src="js/views/repair-dashboard.js"></script>
+    <!-- Shared Model/Type spec card. Must stay ABOVE inventaris.js, which
+         caches its DOM nodes at eval time and therefore has to load last. -->
+    <script src="js/views/spektek.js"></script>
     <script src="js/views/inventaris.js"></script>
 </body>
 
