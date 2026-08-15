@@ -883,8 +883,15 @@ Ranked by what breaks first as the fleet grows.
 - **Tailwind runs as a CDN JIT compiler in the browser.** Replacing it with a
   compiled stylesheet needs a build step.
 - `SparePart` has no `stok_max` column, so `_stok_status()` is always called with
-  `stok_max=None`. The corresponding "DI ATAS MAX" UI tile has been removed rather
-  than left showing a permanent zero.
+  `stok_max=None` and `"DI ATAS MAX"` is unreachable by construction. It is
+  therefore absent from `STOK_STATUS_ORDER` and from `STOK_BANDS`, while the
+  branch itself stays in `_stok_status()` documented as reserved.
+  **This entry used to claim the tile "has been removed" while only half of it
+  had been** — the tile was gone from `STOK_STATUS_META` but the BAND survived,
+  so `bandTotals` summed an empty filter and the dashboard chart carried a
+  segment, and its legend an entry, reading "Di Atas Maksimum 0 (0.0%)" on every
+  load. Fixed in rev0.4.3; `tools/verify/test_rev043.py` now asserts that no
+  legend entry is a structural zero.
 - `sparepart_kategori` names are matched by exact string on bulk import; there is no
   fuzzy match, and unknown categories are rejected rather than created.
 
@@ -1036,9 +1043,61 @@ Version naming changed here: `revX.Y.Z-alpha` / `-beta`, no `-fe-be` suffix.
     behave differently. It still resolves from the button handlers, which
     js/a11y-modal.js depends on.
 
-### Still not done after rev0.4.2
+## rev0.4.3-alpha — what it closed
+
+Four of the seven client-matrix gaps, all on the Part Inventory side, and none
+needing a schema change.
+
+1. **Hierarki Suku Cadang** (`GET /api/inventaris/hirarki`) — the client's B-6,
+   the only line marked *High* with no implementation at all. Three design
+   decisions carry it:
+   - the selector lists **only tool types that have parts** (17 of 104) and
+     states the coverage, because offering all 104 would leave 87 choices
+     rendering an empty tree — which reads as a broken feature rather than as an
+     answer;
+   - stock comes from `_net_stok_map()` / `_stok_status()`, the same helpers the
+     Items Master uses, so the tree cannot disagree with any other screen;
+   - the renderer **collapses a `kategori` level with one child**. Every
+     `(kode_alat, subsistem)` pair has exactly one kategori, named
+     "SUBSISTEM — TOOL", so drawing it would add a level that always has one
+     child and restates its parent. The rule is about SHAPE — split the
+     catalogue later and the level reappears on its own.
+2. **Kartu Riwayat Suku Cadang** (`GET /api/inventaris/parts/{id_part}`) — B-5.
+   Identity plus the balance **per gudang**, which neither existing endpoint
+   carried. Read-only and ungated: a technician who may not edit a part still
+   needs to know where it is.
+3. **Fast / Slow moving** — `_movement_breakdown()` gained an optional `sejak`.
+   A **12-month window**, fixed rather than following the Dari/Sampai filter,
+   which is routinely set to one month; a "slow moving" list that reshuffled
+   whenever someone changed a date box would not mean anything. Terciles over
+   the parts that MOVED — ranking the whole catalogue would dump everything
+   unmoved into "slow". The third bucket is **"Tanpa Pergerakan"**, not "dead
+   stock": a spare for a rarely-failing machine that has not been needed in a
+   year is doing its job.
+4. **`assert_pengadaan_scope()`** — `ADMIN_WILAYAH` may not register or edit an
+   asset to PUSAT. A 400, not a nudge, because `sumber_pengadaan` is baked into
+   the composite primary key. Deliberately NOT folded into
+   `normalise_sumber_pengadaan()`, which is role-blind: that answers "is this a
+   legal value?", this answers "may *you* write it?".
+   Client-side the radio is hidden **and disabled** — hiding a checked radio
+   would submit its value invisibly, and a hidden `required` one is an
+   unfocusable invalid control.
+
+Also fixed: `setInvTab()` un-hid the four inventory write buttons whenever the
+Parts tab opened, which would have undone rev0.4.2's `data-write` gating for a
+read-only role. A tab switcher must never grant a control the role gate removed.
+
+### Still not done after rev0.4.3
 
 - Server-side paging for the deep screens.
 - The repair-events window subquery still runs four times per dashboard load.
 - The rate limiter is per-process; multi-worker deployments need Redis.
 - No persisted audit log of failed sign-ins.
+- **MTBF/MTTR and the calibration reminder are blocked on DATA, not code** —
+  0 repair records and 0 calibration records, so both would ship reading zero.
+- Stock opname is the last client-matrix item that needs a new table.
+
+The full ranked list, with effort and the risk of leaving each, lives in
+[docs/RENCANA-PENGEMBANGAN.md](docs/RENCANA-PENGEMBANGAN.md) — kept in ONE place
+so the two cannot drift. (rev0.4.2 carried its own near-identical copy of this
+list; rev0.4.3 folded them together.)

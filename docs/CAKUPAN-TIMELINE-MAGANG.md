@@ -41,12 +41,14 @@ pun, dan bukan mengambil sparepart untuk laporan yang gagal.
 | 9 | Dashboard — monitoring kondisi aset | ✅ | 6 tab: Matriks Kesiapan, Grafik Ketersediaan, Tren, Sebaran, Laporan Perbaikan, Kurva MCF |
 | 10 | Export laporan — Excel/PDF | ✅ | Proses Laporan; pemeliharaan, kalibrasi, mutasi |
 
-**Catatan "admin daerah hanya input pengadaan 2".** Ditegakkan di server:
-`assert_region_scope()` membatasi `ADMIN_WILAYAH` ke wilayahnya sendiri pada
-create/edit/delete/mutasi/kondisi/kalibrasi. Pembatasan **`sumber_pengadaan`
-ke DAOP/DIVRE saja** untuk peran itu belum ada — form-nya masih menawarkan
-PUSAT. Ini satu baris di `create_aset`/`update_aset` dan layak dikonfirmasi ke
-klien dulu (apakah larangan keras, atau sekadar default).
+**Catatan "admin daerah hanya input pengadaan 2".** ✅ Ditegakkan penuh sejak
+rev0.4.3. `assert_region_scope()` membatasi `ADMIN_WILAYAH` ke wilayahnya sendiri
+pada create/edit/delete/mutasi/kondisi/kalibrasi, dan `assert_pengadaan_scope()`
+menolak `sumber_pengadaan = PUSAT` dari peran itu dengan **400** — baik saat
+membuat maupun mengedit. Ini larangan keras, bukan default: `sumber_pengadaan`
+ikut membentuk primary key gabungan, jadi nilai yang salah bukan masalah tampilan
+yang bisa diperbaiki nanti. Di sisi klien radio PUSAT disembunyikan **dan**
+dinonaktifkan untuk peran itu.
 
 ---
 
@@ -58,8 +60,8 @@ klien dulu (apakah larangan keras, atau sekadar default).
 | 2 | Export stok | ✅ | Excel, sisi klien |
 | 3 | Input Pembelian | ✅ | Form pergerakan, tipe `IN` |
 | 4 | History Card Part — cari part number/nama | ✅ | Pencarian sparepart |
-| 5 | History Card Part — timeline transaksi | ⚠️ | Datanya lengkap: `GET /api/inventaris/stok?id_part=N` mengembalikan buku besar per part, dan `sparepart_stok` memang append-only. Yang belum ada adalah **kartu riwayat per part** sebagai layar tersendiri — sekarang riwayat dibaca dari tab Transaksi yang difilter |
-| 6 | **Hierarki Part — Tree / struktur BOM per jenis alat** | ❌ | Belum ada. Relasinya sebagian sudah tersimpan (`sparepart.kode_alat`, `sparepart.id_varian`, `sparepart_kategori.subsistem`), jadi pohon dua tingkat *alat kerja → kategori/subsistem → part* bisa dibangun dari data yang ada tanpa skema baru |
+| 5 | History Card Part — timeline transaksi | ✅ | **Kartu Riwayat Suku Cadang** (rev0.4.3). Dibuka dari pohon hierarki dan dari baris Daftar Suku Cadang. Berisi identitas, saldo **per gudang**, dan lini masa pergerakan. Jumlah barisnya dicocokkan persis dengan `GET /api/inventaris/stok?id_part=N` |
+| 6 | **Hierarki Part — Tree / struktur BOM per jenis alat** | ✅ | **Hierarki Suku Cadang** (rev0.4.3), tab kelima di Kelola Inventaris. `GET /api/inventaris/hirarki`. Pemilihnya hanya memuat 17 alat kerja yang benar-benar punya sparepart — menawarkan 104 akan membuat 87 pilihan menghasilkan pohon kosong — dan cakupan itu dinyatakan di layar. Klik part membuka kartu riwayatnya |
 | 7 | Dashboard Part | ✅ | `GET /api/inventaris/dashboard` |
 
 ---
@@ -90,14 +92,14 @@ klien dulu (apakah larangan keras, atau sekadar default).
 | Klaim poster | Status | Catatan |
 |---|---|---|
 | Data master sparepart | ✅ | |
-| Hirarki & kategori sparepart | ⚠️ | Kategori ✅ (45 baris, plus `subsistem`). Hirarki sebagai **pohon** ❌ — lihat B-6 |
+| Hirarki & kategori sparepart | ✅ | Kategori (45 baris, plus `subsistem`) dan **pohon** — lihat B-6 |
 | Lokasi penyimpanan | ✅ | `gudang`, sengaja datar dan lepas dari pohon DAOP/UPT |
 | Harga & spesifikasi sparepart | ✅ | |
 | Inbound dan Outbound Part | ✅ | `IN` / `OUT` |
 | Pembelian dan **Stock Adjustment** | ✅ | `ADJ_IN` / `ADJ_OUT`, plus `RETUR_VENDOR` / `RETUR_CUST` |
 | Minimum stock part | ✅ | `sparepart.stok_min` + `_stok_status()` |
 | Integrasi pemeliharaan alat | ✅ | `pemakaian_sparepart`, satu transaksi dengan laporan kondisi |
-| **Fast Moving & Slow Moving** | ❌ | `monthly_usage` sudah dihitung di dashboard inventaris, jadi klasifikasinya adalah lapisan di atas data yang sudah ada |
+| **Fast Moving & Slow Moving** | ✅ | **Perputaran Suku Cadang** (rev0.4.3) di dasbor inventaris. Tersil atas konsumsi 12 bulan terakhir; periodenya dinyatakan di panel. Ember ketiga bernama **Tanpa Pergerakan**, bukan *dead stock* — suku cadang untuk mesin yang jarang rusak sedang menjalankan tugasnya |
 | Critical Part Analysis | ✅ | `critical_count` / `critical_list`, diturunkan dari stok vs `stok_min` — tidak disimpan sebagai boolean, karena part yang stoknya aman bukan part kritis |
 | Minimum stock part | ✅ | |
 | Nilai persediaan | ✅ | `total_value`, `top_value` |
@@ -110,20 +112,28 @@ klien dulu (apakah larangan keras, atau sekadar default).
 
 ## Ringkasan yang belum ada
 
-Diurutkan menurut biaya bangun terhadap manfaat, dan semuanya bisa dikerjakan
-**tanpa perubahan skema** kecuali yang ditandai:
+**rev0.4.3 menutup empat dari tujuh**: Hierarki Part (B-6, satu-satunya baris
+"High" yang belum ada sama sekali), Kartu Riwayat Part (B-5), Fast/Slow moving,
+dan aturan pengadaan untuk ADMIN_WILAYAH. Yang tersisa:
 
-1. **Hierarki Part (BOM tree)** — B-6, satu-satunya baris "High" di matriks klien
-   yang belum ada sama sekali. Dua tingkat dari kolom yang sudah tersimpan.
-2. **MTBF / MTTR** — perhitungan atas `riwayat_kondisi` yang sudah lengkap.
-   Melengkapi Kurva MCF pada tab yang sama.
-3. **Kartu riwayat per part** — endpointnya sudah ada, tinggal layarnya.
-4. **Fast/Slow moving** — klasifikasi atas `monthly_usage` yang sudah dihitung.
-5. **Stock opname** — perlu satu tabel sesi opname; `ADJ_IN`/`ADJ_OUT` sudah
-   menjadi jalur penyesuaiannya.
-6. **Reminder kalibrasi** — `tanggal_berlaku` sudah tersimpan; yang belum ada
-   adalah mekanisme pemberitahuannya.
-7. **Tombol scan QR in-app** — A-8. Butuh izin kamera di browser; alur lapangan
-   sudah berjalan tanpanya.
+1. **MTBF / MTTR** — ⛔ **terhalang DATA, bukan kode.**
+   `_scoped_repair_events()` sudah memisahkan transisi yang tepat, dan satu
+   `lag(waktu_lapor)` tambahan memberi durasinya. Tapi armada nyata punya **0
+   catatan perbaikan**, jadi metriknya akan tampil 0,0 jam. Bangun setelah
+   teknisi benar-benar mengisi laporan.
+2. **Reminder kalibrasi** — ⛔ **terhalang data DAN permukaan.** 18 jenis alat
+   dan 75 aset aktif perlu kalibrasi; ada **0 catatan kalibrasi**. Selain itu
+   belum ada permukaan notifikasi — lonceng sengaja hanya per-sesi, tanpa tabel
+   notifikasi.
+3. **Stock opname** — satu-satunya sisa yang butuh **tabel baru** (sesi opname:
+   hitung fisik → selisih → penyesuaian). `ADJ_IN`/`ADJ_OUT` sudah menjadi jalur
+   penyesuaiannya, jadi sifatnya menambah, bukan mengubah.
+4. **Tombol scan QR in-app** — A-8. Butuh izin kamera di browser; alur lapangan
+   sudah berjalan tanpanya lewat kamera bawaan ponsel.
 
 Tidak ada di daftar ini yang menghalangi alur integrasi utama.
+
+**Pola yang layak diperhatikan:** dua dari empat sisa itu terhalang oleh sistem
+yang belum *dipakai*, bukan oleh sistem yang belum *dibangun*. Menampilkan
+metrik keandalan yang berbunyi 0,0 mengajari pengguna untuk mengabaikan panel
+itu — dan perhatian itu sulit direbut kembali.

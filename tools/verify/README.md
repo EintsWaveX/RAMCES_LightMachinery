@@ -32,6 +32,7 @@ DevTools Protocol — no Playwright, no Node.
 | `test_parent.py` | app, Chrome | All **four** copies of the parent-derivation rule agree on 273 codes |
 | `test_kdak.py` | app, Chrome | The live `id_aset` preview matches what the server actually mints |
 | `test_ux.py` | app, Chrome | The rev0.5.1 per-view features still behave |
+| `test_rev043.py` | app, Chrome | The rev0.4.3 inventory work: the BOM tree (coverage honesty + stock agreeing with the Items Master + the collapse rule), the part history card, fast/slow partitioning the catalogue, the vanished "Di Atas Maksimum" band, and the pengadaan scope rule in BOTH halves |
 | `test_rev042.py` | app, Chrome | The rev0.4.2 frontend: registration panel, progressive captcha, role gating, the peruntukan-filtered UPT list, the KDAK form fitting, landing.html's sign-in, `dokumen_alat`, and the scroll affordance |
 | `test_auth.py` | app | Registration, approval, suspension, the captcha token, and the rate limiter. **The one script here that is not immediately re-runnable** — it exhausts the limits it tests, so it detects a hot bucket and exits 2 rather than reporting a false failure. Restart the app to clear them |
 | `audit.py` | app, Chrome | UI/UX findings sweep — a report, **not** a gate |
@@ -43,12 +44,13 @@ DevTools Protocol — no Playwright, no Node.
 Hold these unless a change is deliberate:
 
 ```
-routes                85      (81 + captcha/register/approve/tolak, rev0.4.2)
-openapi paths         58
+routes                87      (85 + hirarki/parts-detail, rev0.4.3)
+openapi paths         59
 shadow pairs           0
 require_role          43 guards
 broadcasts            37
 manage.py verify   13/13
+audit.py findings      0
 row counts        kategori_alat 104 · lokasi        273 · alat_varian   87
                   aset         1121 · riwayat      1121 · pengguna       2
                   gudang          3 · sparepart     203 · sparepart_stok 973
