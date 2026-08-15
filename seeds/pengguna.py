@@ -70,8 +70,28 @@ def run(db):
         .filter(models.Pengguna.hashed_password.is_(None))
         .count()
     )
-    if stale:
+    # `SYSTEM` is excluded deliberately. It is the attribution author
+    # `seeds/aset.py` stamps on all 1,121 imported RiwayatKondisi rows — imported
+    # history has no human author, and inventing one would be worse than saying
+    # so. It must NEVER have a password, so counting it among the accounts an
+    # admin ought to fix made a fresh, correct install open with a warning about
+    # itself. What remains is genuinely stranded: rows seeded before
+    # authentication existed, which cannot log in until someone sets one.
+    stale_real = (
+        db.query(models.Pengguna)
+        .filter(
+            models.Pengguna.hashed_password.is_(None),
+            models.Pengguna.username != "SYSTEM",
+        )
+        .count()
+    )
+    if stale_real:
         print(
-            f"  ! {stale} akun lama tanpa password — tidak bisa masuk sampai "
+            f"  ! {stale_real} akun lama tanpa password — tidak bisa masuk sampai "
             "SUPER ADMIN menyetelnya di Pusat Data ▸ Pengguna"
+        )
+    elif stale:
+        print(
+            "  · akun SYSTEM tanpa password (penulis riwayat impor, memang tidak "
+            "bisa dipakai masuk)"
         )

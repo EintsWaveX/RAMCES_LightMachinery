@@ -74,6 +74,11 @@ loudly with the line to add:
 | [index.html](index.html) (~6k lines) | SPA shell; every view/modal exists in the DOM at once |
 | [manage.py](manage.py) | The one database CLI — `seed` / `reset` / `verify` / `status` / `list` |
 
+Docs: [docs/MULAI-DARI-NOL.md](docs/MULAI-DARI-NOL.md) is the from-empty-database
+setup path (measured: 9 seconds to seed, 13/13 verify);
+[docs/CAKUPAN-TIMELINE-MAGANG.md](docs/CAKUPAN-TIMELINE-MAGANG.md) maps the
+client's feature matrix line by line to what actually exists.
+
 Supporting: [database.py](database.py) (engine/session/pool), [landing.html](landing.html) (standalone public page reached by scanning an asset's QR code — `/landing.html?uid=<id_aset>`), [assets/](assets/) (static, mounted at `/assets` — `style.css` holds the design tokens and component layer, and is loaded by **both** index.html and landing.html).
 
 **Seeding — the `seeds/` package, TRACKED.** `manage.py` is only a CLI over an
