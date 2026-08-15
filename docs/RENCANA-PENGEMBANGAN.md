@@ -92,7 +92,7 @@ rows under their true parent, and the katalog wins every collision.
 
 ### Left deliberately
 
-- **Synthetic history is opt-in** (`reset.py --with-history`). The imported
+- **Synthetic history is opt-in** (`manage.py reset --with-history`). The imported
   fleet is real; inventing repair records against it would be indistinguishable
   from fact later. The cost is that the repair dashboard, the MCF curve and
   Laporan Perbaikan are **empty** on a default reset.

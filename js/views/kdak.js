@@ -804,8 +804,13 @@ window.openKdakEdit = function(idAset) {
     lokasiSel.innerHTML = `<option value="">— Pilih Lokasi/Wilayah —</option>` +
       lokasiData.map((l) => `<option value="${l.code}"${l.code === parentCode ? " selected" : ""}>${l.name} (${l.code})</option>`).join("");
   }
+  // Filtered by the peruntukan radio set just above, and the asset's own UPT
+  // re-selected only if the filter still offers it.
   const uptSel = document.getElementById("kdak-edit-upt");
-  if (uptSel) { applyUptSelect(parentCode, uptSel); uptSel.value = uptCode; }
+  if (uptSel) {
+    uptSel.value = uptCode;
+    kdakSyncUpt("edit", { keepUpt: true });
+  }
 
   // Paint the preview from the asset's CURRENT values, so the starting state
   // shows the existing ID and every step reads as done. Any edit from here is
@@ -815,11 +820,57 @@ window.openKdakEdit = function(idAset) {
   document.getElementById("kdak-edit-modal")?.classList.remove("hidden");
 };
 
-document.getElementById("kdak-edit-lokasi")?.addEventListener("change", (e) => {
-  const uptSel = document.getElementById("kdak-edit-upt");
-  applyUptSelect(e.target.value, uptSel);
-  if (uptSel) uptSel.value = ""; // clear stale UPT when lokasi changes
+// ── UPT list ⇄ peruntukan ───────────────────────────────────────────────
+//
+// The UPT dropdown must offer only the resorts that can hold an asset of the
+// chosen peruntukan. It offered all of them: JALAN REL + DAOP 1 listed 31
+// options — 25 JR, 4 JB, 2 ME — so six of them produced an asset whose id_aset
+// peruntukan segment contradicted the resort named in the same id. Since the
+// importer began deriving peruntukan from the resort prefix, this form was the
+// only remaining way to create that contradiction.
+//
+// Both KDAK forms go through here, and it is wired to BOTH inputs: changing the
+// peruntukan radio must repopulate the list just as changing the region does,
+// or the filter would only apply in one order of use.
+const KDAK_UPT_FORMS = {
+  tambah: { lokasi: "in-lokasi", upt: "in-upt", unit: "in-unit" },
+  edit: { lokasi: "kdak-edit-lokasi", upt: "kdak-edit-upt", unit: "kdak-edit-unit" },
+};
+
+function kdakSyncUpt(which, { keepUpt = false } = {}) {
+  const cfg = KDAK_UPT_FORMS[which];
+  if (!cfg) return;
+  const lokasiSel = document.getElementById(cfg.lokasi);
+  const uptSel = document.getElementById(cfg.upt);
+  if (!uptSel) return;
+
+  const previous = uptSel.value;
+  const unit =
+    document.querySelector(`input[name="${cfg.unit}"]:checked`)?.value || "";
+  applyUptSelect(lokasiSel?.value || "", uptSel, unit);
+
+  // On open, the asset's stored UPT is re-selected when it is still offered.
+  // When it is NOT — an existing asset whose resort disagrees with its own
+  // peruntukan, which the old unfiltered form could produce — it is dropped
+  // rather than forced back in, so saving the form corrects the row instead of
+  // silently preserving the contradiction. The preview repaints either way, so
+  // the change is visible before submit.
+  if (keepUpt && previous && uptSel.querySelector(`option[value="${previous}"]`)) {
+    uptSel.value = previous;
+  }
+}
+
+window.kdakSyncUpt = kdakSyncUpt;
+
+document.getElementById("kdak-edit-lokasi")?.addEventListener("change", () => {
+  kdakSyncUpt("edit"); // clears any stale UPT — see applyUptSelect
 });
+document.querySelectorAll('input[name="kdak-edit-unit"]').forEach((r) =>
+  r.addEventListener("change", () => kdakSyncUpt("edit")),
+);
+document.querySelectorAll('input[name="in-unit"]').forEach((r) =>
+  r.addEventListener("change", () => kdakSyncUpt("tambah")),
+);
 
 document.getElementById("form-kdak-edit")?.addEventListener("submit", async function(e) {
   e.preventDefault();

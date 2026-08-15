@@ -410,7 +410,7 @@ function _renderMatrixPanel() {
   tbody.innerHTML = rowsHtml;
 
   if (!rowsHtml.trim()) {
-    tbody.innerHTML = `<tr><td colspan="7" class="p-4 text-center text-gray-400">Tidak ada wilayah yang terdaftar.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="7" class="empty-state">Tidak ada wilayah yang terdaftar.</td></tr>`;
   }
 }
 

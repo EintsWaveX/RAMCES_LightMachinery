@@ -297,13 +297,57 @@ def get_alat_varian(
     # The parent alat kerja is eager-loaded because _varian_payload() reads it
     # for the tool-type document fallback; lazily it would be one extra SELECT
     # per model, and this endpoint returns all 87 at boot.
+    #
+    # Its `dokumen` collection rides along on a selectinload — ONE extra query
+    # for the whole result set rather than 87. A joinedload would multiply the
+    # model rows by their document count instead.
     q = db.query(models.AlatVarian).options(
-        joinedload(models.AlatVarian.kategori_alat_ref)
+        joinedload(models.AlatVarian.kategori_alat_ref).selectinload(
+            models.KategoriAlat.dokumen
+        )
     )
     if kode_alat:
         q = q.filter(models.AlatVarian.kode_alat == kode_alat)
     rows = q.order_by(models.AlatVarian.kode_alat, models.AlatVarian.nama_varian).all()
     return [_varian_payload(v) for v in rows]
+
+
+def dokumen_payload(kat) -> list:
+    """
+    Every document filed against an alat kerja, primary one first.
+
+    `kategori_alat.file_spek` / `file_manual` hold ONE basename each, so before
+    `dokumen_alat` existed the seeder's second document for a tool overwrote its
+    first and three files — 5.6 MB across AMB, IMP and LMP — were on disk and
+    reachable by nothing. This is the list that makes them reachable; the single
+    columns remain as the PRIMARY document and still drive `_varian_payload()`'s
+    fallback, so nothing that already worked had to change.
+
+    Every entry resolves to `/api/master/varian/dokumen/<basename>`, which is
+    Bearer-authenticated — documents are not public, only photos are. The client
+    must therefore route these through apiFetch, never a plain `<a href>`, which
+    is why `is_upload` is stated rather than implied.
+    """
+    if kat is None:
+        return []
+    rows = getattr(kat, "dokumen", None) or []
+    out = [
+        {
+            "id_dokumen": d.id_dokumen,
+            "jenis": d.jenis,
+            "judul": d.judul or d.nama_file,
+            "nama_file": d.nama_file,
+            "kelompok": d.kelompok,
+            "utama": bool(d.utama),
+            "url": f"/api/master/varian/dokumen/{d.nama_file}",
+            "is_upload": True,
+        }
+        for d in rows
+    ]
+    # SPEK before MANUAL, primary before the rest — the order the spec card
+    # prints them in, decided once here rather than in each of its two callers.
+    out.sort(key=lambda d: (d["jenis"] != "SPEK", not d["utama"], d["judul"]))
+    return out
 
 
 def _varian_payload(v, katalog=None) -> dict:
@@ -387,6 +431,9 @@ def _varian_payload(v, katalog=None) -> dict:
         # technician is never told a general sheet is their exact machine's.
         "spek_from_katalog": spek_inherited,
         "manual_from_katalog": manual_inherited,
+        # EVERY document filed against the parent alat kerja, not just the one
+        # that fitted in `file_spek`. See dokumen_payload().
+        "dokumen": dokumen_payload(kat),
         # Raw halves, so the edit form can round-trip what was actually stored.
         "foto_url": v.foto_url,
         "foto_file": v.foto_file,

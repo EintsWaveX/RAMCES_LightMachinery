@@ -39,10 +39,11 @@ live in api/ratelimit.py.
 
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
 import models
+from api import captcha, ratelimit
 from api.deps import (
     ROLES,
     USER_ADMIN_ROLES,
@@ -60,7 +61,15 @@ from api.deps import (
     verify_password,
 )
 from api.realtime import manager
-from api.schemas import LoginForm, PasswordSet, Token, UserCreate, UserUpdate
+from api.schemas import (
+    LoginForm,
+    PasswordSet,
+    RegisterForm,
+    Token,
+    UserApprove,
+    UserCreate,
+    UserUpdate,
+)
 
 router = APIRouter()
 
@@ -79,8 +88,38 @@ AW_GRANTABLE_ROLES = ("TEKNISI", "PETUGAS_GUDANG")
 _LOGIN_GAGAL = "Username atau password salah."
 
 
+# What a suspended or unapproved account is told. Deliberately specific: unlike
+# a wrong password, this is not something an attacker learns anything from — you
+# already proved you hold the credentials — and the user genuinely needs to know
+# that waiting for an admin is the next step rather than retyping.
+_STATUS_PESAN = {
+    "PENDING": (
+        "Akun Anda masih menunggu persetujuan admin. Anda akan bisa masuk "
+        "setelah disetujui."
+    ),
+    "DITOLAK": "Pendaftaran akun Anda ditolak. Hubungi admin wilayah Anda.",
+    "NONAKTIF": "Akun Anda dinonaktifkan. Hubungi admin wilayah Anda.",
+}
+
+
+def _captcha_required(ip: str, username: str) -> bool:
+    """
+    Should this attempt have to solve a captcha?
+
+    PROGRESSIVE: only once a bucket has already tripped. A captcha on every
+    login would be a permanent tax on the people the limit is not aimed at —
+    technicians signing in on a phone at a resort — to slow an attack that has
+    not started. And it is never a LOCKOUT: a lockout keyed on username is a
+    denial-of-service primitive, since anyone who knows a username can trigger
+    it deliberately.
+    """
+    return ratelimit.tripped("login:ip", ip) or ratelimit.tripped(
+        "login:user", (username or "").lower()
+    )
+
+
 @router.post("/api/login", response_model=Token)
-def login(form_data: LoginForm, db: Session = Depends(get_db)):
+def login(form_data: LoginForm, request: Request, db: Session = Depends(get_db)):
     """
     Verify a username and password and issue a 12-hour bearer token.
 
@@ -89,20 +128,47 @@ def login(form_data: LoginForm, db: Session = Depends(get_db)):
     on the spot, with whatever `role` the request body claimed — so anyone who
     could reach the app typed a name, sent role="SUPER_ADMIN", and received a
     full-privilege token, which made every require_role([...]) guard behind it
-    decorative. Accounts are now created only through POST /api/users/create,
-    which is itself role-guarded.
+    decorative. Accounts are now created only through POST /api/users/create or
+    through the approval of a POST /api/register, both of which are guarded.
 
     `role` and `id_lokasi` in the request body are IGNORED. Both come from the
     stored row, because a client that can choose its own role has no security
     at all. The fields remain on LoginForm only so older clients still parse.
+
+    ── Rate limiting ──
+    Two buckets, IP and username. Tripping either does not lock anything; it
+    starts requiring a captcha, and the response carries `X-Captcha-Required: 1`
+    so a client that did not send one knows to show the field and retry.
     """
-    user = db.query(models.Pengguna).filter_by(username=form_data.username).first()
+    ip = ratelimit.client_ip(request)
+    uname = (form_data.username or "").strip()
+    need_captcha = _captcha_required(ip, uname)
+
+    ratelimit.hit("login:ip", ip)
+    ratelimit.hit("login:user", uname.lower())
+
+    if need_captcha:
+        ok, alasan = captcha.verify(
+            form_data.captcha_token or "", form_data.captcha_answer or ""
+        )
+        if not ok:
+            raise HTTPException(
+                status_code=401,
+                detail=alasan,
+                headers={"X-Captcha-Required": "1"},
+            )
+
+    user = db.query(models.Pengguna).filter_by(username=uname).first()
 
     if user is None:
         # Hash anyway so a missing username and a wrong password take the same
         # time; bcrypt is slow enough that skipping it is measurable.
         verify_password(form_data.password or "", _DUMMY_HASH)
-        raise HTTPException(status_code=401, detail=_LOGIN_GAGAL)
+        raise HTTPException(
+            status_code=401,
+            detail=_LOGIN_GAGAL,
+            headers={"X-Captcha-Required": "1"} if _captcha_required(ip, uname) else {},
+        )
 
     if not user.hashed_password:
         # Seeded or pre-migration rows. They cannot log in, and the message says
@@ -118,7 +184,28 @@ def login(form_data: LoginForm, db: Session = Depends(get_db)):
     if not form_data.password or not verify_password(
         form_data.password, user.hashed_password
     ):
-        raise HTTPException(status_code=401, detail=_LOGIN_GAGAL)
+        raise HTTPException(
+            status_code=401,
+            detail=_LOGIN_GAGAL,
+            headers={"X-Captcha-Required": "1"} if _captcha_required(ip, uname) else {},
+        )
+
+    # AFTER the password check, deliberately. Reporting "menunggu persetujuan"
+    # to anyone who merely types the username would turn this endpoint into an
+    # oracle for which accounts exist and what state they are in — the same
+    # reason a wrong password and an unknown username share one message.
+    status = (user.status or "AKTIF").upper()
+    if status != "AKTIF":
+        raise HTTPException(
+            status_code=403,
+            detail=_STATUS_PESAN.get(status, "Akun Anda tidak aktif."),
+        )
+
+    # A correct password clears the counters. Without this, someone who mistypes
+    # nine times and then succeeds stays one attempt from a captcha for the next
+    # quarter of an hour — punishing precisely the person this does not target.
+    ratelimit.clear("login:ip", ip)
+    ratelimit.clear("login:user", uname.lower())
 
     user.last_seen = datetime.now()
     db.commit()
@@ -134,6 +221,173 @@ def login(form_data: LoginForm, db: Session = Depends(get_db)):
         ),
         "token_type": "bearer",
     }
+
+
+@router.get("/api/captcha")
+def get_captcha(request: Request):
+    """
+    A fresh challenge: `{token, svg, expires_in}`.
+
+    Unauthenticated by necessity — it is used by the login and registration
+    forms — and therefore rate-limited itself, or it becomes a free CPU sink.
+    The SVG travels inside the JSON rather than as a second `<img src>` request,
+    so there is no challenge id, nothing to store, and nothing to go stale
+    between two uvicorn workers. See api/captcha.py.
+    """
+    ip = ratelimit.client_ip(request)
+    if not ratelimit.hit("captcha:ip", ip):
+        raise HTTPException(
+            status_code=429,
+            detail="Terlalu banyak permintaan captcha. Coba lagi beberapa menit lagi.",
+        )
+    return captcha.issue()
+
+
+@router.post("/api/register")
+def register(form: RegisterForm, request: Request, db: Session = Depends(get_db)):
+    """
+    Self-registration. Creates a PENDING account that CANNOT log in yet.
+
+    Three things this deliberately does not do:
+
+      * **It does not accept a role or a region.** `RegisterForm` has no such
+        fields. Letting the client choose was the escalation removed in
+        rev0.5.0; an unauthenticated form that accepted them would be the same
+        hole wearing a friendlier label. The role written here is an inert
+        placeholder that grants nothing, and an admin assigns the real one at
+        approval.
+      * **It does not issue a token.** Registering is not signing in.
+      * **It does not say whether the username was taken.** A registration form
+        that distinguishes "sudah terdaftar" from success is a username
+        enumeration oracle open to the whole internet — worse than the login
+        one, because no password is needed to query it. Both answers are the
+        same sentence; a genuine user who owns the name recovers through the
+        admin, which is the path they need anyway.
+    """
+    ip = ratelimit.client_ip(request)
+    if not ratelimit.hit("register:ip", ip):
+        raise HTTPException(
+            status_code=429,
+            detail="Terlalu banyak pendaftaran dari jaringan ini. Coba lagi nanti.",
+        )
+
+    ok, alasan = captcha.verify(form.captcha_token, form.captcha_answer)
+    if not ok:
+        raise HTTPException(status_code=400, detail=alasan)
+
+    username = (form.username or "").strip()
+    if len(username) < 3 or len(username) > 50:
+        raise HTTPException(status_code=400, detail="Username harus 3–50 karakter.")
+    validate_password(form.password)
+
+    _DITERIMA = (
+        "Pendaftaran diterima. Akun Anda menunggu persetujuan admin — Anda akan "
+        "bisa masuk setelah disetujui."
+    )
+
+    if db.query(models.Pengguna).filter_by(username=username).first():
+        # Same sentence as success. See the docstring.
+        return {"message": _DITERIMA}
+
+    db.add(
+        models.Pengguna(
+            username=username,
+            hashed_password=get_password_hash(form.password),
+            # An inert placeholder. It is never consulted while status is
+            # PENDING — login refuses the account outright — and the approval
+            # endpoint overwrites it. TEKNISI is used rather than something like
+            # "NONE" so the row satisfies the ROLES tuple if anything ever reads
+            # it without checking status first.
+            role="TEKNISI",
+            id_lokasi=None,
+            status="PENDING",
+            nama_lengkap=(form.nama_lengkap or "").strip() or None,
+            created_at=datetime.now(),
+        )
+    )
+    db.commit()
+    return {"message": _DITERIMA}
+
+
+@router.post("/api/users/{user_id}/approve")
+async def approve_user(
+    user_id: int,
+    body: UserApprove,
+    db: Session = Depends(get_db),
+    current_user: models.Pengguna = Depends(require_role(list(USER_ADMIN_ROLES))),
+):
+    """
+    Approve a PENDING registration, assigning its role and region.
+
+    A DEDICATED endpoint rather than a `status` value on `UserUpdate`: this is
+    the moment privilege is granted, and it should be findable, guardable and
+    auditable on its own rather than smuggled through the general-purpose edit
+    form alongside a role change.
+    """
+    user = db.query(models.Pengguna).filter_by(id_pengguna=user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Pengguna tidak ditemukan.")
+    if (user.status or "").upper() != "PENDING":
+        raise HTTPException(
+            status_code=400, detail="Hanya akun berstatus PENDING yang bisa disetujui."
+        )
+
+    if body.role not in ROLES:
+        raise HTTPException(status_code=400, detail=f"Peran tidak dikenal: {body.role}")
+
+    # A regional admin staffs its own region and cannot mint a peer, a national
+    # read-only account or a super admin — the same list create_user, update_user
+    # and delete_user use, so the four cannot disagree about what the appointment
+    # means.
+    if current_user.role == "ADMIN_WILAYAH":
+        if body.role not in AW_GRANTABLE_ROLES:
+            raise HTTPException(
+                status_code=403,
+                detail=f"ADMIN WILAYAH hanya bisa menyetujui peran: {', '.join(AW_GRANTABLE_ROLES)}.",
+            )
+        assert_region_scope(
+            db, current_user, body.id_lokasi,
+            "Hanya bisa menyetujui pengguna di wilayah Anda.",
+        )
+
+    user.role = body.role
+    user.id_lokasi = body.id_lokasi or None
+    user.status = "AKTIF"
+    user.approved_by = current_user.id_pengguna
+    user.approved_at = datetime.now()
+    db.commit()
+    await manager.broadcast("REFRESH_PRESENCE")
+    return {"message": f"Akun {user.username} disetujui sebagai {body.role}."}
+
+
+@router.post("/api/users/{user_id}/tolak")
+async def reject_user(
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.Pengguna = Depends(require_role(list(USER_ADMIN_ROLES))),
+):
+    """
+    Reject a PENDING registration.
+
+    The row is KEPT with `status='DITOLAK'` rather than deleted, for two
+    reasons: deleting frees the username for immediate re-registration, which
+    makes rejection meaningless against anyone persistent; and a rejected
+    application is a fact an admin may need to look up later.
+    """
+    user = db.query(models.Pengguna).filter_by(id_pengguna=user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Pengguna tidak ditemukan.")
+    if (user.status or "").upper() != "PENDING":
+        raise HTTPException(
+            status_code=400, detail="Hanya akun berstatus PENDING yang bisa ditolak."
+        )
+
+    user.status = "DITOLAK"
+    user.approved_by = current_user.id_pengguna
+    user.approved_at = datetime.now()
+    db.commit()
+    await manager.broadcast("REFRESH_PRESENCE")
+    return {"message": f"Pendaftaran {user.username} ditolak."}
 
 
 @router.get("/api/me")
@@ -202,6 +456,12 @@ def create_user(
             hashed_password=get_password_hash(user_data.password),
             role=user_data.role,
             id_lokasi=region,
+            # An admin-created account is active immediately — the approval step
+            # exists to vet SELF-registration, and an admin creating an account
+            # has already done the vetting.
+            status="AKTIF",
+            nama_lengkap=(user_data.nama_lengkap or "").strip() or None,
+            created_at=datetime.now(),
         )
     )
     db.commit()
@@ -294,6 +554,14 @@ def get_all_users(
                 # only the fact that one exists — so Pusat Data can flag rows
                 # that predate authentication and are therefore locked out.
                 "has_password": bool(u.hashed_password),
+                # AKTIF | PENDING | DITOLAK | NONAKTIF. Pusat Data ▸ Pengguna
+                # renders PENDING rows as an approvals queue — without this the
+                # only way to find a registration would be to notice a new name.
+                "status": (u.status or "AKTIF").upper(),
+                "nama_lengkap": u.nama_lengkap,
+                "created_at": u.created_at.strftime("%Y-%m-%d %H:%M:%S")
+                if u.created_at
+                else None,
                 "online": u.username in online,
                 "last_seen": u.last_seen.strftime("%Y-%m-%d %H:%M:%S")
                 if u.last_seen
@@ -342,6 +610,27 @@ def update_user(
         raise HTTPException(
             status_code=400, detail="Tidak bisa mengedit akun sendiri dari menu ini."
         )
+
+    # Suspend / reinstate only. PENDING and DITOLAK are reachable ONLY through
+    # /approve and /tolak: granting privilege is a distinct act and belongs on a
+    # route that can be found and audited, not on a value smuggled through the
+    # general-purpose edit form. Sending either here is a 400, not a silent
+    # no-op, because a rejected value that appears to save is worse than an
+    # error.
+    if data.status is not None:
+        want = (data.status or "").strip().upper()
+        if want not in ("AKTIF", "NONAKTIF"):
+            raise HTTPException(
+                status_code=400,
+                detail="Status hanya bisa AKTIF atau NONAKTIF di sini. "
+                       "Gunakan /approve atau /tolak untuk akun PENDING.",
+            )
+        if (target.status or "AKTIF").upper() == "PENDING":
+            raise HTTPException(
+                status_code=400,
+                detail="Akun PENDING harus disetujui atau ditolak, bukan diubah statusnya.",
+            )
+        target.status = want
 
     target.role = data.role
     target.id_lokasi = data.id_lokasi

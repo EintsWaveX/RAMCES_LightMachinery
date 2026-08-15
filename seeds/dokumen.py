@@ -145,40 +145,102 @@ def _copy(src_dir: str, filename: str, prefix: str, kode: str):
     return dest_name
 
 
+def _judul(filename: str) -> str:
+    """
+    A printable title from the client's own filename.
+
+    The stored names are what the client sent — "Kertz-Gasoline Jack
+    Hammer[1].pdf", "SPESIFIKASI TEKNIK TRACK GAUGE.PDF" — so the extension,
+    the duplicate marker and the shouting all come off before it reaches a link
+    label. Nothing else is invented: the words are the client's.
+    """
+    stem = os.path.splitext(filename)[0]
+    stem = re.sub(r"\[\d+\]$", "", stem).replace("_", " ").strip()
+    stem = re.sub(r"\s{2,}", " ", stem)
+    # ALL CAPS reads as an error in a list of mixed-case links; anything with
+    # lower-case letters in it is left exactly as the client typed it.
+    return stem.title() if stem.isupper() else stem
+
+
 def run(db):
     if not os.path.isdir(MODULES):
         print(f"  ! {MODULES} tidak ada — impor dokumen dilewati.")
         print("    (modules/ adalah drop sumber dari klien dan tidak ikut di git)")
         return
 
-    known = {row[0] for row in db.query(models.KategoriAlat.kode_alat).all()}
+    katalog = {row.kode_alat: row for row in db.query(models.KategoriAlat).all()}
     copied = attached = 0
     missing_files, unknown_codes = [], set()
 
-    for field, prefix, table in (
-        ("file_spek", "spektek", SPEK_MAP),
-        ("file_manual", "manual", MANUAL_MAP),
+    # Every (kode, jenis) pair already carrying rows, so a re-run neither
+    # duplicates nor rewrites. Keyed by the triple the unique index uses.
+    existing = {
+        (d.kode_alat, d.jenis, d.nama_file): d
+        for d in db.query(models.DokumenAlat).all()
+    }
+    # The FIRST document listed for a (kode, jenis) is the primary one — the one
+    # mirrored onto kategori_alat.file_spek / file_manual for
+    # `_varian_payload()`'s tool-type fallback. Table order is the client's own
+    # ordering, and for the three tools with two documents the first is the one
+    # named after the tool itself rather than the one that bundles it in with
+    # three others.
+    seen_utama = set()
+    rows_new = 0
+
+    for field, jenis, prefix, table in (
+        ("file_spek", "SPEK", "spektek", SPEK_MAP),
+        ("file_manual", "MANUAL", "manual", MANUAL_MAP),
     ):
         for src_dir, filename, codes in table:
             if not os.path.exists(os.path.join(src_dir, filename)):
                 missing_files.append(filename)
                 continue
             for kode in codes:
-                if kode not in known:
+                row = katalog.get(kode)
+                if row is None:
                     unknown_codes.add(kode)
                     continue
                 dest_name = _copy(src_dir, filename, prefix, kode)
                 if not dest_name:
                     continue
                 copied += 1
-                row = db.query(models.KategoriAlat).filter_by(kode_alat=kode).first()
-                if getattr(row, field) != dest_name:
+
+                is_utama = (kode, jenis) not in seen_utama
+                seen_utama.add((kode, jenis))
+
+                # ── The row that makes the SECOND document reachable ──
+                #
+                # kategori_alat has one column per kind, so before dokumen_alat
+                # existed this loop wrote the second document over the first and
+                # 5.6 MB across three files became unreachable: AMB, IMP and LMP
+                # are each covered by two PDFs.
+                key = (kode, jenis, dest_name)
+                dok = existing.get(key)
+                if dok is None:
+                    dok = models.DokumenAlat(
+                        kode_alat=kode, jenis=jenis, nama_file=dest_name
+                    )
+                    db.add(dok)
+                    existing[key] = dok
+                    rows_new += 1
+                dok.judul = _judul(filename)
+                dok.kelompok = row.kelompok
+                dok.utama = is_utama
+
+                # The primary document is still duplicated onto the parent, so
+                # `_varian_payload()` and landing.html's spec card work exactly
+                # as before. Only the primary — writing every document here is
+                # what caused the overwrite in the first place.
+                if is_utama and getattr(row, field) != dest_name:
                     setattr(row, field, dest_name)
                     attached += 1
 
     total = sum(len(c) for _, _, c in SPEK_MAP) + sum(len(c) for _, _, c in MANUAL_MAP)
     print(f"  dokumen       : {copied}/{total} lampiran siap, {attached} baru ditautkan")
-    print(f"                  ({len(SPEK_MAP)} spektek + {len(MANUAL_MAP)} manual → uploads/dokumen_alat/)")
+    print(
+        f"                  ({len(SPEK_MAP)} spektek + {len(MANUAL_MAP)} manual "
+        f"→ uploads/dokumen_alat/), {rows_new} baris dokumen_alat baru"
+    )
     if missing_files:
         print(f"  ! {len(missing_files)} berkas tidak ditemukan: {missing_files[:3]}")
     if unknown_codes:

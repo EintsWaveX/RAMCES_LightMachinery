@@ -32,10 +32,12 @@ about the URL:
   `/api/inventaris/pemakaian`. Module membership is not URL prefix; the path is
   unchanged either way.
 
-`trigger_seed`'s `from seeds.inventaris import seed_spareparts` stays FUNCTION-LOCAL. It is
-an absolute import against the top-level seed.py and works unchanged from inside
-this package; seed.py is gitignored and may be absent from a checkout, so a
-module-level import would break boot for everyone.
+`trigger_seed`'s `from seeds.inventaris import seed_spareparts` stays
+FUNCTION-LOCAL. The seeding pipeline is tracked now, but it imports
+`seed_katalog.py`, which RAISES on a checkout without the client's `modules/`
+drop — deliberately, because the alternative was importing cleanly and silently
+producing an empty catalogue. A module-level import here would turn that into a
+boot failure for everyone rather than a 500 on the one endpoint that seeds.
 """
 
 from datetime import datetime, date, timedelta

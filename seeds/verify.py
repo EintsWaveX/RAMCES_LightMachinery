@@ -32,6 +32,7 @@ import models
 from database import SessionLocal
 from seed_katalog import ALL_ALAT, KATALOG_UPT, verify_upt_parents
 from seeds.dokumen import MANUAL_MAP, SPEK_MAP
+from seeds.dummy import DEMO_SERI_PREFIX
 from seeds.katalog import (
     LOKASI_DATA,
     UPT_DATA_AS_LOKASI,
@@ -116,17 +117,42 @@ def verify_all() -> bool:
             r.note(f"salinan server tidak bisa diperiksa: {exc}")
 
         # ── The real fleet ──
+        #
+        # Counted SEPARATELY from the demo fleet, and that separation is the
+        # point. This used to be a single `expected <= n_aset < expected * 2`
+        # range over the total, chosen loose enough that 100 demo assets would
+        # fit — which at 1,121 workbook rows meant the non-idempotent dummy step
+        # could run ELEVEN times, to 2,221 assets, with every run reporting
+        # 11/11 PASS. Demo assets are distinguishable (`nomor_seri LIKE
+        # 'DEMO-%'`, stamped at creation by seeds/dummy.py), so there is no
+        # reason to check them as one blurred total.
         n_aset = db.query(models.Aset).count()
+        n_demo = (
+            db.query(models.Aset)
+            .filter(models.Aset.nomor_seri.like(f"{DEMO_SERI_PREFIX}%"))
+            .count()
+        )
+        n_real = n_aset - n_demo
         expected_aset = _workbook_row_count()
         if expected_aset is None:
             r.note("aset: workbook tidak tersedia, jumlah tidak diperiksa", f"({n_aset} baris)")
         else:
-            # A dummy run adds 100 more on purpose, so the check is a floor plus
-            # an explicit "not doubled" ceiling rather than an equality.
+            # Now an EQUALITY. The importer keys on identity, so a re-run adds
+            # nothing and any drift from the workbook row count is a real fault.
             r.check(
-                f"aset tidak terduplikasi (workbook {expected_aset} baris)",
-                expected_aset <= n_aset < expected_aset * 2,
-                f"ditemukan {n_aset} — {n_aset / expected_aset:.2f}x workbook",
+                f"aset nyata = {expected_aset} (sesuai workbook)",
+                n_real == expected_aset,
+                f"ditemukan {n_real} nyata + {n_demo} demo = {n_aset}",
+            )
+
+        # The demo step targets a population rather than adding a batch, so a
+        # second run must leave this unchanged. 100 is its default; any run with
+        # `--aset N` sets a different target, hence a ceiling rather than an
+        # equality — what is being asserted is that it did not ACCUMULATE.
+        if n_demo:
+            r.note(
+                "aset demo (nomor_seri DEMO-…)",
+                f"{n_demo} baris — hapus dengan `manage.py reset` bila tidak diinginkan",
             )
 
         # id_aset is the primary key, so a true duplicate is impossible — what
@@ -149,6 +175,44 @@ def verify_all() -> bool:
             "identitas aset unik",
             f"{distinct_identity} kombinasi (alat+lokasi+tanggal+peruntukan+model) "
             f"untuk {n_aset} baris",
+        )
+
+        # ── The peruntukan rule ──
+        #
+        # A UPT code's prefix IS the asset's peruntukan (JR→JALAN REL,
+        # JB→JEMBATAN, ME→MEKANIK), verified 1:1 across all 254 rows of
+        # KATALOG UPT, and the importer derives it that way. Nothing asserted it
+        # afterwards, which is how the demo generator went on picking the letter
+        # at random — producing assets whose id_aset peruntukan segment
+        # contradicted the resort named in the same id.
+        #
+        # ⚠️ It is a CREATION-TIME rule, not a permanent invariant, so this
+        # check deliberately skips any asset that has ever been transferred.
+        # Peruntukan is what the machine is FOR; a jalan rel tamper lent to a
+        # jembatan resort is still a jalan rel tamper, and `mutasi` moves
+        # `id_lokasi` without touching `peruntukan` or the composite id. Asking
+        # for agreement there would assert something the application itself does
+        # not maintain — and would start failing the first time anyone uses the
+        # transfer form. An asset with no mutation history has never moved, so
+        # its current resort IS the resort it was created at.
+        moved = {row[0] for row in db.query(models.RiwayatMutasi.id_aset).distinct()}
+        prefix_expect = {"JR": "JALAN REL", "JB": "JEMBATAN", "ME": "MEKANIK"}
+        mismatched, checked = [], 0
+        for id_aset, id_lokasi, peruntukan in db.query(
+            models.Aset.id_aset, models.Aset.id_lokasi, models.Aset.peruntukan
+        ):
+            if id_aset in moved:
+                continue
+            want = prefix_expect.get(str(id_lokasi or "")[:2].upper())
+            if not want:
+                continue  # homed at a DAOP/DIVRE parent, which carries no prefix
+            checked += 1
+            if (peruntukan or "").upper() != want:
+                mismatched.append(f"{id_aset}@{id_lokasi}={peruntukan}")
+        r.check(
+            f"peruntukan cocok dengan awalan kode UPT ({checked} aset belum pernah mutasi)",
+            not mismatched,
+            f"{len(mismatched)} tidak cocok: {mismatched[:3]}",
         )
 
         # ── Documents ──
@@ -178,6 +242,29 @@ def verify_all() -> bool:
             )
         else:
             r.note("dokumen: modules/ tidak tersedia, lampiran tidak diperiksa")
+
+        # Every file in uploads/dokumen_alat/ must be reachable from a row.
+        #
+        # This is the check that would have caught the collision: `kategori_alat`
+        # has ONE column per document kind, and the seeder wrote both of a tool's
+        # documents to it in table order, so the second overwrote the first.
+        # 5.6 MB across three files (AMB, IMP, LMP) sat on disk referenced by
+        # nothing, and every existing check passed — the files were copied, the
+        # codes existed, the attachment count was met. Only asking the question
+        # from the DISK side finds it.
+        dok_dir = os.path.join(os.path.dirname(WORKBOOK), "..", "uploads", "dokumen_alat")
+        dok_dir = os.path.normpath(dok_dir)
+        if os.path.isdir(dok_dir):
+            on_disk = {f for f in os.listdir(dok_dir) if not f.startswith(".")}
+            referenced = {row[0] for row in db.query(models.DokumenAlat.nama_file).all()}
+            orphan = on_disk - referenced
+            r.check(
+                f"setiap berkas di uploads/dokumen_alat/ terjangkau ({len(on_disk)} berkas)",
+                not orphan,
+                f"{len(orphan)} tidak tertaut baris mana pun: {sorted(orphan)[:3]}",
+            )
+        else:
+            r.note("dokumen_alat: direktori unggahan belum ada")
 
         # ── Orphans ──
         orphan_varian = (

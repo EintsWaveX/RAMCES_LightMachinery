@@ -326,6 +326,74 @@ def _ensure_schema():
         "CREATE INDEX IF NOT EXISTS ix_sparepart_kategori ON sparepart (id_kategori)",
         "CREATE INDEX IF NOT EXISTS ix_sparepart_kode_alat ON sparepart (kode_alat)",
 
+        # ── Self-registration and approval (pengguna) ──
+        #
+        # `created_at` gets NO default on purpose: `DEFAULT NOW()` would stamp
+        # every row that existed before this migration with the migration's own
+        # timestamp, which then reads as the account's creation date forever.
+        # NULL is the honest value for "we did not record it".
+        "ALTER TABLE pengguna ADD COLUMN IF NOT EXISTS status VARCHAR(16) "
+        "NOT NULL DEFAULT 'AKTIF'",
+        "ALTER TABLE pengguna ADD COLUMN IF NOT EXISTS nama_lengkap VARCHAR(120)",
+        "ALTER TABLE pengguna ADD COLUMN IF NOT EXISTS created_at TIMESTAMP",
+        "ALTER TABLE pengguna ADD COLUMN IF NOT EXISTS approved_by INTEGER",
+        "ALTER TABLE pengguna ADD COLUMN IF NOT EXISTS approved_at TIMESTAMP",
+        "UPDATE pengguna SET status = UPPER(status) "
+        "WHERE status IS NOT NULL AND status <> UPPER(status)",
+        # Guarded for the same reason as every other ADD CONSTRAINT here: it is
+        # not IF NOT EXISTS-able, it takes an ACCESS EXCLUSIVE lock while it
+        # rescans, and _ensure_schema() runs at import — so unguarded it locks
+        # `pengguna` on every restart, once per worker.
+        """
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint WHERE conname = 'ck_pengguna_status'
+            ) THEN
+                ALTER TABLE pengguna
+                    ADD CONSTRAINT ck_pengguna_status
+                    CHECK (status IN ('AKTIF', 'PENDING', 'DITOLAK', 'NONAKTIF'));
+            END IF;
+        END $$;
+        """,
+        # The approvals queue filters on this and nothing else.
+        "CREATE INDEX IF NOT EXISTS ix_pengguna_status ON pengguna (status)",
+
+        # ── dokumen_alat ──
+        #
+        # The TABLE itself is created by `Base.metadata.create_all()` from its
+        # declaration in models.py, not here — a raw-DDL-only table survives
+        # `manage.py reset`'s drop_all and then collides with the recreate. What
+        # belongs here is what create_all cannot express: the CHECK, and the
+        # partial unique index that makes "exactly one primary document per
+        # (tool, kind)" a database fact rather than a seeder convention.
+        #
+        # Both are existence-guarded. `ADD CONSTRAINT` is not `IF NOT EXISTS`-
+        # able in PostgreSQL and takes an ACCESS EXCLUSIVE lock while it
+        # rescans, and _ensure_schema() runs at IMPORT — so unguarded this would
+        # lock the table on every restart, per worker.
+        """
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint WHERE conname = 'ck_dokumen_alat_jenis'
+            ) AND EXISTS (
+                SELECT 1 FROM information_schema.tables
+                WHERE table_name = 'dokumen_alat'
+            ) THEN
+                ALTER TABLE dokumen_alat
+                    ADD CONSTRAINT ck_dokumen_alat_jenis
+                    CHECK (jenis IN ('SPEK', 'MANUAL'));
+            END IF;
+        END $$;
+        """,
+        # One document may be named by several tools (one file covers four), so
+        # the uniqueness is per (kode_alat, jenis, nama_file), not per file.
+        "CREATE UNIQUE INDEX IF NOT EXISTS ux_dokumen_alat_row "
+        "ON dokumen_alat (kode_alat, jenis, nama_file)",
+        "CREATE UNIQUE INDEX IF NOT EXISTS ux_dokumen_alat_utama "
+        "ON dokumen_alat (kode_alat, jenis) WHERE utama",
+
         # ── Normalise status_terakhir ──
         #
         # Five queries wrapped this column in func.upper(), which makes both

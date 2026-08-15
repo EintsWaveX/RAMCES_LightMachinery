@@ -5,7 +5,7 @@ This replaced a single 1,274-line `seed.py` that mixed master data, the real
 fleet import, a synthetic history generator, the sparepart catalogue, warehouses
 and the opening stock ledger. Splitting it buys three things:
 
-  * **Every step can be run alone.** `py -3.10 seed.py --only dokumen` re-attaches
+  * **Every step can be run alone.** `py -3.10 manage.py seed --only dokumen` re-attaches
     the client's PDFs without touching 1,121 asset rows.
   * **Every step is idempotent, and that is now ASSERTED.** The previous
     `seed_aset_real` renumbered on sequence collision instead of recognising a

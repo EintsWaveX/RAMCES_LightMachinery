@@ -207,25 +207,63 @@ async function loadMasterUsers() {
         "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300",
       TEKNISI:
         "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300",
+      PETUGAS_GUDANG:
+        "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300",
+      PIMPINAN:
+        "bg-slate-100 text-slate-700 dark:bg-slate-700/40 dark:text-slate-300",
     };
+
+    // PENDING registrations first. They are the only rows that need an action
+    // taken rather than merely read, and a queue buried in alphabetical order
+    // among 40 active accounts is a queue nobody works.
+    data.sort((a, b) => (b.status === "PENDING") - (a.status === "PENDING"));
 
     tbody.innerHTML = data
       .map(
         (u) => `
-            <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50">
-                <td class="px-4 py-3 font-semibold font-mono">${u.username}</td>
+            <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50${
+              u.status === "PENDING" ? " bg-amber-50/60 dark:bg-amber-900/10" : ""
+            }">
+                <td class="px-4 py-3 font-semibold font-mono">${u.username}${
+                  u.nama_lengkap
+                    ? `<span class="block font-sans font-normal text-[11px] text-gray-400">${u.nama_lengkap}</span>`
+                    : ""
+                }</td>
                 <td class="px-4 py-3">
-                    <span class="text-xs px-2 py-0.5 rounded-full font-bold ${roleColors[u.role] || "bg-gray-100 text-gray-700"}">
-                        ${u.role}
-                    </span>
+                    ${
+                      // A PENDING row's `role` is an inert placeholder the
+                      // approval overwrites. Printing it as though it were the
+                      // account's role would be stating something untrue about
+                      // an account that has none yet.
+                      u.status === "PENDING"
+                        ? `<span class="badge badge-warn">MENUNGGU PERSETUJUAN</span>`
+                        : `<span class="text-xs px-2 py-0.5 rounded-full font-bold ${roleColors[u.role] || "bg-gray-100 text-gray-700"}">
+                             ${u.role}
+                           </span>${
+                             u.status && u.status !== "AKTIF"
+                               ? ` <span class="badge badge-neutral">${u.status}</span>`
+                               : ""
+                           }`
+                    }
                 </td>
                 <td class="px-4 py-3 text-sm text-gray-500 font-mono">${u.nama_lokasi || u.id_lokasi || "—"}</td>
                 <td class="px-4 py-3">${_presenceCell(u)}</td>
                 <td class="px-4 py-3 text-right whitespace-nowrap">
-                    <button onclick="window.openMasterEdit('users',${u.id_pengguna},'${u.username}','${u.role}','${u.id_lokasi || ""}')"
-                        class="text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 px-3 py-1 rounded-lg font-bold hover:bg-blue-200 transition">
-                        <i class="fas fa-edit mr-1"></i> Edit
-                    </button>
+                    ${
+                      u.status === "PENDING"
+                        ? `<button onclick="window.openApproveUser(${u.id_pengguna}, ${JSON.stringify(u.username)})"
+                             class="text-xs bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 px-3 py-1 rounded-lg font-bold hover:bg-green-200 transition">
+                             <i class="fas fa-check mr-1"></i> Setujui
+                           </button>
+                           <button onclick="window.rejectUser(${u.id_pengguna}, ${JSON.stringify(u.username)})"
+                             class="ml-1 text-xs bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 px-3 py-1 rounded-lg font-bold hover:bg-red-200 transition">
+                             <i class="fas fa-xmark mr-1"></i> Tolak
+                           </button>`
+                        : `<button onclick="window.openMasterEdit('users',${u.id_pengguna},'${u.username}','${u.role}','${u.id_lokasi || ""}')"
+                             class="text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 px-3 py-1 rounded-lg font-bold hover:bg-blue-200 transition">
+                             <i class="fas fa-edit mr-1"></i> Edit
+                           </button>`
+                    }
                     <button onclick="window.openResetPassword(${u.id_pengguna}, ${JSON.stringify(u.username)})"
                         title="${u.has_password ? "Setel ulang password" : "Akun ini belum punya password dan tidak bisa masuk"}"
                         class="ml-1 text-xs ${
@@ -246,6 +284,78 @@ async function loadMasterUsers() {
     tbody.innerHTML = `<tr><td colspan="5" class="px-4 py-6 text-center text-red-400 text-sm">Gagal memuat data pengguna.</td></tr>`;
   }
 }
+
+// ── Approving a self-registration ───────────────────────────────────────
+//
+// The role and the region are chosen HERE, by the admin, at the moment
+// privilege is granted — never by the registrant, and never on the general
+// edit form. `/api/users/{id}/approve` is a dedicated endpoint for the same
+// reason: this is the act worth being able to find and audit on its own.
+
+window.openApproveUser = async function (idPengguna, username) {
+  const roles = ROLE_ORDER.map(
+    (r) => `<option value="${r}"${r === "TEKNISI" ? " selected" : ""}>${r}</option>`,
+  ).join("");
+  const regions = lokasiData
+    .map((l) => `<option value="${l.code}">${l.name} (${l.code})</option>`)
+    .join("");
+
+  const ok = await customConfirm({
+    title: `Setujui pendaftaran ${username}?`,
+    message: `
+      <p class="text-xs text-gray-500 dark:text-gray-400 mb-3">
+        Tentukan peran dan wilayah untuk akun ini. Pendaftar tidak memilih keduanya.
+      </p>
+      <label class="block text-[11px] font-semibold mb-1">Peran</label>
+      <select id="approve-role" class="w-full p-2.5 mb-3 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm">${roles}</select>
+      <label class="block text-[11px] font-semibold mb-1">Wilayah</label>
+      <select id="approve-region" class="w-full p-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm">
+        <option value="">— Tanpa wilayah (SUPER ADMIN) —</option>${regions}
+      </select>`,
+    confirmText: "Setujui",
+    html: true,
+  });
+  if (!ok) return;
+
+  const role = document.getElementById("approve-role")?.value || "TEKNISI";
+  const id_lokasi = document.getElementById("approve-region")?.value || null;
+
+  // apiFetch only THROWS on 401, so a 400/403 arrives as an ordinary response
+  // and must be checked explicitly — otherwise a refused approval reports
+  // success and the row stays PENDING with nobody the wiser.
+  const res = await apiFetch(`/users/${idPengguna}/approve`, {
+    method: "POST",
+    body: JSON.stringify({ role, id_lokasi }),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    showToast(body.detail || "Gagal menyetujui akun.", "error");
+    return;
+  }
+  showToast(body.message || "Akun disetujui.", "success");
+  loadMasterUsers();
+};
+
+window.rejectUser = async function (idPengguna, username) {
+  const ok = await customConfirm({
+    title: `Tolak pendaftaran ${username}?`,
+    message:
+      "Akun tetap tersimpan dengan status DITOLAK, bukan dihapus — menghapusnya " +
+      "akan membebaskan username itu untuk didaftarkan ulang seketika.",
+    confirmText: "Tolak",
+    danger: true,
+  });
+  if (!ok) return;
+
+  const res = await apiFetch(`/users/${idPengguna}/tolak`, { method: "POST" });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    showToast(body.detail || "Gagal menolak pendaftaran.", "error");
+    return;
+  }
+  showToast(body.message || "Pendaftaran ditolak.", "success");
+  loadMasterUsers();
+};
 
 // Friendly names for the view ids reported over the WebSocket, so the Pengguna
 // list reads "sedang di Kelola Inventaris" rather than "inventaris".
@@ -1427,7 +1537,7 @@ window.openMasterEdit = (type, id, val1, val2, val3) => {
             <div>
                 <label class="block text-xs font-semibold mb-1">Role</label>
                 <select id="edit-field-role" class="w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600">
-                    ${["TEKNISI", "ADMIN_WILAYAH", "SUPER_ADMIN"]
+                    ${ROLE_ORDER
                       .map(
                         (r) =>
                           `<option value="${r}" ${val2 === r ? "selected" : ""}>${r}</option>`,

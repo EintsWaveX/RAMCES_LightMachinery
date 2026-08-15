@@ -120,6 +120,11 @@ def strip_literals(src):
 LOAD_ORDER = [
     "core.js",
     "a11y-modal.js",
+    # Like a11y-modal.js: a self-contained IIFE exporting ONE global, because
+    # landing.html loads it too and declares its own lokasiData/authToken/
+    # showToast at top level. Position is therefore irrelevant to it, but the
+    # list must mirror index.html's script tags exactly or check_html.py fails.
+    "captcha.js",
     "api.js",
     "search.js",
     "shell.js",

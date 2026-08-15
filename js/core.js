@@ -24,7 +24,98 @@ let alatKerjaData = [];
 let lokasiData = [];
 let uptDatabase = []; // Dipertahankan jika backend API masih membutuhkannya
 
-let _currentRole = ""; // SUPER_ADMIN, ADMIN_WILAYAH, TEKNISI
+let _currentRole = ""; // one of ROLE_ORDER below
+
+// ══════════════════════════════════════════════════════════════════════
+// Role access — declarative, and the ONLY description of who sees what
+// ══════════════════════════════════════════════════════════════════════
+//
+// `checkAuth()` used to gate FOUR elements by hand. That left two holes, and
+// they were holes in the UI rather than in security — the server answers 403
+// behind every one of them — but a menu that contradicts the permissions is its
+// own kind of broken:
+//
+//   * `switchView()` had no role check at all, and 34 `onclick=` handlers built
+//     inside template strings call it directly. Hiding a sidebar button does
+//     nothing about a card link that jumps to the same view.
+//   * `#mobile-bottom-nav` was never gated, so on a phone every role got the
+//     full five slots.
+//
+// Three tables replace the four lines. Everything reads from them, so adding a
+// role means editing here and nowhere else.
+//
+// ⚠️ These are a CONVENIENCE, not a control. The enforcement is
+// `require_role([...])` plus `assert_*_region_scope()` on the server, and it
+// stays that way: the token is in sessionStorage and its payload is read
+// client-side, so anything decided here can be edited by the person it applies
+// to.
+
+const ROLE_ORDER = [
+  "SUPER_ADMIN",
+  "ADMIN_WILAYAH",
+  "PETUGAS_GUDANG",
+  "TEKNISI",
+  "PIMPINAN",
+];
+
+// Views every role may open. `r` in the client's matrix means read-only: the
+// view opens, and WRITE_ACCESS below decides whether its buttons appear.
+const VIEW_ACCESS = {
+  dashboard:  ROLE_ORDER,
+  input:      ["SUPER_ADMIN", "ADMIN_WILAYAH"],
+  inventaris: ROLE_ORDER,
+  database:   ROLE_ORDER,
+  history:    ROLE_ORDER,
+  laporan:    ["SUPER_ADMIN", "ADMIN_WILAYAH", "PETUGAS_GUDANG", "PIMPINAN"],
+  masterdata: ["SUPER_ADMIN"],
+  afkir:      ["SUPER_ADMIN"],
+  // Drill-downs reached from a row, never from a nav button. They inherit the
+  // access of the list that leads to them; check_html.py exempts both from its
+  // "every view is reachable from a data-view button" rule for the same reason.
+  edit:            ROLE_ORDER,
+  "history-detail": ROLE_ORDER,
+};
+
+// Who may WRITE in each area. A role absent here gets the view without its
+// create/edit/delete controls — which must be hidden AND 403 behind, never one
+// or the other.
+const WRITE_ACCESS = {
+  aset:       ["SUPER_ADMIN", "ADMIN_WILAYAH"],
+  inventaris: ["SUPER_ADMIN", "ADMIN_WILAYAH", "PETUGAS_GUDANG"],
+  // Condition reporting is deliberately UNSCOPED for TEKNISI — reporting a
+  // machine as broken is the one thing a technician does standing next to it,
+  // and a region check there would block the report rather than the mistake.
+  kondisi:    ["SUPER_ADMIN", "ADMIN_WILAYAH", "TEKNISI"],
+  masterdata: ["SUPER_ADMIN"],
+};
+
+// Sidebar / bottom-nav element ids → the view they open. Ids that do not exist
+// are skipped, so this may safely name a button a future layout adds.
+const NAV_ACCESS = {
+  "nav-input": "input",
+  "nav-masterdata": "masterdata",
+  "nav-afkir": "afkir",
+};
+
+/** True when `role` may open `viewId`. Unknown views are allowed — a view with
+ *  no entry is not yet gated, and silently hiding it would be worse. */
+function canView(viewId, role = _currentRole) {
+  const allowed = VIEW_ACCESS[viewId];
+  return !allowed || allowed.includes(role);
+}
+
+/** True when `role` may write in `area`. Unknown areas are DENIED — a typo here
+ *  must not quietly grant a button. */
+function canWrite(area, role = _currentRole) {
+  return (WRITE_ACCESS[area] || []).includes(role);
+}
+
+window.canView = canView;
+window.canWrite = canWrite;
+window.VIEW_ACCESS = VIEW_ACCESS;
+window.WRITE_ACCESS = WRITE_ACCESS;
+window.NAV_ACCESS = NAV_ACCESS;
+window.ROLE_ORDER = ROLE_ORDER;
 let _wsNgrokFailed = false;
 let _wsRetryCount = 0;
 
@@ -37,7 +128,54 @@ let authToken = sessionStorage.getItem("authToken");
 // Track the QR currently shown in the modal (for export)
 let _qrActiveItem = null;
 
-function applyUptSelect(locCode, uptSelectEl) {
+// ── The peruntukan rule, on the client ──────────────────────────────────
+//
+// A resort code's PREFIX is its peruntukan, verified 1:1 across all 254 rows of
+// the client's KATALOG UPT: JR → JALAN REL, JB → JEMBATAN, ME → MEKANIK, and
+// BY is a Balaiyasa workshop rather than an operating unit. The server derives
+// an imported asset's peruntukan exactly this way.
+//
+// Keep in step with `UPT_PREFIX_TO_LETTER` in seeds/dummy.py and with
+// `normalise_peruntukan()` in api/deps.py.
+const UPT_PREFIX_BY_PERUNTUKAN = {
+  A: "JR", // JALAN REL
+  B: "JB", // JEMBATAN
+  C: "ME", // MEKANIK
+  D: "BY", // BALAIYASA
+};
+
+const PERUNTUKAN_LABEL = {
+  A: "JALAN REL",
+  B: "JEMBATAN",
+  C: "MEKANIK",
+  D: "BALAIYASA",
+};
+
+/** The peruntukan letter for a stored value, or "" when it is not one of the four. */
+function peruntukanLetter(value) {
+  const v = String(value || "").trim().toUpperCase();
+  if (UPT_PREFIX_BY_PERUNTUKAN[v]) return v; // already a letter
+  const hit = Object.entries(PERUNTUKAN_LABEL).find(([, label]) => label === v);
+  return hit ? hit[0] : "";
+}
+
+/**
+ * Fill a UPT `<select>` with the resorts under `locCode`.
+ *
+ * `peruntukan` (a letter or a label, either is accepted) narrows the list to
+ * the resorts that can actually hold such an asset. Omitting it keeps the old
+ * unfiltered behaviour, which is what the Kalibrasi and Mutasi forms want —
+ * they pick where a machine IS, not what it is for.
+ *
+ * ── Why the filter exists ──
+ *
+ * With JALAN REL + DAOP 1 selected, this offered 31 options: 25 JR, 4 JB and
+ * 2 ME. Choosing any of the six wrong ones produced an asset whose id_aset
+ * peruntukan segment contradicted the resort named in the same id — and since
+ * the importer started deriving peruntukan from the resort prefix, that is a
+ * contradiction the system can no longer produce any other way.
+ */
+function applyUptSelect(locCode, uptSelectEl, peruntukan) {
   if (!uptSelectEl) return;
   const loc = lokasiData.find((l) => l.code === locCode);
   const isBalaiyasa = loc?.tipe?.toUpperCase() === "BALAIYASA";
@@ -49,11 +187,27 @@ function applyUptSelect(locCode, uptSelectEl) {
   }
 
   uptSelectEl.disabled = false;
-  const matches = uptDatabase.filter((u) => u.lokasi === locCode);
+  let matches = uptDatabase.filter((u) => u.lokasi === locCode);
+
+  const letter = peruntukanLetter(peruntukan);
+  const prefix = UPT_PREFIX_BY_PERUNTUKAN[letter];
+  if (prefix) {
+    matches = matches.filter((m) =>
+      String(m.upt || "").toUpperCase().startsWith(prefix),
+    );
+  }
+
   if (matches.length > 0) {
     uptSelectEl.innerHTML =
       '<option value="">Pilih UPT...</option>' +
       matches.map((m) => `<option value="${m.upt}">${m.nama || m.upt}</option>`).join("");
+  } else if (prefix) {
+    // A real empty state rather than an empty dropdown. MEKANIK + a DAOP with
+    // no ME* resort is an ordinary combination, and a box that silently offers
+    // nothing reads as a broken form rather than as an answer.
+    uptSelectEl.innerHTML =
+      `<option value="">Tidak ada UPT ${PERUNTUKAN_LABEL[letter]} di lokasi ini</option>`;
+    uptSelectEl.disabled = true;
   } else {
     uptSelectEl.innerHTML = `<option value="">Tidak ada UPT untuk lokasi ini...</option>`;
     uptSelectEl.disabled = true;
@@ -62,6 +216,7 @@ function applyUptSelect(locCode, uptSelectEl) {
 }
 
 window.applyUptSelect = applyUptSelect;
+window.peruntukanLetter = peruntukanLetter;
 
 // Theme resolution, in priority order: the user's own choice (persisted by the
 // Ganti Tema button) wins; with no stored choice, follow the operating system.
@@ -328,11 +483,10 @@ function skeletonCards(containerId, count = 6) {
     .join("");
 }
 
-/** Clear the busy flag once real content has replaced the placeholder. */
-function skeletonDone(id) {
-  document.getElementById(id)?.removeAttribute("aria-busy");
-}
-
+// `skeletonDone(id)` lived here and had no callers — it was the manual version
+// of what the observer below does automatically, and the comment explaining why
+// the observer exists was already sitting directly underneath it.
+//
 // Clearing `aria-busy` by hand means finding every success path in every
 // loader, and the one that gets forgotten leaves a container permanently
 // announced as loading. Watch instead: when an element marked busy no longer
@@ -786,21 +940,58 @@ function showToast(message, type = "info") {
     .addEventListener("click", () => clearTimeout(autoHide));
 }
 
+/**
+ * The app's only confirmation dialog.
+ *
+ * Two call shapes, and the string one is unchanged:
+ *
+ *     await customConfirm("Hapus aset ini?")
+ *     await customConfirm({ title, message, confirmText, danger, html })
+ *
+ * `html: true` renders `message` as markup instead of text, which lets a
+ * caller put a couple of `<select>`s in the body — approving a registration
+ * needs a role and a region chosen at the moment of approval, and a second
+ * bespoke modal for one two-field question is how a codebase ends up with
+ * five dialogs that behave differently. It is opt-in precisely because
+ * `innerText` is the safe default and every other caller wants it.
+ *
+ * ⚠️ The promise resolves from the BUTTON HANDLERS, and js/a11y-modal.js
+ * depends on that: Esc closes this dialog through its own close control rather
+ * than by setting `hidden`, because hiding the panel behind this function's
+ * back would leave every awaiting caller hanging forever.
+ */
 function customConfirm(message) {
+  const opts = typeof message === "string" ? { message } : message || {};
   return new Promise((resolve) => {
     const modal = document.getElementById("confirm-modal");
-    if (!modal) return resolve(window.confirm(message));
+    if (!modal) return resolve(window.confirm(opts.message || ""));
 
     const cancelBtn = document.getElementById("confirm-cancel");
     const okBtn = document.getElementById("confirm-ok");
+    const titleEl = document.getElementById("confirm-title");
+    const bodyEl = document.getElementById("confirm-message");
 
-    document.getElementById("confirm-message").innerText = message;
+    // Remembered so the dialog is restored for the next caller — otherwise one
+    // `danger: true` call would leave every later confirmation red.
+    const priorTitle = titleEl ? titleEl.textContent : null;
+    const priorOk = okBtn.className;
+    const priorOkText = okBtn.textContent;
+
+    if (titleEl && opts.title) titleEl.textContent = opts.title;
+    if (opts.html) bodyEl.innerHTML = opts.message || "";
+    else bodyEl.innerText = opts.message || "";
+    if (opts.confirmText) okBtn.textContent = opts.confirmText;
+    if (opts.danger) okBtn.classList.add("btn-danger");
+
     modal.classList.remove("hidden");
 
     function finish(result) {
       modal.classList.add("hidden");
       cancelBtn.onclick = null;
       okBtn.onclick = null;
+      if (titleEl && priorTitle !== null) titleEl.textContent = priorTitle;
+      okBtn.className = priorOk;
+      okBtn.textContent = priorOkText;
       resolve(result);
     }
 
@@ -1051,6 +1242,39 @@ const BULAN_PANJANG = [
 //     (the dashboard matrix, where the columns ARE the data) keeps scrolling.
 //   * `colspan` cells — empty states, spinners — are skipped by the CSS.
 
+// ── Horizontal scroll affordance ────────────────────────────────────────
+//
+// Marks a `.scroll-hint` strip with how much is left to scroll at each end, so
+// the stylesheet can fade only the end that actually has more content. Pure CSS
+// cannot do this — it has no access to scrollLeft.
+//
+// The dashboard tab bar is the reason: at 390px it is 925px of tabs in 308px of
+// viewport with `scrollbar-none`, so three of six tabs existed with nothing on
+// screen hinting at them.
+function _syncScrollHint(el) {
+  const max = el.scrollWidth - el.clientWidth;
+  // "0" means there IS more in that direction — the attribute names read as
+  // "distance to the start/end is not zero", which is what the CSS keys on.
+  el.setAttribute("data-scroll-start", el.scrollLeft > 4 ? "0" : "1");
+  el.setAttribute("data-scroll-end", max - el.scrollLeft > 4 ? "0" : "1");
+}
+
+function wireScrollHints(root = document) {
+  root.querySelectorAll(".scroll-hint").forEach((el) => {
+    if (el.dataset.scrollWired) return;
+    el.dataset.scrollWired = "1";
+    el.addEventListener("scroll", () => _syncScrollHint(el), { passive: true });
+    // Content and viewport both change after this runs — tabs are re-rendered,
+    // the sidebar opens, the phone rotates — so observe rather than measure once.
+    if (typeof ResizeObserver === "function") {
+      new ResizeObserver(() => _syncScrollHint(el)).observe(el);
+    }
+    _syncScrollHint(el);
+  });
+}
+
+window.wireScrollHints = wireScrollHints;
+
 function stampTableLabels(root = document) {
   root.querySelectorAll("table.table-stack").forEach((table) => {
     const heads = [...table.querySelectorAll("thead th")].map((th) =>
@@ -1106,6 +1330,10 @@ window.stampTableLabels = stampTableLabels;
   });
   document.addEventListener("DOMContentLoaded", () => {
     stampTableLabels();
+    // Same listener rather than a second DOMContentLoaded handler: both are
+    // "measure the DOM once it exists", and wireScrollHints() is idempotent
+    // (it marks what it has already wired).
+    wireScrollHints();
     observer.observe(document.body, { childList: true, subtree: true });
   });
 })();

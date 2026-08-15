@@ -25,13 +25,15 @@ DevTools Protocol — no Playwright, no Node.
 | `gate.ps1` | — | G1–G3b in one call: imports, route set, shadowing, OpenAPI, invariants, unresolved names |
 | `snap.py <label>` | — | Snapshots routes + OpenAPI + shadow pairs into `_snapshots/` |
 | `invariants.py` | — | Guards, broadcasts, one `get_db`, and that no `api/` module imports `main` |
-| `coverage.py` | DB | Every row in `modules/` is in the database, counted on both sides |
+| `coverage.py` | DB | Every row in `modules/` is in the database, counted on both sides — and every file in `uploads/dokumen_alat/` is reachable from a `dokumen_alat` row |
 | `smoke.py` | app | 26 read endpoints, plus the 304, auth and static-refusal contracts |
 | `mutate.py` | app | The write path: repair + `pemakaian` + both broadcasts + short-stock rollback, then cleans up and asserts the counts came back |
 | `walk.py` | app, Chrome | 8 views × 2 widths × 2 themes: console errors and horizontal overflow |
 | `test_parent.py` | app, Chrome | All **four** copies of the parent-derivation rule agree on 273 codes |
 | `test_kdak.py` | app, Chrome | The live `id_aset` preview matches what the server actually mints |
 | `test_ux.py` | app, Chrome | The rev0.5.1 per-view features still behave |
+| `test_rev042.py` | app, Chrome | The rev0.4.2 frontend: registration panel, progressive captcha, role gating, the peruntukan-filtered UPT list, the KDAK form fitting, landing.html's sign-in, `dokumen_alat`, and the scroll affordance |
+| `test_auth.py` | app | Registration, approval, suspension, the captcha token, and the rate limiter. **The one script here that is not immediately re-runnable** — it exhausts the limits it tests, so it detects a hot bucket and exits 2 rather than reporting a false failure. Restart the app to clear them |
 | `audit.py` | app, Chrome | UI/UX findings sweep — a report, **not** a gate |
 | `negcheck.py` | — | Breaks `index.html` five ways and confirms `check_html.py` catches each, then restores it byte-for-byte |
 | `cdp.py` | — | The Chrome driver the browser scripts import; not run directly |
@@ -41,15 +43,22 @@ DevTools Protocol — no Playwright, no Node.
 Hold these unless a change is deliberate:
 
 ```
-routes            81
-shadow pairs       0
-require_role      41 guards
-broadcasts        35
-seed.py --verify  11/11
-row counts        kategori_alat 104 · lokasi   273 · alat_varian  87
-                  aset         1121 · riwayat 1121 · pengguna      2
-                  gudang          3 · sparepart 203 · sparepart_stok 973
+routes                85      (81 + captcha/register/approve/tolak, rev0.4.2)
+openapi paths         58
+shadow pairs           0
+require_role          43 guards
+broadcasts            37
+manage.py verify   13/13
+row counts        kategori_alat 104 · lokasi        273 · alat_varian   87
+                  aset         1121 · riwayat      1121 · pengguna       2
+                  gudang          3 · sparepart     203 · sparepart_stok 973
+                  dokumen_alat   33 (30 primary, 0 orphan files on disk)
 ```
+
+**`manage.py verify` must report `aset nyata = 1121` as an EQUALITY.** It used to
+be a `expected <= n < expected * 2` range, loose enough to hide eleven runs of a
+non-idempotent dummy step. Demo assets are counted separately by their `DEMO-`
+serial.
 
 `sparepart_stok` is only stable because `seeds/inventaris.py` seeds its RNG. It
 did not used to be, and two identical resets produced different ledgers.

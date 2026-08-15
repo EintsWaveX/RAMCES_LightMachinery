@@ -666,7 +666,7 @@
               <td class="px-3 py-2 text-right tabular-nums text-gray-600 dark:text-gray-300">${r.stok_sekarang} <span class="text-[10px] text-gray-400">${r.unit}</span></td>
               <td class="px-3 py-2 text-right tabular-nums font-semibold text-gray-800 dark:text-white" title="${KAI_VIZ.rupiahFull(r.nilai)}">${KAI_VIZ.rupiah(r.nilai)}</td>
             </tr>`).join("")
-        : '<tr><td colspan="4" class="py-8 text-center text-gray-400 italic">Tidak ada data</td></tr>';
+        : '<tr><td colspan="4" class="empty-state">Tidak ada data</td></tr>';
     }
 
     // ── Ringkasan katalog ──
@@ -698,7 +698,7 @@
                 </td>
               </tr>`;
           }).join("")
-        : '<tr><td colspan="2" class="py-8 text-center text-gray-400 italic">Semua stok aman</td></tr>';
+        : '<tr><td colspan="2" class="empty-state">Semua stok aman</td></tr>';
     }
   }
 

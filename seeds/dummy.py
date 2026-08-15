@@ -6,8 +6,8 @@ OFF BY DEFAULT, and that is the whole point. The fleet imported from
 resorts. Repair records invented against them would be indistinguishable from
 fact a year from now, so this module never runs unless explicitly asked:
 
-    py -3.10 seed.py --only dummy
-    py -3.10 reset.py --yes --with-history
+    py -3.10 manage.py seed --only dummy
+    py -3.10 manage.py reset --yes --with-history
 
 The cost of that choice is visible and deliberate: without this step the repair
 dashboard, the MCF curve and Laporan Perbaikan render EMPTY, because there is
@@ -26,6 +26,15 @@ from database import SessionLocal
 from seed_katalog import ALL_ALAT
 from seeds.katalog import get_parent_lokasi_code
 from seeds.katalog import run as seed_katalog_run
+
+# A private Random instance rather than `random.seed()`, matching
+# `seeds/inventaris.py`: seeding the global RNG reaches every other module in
+# the process, and this one is imported by a CLI that also generates a bootstrap
+# password. Fixing the stream makes `manage.py reset --with-history` reproducible
+# — two resets of the same database produce the same 100 machines with the same
+# history, which is what lets the verification harness hold a baseline at all.
+_DUMMY_RNG_SEED = 20260815
+_rng = random.Random(_DUMMY_RNG_SEED)
 
 # (ALAT_KODE_LIST was built here and never read; DUMMY_ALAT_SPREAD below is
 #  what the generator actually walks.)
@@ -51,6 +60,57 @@ SERI_PREFIX = {
     "GEN": "GEN", "PBT": "TMP", "BOR": "DRL", "IMP": "IWR", "RGM": "GRD",
     "TGT": "TGT", "USM": "USM", "RFD": "RFD", "TRG": "TRG",
 }
+
+# ── What marks an asset as fabricated ─────────────────────────────────
+#
+# Every asset this module creates carries a `nomor_seri` beginning `DEMO-`, and
+# that prefix is load-bearing in two ways:
+#
+#   * it is the IDENTITY GATE. This step used to have none at all, so
+#     `manage.py seed --only dummy --with-history` added 100 more assets every
+#     time it ran — 1121 → 1221 → 1321. That is precisely the fleet-doubling bug
+#     the whole `seeds/` package was written to eliminate, surviving in the one
+#     step that never got the treatment. `existing_demo_count()` is the fix.
+#   * it is honest. A nomor_seri is what a technician reads off a nameplate to
+#     confirm they are holding the right machine. A fabricated one that RAMCES
+#     presents in the same typeface as a real one is actively misleading in the
+#     field, so a fabricated one says so.
+#
+# It must never be given to a workbook asset. `backfill_varian_dan_seri()` uses
+# the plain per-tool prefixes for those, and only for assets that have no serial
+# at all.
+DEMO_SERI_PREFIX = "DEMO-"
+
+# ── The peruntukan rule ───────────────────────────────────────────────
+#
+# A UPT code's prefix IS its peruntukan — verified 1:1 across all 254 rows of
+# `KATALOG UPT`. This module used to pick a peruntukan letter at random,
+# independently of where it had just placed the asset, which minted demo assets
+# whose id_aset peruntukan segment contradicted their own resort: a `JALAN REL`
+# machine sitting at `JB1.1`. Real assets have not been able to do that since
+# the importer started deriving it, so the demo data was the only source of rows
+# that broke the rule — and it broke it for roughly three quarters of them.
+UPT_PREFIX_TO_LETTER = {"JR": "A", "JB": "B", "ME": "C", "BY": "D"}
+
+
+def peruntukan_letter_for(id_lokasi: str) -> str:
+    """
+    The peruntukan letter a resort code implies.
+
+    Falls back to `A` (JALAN REL) for a DAOP/DIVRE parent code, which carries no
+    prefix — an asset homed directly at a parent rather than at one of its
+    resorts is unusual but legal, and jalan rel is the overwhelming majority.
+    """
+    return UPT_PREFIX_TO_LETTER.get(str(id_lokasi or "")[:2].upper(), "A")
+
+
+def existing_demo_count(db) -> int:
+    """How many demo assets are already in the database."""
+    return (
+        db.query(models.Aset)
+        .filter(models.Aset.nomor_seri.like(f"{DEMO_SERI_PREFIX}%"))
+        .count()
+    )
 
 # Only MEASURING instruments get calibrated. A genset or an impact wrench is
 # serviced, not calibrated, so seeding certificates for them would be fiction.
@@ -94,6 +154,32 @@ def _system_user(db):
 def generate_dummy_assets(total_count: int = 100):
     db = SessionLocal()
     try:
+        # ── 0. The identity gate ─────────────────────────────────────────
+        #
+        # `total_count` is a TARGET POPULATION, not a number to add. Without
+        # this, every invocation appended another full batch:
+        #
+        #     manage.py seed --only dummy --with-history   # aset 1121 -> 1221
+        #     manage.py seed --only dummy --with-history   # aset 1221 -> 1321
+        #
+        # and `--verify` passed 11/11 both times, because its asset check was a
+        # deliberately loose `expected <= n < expected * 2` range that leaves
+        # room for eleven such runs before it complains. Both halves are fixed:
+        # the shortfall below, and a separate demo/workbook count in
+        # `seeds/verify.py`.
+        already = existing_demo_count(db)
+        if already >= total_count:
+            print(
+                f"  aset dummy    : {already} sudah ada (target {total_count}) — "
+                "tidak ada yang ditambahkan."
+            )
+            return
+        if already:
+            print(
+                f"  aset dummy    : {already} sudah ada, menambah "
+                f"{total_count - already} untuk mencapai {total_count}."
+            )
+        total_count -= already
 
         # ── 1. Master data (alat kerja + lokasi + UPT) ───────────────────
         seed_katalog_run(db)
@@ -151,6 +237,15 @@ def generate_dummy_assets(total_count: int = 100):
         if not operational_ids:
             operational_ids = [l.id_lokasi for l in all_lokasi]
 
+        # Operational resorts bucketed by the peruntukan their code implies, so
+        # a redistribution can stay inside its own unit. Parent codes (D1, VIII)
+        # carry no prefix and fall into the JALAN REL bucket via the same
+        # fallback `peruntukan_letter_for` uses at creation, which keeps the two
+        # consistent.
+        redistribusi_pool: dict[str, list] = {}
+        for _id in operational_ids:
+            redistribusi_pool.setdefault(peruntukan_letter_for(_id), []).append(_id)
+
         # Build a quick lookup: id_lokasi → parent id (None if already a parent)
         # This is used to derive the parent_lokasi segment of the asset ID,
         # mirroring the logic in main.py's create_aset / update_aset.
@@ -185,7 +280,7 @@ def generate_dummy_assets(total_count: int = 100):
         assigned = []
         for i, kode in enumerate(kode_alat_list):
             assigned.extend([kode] * (base + (1 if i < remainder else 0)))
-        random.shuffle(assigned)
+        _rng.shuffle(assigned)
 
         # ── 5. Per-kode_alat sequence counter (mirrors main.py nomor_urut) ──
         # main.py counts existing assets of the same kode_alat and adds 1.
@@ -204,18 +299,22 @@ def generate_dummy_assets(total_count: int = 100):
 
         for kode_alat in assigned:
             # Pick a starting location (operational)
-            start_lokasi = random.choice(operational_ids)
+            start_lokasi = _rng.choice(operational_ids)
 
             # Must match the value the UI writes (index.html) exactly — a spaced
             # variant here silently breaks every Pengadaan filter in the app.
-            sumber = random.choice(["PUSAT", "DAOP/DIVRE"])
+            sumber = _rng.choice(["PUSAT", "DAOP/DIVRE"])
             id_pengadaan = 1 if sumber == "PUSAT" else 2
 
-            year_int = random.randint(2015, 2023)
-            tgl_pembelian = date(year_int, random.randint(1, 12), random.randint(1, 28))
+            year_int = _rng.randint(2015, 2023)
+            tgl_pembelian = date(year_int, _rng.randint(1, 12), _rng.randint(1, 28))
             year_str = str(year_int)[-2:]   # "15" … "23"
 
-            unit_letter = random.choice(PERUNTUKAN_LETTERS)
+            # DERIVED from the resort code, never chosen. See the note on
+            # UPT_PREFIX_TO_LETTER: the prefix IS the peruntukan, and a demo
+            # asset that disagrees with its own resort is a row the real
+            # importer can no longer produce.
+            unit_letter = peruntukan_letter_for(start_lokasi)
             peruntukan = PERUNTUKAN_MAP[unit_letter]
             parent_lokasi = derive_parent(start_lokasi)
 
@@ -247,6 +346,14 @@ def generate_dummy_assets(total_count: int = 100):
                 status_terakhir=kondisi,
                 waktu_update=waktu,
                 peruntukan=peruntukan,
+                # Stamped HERE, not by the backfill below, because it is what
+                # makes this row recognisable as demo data on the next run. See
+                # DEMO_SERI_PREFIX.
+                nomor_seri=(
+                    f"{DEMO_SERI_PREFIX}"
+                    f"{SERI_PREFIX.get(kode_alat, kode_alat)}-"
+                    f"{year_int}-{_rng.randint(10000, 99999)}"
+                ),
             )
             db.add(aset)
 
@@ -262,8 +369,8 @@ def generate_dummy_assets(total_count: int = 100):
             ))
 
             # Random lifecycle events (0–15 per asset)
-            for _ in range(random.randint(0, 15)):
-                waktu += timedelta(days=random.randint(14, 120), hours=random.randint(1, 23))
+            for _ in range(_rng.randint(0, 15)):
+                waktu += timedelta(days=_rng.randint(14, 120), hours=_rng.randint(1, 23))
                 if waktu > now:
                     break
 
@@ -274,7 +381,7 @@ def generate_dummy_assets(total_count: int = 100):
                     is_bengkel = lokasi_saat_ini in bengkel_ids
                     if not is_bengkel and bengkel_ids:
                         # Send to workshop
-                        tujuan = random.choice(bengkel_ids)
+                        tujuan = _rng.choice(bengkel_ids)
                         db.add(models.RiwayatMutasi(
                             id_aset=id_aset,
                             id_lokasi_asal=lokasi_saat_ini,
@@ -286,7 +393,7 @@ def generate_dummy_assets(total_count: int = 100):
                         lokasi_saat_ini = tujuan
                     else:
                         # Repair outcome
-                        kondisi = random.choices(["SO", "AFKIR"], weights=[90, 10])[0]
+                        kondisi = _rng.choices(["SO", "AFKIR"], weights=[90, 10])[0]
                         db.add(models.RiwayatKondisi(
                             id_aset=id_aset,
                             id_pengguna=id_pengguna_default,
@@ -308,7 +415,7 @@ def generate_dummy_assets(total_count: int = 100):
                         # this it would stay parked at the Balaiyasa forever, and the
                         # final write-back would home it at a workshop.
                         if kondisi == "SO" and lokasi_saat_ini != home_lokasi:
-                            waktu += timedelta(days=random.randint(1, 10))
+                            waktu += timedelta(days=_rng.randint(1, 10))
                             db.add(models.RiwayatMutasi(
                                 id_aset=id_aset,
                                 id_lokasi_asal=lokasi_saat_ini,
@@ -320,11 +427,20 @@ def generate_dummy_assets(total_count: int = 100):
                             lokasi_saat_ini = home_lokasi
 
                 elif kondisi == "SO":
-                    aksi = random.choices(["MUTASI", "KONDISI"], weights=[30, 70])[0]
-                    if aksi == "MUTASI" and len(operational_ids) > 1:
-                        tujuan = random.choice(operational_ids)
+                    aksi = _rng.choices(["MUTASI", "KONDISI"], weights=[30, 70])[0]
+                    # Redistribute only among resorts of the SAME peruntukan.
+                    # A redistribution is a permanent move — it rewrites
+                    # `home_lokasi`, and the final write-back stamps that onto
+                    # `aset.id_lokasi`. Choosing freely therefore parked a
+                    # JALAN REL machine at a jembatan resort permanently, which
+                    # is the one thing the peruntukan rule forbids and which no
+                    # real import can produce. Sending a jalan rel tamper to
+                    # another jalan rel resort is also simply what happens.
+                    same_unit = redistribusi_pool.get(unit_letter) or []
+                    if aksi == "MUTASI" and len(same_unit) > 1:
+                        tujuan = _rng.choice(same_unit)
                         while tujuan == lokasi_saat_ini:
-                            tujuan = random.choice(operational_ids)
+                            tujuan = _rng.choice(same_unit)
                         db.add(models.RiwayatMutasi(
                             id_aset=id_aset,
                             id_lokasi_asal=lokasi_saat_ini,
@@ -337,7 +453,7 @@ def generate_dummy_assets(total_count: int = 100):
                         # A redistribution is a permanent move — this is now home.
                         home_lokasi = tujuan
                     else:
-                        kondisi = random.choices(["TSO", "AFKIR"], weights=[85, 15])[0]
+                        kondisi = _rng.choices(["TSO", "AFKIR"], weights=[85, 15])[0]
                         db.add(models.RiwayatKondisi(
                             id_aset=id_aset,
                             id_pengguna=id_pengguna_default,
@@ -358,10 +474,10 @@ def generate_dummy_assets(total_count: int = 100):
             if kode_alat in kalibrasi_codes:
                 kal_tanggal = tgl_pembelian
                 while True:
-                    kal_tanggal = kal_tanggal + timedelta(days=random.randint(330, 400))
+                    kal_tanggal = kal_tanggal + timedelta(days=_rng.randint(330, 400))
                     if kal_tanggal >= now.date():
                         break
-                    status_kal = random.choices(
+                    status_kal = _rng.choices(
                         ["LULUS", "BERSYARAT", "GAGAL"], weights=[80, 15, 5]
                     )[0]
                     db.add(models.RiwayatKalibrasi(
@@ -370,10 +486,10 @@ def generate_dummy_assets(total_count: int = 100):
                         tanggal_kalibrasi=kal_tanggal,
                         tanggal_berlaku=kal_tanggal + timedelta(days=365),
                         status=status_kal,
-                        pelaksana_kalibrasi=random.choice(PELAKSANA_KALIBRASI),
+                        pelaksana_kalibrasi=_rng.choice(PELAKSANA_KALIBRASI),
                         nomor_sertifikat=(
                             f"KAL/{kal_tanggal.year}/"
-                            f"{random.randint(1000, 9999)}"
+                            f"{_rng.randint(1000, 9999)}"
                         ),
                         keterangan=KALIBRASI_KETERANGAN[status_kal],
                         waktu_input=datetime.combine(
@@ -424,6 +540,10 @@ def backfill_varian_dan_seri(db):
     The imported fleet gets its model from the workbook's own Model column, and
     a visibly-incomplete row when that cannot be resolved — which is the honest
     outcome. This function therefore runs ONLY as part of the dummy step.
+
+    Demo assets no longer pass through the serial half of it: they are stamped
+    `DEMO-…` at creation, because that prefix is the identity gate that stops a
+    second run adding another hundred of them.
     """
     varian_by_alat = {}
     for v in db.query(models.AlatVarian).all():
@@ -433,14 +553,14 @@ def backfill_varian_dan_seri(db):
     for aset in db.query(models.Aset).filter(models.Aset.id_varian.is_(None)).all():
         opts = varian_by_alat.get(aset.kode_alat)
         if opts:
-            aset.id_varian = random.choice(opts)
+            aset.id_varian = _rng.choice(opts)
             assigned += 1
 
     seri = 0
     for aset in db.query(models.Aset).filter(models.Aset.nomor_seri.is_(None)).all():
         prefix = SERI_PREFIX.get(aset.kode_alat, aset.kode_alat)
         tahun = aset.tanggal_pembelian.year if aset.tanggal_pembelian else 2020
-        aset.nomor_seri = f"{prefix}-{tahun}-{random.randint(10000, 99999)}"
+        aset.nomor_seri = f"{prefix}-{tahun}-{_rng.randint(10000, 99999)}"
         seri += 1
     db.commit()
     print(f"  backfill      : {assigned} Model/Type, {seri} nomor seri (data contoh)")

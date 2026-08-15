@@ -269,7 +269,7 @@
     if (wBody) {
       if (!d.workshop_list || !d.workshop_list.length) {
         wBody.innerHTML =
-          '<tr><td colspan="3" class="py-8 text-center text-gray-400 italic text-xs">Tidak ada alat sedang diperbaiki</td></tr>';
+          '<tr><td colspan="3" class="empty-state">Tidak ada alat sedang diperbaiki</td></tr>';
       } else {
         wBody.innerHTML = d.workshop_list.map((r, i) => `
           <tr class="border-b border-gray-50 dark:border-gray-700/50 hover:bg-amber-50 dark:hover:bg-amber-900/10 transition">
@@ -439,7 +439,7 @@
       if (!total) {
         pieCanvas.parentElement?.classList.add("hidden");
         if (legEl) legEl.innerHTML =
-          '<p class="text-center text-gray-400 italic py-4">Tidak ada data perbaikan</p>';
+          '<p class="empty-state">Tidak ada data perbaikan</p>';
       } else {
         pieCanvas.parentElement?.classList.remove("hidden");
         _chartPie = new Chart(pieCanvas, {
@@ -490,7 +490,7 @@
     if (!mount) return;
     if (!rows.length) {
       mount.innerHTML =
-        '<p class="py-6 text-center text-gray-400 italic text-xs">Belum ada pemakaian sparepart</p>';
+        '<p class="empty-state">Belum ada pemakaian sparepart</p>';
       return;
     }
     const max = Math.max(...rows.map((r) => r.nilai || 0), 1);

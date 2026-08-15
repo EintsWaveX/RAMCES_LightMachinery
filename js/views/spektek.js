@@ -132,7 +132,36 @@ function spekDocsHtml(spec) {
       "fa-file-lines", "Spek Lengkap");
   add(spec.manual, spec.manual_is_upload, spec.manual_from_katalog,
       "fa-book", "Manual Instruction");
-  if (!links.length) return "";
+
+  // ── The documents the two buttons above cannot reach ──
+  //
+  // `spec.spek` / `spec.manual` resolve to ONE document each, because
+  // `kategori_alat` stores one basename per kind. Three tools are covered by
+  // two PDFs apiece, so the second was on disk and reachable by nothing until
+  // `dokumen_alat` existed. Anything in `spec.dokumen` that is not already the
+  // primary link is listed here rather than replacing the buttons — the
+  // primary document stays the prominent one, and this is the overflow.
+  const extra = (spec.dokumen || []).filter((d) => !d.utama);
+  const extraHtml = extra.length
+    ? `<div class="w-full flex flex-wrap items-center gap-2 pt-1">
+         <span class="text-[10px] uppercase tracking-wide text-gray-400
+                      dark:text-gray-500 w-full">Dokumen lain untuk jenis alat ini</span>
+         ${extra
+           .map(
+             (d) => `<button type="button"
+               onclick="window.bukaDokumenModel('${spekEscape(spekSafeUrl(d.url) || "")}','${spekEscape(d.judul)}')"
+               class="btn btn-ghost text-xs" title="${spekEscape(d.judul)}">
+               <i class="fas ${d.jenis === "MANUAL" ? "fa-book" : "fa-file-lines"}"></i>
+               ${spekEscape(d.judul.length > 38 ? d.judul.slice(0, 37) + "…" : d.judul)}
+               <span class="text-[9px] font-normal opacity-70">(umum)</span>
+             </button>`,
+           )
+           .join("")}
+       </div>`
+    : "";
+  if (extra.length) anyInherited = true;
+
+  if (!links.length && !extra.length) return "";
 
   const note = anyInherited
     ? `<p class="w-full text-[10px] text-gray-400 dark:text-gray-500 leading-snug">
@@ -143,7 +172,7 @@ function spekDocsHtml(spec) {
     : "";
 
   return `<div class="px-5 py-3 border-t border-gray-100 dark:border-gray-700
-                      flex flex-wrap items-center gap-2">${links.join("")}${note}</div>`;
+                      flex flex-wrap items-center gap-2">${links.join("")}${extraHtml}${note}</div>`;
 }
 
 // ── Public entry point ───────────────────────────────────────────────────
@@ -157,11 +186,37 @@ function spekDocsHtml(spec) {
  * opts.title      heading text (default "Spesifikasi Alat Kerja")
  * opts.fotoHeight Tailwind height class for the photo band
  * opts.compact    drop the photo (used where space is tight)
+ * opts.dokumen    tool-type documents to show when `spec` is null — see below
  */
 function renderSpekCard(container, spec, opts = {}) {
   const el =
     typeof container === "string" ? document.getElementById(container) : container;
   if (!el) return false;
+
+  // No Model/Type, but the ALAT KERJA still has documents.
+  //
+  // 49 of the 87 seeded models are bare rows and many assets resolve to no
+  // model at all, so this is not an edge case — and those are exactly the
+  // machines whose only documentation is the tool-type spektek. Hiding the
+  // whole card because the model is missing hid the client's own PDFs from the
+  // technicians most likely to need them. The spec TABLE still does not render
+  // (a grid of em-dashes says less than no grid), only the documents.
+  const orphanDocs = !spec && Array.isArray(opts.dokumen) ? opts.dokumen : [];
+  if (!spec && orphanDocs.length) {
+    el.innerHTML = `
+      <div class="px-5 py-3 bg-blue-50/70 dark:bg-gray-700/40 border-b border-gray-100
+                  dark:border-gray-700 flex items-center gap-2 flex-wrap">
+        <i class="fas fa-file-lines text-kai-blue dark:text-blue-400 text-sm"></i>
+        <h3 class="text-sm font-bold text-kai-blue dark:text-blue-300">Dokumen Alat Kerja</h3>
+      </div>
+      <p class="px-5 pt-3 text-[11px] text-gray-500 dark:text-gray-400 leading-snug">
+        Aset ini belum punya Model/Type, jadi spesifikasinya belum bisa ditampilkan.
+        Dokumen berikut berlaku untuk jenis alat kerjanya.
+      </p>
+      ${spekDocsHtml({ dokumen: orphanDocs.map((d) => ({ ...d, utama: false })) })}`;
+    el.classList.remove("hidden");
+    return true;
+  }
 
   if (!spec) {
     el.classList.add("hidden");

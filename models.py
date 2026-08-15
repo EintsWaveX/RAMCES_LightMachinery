@@ -63,6 +63,74 @@ class KategoriAlat(Base):
     file_manual = Column(String(255), nullable=True)
 
     asets = relationship("Aset", back_populates="kategori")
+    dokumen = relationship(
+        "DokumenAlat",
+        back_populates="kategori_ref",
+        cascade="all, delete-orphan",
+        order_by="DokumenAlat.id_dokumen",
+    )
+
+
+class DokumenAlat(Base):
+    """
+    Every document that describes an alat kerja — not just the first one.
+
+    `kategori_alat.file_spek` / `file_manual` are ONE column each, and the
+    client's drop does not fit in one. Three tool types are covered by two
+    documents apiece, and the seeder wrote both to the same column in table
+    order, so the second silently overwrote the first. 5.6 MB across three files
+    sat in `uploads/dokumen_alat/` reachable by nothing:
+
+        3,659,815 B  spektek_AMB_spektek-alat-uji-beton.pdf
+        1,075,277 B  spektek_LMP_lampu-penerangan-spektek.pdf
+          858,303 B  spektek_IMP_spektek-impact-wrench-milwawkee.pdf
+
+    ── Why this is a table and not two more columns ──
+
+    A third column would move the collision rather than remove it, and the
+    mapping already has one file covering FOUR tools. The relationship is
+    genuinely many-to-many-ish: several documents per tool, and one document
+    named by several tools (one copy on disk, one row per tool).
+
+    ── Why `kategori_alat.file_spek` STAYS ──
+
+    It is now "the primary document", the one `utama=True` row duplicated onto
+    the parent. `_varian_payload()`'s tool-type fallback reads it, landing.html's
+    spec card reads that, and neither had to change for this table to exist.
+    Removing it would have turned a additive change into a rewrite of the one
+    payload shape every screen shares.
+
+    ⚠️ DECLARED HERE ON PURPOSE. `manage.py reset` drops via
+    `Base.metadata.drop_all`, which only knows about declared tables — a table
+    created by raw DDL in `_ensure_schema()` alone survives the drop and then
+    collides with the recreate on the very next boot.
+    """
+
+    __tablename__ = "dokumen_alat"
+    id_dokumen = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    kode_alat = Column(
+        String(10),
+        ForeignKey("kategori_alat.kode_alat", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    # SPEK | MANUAL — the two folders the client files documents under, and the
+    # two slots the spec card renders. Guarded by a CHECK in _ensure_schema().
+    jenis = Column(String(10), nullable=False)
+    # Basename inside uploads/dokumen_alat/. Bearer-authenticated on the way out,
+    # like calibration certificates — only photos are public.
+    nama_file = Column(String(255), nullable=False)
+    # What to print on the link. The stored filename is the client's own, which
+    # includes things like "Kertz-Gasoline Jack Hammer[1].pdf".
+    judul = Column(String(200), nullable=True)
+    # FASILITAS | JEMBATAN — copied from the katalog's own grouping so the card
+    # can say which spektek folder a document came from without a join.
+    kelompok = Column(String(20), nullable=True)
+    # Exactly one per (kode_alat, jenis) should be true: the one mirrored onto
+    # kategori_alat.file_spek / file_manual for the payload fallback.
+    utama = Column(Boolean, nullable=False, server_default=text("false"))
+
+    kategori_ref = relationship("KategoriAlat", back_populates="dokumen")
 
 
 class Lokasi(Base):
@@ -86,6 +154,29 @@ class Pengguna(Base):
     # remains once the socket closes.
     last_seen = Column(DateTime, nullable=True)
     last_view = Column(String(50), nullable=True)  # which screen they are on
+
+    # ── Self-registration and approval ──
+    #
+    # AKTIF | PENDING | DITOLAK | NONAKTIF. Registration creates PENDING with an
+    # inert role and no region; an admin assigns both when approving. The
+    # registrant NEVER picks a role — being able to was the privilege escalation
+    # removed in rev0.5.0, and re-introducing it on a different form would be
+    # the same bug with a new name.
+    #
+    # ⚠️ `get_current_user` checks this, not just `login()`. Tokens last 12
+    # hours, so a suspension enforced only at login would leave a suspended user
+    # working for the rest of the day.
+    status = Column(String(16), nullable=False, server_default="AKTIF")
+    nama_lengkap = Column(String(120), nullable=True)
+    # Deliberately NO server_default. `DEFAULT NOW()` on the migration stamps
+    # every pre-existing row with the moment the column was added — a value that
+    # reads as fact and is not. NULL says "we don't know", which is true.
+    created_at = Column(DateTime, nullable=True)
+    # Plain INTEGER, not a ForeignKey: it records WHO approved, and deleting
+    # that admin's account later must not cascade into or null out the approval
+    # record. It is an audit fact, not a live relationship.
+    approved_by = Column(Integer, nullable=True)
+    approved_at = Column(DateTime, nullable=True)
 
     lokasi_ref = relationship("Lokasi")
 

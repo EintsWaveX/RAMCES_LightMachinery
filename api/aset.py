@@ -835,7 +835,7 @@ async def update_aset(
 # api/master.py. `get_public_aset` below is its other caller — the QR card must
 # render the identical spec block the SPA does — so it is imported rather than
 # reimplemented. (This route moves to api/aset.py, which takes the import with it.)
-from api.master import _varian_payload  # noqa: E402
+from api.master import _varian_payload, dokumen_payload  # noqa: E402
 
 # `_record_pemakaian` (still below, moving to api/riwayat.py) checks stock
 # sufficiency with the SAME map the standalone movement endpoint uses, rather
@@ -886,6 +886,13 @@ def get_public_aset(id_aset: str, db: Session = Depends(get_db)):
     v = aset.varian_ref
     spesifikasi = _varian_payload(v) if v is not None else None
 
+    # Also surfaced OUTSIDE `spesifikasi`, because 49 of the 87 seeded models
+    # are bare rows and plenty of assets resolve to no model at all — and those
+    # are precisely the machines whose only documentation is the tool-type
+    # spektek. Hanging the list off the model would have hidden it from exactly
+    # the technicians who need it most.
+    dokumen = dokumen_payload(aset.kategori)
+
     return {
         "id_aset": aset.id_aset,
         # ── Jenis alat ──
@@ -914,4 +921,5 @@ def get_public_aset(id_aset: str, db: Session = Depends(get_db)):
         "waktu_update": aset.waktu_update,
         "nomor_seri": aset.nomor_seri,
         "spesifikasi": spesifikasi,
+        "dokumen": dokumen,
     }

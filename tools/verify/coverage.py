@@ -63,11 +63,23 @@ def main():
         for sub in ("Manual Instruction Alat Kerja", "Spesifikasi Lengkap Alat Kerja"):
             for dirpath, _d, names in os.walk(os.path.join("modules", sub)):
                 docs += [os.path.join(dirpath, n) for n in names]
-        served = q("SELECT count(*) FROM (SELECT file_spek AS f FROM kategori_alat WHERE file_spek IS NOT NULL "
-                   "UNION SELECT file_manual FROM kategori_alat WHERE file_manual IS NOT NULL) x")
-        on_disk_uploads = len(os.listdir("uploads/dokumen_alat")) if os.path.isdir("uploads/dokumen_alat") else 0
-        line("source documents", len(docs), served,
-             f"({on_disk_uploads} copied to uploads/, {on_disk_uploads - served} unreachable)")
+        # Counted from `dokumen_alat`, NOT from kategori_alat.file_spek /
+        # file_manual. Those are one column each, so when a tool is covered by
+        # two documents the second overwrote the first — AMB, IMP and LMP each
+        # lost one that way, 5.6 MB reachable by nothing. Counting the columns
+        # therefore reported the loss as normal and could never have flagged it.
+        # The DISK side is what makes this a real check.
+        on_disk_uploads = (
+            len(os.listdir("uploads/dokumen_alat"))
+            if os.path.isdir("uploads/dokumen_alat")
+            else 0
+        )
+        served = q("SELECT count(DISTINCT nama_file) FROM dokumen_alat")
+        line("documents reachable from a dokumen_alat row", on_disk_uploads, served,
+             f"({len(docs)} source files in modules/, {on_disk_uploads - served} unreachable)")
+        line("...primary document per (alat, jenis)",
+             q("SELECT count(DISTINCT (kode_alat, jenis)) FROM dokumen_alat"),
+             q("SELECT count(*) FROM dokumen_alat WHERE utama"))
 
     print()
     if gaps:

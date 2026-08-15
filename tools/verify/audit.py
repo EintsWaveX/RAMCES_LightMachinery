@@ -59,15 +59,30 @@ async def audit_view(c, view, width):
         }
 
         // Anything still scrolling sideways inside the view.
-        const sideways = [];
+        // Sideways scrolling is not itself a defect — a 240-column readiness
+        // matrix genuinely has to scroll, and CLAUDE.md documents it as
+        // excluded from .table-stack on purpose. What IS a defect is scrolling
+        // SILENTLY: content the user has no way to know is there.
+        //
+        // So this now splits the two. An element is excused when it carries
+        // `.scroll-hint` (the fade), when a visible scrollbar does the telling
+        // (`overflow-x: scroll`, or `auto` without `.scrollbar-none`), or when
+        // it is on the documented allow-list.
+        const OK_TO_SCROLL = ['dash-panel-matrix'];
+        const sideways = [], silent = [];
         for (const el of sec.querySelectorAll('*')) {
             if (!vis(el)) continue;
             if (el.scrollWidth > el.clientWidth + 4 && el.clientWidth > 0) {
                 const st = getComputedStyle(el).overflowX;
-                if (st === 'auto' || st === 'scroll') {
-                    sideways.push((el.id ? '#' + el.id : el.tagName.toLowerCase()) +
-                                  ` ${el.scrollWidth}>${el.clientWidth}`);
-                }
+                if (st !== 'auto' && st !== 'scroll') continue;
+                const tag = (el.id ? '#' + el.id : el.tagName.toLowerCase()) +
+                            ` ${el.scrollWidth}>${el.clientWidth}`;
+                sideways.push(tag);
+                const hinted = el.classList.contains('scroll-hint');
+                const hasBar = st === 'scroll' ||
+                               (st === 'auto' && !el.classList.contains('scrollbar-none'));
+                const allowed = OK_TO_SCROLL.some(id => el.id === id);
+                if (!hinted && !hasBar && !allowed) silent.push(tag);
             }
         }
 
@@ -87,6 +102,7 @@ async def audit_view(c, view, width):
             id: sec.id,
             unnamed: [...new Set(unnamed)].slice(0, 8),
             sideways: [...new Set(sideways)].slice(0, 6),
+            silent: [...new Set(silent)].slice(0, 6),
             small: [...new Set(small)].slice(0, 8),
             tables: sec.querySelectorAll('table').length,
         };
@@ -119,16 +135,49 @@ async def main():
             for v in VIEWS:
                 r = await audit_view(c, v, width)
                 bits = []
-                if r.get("sideways"):
-                    bits.append(f"sideways={r['sideways']}")
-                    add(f"{v} @{width}", "MED", f"still scrolls sideways: {r['sideways']}")
+                if r.get("silent"):
+                    # No fade, no scrollbar, not on the allow-list — content the
+                    # user cannot know is there. This is the finding.
+                    bits.append(f"silent-scroll={r['silent']}")
+                    add(f"{v} @{width}", "MED",
+                        f"scrolls sideways with NO affordance: {r['silent']}")
+                elif r.get("sideways"):
+                    # Scrolls, but says so. Reported as context, not a finding.
+                    bits.append(f"scrolls(ok)={len(r['sideways'])}")
                 if width < 700 and r.get("small"):
-                    bits.append(f"small-taps={len(r['small'])}")
-                    add(f"{v} @{width}", "LOW", f"tap targets under 44px: {r['small'][:5]}")
+                    # Counted, NOT reported as a finding. `matchMedia('(pointer:
+                    # coarse)')` is false under headless emulation and cannot be
+                    # forced via Emulation.setEmitTouchEventsForMouse, so the
+                    # @media (pointer: coarse) block that supplies the 44px
+                    # minimum never applies here. Every one of these ~30
+                    # "failures" is an artifact of the harness, and reporting
+                    # them each run trains the reader to ignore the list. The
+                    # CSS rule itself is asserted below instead.
+                    bits.append(f"small-taps={len(r['small'])} (see note)")
                 if r.get("unnamed"):
                     bits.append(f"unnamed={r['unnamed']}")
                     add(f"{v} @{width}", "MED", f"controls with no accessible name: {r['unnamed']}")
                 print(f"  {v:<12} {' | '.join(bits) if bits else 'clean'}")
+
+        # ── The coarse-pointer rule, asserted from the SOURCE ──
+        #
+        # The rendered box cannot be trusted headless (see the note above), but
+        # whether the stylesheet still carries the rule can be. This is the
+        # honest version of the tap-target check.
+        css_path = os.path.join(ROOT, "assets", "style.css")
+        with open(css_path, encoding="utf-8") as fh:
+            css = fh.read()
+        has_coarse = "(pointer: coarse)" in css or "(pointer:coarse)" in css
+        has_44 = "44px" in css or "2.75rem" in css
+        print(f"\n{'=' * 66}\nCoarse-pointer rule\n{'=' * 66}")
+        print(f"  @media (pointer: coarse) present : {has_coarse}")
+        print(f"  44px / 2.75rem minimum present   : {has_44}")
+        print("  (rendered tap-target sizes are NOT measurable headless —")
+        print("   matchMedia('(pointer: coarse)') is false and cannot be forced)")
+        if not (has_coarse and has_44):
+            add("assets/style.css", "HIGH",
+                "the @media (pointer: coarse) 44px minimum is GONE — "
+                "phones lose every enlarged tap target")
 
         # ── Tambah Aset form: measure the crowding the user reported ──
         print(f"\n{'='*66}\nTambah Aset form\n{'='*66}")

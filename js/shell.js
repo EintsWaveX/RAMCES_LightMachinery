@@ -8,6 +8,58 @@
 // across two files is a fatal SyntaxError; see CLAUDE.md.
 // ═══════════════════════════════════════════════════════════════════════
 
+/**
+ * Show or hide every role-gated control, in BOTH directions.
+ *
+ * Driven by `NAV_ACCESS` / `VIEW_ACCESS` / `WRITE_ACCESS` in js/core.js — see
+ * the note there on why this is convenience rather than control.
+ *
+ * Two rules this must keep:
+ *
+ *   * `classList.toggle("hidden", …)`, never `remove("hidden")` alone. The old
+ *     code only ever UN-hid things for SUPER_ADMIN and nothing put them back,
+ *     so a role change with no document reload left the higher role's menu on
+ *     screen. `forceLogout(false)` — the 401 path inside apiFetch — is exactly
+ *     that: a super admin's token expiring, then a technician signing in at the
+ *     same workstation, with both admin screens still listed.
+ *   * Never REMOVE the node. `tools/check_html.py` asserts every `.view-section`
+ *     is reachable from a `data-view` button, and a removed button fails it —
+ *     correctly, because the view would then be unreachable for everyone after
+ *     the next role change.
+ */
+function applyRoleGating(role) {
+  const setEl = (id, visible) =>
+    document.getElementById(id)?.classList.toggle("hidden", !visible);
+
+  // Sidebar entries, by the view each one opens.
+  Object.entries(NAV_ACCESS).forEach(([id, viewId]) =>
+    setEl(id, canView(viewId, role)),
+  );
+  setEl("admin-helper", role === "SUPER_ADMIN");
+
+  // Any nav button carrying `data-view`, including the ones with no id and the
+  // five slots in #mobile-bottom-nav, which were never gated at all — on a
+  // phone every role got the full bar.
+  document
+    .querySelectorAll("#mobile-bottom-nav [data-view], .nav-btn[data-view]")
+    .forEach((btn) => {
+      btn.classList.toggle("hidden", !canView(btn.dataset.view, role));
+    });
+
+  // Write controls. Marked in the markup with `data-write="<area>"` so a new
+  // button is gated by adding an attribute rather than an id to a list here.
+  document.querySelectorAll("[data-write]").forEach((el) => {
+    el.classList.toggle("hidden", !canWrite(el.dataset.write, role));
+  });
+
+  // The middle bottom-nav slot is "report a condition", not a destination. A
+  // role that cannot file one gets the plain four-slot bar rather than a raised
+  // button that leads to a form it may not submit.
+  setEl("bnav-lapor", canWrite("kondisi", role));
+}
+
+window.applyRoleGating = applyRoleGating;
+
 // --- LOGIKA AUTENTIKASI ---
 async function checkAuth() {
   if (currentUser && authToken) {
@@ -40,14 +92,7 @@ async function checkAuth() {
     // TEKNISI logging in at the same workstation, and Pusat Data plus Pulihkan
     // Aset Afkir were still there. The server answered 403 behind them, so it
     // was never an escalation, but the menu contradicted the permissions.
-    const setNav = (id, visible) =>
-      document.getElementById(id)?.classList.toggle("hidden", !visible);
-
-    const isSuperAdmin = role === "SUPER_ADMIN";
-    setNav("nav-masterdata", isSuperAdmin);
-    setNav("nav-afkir", isSuperAdmin);
-    setNav("admin-helper", isSuperAdmin);
-    setNav("nav-input", role !== "TEKNISI");
+    applyRoleGating(role);
 
     const welcomeMsg = document.getElementById("dashboard-welcome");
     if (welcomeMsg) welcomeMsg.innerText = `Selamat Datang, ${currentUser}`;
@@ -126,10 +171,23 @@ async function handleLogin() {
         "Content-Type": "application/json",
         "ngrok-skip-browser-warning": "true",
       },
-      body: JSON.stringify({ username: user, password }),
+      body: JSON.stringify({
+        username: user,
+        password,
+        // `{}` until the captcha widget is mounted, which only happens once the
+        // server has asked for one. LoginForm's captcha fields are Optional
+        // precisely so this can be absent on an ordinary sign-in.
+        ...(window.RamcesCaptcha?.values("login-captcha") || {}),
+      }),
     });
 
     if (!response.ok) {
+      // The SERVER decides when a captcha is required — after a rate-limit
+      // bucket trips, never on the first attempt and never as a lockout.
+      if (response.headers.get("X-Captcha-Required") === "1") {
+        window.RamcesCaptcha?.toggle("login-captcha-wrap", "login-captcha", true);
+        window.RamcesCaptcha?.refresh("login-captcha");
+      }
       let detail = "Login gagal.";
       try {
         detail = (await response.json()).detail || detail;
@@ -160,6 +218,101 @@ async function handleLogin() {
     endLoading();
   }
 }
+
+// ── Registration ────────────────────────────────────────────────────────
+//
+// A separate panel rather than a mode of the login form, so the two cannot
+// share a field by accident. It asks for username, password and a name — and
+// deliberately NOT for a role or a region: choosing your own was the privilege
+// escalation the login wizard was rebuilt to remove, and an unauthenticated
+// form offering it would be the same hole with a friendlier label.
+
+function _setRegisterError(message) {
+  const box = document.getElementById("register-error");
+  if (!box) return;
+  box.textContent = message || "";
+  box.classList.toggle("hidden", !message);
+}
+
+function showRegisterPanel(show) {
+  document.getElementById("form-login")?.classList.toggle("hidden", show);
+  document.getElementById("form-register")?.classList.toggle("hidden", !show);
+  _setRegisterError("");
+  _setLoginError("");
+  if (show) {
+    // Mounted on first display rather than at boot: an unauthenticated
+    // /api/captcha call on every page load would be a request nobody asked for
+    // and one more thing to rate-limit.
+    window.RamcesCaptcha?.mount("reg-captcha");
+    document.getElementById("reg-nama")?.focus();
+  } else {
+    document.getElementById("login-username")?.focus();
+  }
+}
+
+async function handleRegister() {
+  const nama = document.getElementById("reg-nama")?.value.trim() || "";
+  const user = document.getElementById("reg-username")?.value.trim() || "";
+  const pass = document.getElementById("reg-password")?.value || "";
+  const btn = document.getElementById("btn-register");
+
+  _setRegisterError("");
+  if (user.length < 3) {
+    _setRegisterError("Nama pengguna minimal 3 karakter.");
+    return;
+  }
+  if (pass.length < 8) {
+    _setRegisterError("Password minimal 8 karakter.");
+    return;
+  }
+
+  if (btn) btn.disabled = true;
+  beginLoading("Mengirim pendaftaran");
+  try {
+    const res = await fetch(`${API_BASE_URL}/register`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "ngrok-skip-browser-warning": "true",
+      },
+      body: JSON.stringify({
+        username: user,
+        password: pass,
+        nama_lengkap: nama || null,
+        ...(window.RamcesCaptcha?.values("reg-captcha") || {}),
+      }),
+    });
+    // A spent challenge cannot be reused, so ANY outcome needs a fresh one —
+    // including success, in case the user registers a second account.
+    window.RamcesCaptcha?.refresh("reg-captcha");
+
+    if (!res.ok) {
+      let detail = "Pendaftaran gagal.";
+      try {
+        detail = (await res.json()).detail || detail;
+      } catch (_) {
+        /* non-JSON body */
+      }
+      throw new Error(detail);
+    }
+
+    const data = await res.json();
+    showToast(data.message || "Pendaftaran diterima.", "success");
+    ["reg-nama", "reg-username", "reg-password"].forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) el.value = "";
+    });
+    showRegisterPanel(false);
+  } catch (e) {
+    _setRegisterError(e.message);
+  } finally {
+    if (btn) btn.disabled = false;
+    endLoading();
+  }
+}
+
+window.showRegisterPanel = showRegisterPanel;
+window.handleRegister = handleRegister;
 
 function forceLogout(reloadPage = false) {
   currentUser = null;
@@ -270,8 +423,14 @@ function populateSelects(preserveValues = false) {
       inUpt.innerHTML = `<option value="">— Pilih Lokasi terlebih dahulu —</option>`;
       inUpt.disabled = true;
     } else {
-      // Re-apply UPT options for current lokasi
-      applyUptSelect(currentLokasi, inUpt);
+      // Re-apply UPT options for current lokasi, narrowed by the peruntukan
+      // radio — this is the Tambah Aset form, where the resort prefix and the
+      // peruntukan segment of the generated id must agree.
+      applyUptSelect(
+        currentLokasi,
+        inUpt,
+        document.querySelector('input[name="in-unit"]:checked')?.value || "",
+      );
       if (inUpt.querySelector(`option[value="${currentUpt}"]`)) {
         inUpt.value = currentUpt;
       }
@@ -332,6 +491,20 @@ function populateSelects(preserveValues = false) {
 }
 
 function switchView(viewId) {
+  // Gating the sidebar is not enough: 34 `onclick=` handlers generated inside
+  // template strings call switchView() directly, so a hidden nav button leaves
+  // every card link, breadcrumb and post-save redirect to the same view wide
+  // open. This is the one place all of them pass through.
+  //
+  // It sends the user to the dashboard rather than doing nothing, because a
+  // click that produces no visible result reads as a broken button. Every role
+  // can open the dashboard, so this cannot loop.
+  if (_currentRole && !canView(viewId)) {
+    showToast("Anda tidak punya akses ke halaman itu.", "warning");
+    if (viewId !== "dashboard") switchView("dashboard");
+    return;
+  }
+
   document.querySelectorAll(".view-section").forEach((el) => {
     el.classList.remove("is-visible", "is-flex");
   });
@@ -457,6 +630,18 @@ function setupEventListeners() {
   document.getElementById("form-login")?.addEventListener("submit", (e) => {
     e.preventDefault();
     handleLogin();
+  });
+
+  // Registration: a separate panel on the same screen. See handleRegister().
+  document.getElementById("btn-open-register")?.addEventListener("click", () => {
+    showRegisterPanel(true);
+  });
+  document.getElementById("btn-back-login")?.addEventListener("click", () => {
+    showRegisterPanel(false);
+  });
+  document.getElementById("form-register")?.addEventListener("submit", (e) => {
+    e.preventDefault();
+    handleRegister();
   });
 
   document
@@ -1005,8 +1190,11 @@ function setupEventListeners() {
     applyUptSelect(e.target.value, document.getElementById("edit-upt"));
   });
 
-  document.getElementById("in-lokasi")?.addEventListener("change", (e) => {
-    applyUptSelect(e.target.value, document.getElementById("in-upt"));
+  // Tambah Aset: filtered by the peruntukan radio, so the list cannot offer a
+  // jembatan resort for a jalan rel asset. `kdakSyncUpt` reads both inputs and
+  // is also wired to the radio itself — see js/views/kdak.js.
+  document.getElementById("in-lokasi")?.addEventListener("change", () => {
+    window.kdakSyncUpt?.("tambah");
   });
 
   // SO / TSO buttons (scoped to perbaikan panel only)

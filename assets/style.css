@@ -1349,6 +1349,44 @@
   display: none;
 }
 
+/* Two steps on one row.
+
+   The KDAK forms are 916px of content in a 737px scroller at 1440x900, so 179px
+   — including the live id_aset preview — was always below the fold and step 1
+   and the preview could never be on screen together, which is the entire point
+   of a live preview. The panels went from max-w-lg to max-w-2xl; this is what
+   spends the extra width instead of just making the fields wider.
+
+   Paired only at `sm:` and up. On a phone the stepper stays a single vertical
+   column, because two 44px-target radio groups side by side at 390px is worse
+   than scrolling. */
+.step-pair {
+  display: grid;
+  gap: 1rem;
+}
+
+/* Wrapping two steps changes what `.step:last-of-type` matches: the second of a
+   pair becomes the last div among ITS siblings, so the global rule above hides
+   its rail. Below `sm:` the pair is still a stacked column and that rail is the
+   one connecting it to the next step, so put it back. */
+.step-pair > .step:last-of-type::after {
+  display: block;
+}
+
+@media (min-width: 640px) {
+  .step-pair {
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem 1.25rem;
+  }
+
+  /* One connecting rail per row, not two. Each `.step` draws its own at its own
+     left edge, so the second of a pair would put a stray vertical line through
+     the middle of the form. */
+  .step-pair > .step + .step::after {
+    display: none;
+  }
+}
+
 .step.is-done::before {
   content: "\f00c";           /* fa-check */
   font-family: "Font Awesome 6 Free";
@@ -1791,6 +1829,58 @@
   .table-stack-wrap {
     overflow-x: visible !important;
   }
+}
+
+/* ── 1b. Horizontal scroll affordance ─────────────────────────────────
+
+   A strip that scrolls sideways with `scrollbar-none` and nothing else has no
+   way of saying so. The dashboard tab bar at 390px is 925px of content in
+   308px of viewport: three of its six tabs were unreachable-looking, because
+   nothing on screen suggested there were six.
+
+   A fade at each end, toggled by `data-scroll-start` / `data-scroll-end`
+   attributes that `wireScrollHints()` in js/core.js stamps on scroll — so the
+   left fade disappears at the left edge instead of implying content that is
+   not there. Pure CSS `mask` cannot do that, since it has no way to know the
+   scroll position.
+
+   Pointer-events: none throughout, or the fade would eat taps on the tab
+   underneath it — which on a 44px touch target is most of it. */
+.scroll-hint {
+  position: relative;
+}
+
+.scroll-hint::before,
+.scroll-hint::after {
+  content: "";
+  position: sticky;
+  top: 0;
+  align-self: stretch;
+  flex: 0 0 auto;
+  width: 1.75rem;
+  margin-inline: -1.75rem; /* overlays the content rather than displacing it */
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.18s ease;
+  z-index: 2;
+}
+
+.scroll-hint::before {
+  left: 0;
+  background: linear-gradient(to right, var(--surface), transparent);
+}
+
+.scroll-hint::after {
+  right: 0;
+  background: linear-gradient(to left, var(--surface), transparent);
+}
+
+.scroll-hint[data-scroll-start="0"]::before {
+  opacity: 1;
+}
+
+.scroll-hint[data-scroll-end="0"]::after {
+  opacity: 1;
 }
 
 /* ── 2. Mobile bottom navigation ──────────────────────────────────────

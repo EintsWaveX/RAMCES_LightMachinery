@@ -567,6 +567,17 @@ def get_current_user(
     )
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
+
+    # Checked HERE, not only in login(). Tokens last 12 hours, so a status
+    # enforced at sign-in alone would let a suspended or rejected account keep
+    # working for the rest of the day on the token it already holds — which is
+    # the whole window an admin suspends someone to close.
+    #
+    # 401 rather than 403 on purpose: `apiFetch` force-logs-out on 401 and
+    # treats 403 as an ordinary response, so 403 would leave a suspended user
+    # sitting in the app watching every request fail.
+    if (user.status or "AKTIF").upper() != "AKTIF":
+        raise HTTPException(status_code=401, detail="Akun Anda tidak aktif.")
     return user
 
 

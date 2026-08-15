@@ -662,6 +662,15 @@
        It uses `authToken` and `showToast`, both declared below — every call
        happens at render time, long after this file has evaluated. -->
   <script src="/js/views/spektek.js"></script>
+  <!-- The captcha widget. A self-contained IIFE exporting one global
+       (window.RamcesCaptcha) — the js/a11y-modal.js pattern, and the ONLY shape
+       this page can load, because the block below declares its own `lokasiData`,
+       `authToken`, `showToast` and `getParentLokasiCode` at top level and
+       classic scripts share one lexical scope. Loading js/core.js here to reuse
+       those would be a fatal SyntaxError that blanks the whole QR page, and
+       neither checker reads this file: check_js.py scans js/, check_html.py
+       reads index.html. -->
+  <script src="/js/captcha.js"></script>
   <script>
   // ── CONFIG ──────────────────────────────────────────────────────────────
   const API = window.location.origin + "/api";
@@ -1098,7 +1107,7 @@
       r("No. Urut",     dec.nomor || "—"),
     ].join("");
 
-    renderSpesifikasi(data.spesifikasi);
+    renderSpesifikasi(data.spesifikasi, data.dokumen);
     applyKalibrasiGate(data.perlu_kalibrasi);
 
     // Mini stats (will be enriched when summary loads)
@@ -1136,10 +1145,13 @@
   // genset and nothing else, and that the client's Rekap Spek template
   // replaced with five free-form label/value rows plus a photo.
   //
-  // The whole card still hides when the asset has no Model/Type: a spec table
-  // of nothing but dashes tells the reader less than no table at all.
-  function renderSpesifikasi(spec) {
-    window.renderSpekCard("spec-card", spec);
+  // The spec TABLE still hides when the asset has no Model/Type: a table of
+  // nothing but dashes tells the reader less than no table at all. The tool
+  // type's own documents are passed separately and still render, because an
+  // asset with no model is the commonest case on this page and its spektek is
+  // the only documentation a technician standing at the machine can reach.
+  function renderSpesifikasi(spec, dokumen) {
+    window.renderSpekCard("spec-card", spec, { dokumen });
   }
 
   // ── BADGES from summary ─────────────────────────────────────────────────
@@ -1791,16 +1803,35 @@
   });
 
   // ── LOGIN GATE ───────────────────────────────────────────────────────────
+  //
+  // ⚠️ THIS FORM WAS BROKEN AND IT WAS ALSO A PRIVILEGE ESCALATION.
+  //
+  // It posted `{username, role, id_lokasi}` with NO PASSWORD. `LoginForm.password`
+  // is required, so every sign-in from a scanned QR code answered 422 — the page
+  // has been unusable for anyone not already holding a session. And it offered
+  // #gate-role / #gate-region dropdowns letting the user DECLARE their own role
+  // and region: exactly the "pick your own privileges" login that was removed
+  // from index.html in rev0.5.0 as the escalation it is. It survived here only
+  // because landing.html is a separate document that neither checker reads.
+  //
+  // Replaced by the same one-step form index.html uses: username + password,
+  // with a captcha appearing only when the server asks for one. Role and region
+  // are properties of the account, read from the stored row and returned in the
+  // token — never asked for.
+  //
+  // The captcha widget comes from js/captcha.js, a self-contained IIFE. Do NOT
+  // load js/core.js here to get `showToast` or `getParentLokasiCode`: this file
+  // declares its own, classic scripts share one global scope, and the duplicate
+  // top-level declaration is a fatal SyntaxError that blanks the whole page.
   function showLoginGate() {
-    // Build and show an inline login overlay
     const existing = document.getElementById("login-gate-overlay");
     if (existing) { existing.classList.remove("hidden"); return; }
 
     const overlay = document.createElement("div");
     overlay.id = "login-gate-overlay";
-    overlay.className = "fixed inset-0 z-[150] bg-gray-900/60 backdrop-blur-sm flex items-center justify-center p-4 anim-fade-in";
+    overlay.className = "fixed inset-0 z-[150] bg-gray-900/60 backdrop-blur-sm flex items-center justify-center p-4 anim-fade-in overflow-y-auto";
     overlay.innerHTML = `
-      <div class="bg-white dark:bg-gray-800 rounded-3xl shadow-2xl border border-gray-100 dark:border-gray-700 w-full max-w-sm p-7 space-y-5 anim-scale-in">
+      <div class="bg-white dark:bg-gray-800 rounded-3xl shadow-2xl border border-gray-100 dark:border-gray-700 w-full max-w-sm p-7 space-y-5 anim-scale-in my-auto">
         <div class="text-center space-y-2">
           <div class="inline-flex items-center justify-center w-14 h-14 rounded-full bg-kai-blue/10 dark:bg-kai-blue/20 text-kai-blue mb-1">
             <i class="fas fa-lock text-2xl"></i>
@@ -1808,63 +1839,73 @@
           <h2 class="text-lg font-bold text-gray-800 dark:text-gray-100">Otorisasi Diperlukan</h2>
           <p class="text-xs text-gray-500 dark:text-gray-400">Masuk untuk mengakses riwayat dan formulir aset ini.</p>
         </div>
-        <div class="space-y-3">
-          <input type="text" id="gate-user" placeholder="Username"
-            class="w-full border dark:border-gray-600 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-kai-blue focus:outline-none transition" />
-
-          <div id="gate-extra" class="hidden space-y-3 bg-gray-50 dark:bg-gray-700/50 p-3 rounded-xl border border-gray-100 dark:border-gray-600">
-            <p class="text-[10px] font-bold text-gray-400 uppercase">Lengkapi Profil Sesi</p>
-            <select id="gate-role" class="w-full border dark:border-gray-600 rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-kai-blue focus:outline-none transition">
-              <option value="TEKNISI">👨‍🔧 TEKNISI</option>
-              <option value="ADMIN_WILAYAH">🏢 ADMIN WILAYAH</option>
-              <option value="SUPER_ADMIN">👑 SUPER ADMIN</option>
-            </select>
-            <select id="gate-region" class="w-full border dark:border-gray-600 rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-kai-blue focus:outline-none transition">
-              <option value="">Memuat region...</option>
-            </select>
+        <form id="gate-form" class="space-y-3" autocomplete="on">
+          <div>
+            <label for="gate-user" class="block text-[11px] font-medium mb-1 text-gray-500 dark:text-gray-400">Username</label>
+            <input type="text" id="gate-user" name="username" autocomplete="username" required
+              class="w-full border dark:border-gray-600 dark:bg-gray-700 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-kai-blue focus:outline-none transition" />
+          </div>
+          <div>
+            <label for="gate-pass" class="block text-[11px] font-medium mb-1 text-gray-500 dark:text-gray-400">Password</label>
+            <div class="relative">
+              <input type="password" id="gate-pass" name="password" autocomplete="current-password" required
+                class="w-full border dark:border-gray-600 dark:bg-gray-700 rounded-xl px-4 py-2.5 pr-11 text-sm focus:ring-2 focus:ring-kai-blue focus:outline-none transition" />
+              <!-- A field a technician in gloves cannot proof-read is how wrong
+                   passwords get retyped four times at a resort. -->
+              <button type="button" id="gate-pass-toggle" aria-label="Tampilkan password"
+                class="absolute right-2 top-1/2 -translate-y-1/2 px-2 py-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition">
+                <i class="fas fa-eye text-xs"></i>
+              </button>
+            </div>
           </div>
 
-          <button id="gate-btn"
+          <!-- Hidden until the server answers X-Captcha-Required: 1. -->
+          <div id="gate-captcha-wrap" class="hidden bg-gray-50 dark:bg-gray-700/50 p-3 rounded-xl border border-gray-100 dark:border-gray-600">
+            <p class="text-[10px] font-bold text-gray-400 uppercase mb-2">Verifikasi keamanan</p>
+            <div id="gate-captcha"></div>
+          </div>
+
+          <button type="submit" id="gate-btn"
             class="w-full bg-kai-blue hover:bg-blue-800 text-white font-bold py-3 rounded-xl transition flex items-center justify-center gap-2 text-sm shadow-md">
             <i class="fas fa-sign-in-alt"></i> Masuk Sekarang
           </button>
-          <p id="gate-err" class="text-xs text-red-500 text-center hidden"></p>
-          <button onclick="document.getElementById('login-gate-overlay').classList.add('hidden')"
+          <p id="gate-err" class="text-xs text-red-500 text-center hidden" role="alert"></p>
+          <button type="button" id="gate-cancel"
             class="w-full py-2 text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition">Batal</button>
-        </div>
+        </form>
       </div>`;
     document.body.appendChild(overlay);
 
-    // Load regions
-    fetch(`${API}/master/lokasi`, { headers:{"ngrok-skip-browser-warning":"true"} })
-      .then(r => r.ok ? r.json() : [])
-      .then(data => {
-        const sel = document.getElementById("gate-region");
-        if (sel && data.length) {
-          sel.innerHTML = '<option value="">— Pilih Region —</option>' +
-            data.filter(l => l.tipe !== "UPT").map(l=>`<option value="${l.id_lokasi}">${l.nama_lokasi}</option>`).join("");
-        }
-      }).catch(()=>{});
-
-    document.getElementById("gate-user").addEventListener("blur", () => {
-      const v = document.getElementById("gate-user").value.trim();
-      document.getElementById("gate-extra").classList.toggle("hidden", !v);
+    document.getElementById("gate-cancel").addEventListener("click", () => {
+      overlay.classList.add("hidden");
     });
 
-    document.getElementById("gate-role")?.addEventListener("change", e => {
-      const reg = document.getElementById("gate-region");
-      if (e.target.value === "SUPER_ADMIN") { reg.disabled = true; reg.value = ""; }
-      else reg.disabled = false;
+    document.getElementById("gate-pass-toggle").addEventListener("click", () => {
+      const f = document.getElementById("gate-pass");
+      const shown = f.type === "text";
+      f.type = shown ? "password" : "text";
+      document.getElementById("gate-pass-toggle").innerHTML =
+        `<i class="fas fa-eye${shown ? "" : "-slash"} text-xs"></i>`;
+      f.focus();
     });
 
-    document.getElementById("gate-btn").addEventListener("click", async () => {
+    // `API` already ends in /api; the captcha widget wants the ORIGIN prefix,
+    // because it appends /api/captcha itself.
+    const CAPTCHA_BASE = API.replace(/\/api\/?$/, "");
+
+    document.getElementById("gate-form").addEventListener("submit", async (ev) => {
+      ev.preventDefault();
       const username = document.getElementById("gate-user").value.trim();
-      const role     = document.getElementById("gate-role")?.value || "TEKNISI";
-      const region   = document.getElementById("gate-region")?.value || "";
+      const password = document.getElementById("gate-pass").value;
       const errEl    = document.getElementById("gate-err");
-      if (!username) { errEl.textContent = "Isi username."; errEl.classList.remove("hidden"); return; }
+      const btn      = document.getElementById("gate-btn");
 
-      const btn = document.getElementById("gate-btn");
+      if (!username || !password) {
+        errEl.textContent = "Isi username dan password.";
+        errEl.classList.remove("hidden");
+        return;
+      }
+
       btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Memproses...';
       btn.disabled = true;
       errEl.classList.add("hidden");
@@ -1872,18 +1913,37 @@
       try {
         const res = await fetch(`${API}/login`, {
           method: "POST",
-          headers: { "Content-Type":"application/json", "ngrok-skip-browser-warning":"true" },
-          body: JSON.stringify({ username, role, id_lokasi: region || null }),
+          headers: { "Content-Type": "application/json", "ngrok-skip-browser-warning": "true" },
+          body: JSON.stringify({
+            username,
+            password,
+            ...(window.RamcesCaptcha?.values("gate-captcha") || {}),
+          }),
         });
-        if (!res.ok) throw new Error((await res.json().catch(()=>({}))).detail || "Login gagal.");
+
+        if (!res.ok) {
+          // The server decides when a captcha is needed — it is progressive, so
+          // it appears only once a rate-limit bucket has tripped rather than on
+          // every sign-in from a resort.
+          if (res.headers.get("X-Captcha-Required") === "1") {
+            window.RamcesCaptcha?.toggle(
+              "gate-captcha-wrap", "gate-captcha", true, CAPTCHA_BASE,
+            );
+            window.RamcesCaptcha?.refresh("gate-captcha", CAPTCHA_BASE);
+          }
+          throw new Error((await res.json().catch(() => ({}))).detail || "Login gagal.");
+        }
+
         const data = await res.json();
         authToken  = data.access_token;
         activeUser = username;
         sessionStorage.setItem("authToken", authToken);
         sessionStorage.setItem("activeUser", activeUser);
         const p = getJwtPayload(authToken);
+        // From the TOKEN, which the server minted from the stored row — not
+        // from a dropdown the person signing in filled out themselves.
         userRole = p?.role || "";
-        document.getElementById("login-gate-overlay").remove();
+        overlay.remove();
         showToast(`Berhasil masuk sebagai ${username}!`, "success");
         // Register presence now that there is an identity to register.
         setupLandingSocket();
@@ -1891,7 +1951,7 @@
         await fetchSummaryForAsset(UID);
         unlockForms();
         loadTabData(activeTab);
-      } catch(e) {
+      } catch (e) {
         errEl.textContent = e.message;
         errEl.classList.remove("hidden");
         btn.innerHTML = '<i class="fas fa-sign-in-alt"></i> Masuk Sekarang';
@@ -1899,10 +1959,7 @@
       }
     });
 
-    // Enter key support
-    document.getElementById("gate-user").addEventListener("keydown", e => {
-      if (e.key === "Enter") document.getElementById("gate-btn").click();
-    });
+    document.getElementById("gate-user").focus();
   }
 
   // ── LIVE CONNECTION / PRESENCE ───────────────────────────────────────────

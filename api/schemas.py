@@ -38,6 +38,48 @@ class LoginForm(BaseModel):
     # own role is not authenticated, it is self-declared.
     role: Optional[str] = None
     id_lokasi: Optional[str] = None
+    # OPTIONAL, and enforced in the handler instead.
+    #
+    # Login asks for a captcha PROGRESSIVELY — only once a rate-limit bucket has
+    # tripped — so most sign-ins never send one. Making these required on the
+    # model would 422 every ordinary login from any client that does not send
+    # them, which is exactly how landing.html's sign-in was broken: it posted a
+    # payload missing a field the model insisted on, and every QR-page sign-in
+    # failed with a validation error rather than a message anyone could act on.
+    captcha_token: Optional[str] = None
+    captcha_answer: Optional[str] = None
+
+
+class RegisterForm(BaseModel):
+    """
+    Self-registration. Note what is NOT here: `role` and `id_lokasi`.
+
+    A registrant never picks either. Letting the client choose its own role was
+    the privilege escalation removed in rev0.5.0 — an unauthenticated form that
+    accepted `role` would be the same hole with a friendlier label. The account
+    is created PENDING with an inert role and no region, and an admin assigns
+    both at approval.
+    """
+
+    username: str
+    password: str
+    nama_lengkap: Optional[str] = None
+    captcha_token: str
+    captcha_answer: str
+
+
+class UserApprove(BaseModel):
+    """
+    What an admin assigns AT the moment of approval.
+
+    Approval is its own endpoint rather than a `status` field on `UserUpdate`,
+    because this is the moment privilege is granted — it deserves a route that
+    can be found, guarded and audited on its own, not a value smuggled through
+    the general-purpose edit form.
+    """
+
+    role: str
+    id_lokasi: Optional[str] = None
 
 
 class UserCreate(BaseModel):
@@ -45,11 +87,15 @@ class UserCreate(BaseModel):
     password: str
     role: str
     id_lokasi: Optional[str] = None
+    nama_lengkap: Optional[str] = None
 
 
 class UserUpdate(BaseModel):
     role: str
     id_lokasi: Optional[str] = None
+    # AKTIF | NONAKTIF only. Approval and rejection have their own endpoints and
+    # are not reachable from here; see UserApprove.
+    status: Optional[str] = None
 
 
 class PasswordSet(BaseModel):
