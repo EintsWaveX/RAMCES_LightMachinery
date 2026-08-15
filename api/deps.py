@@ -311,6 +311,39 @@ def assert_aset_region_scope(db: Session, current_user, aset, pesan: str):
     )
 
 
+def assert_pengadaan_scope(current_user, id_pengadaan: int):
+    """
+    An ADMIN_WILAYAH may only register assets procured by its own region.
+
+    The client's own feature matrix states it: *"admin daerah hanya input
+    pengadaan 2"*. Procurement code 1 is PUSAT — a national purchase, which a
+    regional admin is not the one recording.
+
+    ── Why this is a 400 and not a nudge ──
+
+    `sumber_pengadaan` is baked into the asset's COMPOSITE PRIMARY KEY as its
+    third segment (`6.RGM.1.24.A.D1`). A wrong value is therefore not a display
+    problem that can be edited later — correcting it regenerates the key and
+    rewrites every child row. Refusing at the boundary is much cheaper than any
+    repair afterwards.
+
+    Kept OUT of `normalise_sumber_pengadaan()` deliberately. That function has no
+    user context and answers a different question — "is this a legal value?" —
+    while this one answers "may *you* write it?". Folding a scope rule into a
+    validator is how the region checks went wrong before: it belongs beside
+    `assert_region_scope`, which is exactly where it now is.
+    """
+    if current_user.role == "ADMIN_WILAYAH" and id_pengadaan == 1:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "ADMIN WILAYAH hanya bisa mendaftarkan aset dengan sumber "
+                "pengadaan DAOP/DIVRE. Aset pengadaan PUSAT didaftarkan oleh "
+                "SUPER ADMIN."
+            ),
+        )
+
+
 # `peruntukan` and `sumber_pengadaan` are closed sets that get baked into the
 # asset's composite primary key. Both used to fall back silently — an unknown
 # peruntukan became the literal "X" (an ID segment no decoder can map, invisible

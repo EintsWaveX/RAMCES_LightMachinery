@@ -1290,7 +1290,9 @@
                     </div>
 
                     <!-- ── Tab Switcher ── -->
-                    <div class="flex gap-0 border-b border-gray-200 dark:border-gray-700">
+                    <!-- .scroll-hint: a fifth tab pushes this strip past 390px, and it
+                         has no scrollbar of its own. See wireScrollHints() in js/core.js. -->
+                    <div class="scroll-hint flex gap-0 border-b border-gray-200 dark:border-gray-700 overflow-x-auto">
                         <button id="inv-tab-dashboard"
                             class="inv-tab-btn px-5 py-3 text-sm font-bold border-b-2 border-kai-blue text-kai-blue transition">
                             Dashboard
@@ -1304,8 +1306,12 @@
                             Transaksi Barang
                         </button>
                         <button id="inv-tab-transfer"
-                            class="inv-tab-btn px-5 py-3 text-sm font-bold border-b-2 border-transparent text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition">
+                            class="inv-tab-btn px-5 py-3 text-sm font-bold border-b-2 border-transparent text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition whitespace-nowrap">
                             Riwayat Transfer Suku Cadang
+                        </button>
+                        <button id="inv-tab-hirarki"
+                            class="inv-tab-btn px-5 py-3 text-sm font-bold border-b-2 border-transparent text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition whitespace-nowrap">
+                            Hierarki Suku Cadang
                         </button>
                     </div>
 
@@ -1596,6 +1602,65 @@
                                                 </tr>
                                             </tbody>
                                         </table>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- ══ Fast / Slow Moving ══
+                                 The client's poster asks for this under Inventory
+                                 Monitoring. It is a consumption RATE, so the window is
+                                 stated on the panel — a classification whose period is
+                                 invisible cannot be interpreted. Fixed at 12 months
+                                 rather than following the Dari/Sampai filter above,
+                                 which is routinely set to one month; a "slow moving"
+                                 list that reshuffled whenever someone changed a date
+                                 box would not mean anything. -->
+                            <div
+                                class="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm mt-4">
+                                <div
+                                    class="px-4 py-3 border-b border-gray-100 dark:border-gray-700 flex flex-wrap items-center justify-between gap-2">
+                                    <p
+                                        class="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-widest leading-tight">
+                                        Perputaran Suku Cadang</p>
+                                    <span id="sd-fs-window" class="text-[10px] text-gray-400">—</span>
+                                </div>
+                                <div class="grid grid-cols-1 md:grid-cols-3 gap-px bg-gray-100 dark:bg-gray-700">
+                                    <div class="bg-white dark:bg-gray-800 p-4" id="sd-fs-fast-wrap">
+                                        <div class="flex items-baseline gap-2 mb-2">
+                                            <i class="fas fa-arrow-trend-up text-green-600 dark:text-green-400 text-xs"></i>
+                                            <p class="text-[10px] font-bold tracking-widest text-gray-400 uppercase">
+                                                Cepat</p>
+                                            <span id="sd-fs-fast-count"
+                                                class="ml-auto text-lg font-bold tabular-nums text-gray-800 dark:text-white">0</span>
+                                        </div>
+                                        <ul class="space-y-1" id="sd-fs-fast"></ul>
+                                    </div>
+                                    <div class="bg-white dark:bg-gray-800 p-4" id="sd-fs-slow-wrap">
+                                        <div class="flex items-baseline gap-2 mb-2">
+                                            <i class="fas fa-arrow-trend-down text-amber-600 dark:text-amber-400 text-xs"></i>
+                                            <p class="text-[10px] font-bold tracking-widest text-gray-400 uppercase">
+                                                Lambat</p>
+                                            <span id="sd-fs-slow-count"
+                                                class="ml-auto text-lg font-bold tabular-nums text-gray-800 dark:text-white">0</span>
+                                        </div>
+                                        <ul class="space-y-1" id="sd-fs-slow"></ul>
+                                    </div>
+                                    <div class="bg-white dark:bg-gray-800 p-4" id="sd-fs-diam-wrap">
+                                        <div class="flex items-baseline gap-2 mb-2">
+                                            <i class="fas fa-pause text-gray-400 text-xs"></i>
+                                            <p class="text-[10px] font-bold tracking-widest text-gray-400 uppercase">
+                                                Tanpa Pergerakan</p>
+                                            <span id="sd-fs-diam-count"
+                                                class="ml-auto text-lg font-bold tabular-nums text-gray-800 dark:text-white">0</span>
+                                        </div>
+                                        <ul class="space-y-1" id="sd-fs-diam"></ul>
+                                        <!-- Named for what it is. "Dead stock" is a
+                                             judgement: a spare for a rarely-failing
+                                             machine that has not been needed in a year
+                                             is doing exactly its job. -->
+                                        <p class="text-[10px] text-gray-400 mt-2 leading-snug">
+                                            Belum pernah keluar dalam periode ini — belum tentu tidak
+                                            terpakai.</p>
                                     </div>
                                 </div>
                             </div>
@@ -1985,6 +2050,39 @@
                                     </tr>
                                 </tbody>
                             </table>
+                        </div>
+                    </div>
+
+                    <!-- ── Tab Panel: Hierarki Suku Cadang (BOM tree) ──
+                         The client's "Hierarki Part ▸ Tree ▸ Struktur BOM": pick a
+                         tool type, get its parts grouped by subsistem, click one to
+                         open its history card.
+
+                         The selector lists ONLY tool types that actually have parts.
+                         17 of 104 do; offering all 104 would leave 87 choices
+                         rendering an empty tree, which reads as a broken feature
+                         rather than as an answer. #inv-hirarki-cakupan states the gap
+                         plainly instead — it is data yet to be entered, not a fault.
+                         Built by renderInvHirarki() in js/views/inventaris.js. -->
+                    <div id="inv-panel-hirarki" class="hidden">
+                        <div
+                            class="bg-white dark:bg-gray-800 rounded-b-xl border border-t-0 border-gray-100 dark:border-gray-700 shadow-sm">
+                            <div
+                                class="flex flex-wrap items-end gap-3 px-4 py-3 border-b border-gray-100 dark:border-gray-700 bg-gray-50/60 dark:bg-gray-700/40">
+                                <div class="min-w-[16rem] flex-1">
+                                    <label for="inv-hirarki-alat"
+                                        class="block text-[10px] font-bold tracking-widest text-gray-400 uppercase mb-1">
+                                        Jenis Alat Kerja</label>
+                                    <select id="inv-hirarki-alat"
+                                        class="w-full p-2.5 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition">
+                                        <option value="">Memuat…</option>
+                                    </select>
+                                </div>
+                                <p id="inv-hirarki-cakupan"
+                                    class="text-[11px] text-gray-500 dark:text-gray-400 leading-snug basis-full sm:basis-auto">
+                                    —</p>
+                            </div>
+                            <div id="inv-hirarki-tree" class="p-4" aria-live="polite"></div>
                         </div>
                     </div>
 
@@ -4825,13 +4923,22 @@
                     <div class="step" data-step="2" id="step-in-pengadaan">
                         <span class="step-title">Sumber Pengadaan</span>
                         <div class="flex flex-wrap gap-4 text-sm">
-                            <label class="flex items-center gap-2 cursor-pointer">
+                            <!-- PUSAT is gated: the client's matrix says "admin daerah
+                                 hanya input pengadaan 2". `data-write="aset_pusat"` runs
+                                 through the same WRITE_ACCESS allow-list every other
+                                 gated control uses, and applyRoleGating() also DISABLES
+                                 the input when it hides it — a hidden `required` radio is
+                                 an unfocusable invalid control the browser cannot report.
+                                 The server refuses it regardless; see
+                                 assert_pengadaan_scope(). -->
+                            <label class="flex items-center gap-2 cursor-pointer"
+                                data-write="aset_pusat">
                                 <input type="radio" name="in-pengadaan" value="PUSAT" required
                                     class="accent-kai-orange w-4 h-4" />
                                 <span>PUSAT</span>
                             </label>
                             <label class="flex items-center gap-2 cursor-pointer">
-                                <input type="radio" name="in-pengadaan" value="DAOP/DIVRE"
+                                <input type="radio" name="in-pengadaan" value="DAOP/DIVRE" required
                                     class="accent-kai-orange w-4 h-4" />
                                 <span>DAOP / DIVRE</span>
                             </label>
@@ -4962,7 +5069,9 @@
                     <div class="step" data-step="2" id="step-kdak-edit-pengadaan">
                         <span class="step-title">Sumber Pengadaan</span>
                         <div class="flex flex-wrap gap-4 text-sm">
-                            <label class="flex items-center gap-2 cursor-pointer"><input type="radio"
+                            <!-- Gated for ADMIN_WILAYAH, same as the Tambah form. -->
+                            <label class="flex items-center gap-2 cursor-pointer"
+                                data-write="aset_pusat"><input type="radio"
                                     name="kdak-edit-pengadaan" value="PUSAT"
                                     class="accent-kai-orange w-4 h-4" /><span>PUSAT</span></label>
                             <label class="flex items-center gap-2 cursor-pointer"><input type="radio"
@@ -5610,6 +5719,32 @@
     </div>
 
     <!-- ── Inventaris: Parts Category Modal ── -->
+    <!-- ── Kartu Riwayat Suku Cadang ──
+         The client's "History Card Part ▸ Riwayat ▸ Timeline transaksi part".
+         Opened from the BOM tree and from a row in Daftar Suku Cadang, both via
+         window.openPartHistory(id_part). Filled by renderPartHistory() in
+         js/views/inventaris.js; js/a11y-modal.js gives it dialog semantics, Esc
+         and the focus trap at runtime. -->
+    <div id="inv-part-history-modal"
+        class="hidden fixed inset-0 z-[110] bg-gray-900/40 backdrop-blur-sm flex items-center justify-center p-4">
+        <div
+            class="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-3xl border border-gray-100 dark:border-gray-700 overflow-hidden max-h-[90vh] flex flex-col">
+            <div
+                class="flex justify-between items-start gap-3 px-5 py-4 border-b border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800 shrink-0">
+                <div class="min-w-0">
+                    <h3 class="text-sm font-bold text-gray-800 dark:text-white" id="inv-ph-title">
+                        Kartu Riwayat Suku Cadang</h3>
+                    <p class="text-xs text-gray-400 mt-0.5" id="inv-ph-subtitle">—</p>
+                </div>
+                <button id="close-inv-part-history-modal" aria-label="Tutup"
+                    class="btn btn-icon btn-icon-close shrink-0">
+                    <i class="fas fa-times text-xl"></i>
+                </button>
+            </div>
+            <div class="px-5 py-4 overflow-y-auto" id="inv-ph-body"></div>
+        </div>
+    </div>
+
     <div id="inv-category-modal"
         class="hidden fixed inset-0 z-[100] bg-gray-900/40 backdrop-blur-sm flex items-center justify-center p-4">
         <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-lg border border-gray-100 dark:border-gray-700">

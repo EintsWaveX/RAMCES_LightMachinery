@@ -81,6 +81,11 @@ const VIEW_ACCESS = {
 // or the other.
 const WRITE_ACCESS = {
   aset:       ["SUPER_ADMIN", "ADMIN_WILAYAH"],
+  // Who may register a PUSAT-procured asset. The client's matrix: "admin daerah
+  // hanya input pengadaan 2". An allow-list rather than an ADMIN_WILAYAH
+  // exclusion, so a role added later is denied by default instead of silently
+  // inheriting the permission. Enforced server-side by assert_pengadaan_scope().
+  aset_pusat: ["SUPER_ADMIN"],
   inventaris: ["SUPER_ADMIN", "ADMIN_WILAYAH", "PETUGAS_GUDANG"],
   // Condition reporting is deliberately UNSCOPED for TEKNISI — reporting a
   // machine as broken is the one thing a technician does standing next to it,

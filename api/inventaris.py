@@ -306,17 +306,28 @@ def _stok_status(stok: int, stok_min: int, stok_max: Optional[int]) -> str:
         return "KRITIS"
     if stok_min and stok == stok_min:
         return "DI BAWAH MIN"
+    # RESERVED, and currently unreachable: `SparePart` has no `stok_max` column,
+    # so every caller passes None. Kept rather than deleted because the branch is
+    # correct and costs nothing — but it is deliberately absent from
+    # STOK_STATUS_ORDER, so nothing renders a bucket that can only ever be zero.
+    # Adding the column would be inventing a requirement: the client asked for a
+    # minimum stock level, not a maximum.
     if stok_max and stok > stok_max:
         return "DI ATAS MAX"
     return "AMAN"
 
 
-def _movement_breakdown(db: Session, id_lokasi=None, id_gudang=None) -> dict:
+def _movement_breakdown(db: Session, id_lokasi=None, id_gudang=None, sejak=None) -> dict:
     """
     Per-part movement totals split by type → {id_part: {tipe: qty}}.
 
     One grouped query for the whole catalog; feeds the Items Master columns
     (Masuk, Keluar, Retur ke Vendor, Retur dari Customer, Penyesuaian ±).
+
+    `sejak` restricts to movements at or after that datetime. Defaults to None —
+    all time — so the Items Master columns, which are lifetime totals, are
+    unaffected. The fast/slow classification passes a window, because a
+    consumption rate with no period is not a rate.
     """
     q = _scope_stok(
         db.query(
@@ -329,6 +340,8 @@ def _movement_breakdown(db: Session, id_lokasi=None, id_gudang=None) -> dict:
     )
     if q is None:
         return {}
+    if sejak is not None:
+        q = q.filter(models.SparePartStok.waktu >= sejak)
     out: dict = {}
     for id_part, tipe, qty in q.all():
         out.setdefault(id_part, {})[tipe] = int(qty or 0)
@@ -511,6 +524,93 @@ async def create_inv_part(
     db.refresh(part)
     await manager.broadcast("REFRESH_INVENTARIS")
     return {"message": "Part berhasil ditambahkan.", "id_part": part.id_part}
+
+
+@router.get("/api/inventaris/parts/{id_part}")
+def get_inv_part_detail(
+    id_part: int,
+    db: Session = Depends(get_db),
+    current_user: models.Pengguna = Depends(get_current_user),
+):
+    """
+    One part: identity, and its balance broken down PER GUDANG.
+
+    The Kartu Riwayat card needs both. `/api/inventaris/parts` already carries
+    the identity but only a single summed `stok_sekarang`, and the movement
+    ledger at `/api/inventaris/stok?id_part=` carries the timeline but no
+    identity — so this fills the one gap rather than duplicating either.
+
+    ── Why per gudang, and per gudang only ──
+
+    `id_gudang` is the pool every balance is scoped by: the movement form, the
+    opening balance on part creation, and both halves of a transfer all write
+    it. `id_lokasi` / `site_from` / `site_to` on `sparepart_stok` are older
+    region-tree columns kept only so existing transfer history keeps rendering —
+    a balance grouped by those would not match what any issuing screen shows.
+
+    Read-only and open to any authenticated role: a technician needs to know
+    where a part is before asking for it, and this writes nothing.
+    """
+    p = (
+        db.query(models.SparePart)
+        .options(
+            joinedload(models.SparePart.kategori_ref),
+            joinedload(models.SparePart.kategori_alat_ref),
+            joinedload(models.SparePart.varian_ref),
+        )
+        .filter(models.SparePart.id_part == id_part)
+        .first()
+    )
+    if not p:
+        raise HTTPException(status_code=404, detail="Suku cadang tidak ditemukan.")
+
+    # One grouped query rather than _net_stok_map() once per warehouse. Same
+    # expression either way, so the total below cannot drift from the Items
+    # Master figure.
+    rows = (
+        db.query(
+            models.SparePartStok.id_gudang,
+            models.Gudang.nama,
+            _net_stok_expr(),
+        )
+        .outerjoin(models.Gudang, models.Gudang.id_gudang == models.SparePartStok.id_gudang)
+        .filter(models.SparePartStok.id_part == id_part)
+        .group_by(models.SparePartStok.id_gudang, models.Gudang.nama)
+        .order_by(models.Gudang.nama)
+        .all()
+    )
+    per_gudang = [
+        {
+            "id_gudang": g,
+            # Movements written before `id_gudang` existed have none. Saying so
+            # is better than folding them into an arbitrary warehouse.
+            "nama": nama or "(tanpa gudang)",
+            "stok": int(qty or 0),
+        }
+        for g, nama, qty in rows
+    ]
+    total = sum(x["stok"] for x in per_gudang)
+    kat = p.kategori_ref
+
+    return {
+        "id_part": p.id_part,
+        "nama_part": p.nama_part,
+        "unit": p.unit,
+        "harga_satuan": p.harga_satuan,
+        "stok_min": p.stok_min,
+        "stok_sekarang": total,
+        "status_stok": _stok_status(total, p.stok_min or 0, None),
+        "auto_demand": p.auto_demand,
+        "nama_kategori": kat.nama if kat else None,
+        "subsistem": kat.subsistem if kat else None,
+        "kode_alat": p.kode_alat,
+        "nama_alat": p.kategori_alat_ref.nama_alat if p.kategori_alat_ref else None,
+        # NULL means "fits every model of this tool" — the common case.
+        "id_varian": p.id_varian,
+        "nama_varian": p.varian_ref.nama_varian if p.varian_ref else None,
+        "universal": p.id_varian is None,
+        "per_gudang": per_gudang,
+    }
 
 
 @router.put("/api/inventaris/parts/{id_part}",
@@ -1130,7 +1230,18 @@ def get_pemakaian_list(
 
 # ── Dasbor Inventaris (stock dashboard) ────────────────────────────
 
-STOK_STATUS_ORDER = ["MINUS", "KOSONG", "KRITIS", "DI BAWAH MIN", "AMAN", "DI ATAS MAX"]
+# "DI ATAS MAX" is NOT in this list, and its absence is the point.
+#
+# `SparePart` has no `stok_max` column, so `_stok_status()` is only ever called
+# with `stok_max=None` and can never return it. Listing it here made the
+# dashboard's status chart carry a permanent zero segment and print a legend
+# entry for a category that cannot exist — a tile that reads as real data and is
+# structurally incapable of being non-zero.
+#
+# The status itself stays in `_stok_status()`, documented as reserved. The
+# client's poster asks for MINIMUM stock, not maximum, so adding the column to
+# make this reachable would be inventing a requirement rather than meeting one.
+STOK_STATUS_ORDER = ["MINUS", "KOSONG", "KRITIS", "DI BAWAH MIN", "AMAN"]
 
 # Human labels for the movement vocabulary, in the order the printed report
 # lists them under "TRANSAKSI BARANG PER PERIODE".
@@ -1142,6 +1253,157 @@ GERAKAN_LABEL = [
     ("ADJ_IN", "Penyesuaian Masuk"),
     ("ADJ_OUT", "Penyesuaian Keluar"),
 ]
+
+
+@router.get("/api/inventaris/hirarki")
+def get_hirarki_part(
+    kode_alat: Optional[str] = None,
+    id_gudang: Optional[int] = None,
+    db: Session = Depends(get_db),
+    current_user: models.Pengguna = Depends(get_current_user),
+):
+    """
+    The BOM tree: alat kerja → subsistem → kategori → part.
+
+    The client's matrix asks for this as *"Hierarki Part ▸ Tree ▸ Struktur BOM,
+    input Jenis alat, output Tree, klik part buka detail & history"* — the one
+    line marked High that had no implementation at all.
+
+    Two call shapes:
+
+      * **no `kode_alat`** → the INDEX for the selector: every tool type that
+        actually has spareparts, with its part count.
+      * **`kode_alat=XXX`** → the tree for that tool.
+
+    ── Why the index only lists tools that HAVE parts ──
+
+    17 of the 104 katalog tool types have any sparepart registered. A selector
+    offering all 104 would leave 87 choices rendering an empty tree, which reads
+    as a broken feature rather than as an answer — so the list is the 17, and
+    `cakupan` carries both numbers so the UI can state the gap plainly. The
+    missing 87 are data yet to be entered, and saying so is more useful than
+    hiding it or pretending it is a fault.
+
+    ── Stock is not recomputed here ──
+
+    `_net_stok_map()` and `_stok_status()` are the same helpers the Items Master
+    uses, so a part's stock in the tree cannot disagree with its stock in the
+    table. `SparePartStok.GERAKAN_MASUK` / `GERAKAN_KELUAR` remain the single
+    source of truth for what adds versus removes; a second implementation here
+    would be a second thing to keep correct.
+
+    ── Three levels here, often two on screen ──
+
+    The payload keeps `subsistem → kategori → part` because that is the true
+    shape of the data. But in the catalogue as it stands, EVERY
+    (kode_alat, subsistem) pair has exactly one kategori, and that kategori is
+    named "SUBSISTEM — TOOL NAME" — so drawing it would add a level that always
+    has one child and whose label restates its parent. That looks like structure
+    while carrying no information.
+
+    So the renderer collapses any kategori level with a single child, which is a
+    rule about the SHAPE rather than about today's data: if the catalogue is ever
+    split so a tool has two categories under one subsistem, the level reappears
+    on its own. Flattening it here instead would have thrown that away
+    permanently.
+    """
+    total_alat = db.query(models.KategoriAlat).count()
+
+    # ── The selector index ──
+    if not kode_alat:
+        rows = (
+            db.query(
+                models.SparePart.kode_alat,
+                models.KategoriAlat.nama_alat,
+                func.count(models.SparePart.id_part),
+            )
+            .join(
+                models.KategoriAlat,
+                models.KategoriAlat.kode_alat == models.SparePart.kode_alat,
+            )
+            .filter(models.SparePart.kode_alat.isnot(None))
+            .group_by(models.SparePart.kode_alat, models.KategoriAlat.nama_alat)
+            .order_by(models.KategoriAlat.nama_alat)
+            .all()
+        )
+        return {
+            "alat": [
+                {"kode_alat": k, "nama_alat": n, "jumlah_part": int(c)}
+                for k, n, c in rows
+            ],
+            "cakupan": {"dengan_part": len(rows), "total_alat": total_alat},
+        }
+
+    alat = db.query(models.KategoriAlat).filter_by(kode_alat=kode_alat).first()
+    if not alat:
+        raise HTTPException(status_code=404, detail="Alat kerja tidak ditemukan.")
+
+    parts = (
+        db.query(models.SparePart)
+        .options(
+            joinedload(models.SparePart.kategori_ref),
+            joinedload(models.SparePart.varian_ref),
+        )
+        .filter(models.SparePart.kode_alat == kode_alat)
+        .order_by(models.SparePart.nama_part)
+        .all()
+    )
+
+    stok_map = _net_stok_map(db, None, id_gudang)
+
+    # subsistem → kategori → [part]. Both levels are grouped in Python rather
+    # than by a nested query: it is ~200 rows at most for one tool, and one pass
+    # keeps the ordering rules (below) in a single readable place.
+    tree: dict = {}
+    for p in parts:
+        kat = p.kategori_ref
+        sub = (kat.subsistem if kat else None) or "LAIN-LAIN"
+        kat_nama = (kat.nama if kat else None) or "Tanpa Kategori"
+        stok = int(stok_map.get(p.id_part, 0))
+        node = {
+            "id_part": p.id_part,
+            "nama_part": p.nama_part,
+            "unit": p.unit,
+            "harga_satuan": p.harga_satuan,
+            "stok_min": p.stok_min,
+            "stok_sekarang": stok,
+            "status_stok": _stok_status(stok, p.stok_min or 0, None),
+            # NULL is the COMMON case and means "fits every model of this tool".
+            # The renderer must say so — leaving it blank reads as missing data
+            # about a part when it is a positive fact about its compatibility.
+            "id_varian": p.id_varian,
+            "nama_varian": p.varian_ref.nama_varian if p.varian_ref else None,
+            "universal": p.id_varian is None,
+        }
+        tree.setdefault(sub, {}).setdefault(kat_nama, []).append(node)
+
+    # Subsistems in a fixed order so the tree does not reshuffle between tools;
+    # anything unrecognised sorts after the four known ones rather than being
+    # dropped.
+    SUB_ORDER = ["ENGINE", "ELECTRIC", "MECHANIC", "CONSUMABLES"]
+    def _sub_key(name):
+        return (SUB_ORDER.index(name) if name in SUB_ORDER else len(SUB_ORDER), name)
+
+    subsistem = []
+    for sub in sorted(tree, key=_sub_key):
+        kategori = [
+            {"nama": nama, "parts": items, "jumlah_part": len(items)}
+            for nama, items in sorted(tree[sub].items())
+        ]
+        subsistem.append({
+            "nama": sub,
+            "kategori": kategori,
+            "jumlah_part": sum(k["jumlah_part"] for k in kategori),
+        })
+
+    return {
+        "kode_alat": alat.kode_alat,
+        "nama_alat": alat.nama_alat,
+        "kelompok": alat.kelompok,
+        "jumlah_part": len(parts),
+        "subsistem": subsistem,
+        "cakupan": {"total_alat": total_alat},
+    }
 
 
 @router.get("/api/inventaris/dashboard")
@@ -1292,6 +1554,66 @@ def get_inv_dashboard(
         monthly_q.group_by("bulan").order_by("bulan").all() if monthly_q is not None else []
     )
 
+    # ── Fast Moving / Slow Moving ─────────────────────────────────────
+    #
+    # The client's poster asks for it under Inventory Monitoring. It is a
+    # CONSUMPTION RATE, so it needs a window: an all-time total would rank a
+    # part bought in bulk three years ago above one issued weekly.
+    #
+    # The window is fixed at 12 months rather than following the Dari/Sampai
+    # filter above, because that filter drives the TRANSACTION figures and is
+    # routinely set to a single month — a classification computed over 30 days
+    # would reshuffle every time someone changed the date box, which is not what
+    # "slow moving" means. `pergerakan.sejak` is returned so the panel can state
+    # the period; a classification whose period is invisible is not
+    # interpretable.
+    FAST_SLOW_BULAN = 12
+    sejak_fs = datetime.now() - timedelta(days=FAST_SLOW_BULAN * 30)
+    keluar_window = _movement_breakdown(db, id_lokasi, id_gudang, sejak=sejak_fs)
+
+    konsumsi = []
+    for p in all_parts:
+        g = keluar_window.get(p.id_part, {})
+        # Outbound only, and returns to a vendor are NOT consumption — they are
+        # stock leaving because it was wrong, not because it was used.
+        qty = int(g.get("OUT", 0) or 0)
+        konsumsi.append((p, qty))
+
+    bergerak = sorted(
+        [(p, q) for p, q in konsumsi if q > 0], key=lambda x: x[1], reverse=True
+    )
+    diam = [p for p, q in konsumsi if q == 0]
+
+    # Terciles over the parts that MOVED. Ranking the whole catalogue would put
+    # everything that never moved into "slow" and make the boundary meaningless.
+    n = len(bergerak)
+    cut = max(1, n // 3) if n else 0
+
+    def _fs_row(p, q):
+        return {
+            "id_part": p.id_part,
+            "nama_part": p.nama_part,
+            "unit": p.unit,
+            "kode_alat": p.kode_alat,
+            "nama_alat": p.kategori_alat_ref.nama_alat if p.kategori_alat_ref else None,
+            "stok_sekarang": int(stok_map.get(p.id_part, 0)),
+            "keluar": q,
+        }
+
+    pergerakan = {
+        "bulan": FAST_SLOW_BULAN,
+        "sejak": sejak_fs.strftime("%Y-%m-%d"),
+        "fast_count": len(bergerak[:cut]),
+        "slow_count": len(bergerak[cut:]),
+        # Named for what it IS. "Dead stock" is a judgement — a spare for a
+        # rarely-failing machine that has not been needed in a year is doing
+        # exactly its job, and calling it dead invites someone to write it off.
+        "diam_count": len(diam),
+        "fast": [_fs_row(p, q) for p, q in bergerak[:cut]][:15],
+        "slow": [_fs_row(p, q) for p, q in bergerak[cut:]][-15:],
+        "diam": [_fs_row(p, 0) for p in diam][:15],
+    }
+
     return {
         "periode": {"dari": str(dari), "sampai": str(sampai)},
 
@@ -1311,6 +1633,7 @@ def get_inv_dashboard(
         # "Pemasok" tile that read it is gone from index.html too.
         "critical_count": len(critical_list),
         "critical_list": critical_list[:50],
+        "pergerakan": pergerakan,
         "top_value": top_value_list[:15],
         "by_subsistem": by_subsistem,
         "by_alat": by_alat,

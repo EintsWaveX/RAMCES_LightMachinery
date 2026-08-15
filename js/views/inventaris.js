@@ -39,6 +39,11 @@
   const panelParts = el("inv-panel-parts");
   const panelTransaksi = el("inv-panel-transaksi");
   const panelTransfer = el("inv-panel-transfer");
+  const tabHirarki = el("inv-tab-hirarki");
+  const panelHirarki = el("inv-panel-hirarki");
+  const hirarkiAlat = el("inv-hirarki-alat");
+  const hirarkiTree = el("inv-hirarki-tree");
+  const hirarkiCakupan = el("inv-hirarki-cakupan");
   const toolbar = el("inv-toolbar");
   const toolbarActions = el("inv-toolbar-actions");
   const searchInput = el("inv-parts-search");
@@ -49,6 +54,7 @@
     { btn: tabParts, panel: panelParts, id: "parts" },
     { btn: tabTransaksi, panel: panelTransaksi, id: "transaksi" },
     { btn: tabTransfer, panel: panelTransfer, id: "transfer" },
+    { btn: tabHirarki, panel: panelHirarki, id: "hirarki" },
   ];
 
   function setInvTab(which) {
@@ -62,20 +68,28 @@
     });
     // The toolbar belongs to Parts and Transfer and lives outside every panel,
     // so it has to be hidden explicitly on the tabs that don't want it.
-    toolbar?.classList.toggle("hidden", which === "dashboard" || which === "transaksi");
-    toolbarActions?.classList.toggle("hidden", which === "dashboard" || which === "transaksi");
+    const noToolbar =
+      which === "dashboard" || which === "transaksi" || which === "hirarki";
+    toolbar?.classList.toggle("hidden", noToolbar);
+    toolbarActions?.classList.toggle("hidden", noToolbar);
 
-    // Catalogue actions are Parts-only; Transfer is the one action that also
-    // belongs to the Transfer tab. `.relative` is the wrapper around the bulk
-    // dropdown, so hiding the button alone would leave an empty box behind.
-    const partsOnly = which === "parts";
+    // ⚠️ Role gating has to survive this.
+    //
+    // These four ids also carry `data-write="inventaris"`, so applyRoleGating()
+    // hides them for a read-only role — and then the un-hide below would put
+    // them straight back the moment that user opened the Parts tab. A tab
+    // switcher must never be able to grant a control the role gate removed, so
+    // both conditions are ANDed. The server refuses regardless, but a button
+    // that appears and 403s is worse than one that never appears.
+    const mayWrite = window.canWrite ? canWrite("inventaris") : true;
+    const partsOnly = which === "parts" && mayWrite;
     ["inv-btn-add-part", "inv-btn-parts-category", "inv-btn-gudang"].forEach((id) =>
       el(id)?.classList.toggle("hidden", !partsOnly),
     );
     el("inv-btn-bulk-toggle")?.closest(".relative")?.classList.toggle("hidden", !partsOnly);
     el("inv-btn-transfer")?.classList.toggle(
       "hidden",
-      which !== "parts" && which !== "transfer",
+      !mayWrite || (which !== "parts" && which !== "transfer"),
     );
 
     if (searchInput) searchInput.value = "";
@@ -83,6 +97,7 @@
     if (which === "parts") { loadInvParts(); loadInvKategoriOptions(); loadGudangOptions(); }
     if (which === "transaksi") { loadPartCatalog(); loadLedger({ reset: true }); }
     if (which === "transfer") loadInvTransfer();
+    if (which === "hirarki") loadInvHirarki();
   }
 
   ALL_TABS.forEach(({ btn, id }) => btn?.addEventListener("click", () => setInvTab(id)));
@@ -229,18 +244,26 @@
   // DASBOR INVENTARIS — stock dashboard
   // ══════════════════════════════════════════════════════════════════
 
-  // The six Items Master states, in severity order, rolled into four bands.
+  // The five Items Master states, in severity order, rolled into three bands.
   //
-  // Bands exist because the part-to-whole bar can carry four segments legibly
-  // and the status scale only defines four reserved tones; the six exact counts
-  // live in the counter tiles above it, so no detail is lost. Each tile inherits
-  // its band's tone and adds its own icon and label — `warning` and `serious`
-  // sit below 3:1 on a white surface, so colour must never carry the meaning.
+  // Bands exist because the part-to-whole bar can carry a few segments legibly;
+  // the exact per-status counts live in the counter tiles above it, so no detail
+  // is lost. Each tile inherits its band's tone and adds its own icon and label —
+  // `warning` and `serious` sit below 3:1 on a white surface, so colour must
+  // never carry the meaning on its own.
+  //
+  // ⚠️ There is no `atasmax` band, and that is deliberate. It used to sit here
+  // as a fourth segment while the matching "DI ATAS MAX" tile had already been
+  // removed from STOK_STATUS_META below — so `bandTotals` summed an empty filter
+  // and the chart carried a segment, and the legend an entry, that were 0 on
+  // every single load. A category that is structurally incapable of being
+  // non-zero reads as real data and is worse than no category at all.
+  // `SparePart` has no `stok_max` column; see `_stok_status()` in
+  // api/inventaris.py.
   const STOK_BANDS = [
     { key: "bermasalah", label: "Bermasalah", tone: "critical" },
     { key: "perhatian", label: "Perlu Perhatian", tone: "warning" },
     { key: "aman", label: "Aman", tone: "good" },
-    { key: "atasmax", label: "Di Atas Maksimum", tone: "neutral" },
   ];
 
   const STOK_STATUS_META = [
@@ -254,10 +277,12 @@
       hint: "tepat di stok minimum" },
     { key: "AMAN", label: "Aman", icon: "fa-circle-check", band: "aman",
       hint: "di atas stok minimum" },
-    // "DI ATAS MAX" used to sit here as a sixth tile. _stok_status() in main.py
-    // is only ever called with stok_max=None (there is no stok_max column on
-    // SparePart), so the bucket could never be non-zero — a permanent 0 that
-    // read as a real category. Removed until the column exists.
+    // "DI ATAS MAX" used to sit here as a sixth tile. `_stok_status()` in
+    // api/inventaris.py is only ever called with stok_max=None (there is no
+    // stok_max column on SparePart), so the bucket could never be non-zero — a
+    // permanent 0 that read as a real category. Its BAND was removed at the same
+    // time; removing only one of the two is what left the chart legend still
+    // printing "Di Atas Maksimum 0" long after the tile had gone.
   ];
 
   function bandTone(t, key) {
@@ -673,6 +698,41 @@
     if (el("sd-total-parts")) el("sd-total-parts").textContent = (d.total_parts ?? 0).toLocaleString("id-ID");
     if (el("sd-total-types")) el("sd-total-types").textContent = (d.total_types ?? 0).toLocaleString("id-ID");
     if (el("sd-auto-demand")) el("sd-auto-demand").textContent = (d.auto_demand ?? 0).toLocaleString("id-ID");
+
+    // ── Perputaran suku cadang (fast / slow / tanpa pergerakan) ──
+    //
+    // Every row is a link into the history card, because "this part moved 94
+    // times" is the beginning of a question, not the end of one.
+    const g = d.pergerakan;
+    if (g) {
+      if (el("sd-fs-window")) {
+        el("sd-fs-window").textContent =
+          `${g.bulan} bulan terakhir — sejak ${g.sejak}`;
+      }
+      const fsList = (rows, empty) =>
+        rows.length
+          ? rows
+              .map(
+                (r) => `
+          <li class="flex items-baseline gap-2 text-[11px]">
+            <button type="button" onclick="window.openPartHistory(${r.id_part})"
+                class="text-left text-kai-blue dark:text-blue-400 hover:underline truncate min-w-0 flex-1"
+                title="${r.nama_part}">${r.nama_part}</button>
+            <span class="tabular-nums font-bold text-gray-600 dark:text-gray-300 shrink-0">
+              ${r.keluar.toLocaleString("id-ID")}</span>
+          </li>`,
+              )
+              .join("")
+          : `<li class="empty-state">${empty}</li>`;
+
+      ["fast", "slow", "diam"].forEach((k) => {
+        const cnt = el(`sd-fs-${k}-count`);
+        if (cnt) cnt.textContent = (g[`${k}_count`] ?? 0).toLocaleString("id-ID");
+      });
+      if (el("sd-fs-fast")) el("sd-fs-fast").innerHTML = fsList(g.fast || [], "Belum ada pemakaian.");
+      if (el("sd-fs-slow")) el("sd-fs-slow").innerHTML = fsList(g.slow || [], "Belum ada pemakaian.");
+      if (el("sd-fs-diam")) el("sd-fs-diam").innerHTML = fsList(g.diam || [], "Semua suku cadang bergerak.");
+    }
 
     // ── Perlu segera dipesan ──
     if (el("sd-critical-badge")) el("sd-critical-badge").textContent = d.critical_count ?? 0;
@@ -1638,7 +1698,9 @@
     tbody.innerHTML = page.items.map(p => {
       const meta = STOK_STATUS_META.find((m) => m.key === p.status_stok);
       const statusColor = bandTone(t, meta?.band);
-      const isProblem = meta && meta.band !== "aman" && meta.band !== "atasmax";
+      // `aman` is the only non-problem band now that `atasmax` is gone; the
+      // second clause it used to carry could never match anything again.
+      const isProblem = meta && meta.band !== "aman";
       const rowCls = isProblem
         ? "bg-red-50/40 dark:bg-red-900/10"
         : "hover:bg-gray-50 dark:hover:bg-gray-700/30";
@@ -1653,6 +1715,13 @@
       return `<tr class="${rowCls} border-b border-gray-50 dark:border-gray-700/50 transition">
         <td class="px-3 py-2.5 whitespace-nowrap">
           <div class="flex items-center gap-0.5">
+            <!-- The history card is READ-only, so it is not gated with
+                 data-write — a technician who may not edit a part still needs to
+                 see where it is and what has moved. -->
+            <button class="btn-icon" title="Kartu riwayat suku cadang"
+                onclick="window.openPartHistory(${p.id_part})">
+              <i class="fas fa-clock-rotate-left text-[11px]"></i>
+            </button>
             <button class="inv-part-edit btn-icon" data-id="${p.id_part}" title="Ubah suku cadang">
               <i class="fas fa-pen text-[11px]"></i>
             </button>
@@ -1744,6 +1813,326 @@
 
   // ── Transfer history loader ────────────────────────────────────────
   let _transferRows = [];
+
+  // ══════════════════════════════════════════════════════════════════
+  // Hierarki Suku Cadang — the BOM tree
+  // ══════════════════════════════════════════════════════════════════
+  //
+  // The client's "Hierarki Part ▸ Tree ▸ Struktur BOM": pick a tool type, see
+  // its parts grouped by subsistem, click one to open its history card.
+  //
+  // Rendered as a real <ul>/<li> nesting rather than indented divs, because
+  // that is what a tree IS — a screen reader announces the levels and the item
+  // counts for free, which no amount of padding-left can do.
+
+  // Which subsistem gets which icon. Unknown ones fall back rather than being
+  // dropped, so a catalogue that adds a fifth still renders.
+  const SUBSISTEM_ICON = {
+    ENGINE: "fa-gear",
+    ELECTRIC: "fa-bolt",
+    MECHANIC: "fa-screwdriver-wrench",
+    CONSUMABLES: "fa-droplet",
+  };
+
+  let _hirarkiLoaded = false;
+
+  async function loadInvHirarki() {
+    if (!hirarkiAlat || !hirarkiTree) return;
+
+    // The selector is fetched once per session — the catalogue of which tools
+    // have parts changes only when parts are created.
+    if (!_hirarkiLoaded) {
+      try {
+        const res = await apiFetch("/inventaris/hirarki", { background: true });
+        if (!res.ok) throw new Error();
+        const d = await res.json();
+        const opts = (d.alat || [])
+          .map(
+            (a) =>
+              `<option value="${a.kode_alat}">${a.kode_alat} — ${a.nama_alat} (${a.jumlah_part})</option>`,
+          )
+          .join("");
+        hirarkiAlat.innerHTML =
+          `<option value="">— Pilih jenis alat kerja —</option>` + opts;
+
+        // State the coverage plainly. 17 of 104 tool types have parts; a
+        // selector that silently listed only those would look complete while
+        // hiding that 87 have nothing yet. Naming the gap makes it read as work
+        // outstanding rather than as a defect in this screen.
+        const c = d.cakupan || {};
+        if (hirarkiCakupan) {
+          hirarkiCakupan.innerHTML =
+            `<i class="fas fa-circle-info mr-1 opacity-60"></i>` +
+            `<b>${c.dengan_part ?? 0}</b> dari <b>${c.total_alat ?? 0}</b> alat kerja ` +
+            `sudah punya suku cadang terdaftar. Sisanya belum didata — ` +
+            `tambahkan lewat tab <b>Daftar Suku Cadang</b>.`;
+        }
+        _hirarkiLoaded = true;
+      } catch (e) {
+        hirarkiTree.innerHTML = `<p class="empty-state">Gagal memuat daftar alat kerja.</p>`;
+        return;
+      }
+    }
+
+    if (!hirarkiAlat.value) {
+      hirarkiTree.innerHTML = `<p class="empty-state">
+        Pilih jenis alat kerja di atas untuk melihat struktur suku cadangnya.</p>`;
+      return;
+    }
+    await renderInvHirarki(hirarkiAlat.value);
+  }
+
+  async function renderInvHirarki(kodeAlat) {
+    hirarkiTree.setAttribute("aria-busy", "true");
+    hirarkiTree.innerHTML = `<p class="empty-state">Memuat…</p>`;
+    let d;
+    try {
+      const res = await apiFetch(
+        `/inventaris/hirarki?kode_alat=${encodeURIComponent(kodeAlat)}`,
+        { background: true },
+      );
+      if (!res.ok) throw new Error();
+      d = await res.json();
+    } catch (e) {
+      hirarkiTree.removeAttribute("aria-busy");
+      hirarkiTree.innerHTML = `<p class="empty-state">Gagal memuat hierarki suku cadang.</p>`;
+      return;
+    }
+
+    if (!d.subsistem?.length) {
+      hirarkiTree.removeAttribute("aria-busy");
+      hirarkiTree.innerHTML = `<p class="empty-state">
+        Belum ada suku cadang terdaftar untuk ${d.nama_alat || kodeAlat}.</p>`;
+      return;
+    }
+
+    // Theme tokens are read per render, exactly as every other renderer here
+    // does — `t` is a local in each, not a shared binding, and the palette
+    // changes when the user toggles dark mode mid-session.
+    const t = KAI_VIZ.theme();
+
+    const partLi = (p) => {
+      const meta = STOK_STATUS_META.find((m) => m.key === p.status_stok);
+      const color = bandTone(t, meta?.band);
+      // `id_varian` NULL is the COMMON case and means "fits every model of this
+      // tool" — a positive fact. Rendering it as a blank would read as missing
+      // data about the part instead.
+      const cocok = p.universal
+        ? `<span class="badge badge-neutral">semua model</span>`
+        : `<span class="badge badge-info">${p.nama_varian || "model tertentu"}</span>`;
+      return `
+        <li class="flex flex-wrap items-center gap-x-3 gap-y-1 py-2 pl-6 border-b border-gray-50 dark:border-gray-700/50 last:border-0">
+          <button type="button" onclick="window.openPartHistory(${p.id_part})"
+              class="text-left font-semibold text-sm text-kai-blue dark:text-blue-400 hover:underline min-w-0 flex-1">
+            ${p.nama_part}
+          </button>
+          ${cocok}
+          <span class="tabular-nums text-sm font-bold shrink-0" style="color:${color}">
+            ${p.stok_sekarang.toLocaleString("id-ID")}
+            <span class="text-[10px] font-normal text-gray-400">${p.unit || ""}</span>
+          </span>
+          <span class="badge ${
+            meta && meta.band !== "aman" ? "badge-warn" : "badge-so"
+          } shrink-0">${p.status_stok}</span>
+        </li>`;
+    };
+
+    const kategoriBlock = (k, collapse) =>
+      collapse
+        ? k.parts.map(partLi).join("")
+        : `<li class="pl-4">
+             <p class="text-[11px] font-bold tracking-wide text-gray-500 dark:text-gray-400 uppercase pt-2">
+               ${k.nama} <span class="font-normal opacity-70">(${k.jumlah_part})</span>
+             </p>
+             <ul>${k.parts.map(partLi).join("")}</ul>
+           </li>`;
+
+    const subBlock = (s) => {
+      // Collapse a kategori level that has exactly one child — in this
+      // catalogue every (alat, subsistem) pair has one kategori named
+      // "SUBSISTEM — TOOL", so drawing it would add a level that always has one
+      // child and whose label restates its parent. The rule is about SHAPE, not
+      // about today's data: split the catalogue later and the level returns.
+      const collapse = s.kategori.length === 1;
+      return `
+        <li class="border border-gray-100 dark:border-gray-700 rounded-lg overflow-hidden">
+          <div class="flex items-center gap-2 px-3 py-2 bg-gray-50 dark:bg-gray-700/40">
+            <i class="fas ${SUBSISTEM_ICON[s.nama] || "fa-cube"} text-kai-blue dark:text-blue-400 text-xs"></i>
+            <span class="font-bold text-xs tracking-wide text-gray-700 dark:text-gray-200 uppercase">${s.nama}</span>
+            <span class="badge badge-neutral ml-auto">${s.jumlah_part} suku cadang</span>
+          </div>
+          <ul>${s.kategori.map((k) => kategoriBlock(k, collapse)).join("")}</ul>
+        </li>`;
+    };
+
+    hirarkiTree.innerHTML = `
+      <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1 mb-3">
+        <h3 class="font-bold text-sm text-gray-800 dark:text-white">
+          ${d.kode_alat} — ${d.nama_alat}
+        </h3>
+        <span class="badge badge-info">${d.jumlah_part} suku cadang</span>
+        ${d.kelompok ? `<span class="badge badge-neutral">${d.kelompok}</span>` : ""}
+        <span class="text-[11px] text-gray-400 basis-full">
+          Klik nama suku cadang untuk membuka kartu riwayatnya.
+        </span>
+      </div>
+      <ul class="space-y-3">${d.subsistem.map(subBlock).join("")}</ul>`;
+    hirarkiTree.removeAttribute("aria-busy");
+  }
+
+  hirarkiAlat?.addEventListener("change", () => loadInvHirarki());
+
+  // ══════════════════════════════════════════════════════════════════
+  // Kartu Riwayat Suku Cadang — the per-part history card
+  // ══════════════════════════════════════════════════════════════════
+  //
+  // The client's "History Card Part ▸ Riwayat ▸ Timeline transaksi part". The
+  // data path already existed — `sparepart_stok` is append-only by design and
+  // `/api/inventaris/stok?id_part=` has always returned the per-part ledger —
+  // so this is the screen, not a new source of truth.
+  //
+  // Two requests, deliberately: identity + per-gudang balance from
+  // /parts/{id}, and the movements from /stok. Neither endpoint grew a copy of
+  // the other's job.
+
+  const GERAKAN_META = {
+    IN:           { label: "Masuk",              icon: "fa-arrow-down",  masuk: true },
+    OUT:          { label: "Keluar",             icon: "fa-arrow-up",    masuk: false },
+    RETUR_CUST:   { label: "Retur dari Customer", icon: "fa-rotate-left", masuk: true },
+    RETUR_VENDOR: { label: "Retur ke Vendor",    icon: "fa-rotate-right", masuk: false },
+    ADJ_IN:       { label: "Penyesuaian +",      icon: "fa-plus",        masuk: true },
+    ADJ_OUT:      { label: "Penyesuaian −",      icon: "fa-minus",       masuk: false },
+  };
+
+  async function renderPartHistory(idPart) {
+    const body = el("inv-ph-body");
+    if (!body) return;
+    body.setAttribute("aria-busy", "true");
+    body.innerHTML = `<p class="empty-state">Memuat…</p>`;
+
+    let detail, ledger;
+    try {
+      // apiFetch only THROWS on 401, so both have to be checked explicitly —
+      // otherwise a 404 would render as an empty card rather than as an error.
+      const [rd, rl] = await Promise.all([
+        apiFetch(`/inventaris/parts/${idPart}`, { background: true }),
+        apiFetch(`/inventaris/stok?id_part=${idPart}&limit=200`, { background: true }),
+      ]);
+      if (!rd.ok || !rl.ok) throw new Error();
+      detail = await rd.json();
+      ledger = await rl.json();
+    } catch (e) {
+      body.removeAttribute("aria-busy");
+      body.innerHTML = `<p class="empty-state">Gagal memuat kartu riwayat suku cadang.</p>`;
+      return;
+    }
+
+    const sub = el("inv-ph-subtitle");
+    if (sub) {
+      sub.textContent =
+        `${detail.kode_alat || "—"} ${detail.nama_alat || ""} · ` +
+        `${detail.subsistem || "—"} · ` +
+        (detail.universal ? "cocok untuk semua model" : detail.nama_varian || "model tertentu");
+    }
+    const title = el("inv-ph-title");
+    if (title) title.textContent = detail.nama_part;
+
+    const t = KAI_VIZ.theme();
+    const meta = STOK_STATUS_META.find((m) => m.key === detail.status_stok);
+    const color = bandTone(t, meta?.band);
+
+    // Per-gudang, because `id_gudang` is the pool every balance is scoped by —
+    // "24 in total" is not actionable if a technician cannot tell which shelf.
+    const gudangRows = (detail.per_gudang || []).length
+      ? detail.per_gudang
+          .map(
+            (g) => `
+        <div class="flex items-baseline justify-between gap-3 py-1.5 border-b border-gray-50 dark:border-gray-700/50 last:border-0">
+          <span class="text-xs text-gray-600 dark:text-gray-300 min-w-0 truncate">${g.nama}</span>
+          <span class="tabular-nums text-sm font-bold shrink-0">${g.stok.toLocaleString("id-ID")}
+            <span class="text-[10px] font-normal text-gray-400">${detail.unit || ""}</span></span>
+        </div>`,
+          )
+          .join("")
+      : `<p class="empty-state">Belum ada pergerakan di gudang mana pun.</p>`;
+
+    const movementRows = (ledger.items || []).length
+      ? ledger.items
+          .map((m) => {
+            const g = GERAKAN_META[m.tipe_gerakan] || { label: m.tipe_gerakan, icon: "fa-circle", masuk: true };
+            const sign = g.masuk ? "+" : "−";
+            const tone = g.masuk ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400";
+            return `
+              <tr>
+                <td class="px-3 py-2 text-xs whitespace-nowrap">${m.waktu || "—"}</td>
+                <td class="px-3 py-2 text-xs">
+                  <span class="badge ${g.masuk ? "badge-so" : "badge-tso"}">
+                    <i class="fas ${g.icon}"></i> ${g.label}</span>
+                </td>
+                <td class="px-3 py-2 text-xs text-right tabular-nums font-bold ${tone} whitespace-nowrap">
+                  ${sign}${Math.abs(m.jumlah).toLocaleString("id-ID")}
+                </td>
+                <td class="px-3 py-2 text-xs">${m.gudang || "—"}</td>
+                <td class="px-3 py-2 text-xs">${m.user || "—"}</td>
+                <td class="px-3 py-2 text-xs text-gray-500 dark:text-gray-400">${m.keterangan || "—"}</td>
+              </tr>`;
+          })
+          .join("")
+      : `<tr><td colspan="6" class="empty-state">Belum ada pergerakan tercatat untuk suku cadang ini.</td></tr>`;
+
+    const shown = (ledger.items || []).length;
+    const more =
+      ledger.total > shown
+        ? `<p class="text-[11px] text-gray-400 mt-2">Menampilkan ${shown} dari
+             ${ledger.total} pergerakan terakhir.</p>`
+        : "";
+
+    body.innerHTML = `
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+        <div class="sm:col-span-1 card p-3">
+          <p class="text-[10px] font-bold tracking-widest text-gray-400 uppercase mb-1">Stok saat ini</p>
+          <p class="text-2xl font-bold tabular-nums" style="color:${color}">
+            ${detail.stok_sekarang.toLocaleString("id-ID")}
+            <span class="text-xs font-normal text-gray-400">${detail.unit || ""}</span>
+          </p>
+          <p class="text-[11px] text-gray-400 mt-0.5">Minimum: ${detail.stok_min ?? 0}</p>
+          <span class="badge ${meta && meta.band !== "aman" ? "badge-warn" : "badge-so"} mt-2">
+            ${detail.status_stok}</span>
+        </div>
+        <div class="sm:col-span-2 card p-3">
+          <p class="text-[10px] font-bold tracking-widest text-gray-400 uppercase mb-1">Sebaran per gudang</p>
+          ${gudangRows}
+        </div>
+      </div>
+
+      <p class="text-[10px] font-bold tracking-widest text-gray-400 uppercase mb-1">Riwayat pergerakan</p>
+      <div class="table-stack-wrap overflow-x-auto border border-gray-100 dark:border-gray-700 rounded-lg">
+        <table class="table-stack table-timeline w-full text-left">
+          <thead class="bg-gray-50 dark:bg-gray-700/40">
+            <tr>
+              <th class="px-3 py-2 text-[10px] font-bold tracking-widest text-gray-400 uppercase">Waktu</th>
+              <th class="px-3 py-2 text-[10px] font-bold tracking-widest text-gray-400 uppercase">Jenis</th>
+              <th class="px-3 py-2 text-[10px] font-bold tracking-widest text-gray-400 uppercase text-right">Jumlah</th>
+              <th class="px-3 py-2 text-[10px] font-bold tracking-widest text-gray-400 uppercase">Gudang</th>
+              <th class="px-3 py-2 text-[10px] font-bold tracking-widest text-gray-400 uppercase">Oleh</th>
+              <th class="px-3 py-2 text-[10px] font-bold tracking-widest text-gray-400 uppercase">Keterangan</th>
+            </tr>
+          </thead>
+          <tbody>${movementRows}</tbody>
+        </table>
+      </div>
+      ${more}`;
+    body.removeAttribute("aria-busy");
+  }
+
+  window.openPartHistory = function (idPart) {
+    el("inv-part-history-modal")?.classList.remove("hidden");
+    renderPartHistory(idPart);
+  };
+
+  el("close-inv-part-history-modal")?.addEventListener("click", () =>
+    el("inv-part-history-modal")?.classList.add("hidden"),
+  );
 
   async function loadInvTransfer() {
     const tbody = document.getElementById("inv-transfer-body");

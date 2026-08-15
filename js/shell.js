@@ -49,7 +49,18 @@ function applyRoleGating(role) {
   // Write controls. Marked in the markup with `data-write="<area>"` so a new
   // button is gated by adding an attribute rather than an id to a list here.
   document.querySelectorAll("[data-write]").forEach((el) => {
-    el.classList.toggle("hidden", !canWrite(el.dataset.write, role));
+    const allowed = canWrite(el.dataset.write, role);
+    el.classList.toggle("hidden", !allowed);
+
+    // A gated FORM CONTROL needs disabling, not just hiding — hiding a checked
+    // radio would submit its value invisibly, and a hidden `required` one is an
+    // unfocusable invalid control the browser cannot report ("An invalid form
+    // control is not focusable"). Disabled inputs are excluded from both the
+    // submitted data and validation entirely.
+    el.querySelectorAll("input, select, textarea, button").forEach((f) => {
+      f.disabled = !allowed;
+      if (!allowed && f.checked) f.checked = false;
+    });
   });
 
   // The middle bottom-nav slot is "report a condition", not a destination. A

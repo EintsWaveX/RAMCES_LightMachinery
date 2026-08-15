@@ -64,6 +64,7 @@ import models
 from api.deps import (
     MAX_PAGE,
     assert_aset_region_scope,
+    assert_pengadaan_scope,
     assert_region_scope,
     get_current_user,
     get_db,
@@ -111,6 +112,9 @@ async def create_aset(
 
     peruntukan_norm, kode_peruntukan = normalise_peruntukan(aset_in.peruntukan)
     sumber_norm, id_pengadaan = normalise_sumber_pengadaan(aset_in.sumber_pengadaan)
+    # "admin daerah hanya input pengadaan 2" — the client's own matrix. Checked
+    # here rather than inside the normaliser, which is role-blind by design.
+    assert_pengadaan_scope(current_user, id_pengadaan)
 
     # 1. Hitung urutan (Sequence) berdasarkan kode_alat
     #
@@ -749,6 +753,10 @@ async def update_aset(
     # Rebuild the generated ID from updated fields
     peruntukan_norm, kode_peruntukan = normalise_peruntukan(aset_in.peruntukan)
     sumber_norm, id_pengadaan = normalise_sumber_pengadaan(aset_in.sumber_pengadaan)
+    # Also on EDIT, not just create: the segment is part of the primary key, so
+    # an ADMIN_WILAYAH editing an asset to PUSAT would regenerate the key and
+    # rewrite every child row into a state it may not author.
+    assert_pengadaan_scope(current_user, id_pengadaan)
     tahun = aset_in.tanggal_pembelian.year
     year_str = str(tahun)[-2:] if tahun >= 2000 else str(tahun)
 
