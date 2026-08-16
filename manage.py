@@ -91,6 +91,17 @@ def _add_seed_flags(parser: argparse.ArgumentParser) -> None:
         ),
     )
     parser.add_argument(
+        "--simulasi",
+        action="store_true",
+        help=(
+            "tambahkan riwayat operasional ke setiap aset yang belum punya: "
+            "kondisi SO/TSO/AFKIR beserta transisinya, mutasi, kalibrasi dan "
+            "pemakaian sparepart. MATI secara default. SETIAP BARIS DITANDAI "
+            "atas nama pengguna 'SIMULASI' dan diberi awalan [SIMULASI], dan "
+            "bisa dihapus seluruhnya lagi dengan `manage.py hapus-simulasi`."
+        ),
+    )
+    parser.add_argument(
         "--aset",
         type=int,
         default=100,
@@ -123,8 +134,32 @@ def cmd_seed(args) -> int:
         return 2
 
     return seeds.run_steps(
-        only=only, with_history=args.with_history, total_aset=args.aset
+        only=only,
+        with_history=args.with_history,
+        total_aset=args.aset,
+        simulasi_on=args.simulasi,
     )
+
+
+def cmd_hapus_simulasi(_args) -> int:
+    """
+    Remove every simulated row and restore each asset's opening state.
+
+    Not destructive the way `reset` is: it touches ONLY rows attributed to the
+    SIMULASI account, and restores `status_terakhir` / `id_lokasi` from the
+    opening `RiwayatKondisi` the importer wrote — a row the simulation never
+    touches. Real data, and anything a user actually filed, is out of reach by
+    construction, which is why this needs no confirmation prompt.
+    """
+    from database import SessionLocal
+    from seeds import simulasi
+
+    db = SessionLocal()
+    try:
+        simulasi.hapus(db)
+    finally:
+        db.close()
+    return 0
 
 
 def cmd_list(_args) -> int:
@@ -147,6 +182,35 @@ def cmd_verify(_args) -> int:
 def cmd_status(_args) -> int:
     print(f"Database: {engine.url}\n")
     print(_table_summary())
+
+    # Simulated rows are called out SEPARATELY, so a database carrying
+    # fabricated history can never be mistaken for one that does not. This is
+    # the whole bargain that makes the simulation acceptable against a real
+    # fleet: it is marked, it is countable, and it is removable.
+    with engine.connect() as conn:
+        try:
+            uid = conn.execute(
+                sa_text("SELECT id_pengguna FROM pengguna WHERE username = 'SIMULASI'")
+            ).scalar()
+        except Exception:  # noqa: BLE001 — a status view must not raise
+            uid = None
+        if uid:
+            print("\n  Data SIMULASI (bertanda, dapat dihapus):")
+            for tbl in (
+                "riwayat_kondisi",
+                "riwayat_mutasi",
+                "riwayat_kalibrasi",
+                "sparepart_stok",
+            ):
+                try:
+                    n = conn.execute(
+                        sa_text(f"SELECT COUNT(*) FROM {tbl} WHERE id_pengguna = :u"),
+                        {"u": uid},
+                    ).scalar()
+                    print(f"    {tbl:<24} {n:>8,} baris")
+                except Exception:  # noqa: BLE001
+                    pass
+            print("    → hapus dengan: py -3.10 manage.py hapus-simulasi")
     return 0
 
 
@@ -194,7 +258,10 @@ def cmd_reset(args) -> int:
         print("Menyemai armada nyata dari modules/ (tanpa riwayat sintetis)…\n")
 
     code = seeds.run_steps(
-        only=None, with_history=args.with_history, total_aset=args.aset
+        only=None,
+        with_history=args.with_history,
+        total_aset=args.aset,
+        simulasi_on=args.simulasi,
     )
 
     print(
@@ -234,6 +301,12 @@ def main(argv=None) -> int:
 
     p_status = sub.add_parser("status", help="tampilkan jumlah baris per tabel")
     p_status.set_defaults(func=cmd_status)
+
+    p_hapus = sub.add_parser(
+        "hapus-simulasi",
+        help="hapus seluruh riwayat SIMULASI, pulihkan kondisi awal setiap aset",
+    )
+    p_hapus.set_defaults(func=cmd_hapus_simulasi)
 
     p_reset = sub.add_parser(
         "reset",

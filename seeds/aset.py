@@ -35,6 +35,9 @@ See `_identity()` for why the Model column is not part of the key.
 """
 
 import os
+from datetime import datetime, time
+
+from sqlalchemy import DateTime, func, text
 
 import models
 from seed_aset_real import PERUNTUKAN_MAP, PROSES_NOTE, WORKBOOK, read_rows
@@ -199,10 +202,56 @@ def run(db, path: str = WORKBOOK):
                 keterangan=PROSES_NOTE if row["tanggal_provisional"] else "Aset Baru",
                 id_lokasi=row["id_lokasi"],
                 peruntukan=row["peruntukan"],
+                # STAMPED WITH THE PURCHASE DATE, not left to the column's
+                # CURRENT_TIMESTAMP default.
+                #
+                # The registration record belongs at the purchase, not at the
+                # moment somebody ran a script — and while this was the only row
+                # an asset had, nothing revealed that it was dated "today".
+                # `seeds/simulasi.py` exposed it immediately: history generated
+                # from the purchase date forward sorted BEFORE the registration,
+                # so the `LAG` in `_scoped_repair_events()` read the opening SO
+                # as the newest row and counted a phantom completion. The
+                # reconciling identity `masuk == selesai + diafkir + sedang`
+                # broke by exactly that much.
+                waktu_lapor=datetime.combine(row["tanggal"], time(8, 0)),
             )
         )
         created += 1
         provisional += 1 if row["tanggal_provisional"] else 0
+
+    # ── Backfill: opening rows written before the stamp above ──
+    #
+    # Idempotent, and it corrects rows THIS module wrote wrong. Every opening
+    # record used to fall to `waktu_lapor`'s CURRENT_TIMESTAMP default, so on an
+    # existing database they all carry the date the seed last ran — which sorts
+    # after any simulated history and makes `_scoped_repair_events()`'s LAG read
+    # the registration as the newest event. Costs one indexed UPDATE on a clean
+    # database, which touches nothing.
+    diperbaiki = (
+        db.query(models.RiwayatKondisi)
+        .filter(
+            models.RiwayatKondisi.id_pengguna == system_user.id_pengguna,
+            models.RiwayatKondisi.kondisi == "SO",
+        )
+        .join(models.Aset, models.Aset.id_aset == models.RiwayatKondisi.id_aset)
+        .filter(
+            models.RiwayatKondisi.waktu_lapor
+            > func.cast(models.Aset.tanggal_pembelian, DateTime) + text("interval '1 day'")
+        )
+        .count()
+    )
+    if diperbaiki:
+        db.execute(
+            text(
+                "UPDATE riwayat_kondisi r SET waktu_lapor = a.tanggal_pembelian + time '08:00' "
+                "FROM aset a WHERE a.id_aset = r.id_aset AND r.id_pengguna = :uid "
+                "AND r.kondisi = 'SO' "
+                "AND r.waktu_lapor > a.tanggal_pembelian + interval '1 day'"
+            ),
+            {"uid": system_user.id_pengguna},
+        )
+        print(f"  aset          : {diperbaiki} tanggal pencatatan awal diperbaiki")
 
     print(f"  aset          : {created} baru, {existing} sudah ada  (dari {len(rows)} baris)")
     if renumbered:

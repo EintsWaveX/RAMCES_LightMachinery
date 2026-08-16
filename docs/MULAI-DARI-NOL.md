@@ -4,7 +4,7 @@ Panduan menyiapkan RAMCES dari **database kosong** sampai bisa dipakai, memakai
 tools yang sudah ada di direktori ini. Tidak ada langkah yang butuh unduhan baru.
 
 Perkiraan waktu: **di bawah 5 menit**. Langkah `seed` sendiri diukur **9 detik**
-dari database benar-benar kosong sampai 13/13 verifikasi lulus — 1.121 aset,
+dari database benar-benar kosong sampai 16/16 verifikasi lulus — 1.121 aset,
 273 lokasi, 203 sparepart dan 33 dokumen. Sisanya adalah mengetik `.env`.
 
 ---
@@ -102,7 +102,7 @@ Yang seharusnya Anda lihat:
 ✓ aset nyata = 1121 (sesuai workbook)
 ✓ setiap berkas di uploads/dokumen_alat/ terjangkau (33 berkas)
 ✓ ada SUPER_ADMIN yang bisa masuk
-✓ VERIFIKASI LULUS — 13 pemeriksaan.
+✓ VERIFIKASI LULUS — 16 pemeriksaan.
 ```
 
 **Catat username dan password `SUPER_ADMIN`** dari keluaran langkah `pengguna`.
@@ -124,6 +124,32 @@ py -3.10 manage.py seed --only dummy --with-history
 Aset contoh diberi `nomor_seri` berawalan `DEMO-`, jadi selalu bisa dibedakan
 dan dihapus. `--aset N` mengubah **target populasi**, bukan jumlah yang
 ditambahkan — menjalankannya dua kali tidak menggandakan apa pun.
+
+### Kalau ingin SELURUH armada nyata punya riwayat
+
+Cara di atas hanya mengisi 100 aset contoh. Untuk membuat dashboard benar-benar
+representatif — sebaran per DAOP nyata, campuran alat kerja nyata — jalankan:
+
+```bash
+py -3.10 manage.py seed --simulasi
+```
+
+Ini menulis riwayat kondisi, mutasi, kalibrasi dan pemakaian sparepart untuk
+**setiap aset yang belum punya**, termasuk 1.121 aset nyata. Hasilnya kira-kira
+**85% SO · 11% TSO · 4% AFKIR** — angka yang wajar untuk armada perawatan jalan
+rel.
+
+> **Semua barisnya DITANDAI.** Setiap baris diatasnamakan pengguna `SIMULASI`
+> (yang tidak bisa dipakai masuk) dan diberi awalan `[SIMULASI]` pada
+> keterangannya, jadi di layar Pantau Riwayat jelas terlihat mana fakta hasil
+> impor dan mana ilustrasi. `manage.py status` menghitungnya terpisah.
+
+Menghapusnya lagi mengembalikan basis data **persis** seperti semula — jumlah
+baris, status, dan lokasi setiap aset:
+
+```bash
+py -3.10 manage.py hapus-simulasi
+```
 
 ---
 
@@ -152,7 +178,7 @@ py -3.10 -m uvicorn main:app --port 8017     # terminal terpisah
 py -3.10 tools\verify\smoke.py               # 26 endpoint baca
 py -3.10 tools\verify\mutate.py              # jalur tulis, lalu bersih-bersih
 py -3.10 tools\verify\coverage.py            # modules/ → DB, baris per baris
-py -3.10 manage.py verify                    # 13 pemeriksaan seed
+py -3.10 manage.py verify                    # 16 pemeriksaan seed
 ```
 
 Tanpa aplikasi hidup, tiga pemeriksa statis tetap jalan dan murah:
@@ -200,6 +226,8 @@ py -3.10 -m uvicorn main:app --reload
 | `manage.py list` | Daftar langkah yang tersedia. |
 | `manage.py verify` | Periksa tanpa menulis. |
 | `manage.py status` | Jumlah baris per tabel. |
+| `manage.py seed --simulasi` | + riwayat simulasi BERTANDA untuk semua aset. |
+| `manage.py hapus-simulasi` | Hapus riwayat simulasi, pulihkan kondisi awal. |
 | `manage.py reset` | **HAPUS SEMUA**, buat ulang, semai dari nol. |
 
 ---
@@ -211,7 +239,8 @@ py -3.10 -m uvicorn main:app --reload
 | `ModuleNotFoundError: fastapi` | Memakai `python`, bukan `py -3.10` | Pakai `py -3.10` |
 | Boot gagal menyebut `DATABASE_URL` / `SECRET_KEY` | `.env` belum ada atau kosong | Langkah 2 |
 | `seed` menyebut `modules/` tidak ada | Drop klien belum disalin | Salin `modules/` |
-| Dashboard perbaikan & Kurva MCF kosong | **Benar** — armada nyata belum punya riwayat | `--with-history` untuk demo |
+| Dashboard perbaikan & Kurva MCF kosong | **Benar** — armada nyata belum punya riwayat | `--simulasi` (seluruh armada) atau `--with-history` (100 aset contoh) |
+| Ada baris riwayat bertanda `[SIMULASI]` | Data ilustrasi, bukan fakta | `manage.py hapus-simulasi` menghapusnya persis |
 | Tab Kalibrasi tidak muncul di sebagian aset | **Benar** — digerakkan `kategori_alat.perlu_kalibrasi`. Genset diservis, bukan dikalibrasi | Bukan bug |
 | Akun lama tidak bisa masuk | Baris yang di-seed sebelum autentikasi punya `hashed_password` NULL | Pusat Data ▸ Pengguna menandainya; setel password dari sana |
 | "Captcha" muncul saat login | Batas percobaan tersentuh. **Bukan penguncian** — akun tetap bisa masuk | Isi captcha; login berhasil mereset hitungannya |

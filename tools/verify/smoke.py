@@ -108,14 +108,19 @@ def main():
         ("inventaris", "/api/inventaris/transfer", lambda j: f"total={j['total']}"),
         ("inventaris", "/api/inventaris/pemakaian", lambda j: f"{len(j)} pemakaian"),
         ("inventaris", "/api/inventaris/dashboard", lambda j: list(j)[:4]),
-        # The reconciling identity holds exactly on "Semua Tahun" (all_years).
-        # A single year cannot satisfy it: `sedang` is a point-in-time count of
-        # currently-TSO assets, deliberately not year-scoped.
-        ("dashboard",  "/api/aset/dashboard/perbaikan?tahun=all",
+        # The reconciling identity holds exactly on "Semua Tahun".
+        #
+        # ⚠️ THE PARAMETER IS `all_years`, NOT `tahun=all`. This check used to
+        # send `?tahun=all`, which is not a valid int, so the endpoint silently
+        # fell back to the CURRENT YEAR — and a single year cannot satisfy the
+        # identity, because `sedang` is a point-in-time count of currently-TSO
+        # assets and is deliberately not year-scoped. The check passed anyway
+        # for as long as the seeded fleet had no repair history at all and every
+        # term was 0. It is asserted properly below rather than mentioned in a
+        # label, which is what let it stay wrong.
+        ("dashboard",  "/api/aset/dashboard/perbaikan?all_years=true",
          lambda j: (f"masuk={j['masuk']} = selesai {j['selesai']} + afkir {j['diafkir']}"
-                    f" + sedang {j['sedang']}"
-                    + ("" if j["masuk"] == j["selesai"] + j["diafkir"] + j["sedang"]
-                       else "   <<< IDENTITY BROKEN"))),
+                    f" + sedang {j['sedang']}")),
         ("dashboard",  "/api/aset/dashboard/mcf", lambda j: list(j)[:4]),
     ]
     print()
@@ -130,6 +135,28 @@ def main():
         except Exception as e:
             print(f"  FAIL [{bucket:10}] {path:42} {type(e).__name__}: {e}")
             fails.append(f"{path} -> {e}")
+
+    # ── The reconciling identity, as a real assertion ──
+    #
+    # `masuk == selesai + diafkir + sedang` is the single most load-bearing
+    # arithmetic claim the repair dashboard makes, and the thing that broke last
+    # time anyone touched condition transitions. It gets its own check rather
+    # than a note appended to a label.
+    rp = s.get(f"{BASE}/api/aset/dashboard/perbaikan?all_years=true", headers=H)
+    if rp.status_code == 200:
+        j = rp.json()
+        kanan = j["selesai"] + j["diafkir"] + j["sedang"]
+        if j["masuk"] == kanan:
+            print(
+                f"  ok   [identity  ] masuk {j['masuk']} == selesai {j['selesai']}"
+                f" + afkir {j['diafkir']} + sedang {j['sedang']}"
+            )
+        else:
+            print(
+                f"  FAIL [identity  ] masuk {j['masuk']} != {kanan}"
+                f" (selesai {j['selesai']} + afkir {j['diafkir']} + sedang {j['sedang']})"
+            )
+            fails.append(f"reconciling identity broken: {j['masuk']} != {kanan}")
 
     # ── one asset drill-down: the per-asset routes ──
     items = s.get(f"{BASE}/api/aset?limit=1", headers=H).json()["items"]

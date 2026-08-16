@@ -19,13 +19,14 @@ machinery rather than like noise.
 """
 
 import random
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 
 import models
 from database import SessionLocal
 from seed_katalog import ALL_ALAT
 from seeds.katalog import get_parent_lokasi_code
 from seeds.katalog import run as seed_katalog_run
+from seeds.simulasi import SimContext, simulate_history
 
 # A private Random instance rather than `random.seed()`, matching
 # `seeds/inventaris.py`: seeding the global RNG reaches every other module in
@@ -54,7 +55,9 @@ PERUNTUKAN_MAP = {
     "C": "MEKANIK",
     "D": "BALAIYASA",
 }
-PERUNTUKAN_LETTERS = list(PERUNTUKAN_MAP.keys())
+# (`PERUNTUKAN_LETTERS` stood here. It existed only so the state machine could
+#  pick a letter at random — which is the bug the peruntukan rule fixed, since
+#  the letter is DERIVED from the resort prefix. Nothing reads it now.)
 
 SERI_PREFIX = {
     "GEN": "GEN", "PBT": "TMP", "BOR": "DRL", "IMP": "IWR", "RGM": "GRD",
@@ -112,31 +115,10 @@ def existing_demo_count(db) -> int:
         .count()
     )
 
-# Only MEASURING instruments get calibrated. A genset or an impact wrench is
-# serviced, not calibrated, so seeding certificates for them would be fiction.
-# Read from the katalog flag rather than a hardcoded set, so seeded data and the
-# live UI gate (kategori_alat.perlu_kalibrasi) cannot disagree.
-def kalibrasi_alat_codes(db) -> set:
-    return {
-        row[0]
-        for row in db.query(models.KategoriAlat.kode_alat)
-        .filter(models.KategoriAlat.perlu_kalibrasi.is_(True))
-        .all()
-    }
-
-PELAKSANA_KALIBRASI = [
-    "BALAI KALIBRASI KAI",
-    "PT KAI BALAI YASA",
-    "LAB METROLOGI BANDUNG",
-    "BSN - KAN TERAKREDITASI",
-]
-
-KALIBRASI_KETERANGAN = {
-    "LULUS": "Hasil kalibrasi sesuai toleransi.",
-    "BERSYARAT": "Deviasi kecil, layak pakai dengan pemantauan.",
-    "GAGAL": "Deviasi melebihi ambang; perlu perbaikan/kalibrasi ulang.",
-}
-
+# `kalibrasi_alat_codes()` and the calibration constants moved to
+# seeds/simulasi.py with the state machine that used them — only calibrated tool
+# types get certificates, read from `kategori_alat.perlu_kalibrasi` rather than a
+# hardcoded set, because a genset is serviced and not calibrated.
 
 def _system_user(db):
     """The SUPER_ADMIN every seeded history row is attributed to."""
@@ -184,9 +166,6 @@ def generate_dummy_assets(total_count: int = 100):
         # ── 1. Master data (alat kerja + lokasi + UPT) ───────────────────
         seed_katalog_run(db)
         db.commit()
-        # Which tool types actually get calibrated, straight from the katalog
-        # flag rather than a hardcoded guess.
-        kalibrasi_codes = kalibrasi_alat_codes(db)
 
         # ── 2. Lokasi ────────────────────────────────────────────────────
         # Lokasi.tipe values in the current model: PUSAT, DAOP, DIVRE, BALAIYASA, UPT
@@ -200,14 +179,6 @@ def generate_dummy_assets(total_count: int = 100):
 
         PARENT_TIPES = {"DAOP", "DIVRE", "PUSAT", "BALAIYASA"}
 
-        parent_lokasi_ids = [
-            l.id_lokasi for l in all_lokasi
-            if l.tipe.upper() in PARENT_TIPES
-        ]
-        upt_lokasi_ids = [
-            l.id_lokasi for l in all_lokasi
-            if l.tipe.upper() == "UPT"
-        ]
         balaiyasa_ids = [
             l.id_lokasi for l in all_lokasi
             if l.tipe.upper() == "BALAIYASA"
@@ -230,21 +201,9 @@ def generate_dummy_assets(total_count: int = 100):
             if l.tipe.upper() in {"DAOP", "DIVRE", "UPT"}
             and not _is_balaiyasa_side(l.id_lokasi)
         ]
-        # Workshop / bengkel = BALAIYASA entries (TSO assets get sent here)
-        bengkel_ids = balaiyasa_ids if balaiyasa_ids else parent_lokasi_ids
-
         # Fallback if classification is incomplete
         if not operational_ids:
             operational_ids = [l.id_lokasi for l in all_lokasi]
-
-        # Operational resorts bucketed by the peruntukan their code implies, so
-        # a redistribution can stay inside its own unit. Parent codes (D1, VIII)
-        # carry no prefix and fall into the JALAN REL bucket via the same
-        # fallback `peruntukan_letter_for` uses at creation, which keeps the two
-        # consistent.
-        redistribusi_pool: dict[str, list] = {}
-        for _id in operational_ids:
-            redistribusi_pool.setdefault(peruntukan_letter_for(_id), []).append(_id)
 
         # Build a quick lookup: id_lokasi → parent id (None if already a parent)
         # This is used to derive the parent_lokasi segment of the asset ID,
@@ -294,6 +253,12 @@ def generate_dummy_assets(total_count: int = 100):
             )
 
         # ── 6. Seed assets ───────────────────────────────────────────────
+        #
+        # The history generator's context is built ONCE — it loads the lokasi
+        # tree, the calibration flags and the whole stock balance map, none of
+        # which vary per asset. It is given THIS module's RNG so a demo fleet
+        # stays reproducible from the same seed.
+        ctx = SimContext(db, rng=_rng, populasi=total_count)
         inserted = 0
         now = datetime.now()
 
@@ -330,11 +295,10 @@ def generate_dummy_assets(total_count: int = 100):
                 id_aset = f"{nomor_urut}.{kode_alat}.{id_pengadaan}.{year_str}.{unit_letter}.{parent_lokasi}"
 
             # ── State-machine simulation ─────────────────────────────────
+            # Created SO at its starting resort; simulate_history() takes it
+            # from there and derives home vs current position itself.
             waktu = datetime.combine(tgl_pembelian, datetime.min.time())
             lokasi_saat_ini = start_lokasi
-            # Where the asset BELONGS, as opposed to where it currently sits. A
-            # workshop visit changes the latter but never the former.
-            home_lokasi = start_lokasi
             kondisi = "SO"
 
             aset = models.Aset(
@@ -368,144 +332,21 @@ def generate_dummy_assets(total_count: int = 100):
                 peruntukan=peruntukan,
             ))
 
-            # Random lifecycle events (0–15 per asset)
-            for _ in range(_rng.randint(0, 15)):
-                waktu += timedelta(days=_rng.randint(14, 120), hours=_rng.randint(1, 23))
-                if waktu > now:
-                    break
-
-                if kondisi == "AFKIR":
-                    break
-
-                elif kondisi == "TSO":
-                    is_bengkel = lokasi_saat_ini in bengkel_ids
-                    if not is_bengkel and bengkel_ids:
-                        # Send to workshop
-                        tujuan = _rng.choice(bengkel_ids)
-                        db.add(models.RiwayatMutasi(
-                            id_aset=id_aset,
-                            id_lokasi_asal=lokasi_saat_ini,
-                            id_lokasi_tujuan=tujuan,
-                            id_pengguna=id_pengguna_default,
-                            alasan_mutasi="Pengiriman untuk perbaikan (TSO)",
-                            waktu_mutasi=waktu,
-                        ))
-                        lokasi_saat_ini = tujuan
-                    else:
-                        # Repair outcome
-                        kondisi = _rng.choices(["SO", "AFKIR"], weights=[90, 10])[0]
-                        db.add(models.RiwayatKondisi(
-                            id_aset=id_aset,
-                            id_pengguna=id_pengguna_default,
-                            kondisi=kondisi,
-                            keterangan=f"Hasil perbaikan: {kondisi}",
-                            waktu_lapor=waktu,
-                            # NOT lokasi_saat_ini. The repair physically happens
-                            # at a Balaiyasa, but it belongs to the region that
-                            # owns the asset. Stamping the workshop here is what
-                            # used to grow a "BALAIYASA …" row in Laporan
-                            # Perbaikan and drop the completion out of the
-                            # owning DAOP's scope, so `masuk` never reconciled
-                            # against `selesai + sedang`. The mutation rows
-                            # above still record the physical trip.
-                            id_lokasi=home_lokasi,
-                            peruntukan=peruntukan,
-                        ))
-                        # A repaired asset goes back to its operating resort. Without
-                        # this it would stay parked at the Balaiyasa forever, and the
-                        # final write-back would home it at a workshop.
-                        if kondisi == "SO" and lokasi_saat_ini != home_lokasi:
-                            waktu += timedelta(days=_rng.randint(1, 10))
-                            db.add(models.RiwayatMutasi(
-                                id_aset=id_aset,
-                                id_lokasi_asal=lokasi_saat_ini,
-                                id_lokasi_tujuan=home_lokasi,
-                                id_pengguna=id_pengguna_default,
-                                alasan_mutasi="Pengembalian setelah perbaikan",
-                                waktu_mutasi=waktu,
-                            ))
-                            lokasi_saat_ini = home_lokasi
-
-                elif kondisi == "SO":
-                    aksi = _rng.choices(["MUTASI", "KONDISI"], weights=[30, 70])[0]
-                    # Redistribute only among resorts of the SAME peruntukan.
-                    # A redistribution is a permanent move — it rewrites
-                    # `home_lokasi`, and the final write-back stamps that onto
-                    # `aset.id_lokasi`. Choosing freely therefore parked a
-                    # JALAN REL machine at a jembatan resort permanently, which
-                    # is the one thing the peruntukan rule forbids and which no
-                    # real import can produce. Sending a jalan rel tamper to
-                    # another jalan rel resort is also simply what happens.
-                    same_unit = redistribusi_pool.get(unit_letter) or []
-                    if aksi == "MUTASI" and len(same_unit) > 1:
-                        tujuan = _rng.choice(same_unit)
-                        while tujuan == lokasi_saat_ini:
-                            tujuan = _rng.choice(same_unit)
-                        db.add(models.RiwayatMutasi(
-                            id_aset=id_aset,
-                            id_lokasi_asal=lokasi_saat_ini,
-                            id_lokasi_tujuan=tujuan,
-                            id_pengguna=id_pengguna_default,
-                            alasan_mutasi="Redistribusi operasional",
-                            waktu_mutasi=waktu,
-                        ))
-                        lokasi_saat_ini = tujuan
-                        # A redistribution is a permanent move — this is now home.
-                        home_lokasi = tujuan
-                    else:
-                        kondisi = _rng.choices(["TSO", "AFKIR"], weights=[85, 15])[0]
-                        db.add(models.RiwayatKondisi(
-                            id_aset=id_aset,
-                            id_pengguna=id_pengguna_default,
-                            kondisi=kondisi,
-                            keterangan=f"Degradasi kondisi ke {kondisi}",
-                            waktu_lapor=waktu,
-                            # Same rule as the repair-outcome row: condition
-                            # history is attributed to the owning region, never
-                            # to a workshop the asset is merely visiting.
-                            id_lokasi=home_lokasi,
-                            peruntukan=peruntukan,
-                        ))
-
-            # ── Periodic calibration history ─────────────────────────────
-            # Measuring tools are recalibrated roughly yearly. Without these
-            # rows the Kalibrasi card grid, the asset detail tab and the
-            # Kalibrasi export are all permanently empty.
-            if kode_alat in kalibrasi_codes:
-                kal_tanggal = tgl_pembelian
-                while True:
-                    kal_tanggal = kal_tanggal + timedelta(days=_rng.randint(330, 400))
-                    if kal_tanggal >= now.date():
-                        break
-                    status_kal = _rng.choices(
-                        ["LULUS", "BERSYARAT", "GAGAL"], weights=[80, 15, 5]
-                    )[0]
-                    db.add(models.RiwayatKalibrasi(
-                        id_aset=id_aset,
-                        id_pengguna=id_pengguna_default,
-                        tanggal_kalibrasi=kal_tanggal,
-                        tanggal_berlaku=kal_tanggal + timedelta(days=365),
-                        status=status_kal,
-                        pelaksana_kalibrasi=_rng.choice(PELAKSANA_KALIBRASI),
-                        nomor_sertifikat=(
-                            f"KAL/{kal_tanggal.year}/"
-                            f"{_rng.randint(1000, 9999)}"
-                        ),
-                        keterangan=KALIBRASI_KETERANGAN[status_kal],
-                        waktu_input=datetime.combine(
-                            kal_tanggal, datetime.min.time()
-                        ),
-                    ))
-
-            # Write final state back to the asset row.
-            # Safety net: an asset must never be HOMED at a workshop. If the
-            # simulation ended mid-repair at a Balaiyasa we keep the condition
-            # (it really is under repair) but record its owning resort.
-            aset.status_terakhir = kondisi
-            aset.id_lokasi = (
-                home_lokasi if _is_balaiyasa_side(lokasi_saat_ini) else lokasi_saat_ini
-            )
-            aset.waktu_update = waktu
+            # ── The simulated history ────────────────────────────────
+            #
+            # EXTRACTED to seeds/simulasi.py, which the real fleet uses too.
+            # This block used to live here, which is the only reason it ever ran
+            # against the 100 demo assets and never against the 1,121 real ones.
+            # It carries four rules that took three rounds to get right — the
+            # Balaiyasa attribution rule, peruntukan-preserving redistribution,
+            # calibration gated on the katalog flag, and the "never home an
+            # asset at a workshop" safety net — and a second copy would have had
+            # to keep all four in step.
+            #
+            # A consequence worth having: this history is now MARKED. It is just
+            # as fabricated as the real fleet's would be, and until now was
+            # indistinguishable from a technician's entry.
+            simulate_history(ctx, aset, mulai=waktu)
 
             inserted += 1
             if inserted % 100 == 0:

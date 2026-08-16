@@ -38,6 +38,13 @@ py -3.10 manage.py reset
 # against it would be indistinguishable from fact later. Without this flag the
 # repair dashboard, the MCF curve and Laporan Perbaikan render EMPTY.
 py -3.10 manage.py reset --yes --with-history
+
+# ── Simulated operational history for the REAL fleet ─────────────────
+# Also OFF BY DEFAULT, and safe for a different reason: every row it writes is
+# attributed to a dedicated SIMULASI account and tagged [SIMULASI], and the
+# undo restores the database exactly. See "Simulated history" below.
+py -3.10 manage.py seed --simulasi        # or: seed --only simulasi
+py -3.10 manage.py hapus-simulasi         # remove all of it, exactly
 ```
 
 `--aset N` is a TARGET POPULATION, not a number to add, and it is refused
@@ -75,7 +82,7 @@ loudly with the line to add:
 | [manage.py](manage.py) | The one database CLI — `seed` / `reset` / `verify` / `status` / `list` |
 
 Docs: [docs/MULAI-DARI-NOL.md](docs/MULAI-DARI-NOL.md) is the from-empty-database
-setup path (measured: 9 seconds to seed, 13/13 verify);
+setup path (measured: 9 seconds to seed, 16/16 verify);
 [docs/CAKUPAN-TIMELINE-MAGANG.md](docs/CAKUPAN-TIMELINE-MAGANG.md) maps the
 client's feature matrix line by line to what actually exists.
 
@@ -93,6 +100,7 @@ ordered registry of idempotent steps; each step is one module:
 | `inventaris` | `seeds/inventaris.py` | gudang → kategori → sparepart → stok awal, in that order |
 | `pengguna` | `seeds/pengguna.py` | the bootstrap `SUPER_ADMIN` |
 | `dummy` | `seeds/dummy.py` | **off by default** — 100 demo assets (`nomor_seri` `DEMO-…`) + a simulated history |
+| `simulasi` | `seeds/simulasi.py` | **off by default** — marked operational history for every asset that has none |
 
 `seeds/verify.py` runs after every seed and after `manage.py reset`; a failed assertion is a
 non-zero exit. `seed_katalog.py` keeps its role as the DATA (the transcription of the
@@ -1042,6 +1050,78 @@ Version naming changed here: `revX.Y.Z-alpha` / `-beta`, no `-fe-be` suffix.
     for one two-field question is how a codebase ends up with five dialogs that
     behave differently. It still resolves from the button handlers, which
     js/a11y-modal.js depends on.
+
+### Simulated history: marked, and exactly reversible
+
+A default seed produces an **entirely green** system — every asset `SO`, one
+opening condition row each, and zero mutations, calibrations or part usage. Five
+dashboard panels are empty or meaningless as a result, and the client's workbook
+has **no condition column at all**, so nothing is being discarded on import: any
+variety has to be fabricated.
+
+`seeds/simulasi.py` fabricates it without abandoning the rule the rest of
+`seeds/` enforces (*repair records invented against a real fleet are
+indistinguishable from fact a year later*). It satisfies what that rule protects
+instead:
+
+- **Every fabricated row is attributed to a `SIMULASI` account** and tagged
+  `[SIMULASI]` in `keterangan`. `id_pengguna` exists on `riwayat_kondisi`,
+  `riwayat_mutasi`, `riwayat_kalibrasi` and `sparepart_stok`, so one join finds
+  all of it; `pemakaian_sparepart` is reached through `id_riwayat`/`id_stok`.
+- **The account cannot log in** — `hashed_password` stays NULL, like `SYSTEM`.
+- **`manage.py hapus-simulasi` restores EXACTLY**, and needs no snapshot table:
+  the opening `RiwayatKondisi` carries the import location and starting
+  condition, and the simulation never touches it. Asserted row-for-row by
+  `tools/verify/test_simulasi.py`.
+- **One row per asset marks where fabricated history begins** ("Awal periode
+  pemantauan simulasi"). It is also what makes the idempotency gate exact:
+  gating on "has any simulated condition row" missed assets that legitimately
+  generate no events — 326 assets bought in 2026 whose first gap already runs
+  past today — and a second `--simulasi` added 429 more rows.
+
+**One generator, not two.** The state machine lived inside `seeds/dummy.py`'s
+creation loop, which is why it only ever ran against the 100 demo assets. It is
+now in `seeds/simulasi.py` and `dummy.py` imports it, so the demo fleet's
+history is marked too — it was equally fabricated and equally unmarked before.
+
+#### Tuning it is a modelling problem, not a weights problem
+
+The first cut reused the demo weights and produced **21% written off and 37%
+currently broken**. Three corrections, each recorded in the module:
+
+- **Time-to-repair is not time-between-failures.** One event gap made every
+  repair take 2–13 months, so a machine that broke usually had not been fixed by
+  the time the simulation reached today. Splitting `GAP_SEHAT_HARI` from
+  `GAP_PERBAIKAN_HARI` moved SO from 60% to 85% on its own.
+- **Write-off is budget-constrained.** AFKIR is an absorbing state, so any
+  per-event probability compounds toward scrapping everything. `AFKIR_QUOTA_PCT`
+  is scaled to **the population this run touches** — sized against the whole
+  fleet, a `--only dummy` run let 100 demo machines absorb a budget meant for
+  1,221 and came out 29% scrapped.
+- **A machine does not stay broken forever.** An asset left TSO by a failure
+  older than `TSO_BASI_HARI` is repaired, which keeps `sedang` the point-in-time
+  count it is meant to be.
+
+Result: **84.7% SO · 11.3% TSO · 3.9% AFKIR** on the real fleet, 92/4/4 on the
+demo one. `seeds/verify.py` asserts the band **over the simulated assets only** —
+measured fleet-wide, a `--only dummy` run reads 97% available and says nothing
+about the generator.
+
+#### Two bugs it exposed
+
+- **The registration row was dated the seed run, not the purchase.**
+  `seeds/aset.py` left `waktu_lapor` to its `CURRENT_TIMESTAMP` default, so
+  every "Aset Baru" record carried today's date. Invisible while it was the only
+  row an asset had; the moment history existed it sorted LAST, and the `LAG` in
+  `_scoped_repair_events()` read the registration as the newest event and
+  counted a phantom completion. Now stamped at 08:00 on the purchase date, with
+  an idempotent backfill for databases seeded before the fix.
+- **`tools/verify/smoke.py` never tested "Semua Tahun".** It sent `?tahun=all`,
+  which is not a valid int, so the endpoint fell back to the current year — and
+  a single year *cannot* satisfy `masuk == selesai + diafkir + sedang`, because
+  `sedang` is not year-scoped. It passed anyway for as long as every term was 0.
+  **The parameter is `all_years`**, and the identity is now a real assertion
+  rather than a note appended to a label.
 
 ## rev0.4.3-alpha — what it closed
 

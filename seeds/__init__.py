@@ -49,6 +49,7 @@ from seeds import (  # noqa: E402  (import after create_all, deliberately)
     katalog,
     model_type,
     pengguna,
+    simulasi,
 )
 from seeds.verify import verify_all  # noqa: E402
 
@@ -79,12 +80,29 @@ STEPS = [
     ("inventaris", inventaris.run, "Gudang, kategori, sparepart, stok awal", True),
     ("pengguna", pengguna.run, "Akun SUPER_ADMIN awal", True),
     ("dummy", dummy.run, "100 aset contoh + simulasi riwayat perawatan", False),
+    # Also off by default, and for the same reason as `dummy` — but this one
+    # writes against the REAL fleet, so the bar is higher. Every row it creates
+    # is attributed to a dedicated SIMULASI account and tagged in `keterangan`,
+    # and `manage.py hapus-simulasi` removes all of it exactly. Without it the
+    # readiness matrix, the availability chart, Tren Perbaikan, Laporan
+    # Perbaikan and the MCF curve are empty or 100% on a fresh install.
+    (
+        "simulasi",
+        simulasi.run,
+        "Riwayat operasional simulasi untuk aset yang belum punya (BERTANDA)",
+        False,
+    ),
 ]
 
 STEP_NAMES = [name for name, _, _, _ in STEPS]
 
 
-def run_steps(only=None, with_history: bool = False, total_aset: int = 100) -> int:
+def run_steps(
+    only=None,
+    with_history: bool = False,
+    total_aset: int = 100,
+    simulasi_on: bool = False,
+) -> int:
     """
     Execute the registry in order. Returns a process exit code.
 
@@ -106,7 +124,11 @@ def run_steps(only=None, with_history: bool = False, total_aset: int = 100) -> i
             if name not in selected:
                 continue
         elif not default_on:
-            if not (name == "dummy" and with_history):
+            # `--with-history` turns on the demo fleet; `--simulasi` turns on
+            # marked history for whatever assets exist. Neither runs otherwise.
+            if not (name == "dummy" and with_history) and not (
+                name == "simulasi" and simulasi_on
+            ):
                 continue
 
         print(f"\n── {name} · {desc}")
@@ -133,4 +155,4 @@ def run_steps(only=None, with_history: bool = False, total_aset: int = 100) -> i
 
 # `seed_all()` was kept as a backwards-compatible shim and had no callers —
 # seed.py and reset.py both call run_steps() directly.
-__all__ = ["STEPS", "STEP_NAMES", "run_steps", "verify_all"]
+__all__ = ["STEPS", "STEP_NAMES", "run_steps", "verify_all", "simulasi"]

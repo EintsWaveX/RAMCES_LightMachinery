@@ -39,10 +39,21 @@ WS = BASE.replace("http://", "ws://").replace("https://", "wss://") + "/ws/updat
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, ROOT)
 
-# rev0.5.2 baseline. `lokasi` went 259 -> 273 when the 14 MEKANIK resorts the
-# katalog always had finally reached the database, and `sparepart_stok` is now
-# stable at 973 because seeds/inventaris.py seeds its RNG — before that, every
-# full reset produced a different ledger size and this assertion was unusable.
+# The CLEAN-IMPORT baseline: what a `manage.py seed` with no optional steps
+# produces. `lokasi` went 259 -> 273 when the 14 MEKANIK resorts the katalog
+# always had finally reached the database, and `sparepart_stok` is stable at 973
+# because seeds/inventaris.py seeds its RNG — before that, every full reset
+# produced a different ledger size and this assertion was unusable.
+#
+# ⚠️ It is INFORMATIONAL once optional data is present. `--simulasi` adds
+# condition rows, stock movements and the SIMULASI account; `--with-history`
+# adds 100 assets. Both are legitimate states for a working database, so a
+# mismatch against this table is not a failure.
+#
+# The assertion that actually matters is the SNAPSHOT one below — every count
+# returns to whatever it was when this script started. That is what proves the
+# mutation path leaves nothing behind, and it holds in every one of those
+# states.
 EXPECTED_COUNTS = {
     "kategori_alat": 104,
     "lokasi": 273,
@@ -54,6 +65,30 @@ EXPECTED_COUNTS = {
     "sparepart": 203,
     "sparepart_stok": 973,
 }
+
+
+def _optional_data_present():
+    """Which opt-in seed steps have been run — `--simulasi`, `--with-history`."""
+    from sqlalchemy import text
+    from database import engine
+
+    found = []
+    with engine.connect() as conn:
+        try:
+            if conn.execute(
+                text("SELECT 1 FROM pengguna WHERE username = 'SIMULASI'")
+            ).first():
+                found.append("simulasi")
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            if conn.execute(
+                text("SELECT 1 FROM aset WHERE nomor_seri LIKE 'DEMO-%'")
+            ).first():
+                found.append("aset demo")
+        except Exception:  # noqa: BLE001
+            pass
+    return found
 
 
 def _env(key):
@@ -121,7 +156,12 @@ async def main():
 
     before = counts()
     drift0 = {k: v for k, v in before.items() if v != EXPECTED_COUNTS[k]}
-    print("row counts before:", drift0 or "all 9 tables at their seeded values")
+    optional = _optional_data_present()
+    if drift0 and optional:
+        print(f"row counts before: {drift0}")
+        print(f"                   (expected — {', '.join(optional)} present)")
+    else:
+        print("row counts before:", drift0 or "all 9 tables at their seeded values")
 
     r = await asyncio.to_thread(
         s.post, f"{BASE}/api/login",
@@ -304,8 +344,15 @@ async def main():
     else:
         print("       every row count back to its starting value")
     mismatch = {k: (after_counts[k], v) for k, v in EXPECTED_COUNTS.items() if after_counts[k] != v}
-    print(f"       vs seeded expectation: {mismatch or 'exact match on all 9 tables'}")
-    if mismatch:
+    if not mismatch:
+        print("       vs clean-import baseline: exact match on all 9 tables")
+    elif optional:
+        # A database carrying simulated history or a demo fleet is a legitimate
+        # state, so this is reported and not failed. The snapshot check above is
+        # the one that proves nothing was left behind.
+        print(f"       vs clean-import baseline: differs, as expected ({', '.join(optional)})")
+    else:
+        print(f"       vs clean-import baseline: {mismatch}")
         fails.append(f"counts differ from the seeded expectation: {mismatch}")
 
     print()

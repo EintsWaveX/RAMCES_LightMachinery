@@ -24,7 +24,7 @@ Every number here was measured against the local seeded database, not estimated.
 
 ## 1. Where the project stands
 
-Branch `rev0.4.3-alpha`. Version naming is `revX.Y.Z-alpha` / `-beta`; the older
+Branch `rev0.4.4-alpha`. Version naming is `revX.Y.Z-alpha` / `-beta`; the older
 `-fe-be` suffix is retired.
 
 | Round | What it delivered |
@@ -37,22 +37,32 @@ Branch `rev0.4.3-alpha`. Version naming is `revX.Y.Z-alpha` / `-beta`; the older
 | **rev0.5.0/0.5.1** | Authentication; `main.py` 5,901 → 324 lines split into `api/`; per-view redesign |
 | **rev0.4.2** | Self-registration + approval + captcha + rate limiting; `manage.py`; `dokumen_alat`; declarative role gating |
 | **rev0.4.3** | Hierarki Part (BOM tree), Kartu Riwayat Part, Fast/Slow moving, the pengadaan scope rule |
+| **rev0.4.4** | `seeds/simulasi.py` — marked, reversible operational history for the real fleet |
 
 ### Current baseline — keep these honest
 
 ```
 routes            87        openapi paths     59
 shadow pairs       0        require_role      43 guards
-broadcasts        37        manage.py verify  13/13
+broadcasts        37        manage.py verify  16/16
 audit findings     0        console errors     0  (8 views x 2 widths x 2 themes)
 
-kategori_alat 104 · lokasi        273 · alat_varian   87
-aset         1121 · riwayat      1121 · pengguna       2
-gudang          3 · sparepart     203 · sparepart_stok 973
-dokumen_alat   33 (30 primary, 0 orphaned files on disk)
+CLEAN IMPORT (manage.py seed, nothing optional):
+  kategori_alat 104 · lokasi        273 · alat_varian   87
+  aset         1121 · riwayat      1121 · pengguna       2
+  gudang          3 · sparepart     203 · sparepart_stok 973
+  dokumen_alat   33 (30 primary, 0 orphaned files on disk)
+  every asset SO — five dashboard panels are empty, and that is honest
+
+WITH `--simulasi` (opt-in, every row marked, fully reversible):
+  riwayat_kondisi ~3200 · riwayat_mutasi ~1000 · riwayat_kalibrasi ~26
+  pemakaian_sparepart ~77 · pengguna 3 (+SIMULASI)
+  84.7% SO · 11.3% TSO · 3.9% AFKIR
+  `manage.py hapus-simulasi` returns every one of those to the clean import
 ```
 
-Seeding a genuinely empty database takes **9 seconds** end to end.
+Seeding a genuinely empty database takes **9 seconds** end to end; the
+simulation adds about the same again.
 
 ---
 
@@ -73,11 +83,12 @@ Each was reproduced live before the fix and verified live after.
 | **`lokasi` re-read per request** | 4x per dashboard load | 60 s TTL cache of plain tuples, explicitly invalidated |
 | **Exports built in memory** | 223 KB and growing | `StreamingResponse` over a row-at-a-time generator |
 | **Pagination transport** | one 4.5 MB / 16 MB response | `{total, limit, offset, items}` + `fetchAllPages()` |
-| **Seeding** | a second run DOUBLED the fleet; the dummy step was never idempotent | `manage.py`, identity gates, `DEMO-` serials, 13/13 asserted |
+| **Seeding** | a second run DOUBLED the fleet; the dummy step was never idempotent | `manage.py`, identity gates, `DEMO-` serials, 16/16 asserted |
 | **Documents** | 3 PDFs (5.6 MB) reachable by nothing | `dokumen_alat`; verified from the DISK side |
 | **`landing.html` sign-in** | 422'd for every user, and let you pick your own role | username + password + progressive captcha |
 | **`uploads/` static leak** | a certificate saved as `.jpg` was readable with no token | the catch-all refuses the whole tree |
 | **Mobile** | designed at desktop width and allowed to shrink | `.table-stack`, bottom nav, 44px targets, `.scroll-hint` |
+| **An all-green demo** | every asset SO; five panels empty, nothing to show a client | `seeds/simulasi.py` — marked with a SIMULASI account, tagged `[SIMULASI]`, idempotent, and exactly reversible |
 
 ---
 
@@ -101,6 +112,11 @@ That is the work; the API is ready.
 four `db.execute()` calls, and it contains a deliberately unfiltered `LAG` over
 the whole `riwayat_kondisi` table. Wants a materialised CTE or a rollup table.
 The dashboard is the first screen after login.
+
+**Its real cost is now measurable for the first time.** `riwayat_kondisi` was
+1,121 rows of nothing but registrations; `--simulasi` takes it past 3,000 with
+genuine transitions to scan. Profile it against a simulated database rather than
+a clean one, or the optimisation will look unnecessary.
 
 ### 3.3 The rate limiter is per-process
 
@@ -162,14 +178,16 @@ original seven closed in rev0.4.3; these are what is left.
 
 | Feature | Blocked on | Notes |
 |---|---|---|
-| **MTBF / MTTR** | **data, not code** | `_scoped_repair_events()` already isolates the exact transitions; one added `lag(waktu_lapor)` supplies the durations. But the fleet has **0 repair records**, so it would ship reading 0.0 hours. Build it once technicians have filed some. |
-| **Calibration reminder** | **data + a surface** | 18 tool types and 75 live assets need calibration; there are **0 calibration records**. Also needs a notification surface the app does not have — the bell is session-scoped with no notifications table, deliberately. |
+| **MTBF / MTTR** | ~~data~~ — **now unblocked** | `_scoped_repair_events()` already isolates the exact transitions; one added `lag(waktu_lapor)` supplies the durations. rev0.4.4 removed the blocker: `manage.py seed --simulasi` produces ~500 repair events with real timestamps, so the metric can be built and SEEN. Sits beside the existing Kurva MCF tab. |
+| **Calibration reminder** | ~~data~~ — **surface only** | rev0.4.4 fills `riwayat_kalibrasi`, so `tanggal_berlaku` now has something to compare against. What remains is the notification surface: the bell is session-scoped with no notifications table, deliberately. |
 | **Stock opname** | a new table | The only remaining gap needing schema: an opname session (count → variance → adjustment). `ADJ_IN`/`ADJ_OUT` already exist as the adjustment mechanism, so it is additive. |
 | **In-app QR scanner** | nothing, but low value | The field flow already works: the phone's native camera opens `landing.html?uid=…`. Needs camera-permission handling for marginal gain. |
 
-**The pattern worth noticing:** two of the four are blocked on the system being
-*used*, not on it being built. Shipping a reliability metric that reads 0.0
-teaches users to ignore that panel, and it is hard to win that attention back.
+**This was the point of rev0.4.4.** Two of these four used to be blocked on the
+system being *used* rather than built — shipping a reliability metric that reads
+0.0 teaches users to ignore that panel, and it is hard to win that attention
+back. A marked, reversible simulation removes that block without pretending the
+data is real.
 
 ---
 
@@ -180,7 +198,8 @@ teaches users to ignore that panel, and it is hard to win that attention back.
 | 1 | Server-side paging for the deep screens (§3.1) | Large (FE) | The wall the system hits as the fleet grows |
 | 2 | Repair-dashboard CTE (§3.2) | Medium | Dashboard is the first screen after login |
 | 3 | Stock opname | Medium | Last client-matrix item that is purely build work |
-| 4 | MTBF/MTTR + calibration reminder | Small each | **Wait for data.** Neither is a code problem |
+| 4 | MTBF/MTTR | Small | Unblocked by rev0.4.4 — build it next |
+| 4b | Calibration reminder | Small | Data is there; needs a notification surface |
 | 5 | Surrogate PK (§3.4) | Large | Makes every edit cheap; do after paging |
 | 6 | Redis-backed rate limiting (§3.3) | Small | Only matters once deployed multi-worker |
 | 7 | Tailwind build step (§3.6) | Medium | Only if a build step becomes acceptable |
@@ -231,4 +250,4 @@ seeded database is indistinguishable from demo data later.
 
 ---
 
-*Last updated against `rev0.4.3-alpha`.*
+*Last updated against `rev0.4.4-alpha`.*

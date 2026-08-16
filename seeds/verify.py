@@ -26,13 +26,14 @@ The four that matter most:
 
 import os
 
-from sqlalchemy import func
+from sqlalchemy import func, select
 
 import models
 from database import SessionLocal
 from seed_katalog import ALL_ALAT, KATALOG_UPT, verify_upt_parents
 from seeds.dokumen import MANUAL_MAP, SPEK_MAP
 from seeds.dummy import DEMO_SERI_PREFIX
+from seeds.simulasi import SIMULASI_USERNAME
 from seeds.katalog import (
     LOKASI_DATA,
     UPT_DATA_AS_LOKASI,
@@ -214,6 +215,100 @@ def verify_all() -> bool:
             not mismatched,
             f"{len(mismatched)} tidak cocok: {mismatched[:3]}",
         )
+
+        # ── Simulated history ──
+        #
+        # Only checked when there is any. A clean import has none, and that is
+        # the honest default — `manage.py seed --simulasi` is opt-in.
+        sim_user = (
+            db.query(models.Pengguna)
+            .filter(models.Pengguna.username == SIMULASI_USERNAME)
+            .first()
+        )
+        if sim_user:
+            # The marker must never become a way in. `login()` refuses an
+            # account with no hash, which is the whole reason it has none.
+            r.check(
+                "akun SIMULASI tidak bisa dipakai masuk",
+                sim_user.hashed_password is None,
+                "akun penanda punya password — itu jalan masuk, bukan penanda",
+            )
+
+            n_sim = (
+                db.query(models.RiwayatKondisi)
+                .filter(models.RiwayatKondisi.id_pengguna == sim_user.id_pengguna)
+                .count()
+            )
+
+            # The distribution has to stay plausible. The first cut produced
+            # 21% written off and 37% currently broken — arithmetically fine and
+            # completely unbelievable, which is worse than an empty demo because
+            # it is quietly wrong. See the tuning note in seeds/simulasi.py.
+            #
+            # Measured over the SIMULATED assets only, not the whole fleet.
+            # `--only dummy` simulates 100 machines and leaves 1,121 untouched
+            # at SO, so a fleet-wide reading is 97% available and says nothing
+            # about whether the generator is behaving — it just reports how much
+            # of the fleet was left alone.
+            sim_ids = (
+                db.query(models.RiwayatKondisi.id_aset)
+                .filter(models.RiwayatKondisi.id_pengguna == sim_user.id_pengguna)
+                .distinct()
+                .subquery()
+            )
+            by_status = dict(
+                db.query(models.Aset.status_terakhir, func.count())
+                .filter(models.Aset.id_aset.in_(select(sim_ids.c.id_aset)))
+                .group_by(models.Aset.status_terakhir)
+                .all()
+            )
+            total = sum(by_status.values()) or 1
+            pct = {k: (v / total) * 100 for k, v in by_status.items()}
+            so, tso, afkir = pct.get("SO", 0), pct.get("TSO", 0), pct.get("AFKIR", 0)
+            r.check(
+                f"sebaran kondisi masuk akal ({total} aset tersimulasi: "
+                f"SO {so:.1f}% · TSO {tso:.1f}% · AFKIR {afkir:.1f}%)",
+                75 <= so <= 95 and tso <= 18 and afkir <= 8,
+                "di luar rentang armada nyata (SO 75-95%, TSO <=18%, AFKIR <=8%)",
+            )
+            r.note("riwayat simulasi", f"{n_sim} baris kondisi atas nama SIMULASI")
+
+        # A repair physically happens at a workshop but BELONGS to the region
+        # that OWNS the asset. Stamping the workshop is what used to grow a
+        # "BALAIYASA …" row in Laporan Perbaikan and drop the completion out of
+        # the owning DAOP's scope. Nothing exercised this until the simulation
+        # started sending assets for repair.
+        #
+        # ⚠️ The check is about MISATTRIBUTION, not about location, and the
+        # distinction is not academic: CLAUDE.md says an asset "is never based
+        # at" a Balaiyasa, and the client's own workbook has FOUR that are —
+        # `35.LMP.1.25.D.BY3` and three others, homed at BY3 with peruntukan
+        # BALAIYASA, which the importer derives from the BY prefix. For those,
+        # BY3 *is* the owning region and a condition row there is correct. What
+        # must never happen is a DAOP-owned machine's repair being recorded
+        # against the workshop it was merely visiting.
+        by_ids = {
+            row[0]
+            for row in db.query(models.Lokasi.id_lokasi)
+            .filter(func.upper(models.Lokasi.tipe) == "BALAIYASA")
+            .all()
+        }
+        if by_ids:
+            salah_bengkel = (
+                db.query(models.RiwayatKondisi)
+                .join(models.Aset, models.Aset.id_aset == models.RiwayatKondisi.id_aset)
+                .filter(
+                    models.RiwayatKondisi.id_lokasi.in_(by_ids),
+                    # …but the asset itself is NOT based there.
+                    ~models.Aset.id_lokasi.in_(by_ids),
+                )
+                .count()
+            )
+            r.check(
+                "tidak ada perbaikan milik DAOP yang diatribusikan ke bengkel",
+                salah_bengkel == 0,
+                f"{salah_bengkel} baris — perbaikan milik wilayah pemilik, bukan bengkel",
+            )
 
         # ── Documents ──
         mapped = {k for _, _, codes in SPEK_MAP for k in codes}
