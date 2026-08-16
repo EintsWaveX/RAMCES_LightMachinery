@@ -286,6 +286,9 @@ async function fetchAsetFromServer(opts = {}) {
   try {
     invalidateFleet();
     invalidateRingkasan();
+    // Filing a calibration takes an asset off the due list, so the bell's
+    // standing count has to be re-read rather than left at the boot value.
+    if (typeof refreshKalibrasiDue === "function") refreshKalibrasiDue();
 
     const isVisible = (id) =>
       !!document.getElementById(id)?.classList.contains("is-visible");

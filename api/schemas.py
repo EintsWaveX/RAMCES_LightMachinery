@@ -295,3 +295,26 @@ class AlatVarianCreate(_AlatVarianSpecBase):
 class AlatVarianUpdate(_AlatVarianSpecBase):
     nama_varian: Optional[str] = None
 
+
+
+# ── Stock opname (rev0.4.6) ───────────────────────────────────────────
+
+class OpnameCreate(BaseModel):
+    id_gudang: int
+    keterangan: Optional[str] = None
+
+
+class OpnameBarisInput(BaseModel):
+    id_part: int
+    # None means "not counted yet" and is different from counted-as-zero:
+    # a missing part is a finding, an uncounted one is an incomplete sheet.
+    stok_fisik: Optional[int] = None
+    keterangan: Optional[str] = None
+
+
+class OpnameBarisBatch(BaseModel):
+    baris: List[OpnameBarisInput]
+
+
+class OpnameSelesai(BaseModel):
+    keterangan: Optional[str] = None

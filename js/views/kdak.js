@@ -123,16 +123,10 @@ async function renderKdakTable() {
         ? `<span class="badge badge-so"><i class="fas fa-circle text-[6px]"></i>SO</span>`
         : `<span class="badge badge-tso"><i class="fas fa-circle text-[6px]"></i>TSO</span>`;
 
-      // Badge 2: Kalibrasi status. Carried by /api/aset since rev0.4.5 —
+      // Badge 2: Kalibrasi. Carried by /api/aset since rev0.4.5 —
       // see _card_facts() — rather than by a fleet-wide summary download.
-      const kalibStatus = a.kalibrasi_status;
-      const kalibBadge = kalibStatus === "LULUS"
-        ? `<span class="badge badge-so"><i class="fas fa-circle text-[6px]"></i>LULUS</span>`
-        : kalibStatus === "BERSYARAT"
-        ? `<span class="badge badge-warn"><i class="fas fa-circle text-[6px]"></i>BERSYARAT</span>`
-        : kalibStatus === "GAGAL"
-        ? `<span class="badge badge-tso"><i class="fas fa-circle text-[6px]"></i>GAGAL</span>`
-        : `<span class="badge badge-neutral"><i class="fas fa-circle text-[6px]"></i>BLM KALIBRASI</span>`;
+      // Same one rule as Kelola Data Aset; see kalibrasiBadgeState().
+      const kalibBadge = window.kalibrasiBadgeHtml(a);
 
       // Badge 3: Mutasi status
       const mutasiBadge = (a.mutasi_count > 0)

@@ -57,11 +57,18 @@ function _historyEmptyState(mode, searchQ, filters) {
 // `_historyFilterMatches` shared, so a tab cannot silently ignore a criterion.
 // Those two remain: they are what the parity harness compares against.
 async function _loadHistoryTab(tab, key) {
+  // The Kalibrasi tab can narrow itself to what is actually due. The gate is a
+  // different `punya` VALUE rather than an extra parameter, so the server has
+  // one branch to read and the two states cannot both be set.
+  let punya = tab === "repair" ? "" : tab;
+  if (tab === "kalibrasi" && document.getElementById("hist-jatuh-tempo")?.checked) {
+    punya = "kalibrasi-jatuh-tempo";
+  }
   const params = asetFilterParams(_histSortFilters, {
     q: document.getElementById("search-history")?.value || "",
     sort: _histSortField,
     dir: _histSortDir,
-    punya: tab === "repair" ? "" : tab,
+    punya,
   });
   const { limit, offset } = pagerRequest(key);
   params.set("limit", limit);

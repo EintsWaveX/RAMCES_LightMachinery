@@ -117,14 +117,21 @@ def _repair_events_subquery():
     Filter AFTER the window, never inside it.
     """
     RK = models.RiwayatKondisi
+    _order = (RK.waktu_lapor, RK.id_riwayat)
     return select(
         RK.id_aset.label("id_aset"),
         RK.kondisi.label("kondisi"),
         RK.waktu_lapor.label("waktu_lapor"),
         RK.id_lokasi.label("id_lokasi"),
         func.lag(RK.kondisi)
-        .over(partition_by=RK.id_aset, order_by=(RK.waktu_lapor, RK.id_riwayat))
+        .over(partition_by=RK.id_aset, order_by=_order)
         .label("prev_kondisi"),
+        # The previous row's TIMESTAMP, over the identical window. MTBF and MTTR
+        # are both a difference between adjacent events, so they cost one more
+        # column on a scan that already happens rather than a scan of their own.
+        func.lag(RK.waktu_lapor)
+        .over(partition_by=RK.id_aset, order_by=_order)
+        .label("prev_waktu"),
     ).subquery("ev")
 
 
@@ -185,6 +192,38 @@ def _scoped_repair_events(year: int, lokasi_ids):
             case(
                 ((ev.c.kondisi == "AFKIR") & (ev.c.prev_kondisi == "TSO"), 1), else_=0
             ).label("f_afkir"),
+            # ── Durations, for MTTR and MTBF (rev0.4.6) ──
+            #
+            # Both are the gap between this event and the SAME asset's previous
+            # one, in seconds. NULL where the pair does not exist, so SUM skips
+            # them rather than counting a zero.
+            #
+            #   d_repair   TSO -> SO/AFKIR   how long the machine was DOWN
+            #   d_uptime   anything -> TSO   how long it was UP before failing
+            #
+            # `d_uptime` requires prev_kondisi IS NOT NULL, so an asset's very
+            # first row contributes nothing — there is no interval before it.
+            # The first interval that DOES count is registration -> first
+            # failure, i.e. purchase -> first failure, which is real because
+            # rev0.4.4 stamps the registration row at tanggal_pembelian rather
+            # than at seed time. That is time-to-first-failure, and it belongs
+            # in MTBF for a repairable fleet.
+            case(
+                (
+                    ev.c.kondisi.in_(("SO", "AFKIR")) & (ev.c.prev_kondisi == "TSO"),
+                    extract("epoch", ev.c.waktu_lapor - ev.c.prev_waktu),
+                ),
+                else_=None,
+            ).label("d_repair"),
+            case(
+                (
+                    (ev.c.kondisi == "TSO")
+                    & ev.c.prev_kondisi.is_distinct_from("TSO")
+                    & ev.c.prev_kondisi.isnot(None),
+                    extract("epoch", ev.c.waktu_lapor - ev.c.prev_waktu),
+                ),
+                else_=None,
+            ).label("d_uptime"),
         )
         .select_from(ev)
         .join(AS, AS.id_aset == ev.c.id_aset)
@@ -253,6 +292,16 @@ def _repair_facts(db, year, lokasi_ids):
             func.coalesce(func.sum(S.c.f_masuk), 0),
             func.coalesce(func.sum(S.c.f_selesai), 0),
             func.coalesce(func.sum(S.c.f_afkir), 0),
+            # Seconds. NULL durations are skipped by SUM, so these are totals
+            # over the pairs that exist, not over every row in the group.
+            func.coalesce(func.sum(S.c.d_repair), 0),
+            func.coalesce(func.sum(S.c.d_uptime), 0),
+            # ...and the matching DENOMINATORS. `f_selesai + f_afkir` happens to
+            # equal the number of d_repair values, but only because a repair
+            # closes exactly once — counting the durations directly means the
+            # two cannot drift apart if that ever stops being true.
+            func.count(S.c.d_repair),
+            func.count(S.c.d_uptime),
         ).group_by(bucket, S.c.eff_lokasi, S.c.kode_alat)
     ).all()
     return [
@@ -263,6 +312,10 @@ def _repair_facts(db, year, lokasi_ids):
             int(r[3] or 0),
             int(r[4] or 0),
             int(r[5] or 0),
+            float(r[6] or 0.0),
+            float(r[7] or 0.0),
+            int(r[8] or 0),
+            int(r[9] or 0),
         )
         for r in rows
     ]
@@ -323,6 +376,36 @@ def get_aset_perbaikan_dashboard(
     masuk = sum(f[3] for f in facts)
     selesai = sum(f[4] for f in facts)
     diafkir = sum(f[5] for f in facts)
+
+    # ── Reliability: MTBF and MTTR ───────────────────────────────────────────
+    #
+    # MTTR — mean time to repair: how long a machine stays DOWN, averaged over
+    #        the repairs that actually closed (returned to service or scrapped).
+    # MTBF — mean time between failures: how long it stays UP, averaged over the
+    #        failures that had a preceding event to measure from.
+    #
+    # Both come out of `facts`, which is the SAME single window scan the four
+    # aggregations above read — see `_repair_facts()`. Adding them to `get_mcf()`
+    # instead would have put a second scan of `riwayat_kondisi` on the same page
+    # load, which is exactly the cost rev0.4.5 removed.
+    #
+    # ── Two conventions, both deliberate ──
+    # A repair opened in December and closed in January contributes its whole
+    # duration to the CLOSING year, because the year filter is applied after the
+    # window. That matches how `selesai` is already counted, and the pair is
+    # never severed.
+    #
+    # An asset that has never failed contributes NO interval, so it cannot pull
+    # MTBF up. The figure therefore describes the machines that do break, not the
+    # fleet — which is what a maintenance planner wants, and what the tile says.
+    detik_perbaikan = sum(f[6] for f in facts)
+    detik_operasi = sum(f[7] for f in facts)
+    n_perbaikan = sum(f[8] for f in facts)
+    n_kegagalan = sum(f[9] for f in facts)
+
+    _jam = lambda detik, n: round(detik / n / 3600.0, 1) if n else None
+    mttr_jam = _jam(detik_perbaikan, n_perbaikan)
+    mtbf_jam = _jam(detik_operasi, n_kegagalan)
 
     # An asset's HOME region as a SQL expression: `id_lokasi` normally, but the
     # origin of its first mutation while it is away at a Balaiyasa. This is
@@ -423,7 +506,7 @@ def get_aset_perbaikan_dashboard(
     # `bucket` is already the right resolution for whichever mode is active —
     # the year when "Semua Tahun" is on, the month otherwise.
     b_map = {}
-    for bucket, _lok, _alat, mk, sl, _af in facts:
+    for bucket, _lok, _alat, mk, sl, *_ in facts:
         if bucket is None:
             continue  # a row with no waktu_lapor belongs to no point on the axis
         prev = b_map.get(bucket, (0, 0))
@@ -453,7 +536,7 @@ def get_aset_perbaikan_dashboard(
 
     # ── Per resort (UPT) ─────────────────────────────────────────────────────
     r_map = {}
-    for _bucket, lok, _alat, mk, sl, _af in facts:
+    for _bucket, lok, _alat, mk, sl, *_ in facts:
         if lok is None:
             continue
         prev = r_map.get(lok, (0, 0))
@@ -520,7 +603,7 @@ def get_aset_perbaikan_dashboard(
         db.execute(select(KA.kode_alat, KA.nama_alat)).all()
     )
     a_map = {}
-    for _bucket, _lok, kode, mk, sl, _af in facts:
+    for _bucket, _lok, kode, mk, sl, *_ in facts:
         nama = alat_names.get(kode)
         if nama is None:
             continue
@@ -576,6 +659,18 @@ def get_aset_perbaikan_dashboard(
         # this the report cannot explain why masuk != selesai + sedang.
         "diafkir": diafkir,
         "persen_selesai": persen_selesai,
+
+        # Reliability. `null` rather than 0.0 when there is nothing to average:
+        # a metric that reads "0.0 jam" looks like an answer and teaches the
+        # reader to ignore the panel, which is hard to win back.
+        "mtbf_jam": mtbf_jam,
+        "mttr_jam": mttr_jam,
+        "mtbf_hari": round(mtbf_jam / 24.0, 1) if mtbf_jam is not None else None,
+        "mttr_hari": round(mttr_jam / 24.0, 1) if mttr_jam is not None else None,
+        # The denominators, so the tiles can say what they averaged over rather
+        # than presenting a bare number with no sample size.
+        "mtbf_n": n_kegagalan,
+        "mttr_n": n_perbaikan,
 
         # Cost of the parts consumed by repairs in this scope. Home-attributed,
         # so a Balaiyasa visit does not move the spend out of the owning DAOP.

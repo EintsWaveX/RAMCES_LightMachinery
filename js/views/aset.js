@@ -1064,18 +1064,16 @@ async function renderDbCards() {
         ? `<span class="badge badge-so"><i class="fas fa-circle text-[6px]"></i>SO</span>`
         : `<span class="badge badge-tso"><i class="fas fa-circle text-[6px]"></i>TSO</span>`;
 
-      // Badge 2: Kalibrasi status.
+      // Badge 2: Kalibrasi.
       // These three badges are why the SPA used to download the entire
       // /api/history/summary at login. They ride on /api/aset itself now —
       // batched over the ids on this page, see _card_facts() in api/aset.py.
-      const kalibStatus = item.kalibrasi_status;
-      const kalibBadge = kalibStatus === "LULUS"
-        ? `<span class="badge badge-so"><i class="fas fa-circle text-[6px]"></i>LULUS</span>`
-        : kalibStatus === "BERSYARAT"
-        ? `<span class="badge badge-warn"><i class="fas fa-circle text-[6px]"></i>BERSYARAT</span>`
-        : kalibStatus === "GAGAL"
-        ? `<span class="badge badge-tso"><i class="fas fa-circle text-[6px]"></i>GAGAL</span>`
-        : `<span class="badge badge-neutral"><i class="fas fa-circle text-[6px]"></i>BLM KALIBRASI</span>`;
+      //
+      // The four-branch ladder that used to be inline here is now
+      // kalibrasiBadgeState() in js/core.js, shared with Kelola Data Alat
+      // Kerja: an EXPIRED pass has to read JATUH TEMPO rather than a green
+      // LULUS, and two copies of that rule would drift.
+      const kalibBadge = window.kalibrasiBadgeHtml(item);
 
       // Badge 3: Mutasi status
       const mutasiBadge = (item.mutasi_count > 0)

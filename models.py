@@ -558,3 +558,116 @@ class PemakaianSparepart(Base):
     part_ref = relationship("SparePart")
     stok_ref = relationship("SparePartStok")
     gudang_ref = relationship("Gudang")
+
+
+# ══════════════════════════════════════════════════════════════════════
+# STOCK OPNAME — physical count → variance → adjustment
+# ══════════════════════════════════════════════════════════════════════
+#
+# The last client-matrix item that needed schema, and it is purely additive:
+# `ADJ_IN` / `ADJ_OUT` already existed in `SparePartStok` as the adjustment
+# mechanism, so an opname does not introduce a new way for stock to move. It
+# introduces a record of WHY a particular adjustment was made — which is the
+# thing an auditor asks for and the ledger alone cannot answer.
+#
+# DECLARED HERE ON PURPOSE. `manage.py reset` drops via
+# `Base.metadata.drop_all`, which only knows about declared tables, so a table
+# created by raw DDL alone survives the drop and then collides with the
+# recreate on the very next boot. `_ensure_schema()` adds only what `create_all`
+# cannot express — see api/schema.py.
+
+
+class OpnameSesi(Base):
+    """
+    One physical stock count of one warehouse.
+
+    Scoped to a single `id_gudang` because that is the pool every balance in
+    this system is scoped by (see `_net_stok_map`). A count that spanned
+    warehouses could not produce an adjustment anyone could act on.
+
+    ── The lifecycle, and why it is three states and not a boolean ──
+      DRAFT    open; lines are being counted. Writes nothing to the ledger.
+      SELESAI  posted; every non-zero variance became an ADJ_IN/ADJ_OUT row.
+      BATAL    abandoned; writes nothing, and is KEPT rather than deleted so
+               that "we counted and then stopped" stays visible.
+
+    A boolean `selesai` could not distinguish the last two, and deleting an
+    abandoned count hides the fact that it happened.
+    """
+
+    __tablename__ = "opname_sesi"
+
+    id_opname = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    id_gudang = Column(
+        Integer, ForeignKey("gudang.id_gudang"), nullable=False, index=True
+    )
+    status = Column(String(10), nullable=False, server_default=text("'DRAFT'"))
+    waktu_mulai = Column(DateTime, server_default=text("CURRENT_TIMESTAMP"), index=True)
+    waktu_selesai = Column(DateTime, nullable=True)
+    id_pengguna = Column(
+        Integer,
+        ForeignKey("pengguna.id_pengguna", ondelete="SET NULL"),
+        nullable=True,
+    )
+    keterangan = Column(Text, nullable=True)
+
+    gudang_ref = relationship("Gudang")
+    pengguna_ref = relationship("Pengguna")
+    baris = relationship(
+        "OpnameBaris", back_populates="sesi_ref", cascade="all, delete-orphan"
+    )
+
+    STATUS = ("DRAFT", "SELESAI", "BATAL")
+
+    __table_args__ = (
+        CheckConstraint(status.in_(list(STATUS)), name="opname_sesi_status_check"),
+    )
+
+
+class OpnameBaris(Base):
+    """
+    One part on one count sheet.
+
+    `stok_sistem` is the balance AT THE MOMENT THE SESSION OPENED, kept so the
+    sheet can show the counter what the system believed and so the posted
+    adjustment can be explained afterwards.
+
+    It is NOT what the adjustment is computed from. Counting a warehouse takes
+    time, and a part issued to a repair while the count is in progress would
+    otherwise be silently reversed by the posting. `POST .../selesai` re-reads
+    the current balance and posts the difference against THAT — see the
+    endpoint, where this is the invariant most worth protecting.
+
+    `selisih` is deliberately NOT a column: it is `stok_fisik - stok_sistem`,
+    and a stored copy is a second source of truth that can disagree with its
+    own inputs.
+    """
+
+    __tablename__ = "opname_baris"
+
+    id_baris = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    id_opname = Column(
+        Integer,
+        ForeignKey("opname_sesi.id_opname", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    id_part = Column(
+        Integer, ForeignKey("sparepart.id_part"), nullable=False, index=True
+    )
+    stok_sistem = Column(Integer, nullable=False, server_default=text("0"))
+    # NULL means "not counted yet", which is different from counted-as-zero.
+    # A missing part IS a finding; an uncounted one is an incomplete sheet.
+    stok_fisik = Column(Integer, nullable=True)
+    keterangan = Column(Text, nullable=True)
+    # The adjustment this line produced, or NULL when the variance was zero.
+    # Points into the ledger so a posted count can be traced both ways.
+    id_stok = Column(Integer, ForeignKey("sparepart_stok.id_stok"), nullable=True)
+
+    sesi_ref = relationship("OpnameSesi", back_populates="baris")
+    part_ref = relationship("SparePart")
+    stok_ref = relationship("SparePartStok")
+
+    __table_args__ = (
+        UniqueConstraint("id_opname", "id_part", name="uq_opname_baris"),
+    )

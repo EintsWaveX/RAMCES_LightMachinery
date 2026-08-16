@@ -41,7 +41,9 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
-from sqlalchemy import exists, func
+from datetime import date, timedelta
+
+from sqlalchemy import exists, func, select
 from sqlalchemy.orm import Session, joinedload
 
 import models
@@ -329,6 +331,7 @@ def get_history_summary(
     id_from: Optional[int] = None,
     id_to: Optional[int] = None,
     punya: Optional[str] = None,
+    jatuh_tempo_hari: int = Query(30, ge=1, le=365),
     sort: Optional[str] = None,
     dir: Optional[str] = None,
     db: Session = Depends(get_db),
@@ -360,8 +363,11 @@ def get_history_summary(
               transfer, the origin it was transferred from
       punya   the tab gate. 'kalibrasi' keeps assets with a calibration record
               (the client's `has_kalibrasi`), 'mutasi' keeps assets with a
-              transfer (its `item.mutasi` truthiness). Absent keeps everything,
-              which is the Perbaikan tab.
+              transfer (its `item.mutasi` truthiness), and
+              'kalibrasi-jatuh-tempo' narrows the first of those to the ones
+              whose certificate has expired or is within `jatuh_tempo_hari`
+              days of doing so. Absent keeps everything, which is the
+              Perbaikan tab.
 
     `id_aset` bypasses all of it: landing.html asks for one row by name.
     """
@@ -398,6 +404,27 @@ def get_history_summary(
                 exists().where(
                     models.RiwayatKalibrasi.id_aset == models.Aset.id_aset
                 )
+            )
+        elif punya == "kalibrasi-jatuh-tempo":
+            # The actionable subset of the Kalibrasi tab: assets whose LATEST
+            # certificate has expired or is about to.
+            #
+            # "Latest" is the same row_number the summary payload and
+            # `_card_facts()` pick, so the list and the badge on each card can
+            # never name different records. The comparison is against a
+            # correlated MAX rather than a join, because a join to the latest
+            # row would need the whole row_number subquery inlined into a
+            # filter — this asks the narrower question directly.
+            RKAL = models.RiwayatKalibrasi
+            terbaru = (
+                select(func.max(RKAL.tanggal_berlaku))
+                .where(RKAL.id_aset == models.Aset.id_aset)
+                .correlate(models.Aset)
+                .scalar_subquery()
+            )
+            base = base.filter(
+                terbaru.isnot(None),
+                terbaru <= date.today() + timedelta(days=jatuh_tempo_hari),
             )
         elif punya == "mutasi":
             base = base.filter(

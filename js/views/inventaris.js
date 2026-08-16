@@ -41,6 +41,8 @@
   const panelTransfer = el("inv-panel-transfer");
   const tabHirarki = el("inv-tab-hirarki");
   const panelHirarki = el("inv-panel-hirarki");
+  const tabOpname = el("inv-tab-opname");
+  const panelOpname = el("inv-panel-opname");
   const hirarkiAlat = el("inv-hirarki-alat");
   const hirarkiTree = el("inv-hirarki-tree");
   const hirarkiCakupan = el("inv-hirarki-cakupan");
@@ -55,6 +57,7 @@
     { btn: tabTransaksi, panel: panelTransaksi, id: "transaksi" },
     { btn: tabTransfer, panel: panelTransfer, id: "transfer" },
     { btn: tabHirarki, panel: panelHirarki, id: "hirarki" },
+    { btn: tabOpname, panel: panelOpname, id: "opname" },
   ];
 
   function setInvTab(which) {
@@ -69,7 +72,8 @@
     // The toolbar belongs to Parts and Transfer and lives outside every panel,
     // so it has to be hidden explicitly on the tabs that don't want it.
     const noToolbar =
-      which === "dashboard" || which === "transaksi" || which === "hirarki";
+      which === "dashboard" || which === "transaksi" || which === "hirarki" ||
+      which === "opname";
     toolbar?.classList.toggle("hidden", noToolbar);
     toolbarActions?.classList.toggle("hidden", noToolbar);
 
@@ -98,6 +102,7 @@
     if (which === "transaksi") { loadPartCatalog(); loadLedger({ reset: true }); }
     if (which === "transfer") loadInvTransfer();
     if (which === "hirarki") loadInvHirarki();
+    if (which === "opname") loadOpname();
   }
 
   ALL_TABS.forEach(({ btn, id }) => btn?.addEventListener("click", () => setInvTab(id)));
@@ -319,6 +324,17 @@
     const entry = el("tx-gudang");
     if (entry) {
       entry.innerHTML = opts || '<option value="">— Belum ada gudang —</option>';
+    }
+    // Same rule for the opname sheet: a count is always OF one warehouse, so
+    // there is no "all warehouses" option to offer. Filled here rather than in
+    // loadOpname() so every gudang select in this view is built in one place —
+    // the tab previously copied another select's innerHTML, which silently
+    // produced an empty list whenever it happened to open first.
+    const opname = el("inv-opname-gudang");
+    if (opname) {
+      const keep = opname.value;
+      opname.innerHTML = opts || '<option value="">— Belum ada gudang —</option>';
+      if (keep) opname.value = keep;
     }
     // Opening stock on the "Tambah Suku Cadang" modal, and both ends of a
     // transfer. All three write id_gudang, the pool every balance is computed
@@ -2327,6 +2343,297 @@
       loadLedger({ reset: true });
     }
     if (!panelTransfer?.classList.contains("hidden")) loadInvTransfer();
+    // A repair consuming parts, or another counter posting, changes the
+    // balances this sheet is measured against.
+    if (!panelOpname?.classList.contains("hidden")) loadOpname();
+  });
+
+
+  // ══════════════════════════════════════════════════════════════════
+  // STOCK OPNAME — count sheet, variance, posting
+  // ══════════════════════════════════════════════════════════════════
+  //
+  // Nothing in this tab touches the ledger until "Selesaikan" is pressed. The
+  // physical counts are saved as they are typed so a half-finished sheet
+  // survives a reload, but they are just numbers on a form until the variance
+  // is posted as ADJ_IN/ADJ_OUT rows — see selesai_opname() in
+  // api/inventaris.py, where the variance is deliberately recomputed against
+  // the CURRENT balance rather than the one snapshotted when the sheet opened.
+  //
+  // The sheet shows BOTH figures for exactly that reason: `stok_sistem` is what
+  // the system believed when counting started, `stok_kini` is what it believes
+  // now, and when they differ it is because the warehouse legitimately moved
+  // stock mid-count. Hiding that would make the counter answer for a variance
+  // they did not create.
+
+  let _opnameAktif = null;   // the open session's payload, or null
+
+  async function loadOpname() {
+    // loadGudangOptions() fills #inv-opname-gudang along with every other
+    // warehouse select in this view.
+    await loadGudangOptions();
+    await Promise.all([_loadOpnameAktif(), _loadOpnameRiwayat()]);
+  }
+
+  async function _loadOpnameAktif() {
+    const sheet = el("inv-opname-sheet");
+    const info = el("inv-opname-status");
+    if (!sheet) return;
+    try {
+      const res = await apiFetch("/inventaris/opname?status=DRAFT&limit=1", {
+        background: true,
+      });
+      if (!res.ok) throw new Error("Gagal memuat opname.");
+      const first = (await res.json()).items[0];
+      if (!first) {
+        _opnameAktif = null;
+        if (info) info.textContent = "Tidak ada opname berjalan.";
+        sheet.innerHTML =
+          `<div class="empty-state"><i class="fas fa-clipboard-list"></i>
+             Belum ada opname berjalan. Pilih gudang lalu tekan
+             <b>Mulai Opname</b> untuk mencetak lembar hitung.</div>`;
+        return;
+      }
+      const detail = await apiFetch(`/inventaris/opname/${first.id_opname}`, {
+        background: true,
+      });
+      if (!detail.ok) throw new Error("Gagal memuat lembar opname.");
+      _opnameAktif = await detail.json();
+      if (info)
+        info.textContent =
+          `Opname #${_opnameAktif.id_opname} · ${_opnameAktif.nama_gudang} · ` +
+          `${_opnameAktif.jumlah_dihitung}/${_opnameAktif.jumlah_baris} baris dihitung`;
+      renderOpnameSheet();
+    } catch (e) {
+      sheet.innerHTML = `<div class="empty-state"><i class="fas fa-triangle-exclamation"></i>${e.message}</div>`;
+    }
+  }
+
+  function renderOpnameSheet() {
+    const sheet = el("inv-opname-sheet");
+    if (!sheet || !_opnameAktif) return;
+    const esc = window.spekEscape;
+
+    const rows = _opnameAktif.baris
+      .map((b) => {
+        // A variance is only meaningful once something has been counted.
+        const counted = b.stok_fisik !== null && b.stok_fisik !== undefined;
+        const sel = counted ? b.stok_fisik - b.stok_kini : null;
+        const selCls =
+          sel === null ? "text-gray-300"
+            : sel === 0 ? "text-gray-400"
+              : sel > 0 ? "text-green-600 dark:text-green-400 font-bold"
+                : "text-red-600 dark:text-red-400 font-bold";
+        // The system figure MOVED while the sheet was open. Say so rather than
+        // presenting a variance the counter cannot explain.
+        const geser = b.stok_kini !== b.stok_sistem
+          ? `<span class="badge badge-warn ml-1" title="Stok berubah saat opname berjalan">
+               ${b.stok_sistem} → ${b.stok_kini}</span>`
+          : "";
+        return `
+          <tr class="border-b border-gray-50 dark:border-gray-700/50" data-opname-row data-part="${b.id_part}">
+            <td class="px-3 py-2 text-sm">${esc(b.nama_part || "—")}</td>
+            <td class="px-3 py-2 text-center text-sm text-gray-500">${b.stok_kini} ${esc(b.unit || "")}${geser}</td>
+            <td class="px-3 py-2 text-center">
+              <input type="number" min="0" step="1" data-opname-fisik aria-label="Jumlah fisik ${esc(b.nama_part || "")}"
+                value="${counted ? b.stok_fisik : ""}" placeholder="—"
+                class="w-24 p-1.5 text-center bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition" />
+            </td>
+            <td class="px-3 py-2 text-center text-sm ${selCls}" data-opname-selisih>
+              ${sel === null ? "—" : (sel > 0 ? "+" : "") + sel}
+            </td>
+          </tr>`;
+      })
+      .join("");
+
+    sheet.innerHTML = `
+      <div class="flex flex-wrap items-center gap-2 mb-3">
+        <button type="button" id="inv-opname-simpan" class="btn btn-ghost">
+          <i class="fas fa-floppy-disk"></i> Simpan Hitungan
+        </button>
+        <button type="button" id="inv-opname-selesai" class="btn btn-success">
+          <i class="fas fa-check"></i> Selesaikan &amp; Sesuaikan Stok
+        </button>
+        <button type="button" id="inv-opname-batal" class="btn btn-danger">
+          <i class="fas fa-xmark"></i> Batalkan
+        </button>
+        <p class="text-[11px] text-gray-400 basis-full">
+          Baris yang dikosongkan dianggap <b>belum dihitung</b> dan tidak akan
+          menghasilkan penyesuaian — berbeda dengan diisi angka nol.
+        </p>
+      </div>
+      <div class="overflow-x-auto table-stack-wrap">
+        <table class="w-full text-sm table-stack">
+          <thead class="text-[10px] uppercase tracking-wider text-gray-400 border-b border-gray-100 dark:border-gray-700">
+            <tr>
+              <th class="px-3 py-2 text-left">Sparepart</th>
+              <th class="px-3 py-2 text-center">Stok Sistem</th>
+              <th class="px-3 py-2 text-center">Hitung Fisik</th>
+              <th class="px-3 py-2 text-center">Selisih</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>`;
+  }
+
+  /** [{id_part, stok_fisik, keterangan}] straight off the sheet. */
+  function _collectOpname() {
+    return [...document.querySelectorAll("#inv-opname-sheet [data-opname-row]")].map(
+      (tr) => {
+        const raw = tr.querySelector("[data-opname-fisik]").value.trim();
+        return {
+          id_part: parseInt(tr.dataset.part, 10),
+          // "" means not counted. `parseInt("")` is NaN, so the empty string has
+          // to be tested before parsing or every blank row would post as null
+          // anyway by accident rather than by intent.
+          stok_fisik: raw === "" ? null : parseInt(raw, 10),
+        };
+      },
+    );
+  }
+
+  async function _saveOpname(silent) {
+    if (!_opnameAktif) return false;
+    const res = await apiFetch(`/inventaris/opname/${_opnameAktif.id_opname}/baris`, {
+      method: "PUT",
+      body: JSON.stringify({ baris: _collectOpname() }),
+      background: true,
+    });
+    if (!res.ok) {
+      const d = await res.json().catch(() => ({}));
+      showToast(d.detail || "Gagal menyimpan hitungan.", "error");
+      return false;
+    }
+    if (!silent) showToast("Hitungan tersimpan.", "success");
+    return true;
+  }
+
+  async function _loadOpnameRiwayat() {
+    const tbody = el("inv-opname-riwayat");
+    if (!tbody) return;
+    try {
+      const res = await apiFetch("/inventaris/opname?limit=20", { background: true });
+      if (!res.ok) return;
+      const rows = (await res.json()).items;
+      if (!rows.length) {
+        tbody.innerHTML =
+          `<tr><td colspan="7" class="px-3 py-6 text-center text-xs text-gray-400">Belum ada opname.</td></tr>`;
+        return;
+      }
+      const tone = { DRAFT: "badge-warn", SELESAI: "badge-so", BATAL: "badge-neutral" };
+      tbody.innerHTML = rows
+        .map(
+          (r) => `
+          <tr class="border-b border-gray-50 dark:border-gray-700/50">
+            <td class="px-3 py-2 font-mono text-xs">#${r.id_opname}</td>
+            <td class="px-3 py-2 text-sm">${window.spekEscape(r.nama_gudang || "—")}</td>
+            <td class="px-3 py-2 font-mono text-xs">${r.waktu_mulai ? formatUtcToLocal(r.waktu_mulai) : "—"}</td>
+            <td class="px-3 py-2 font-mono text-xs">${r.waktu_selesai ? formatUtcToLocal(r.waktu_selesai) : "—"}</td>
+            <td class="px-3 py-2 text-sm">${window.spekEscape(r.oleh || "—")}</td>
+            <td class="px-3 py-2 text-center text-sm">${r.jumlah_dihitung}/${r.jumlah_baris}</td>
+            <td class="px-3 py-2 text-center">
+              <span class="badge ${tone[r.status] || "badge-neutral"}">${r.status}</span>
+            </td>
+          </tr>`,
+        )
+        .join("");
+    } catch (e) {
+      /* the sheet above is the working surface; history is supporting detail */
+    }
+  }
+
+  // Delegated, because the sheet is rebuilt from a template string on every
+  // load and per-row listeners would have to be re-bound each time.
+  el("inv-opname-sheet")?.addEventListener("input", (e) => {
+    const tr = e.target.closest("[data-opname-row]");
+    if (!tr || !_opnameAktif) return;
+    const raw = tr.querySelector("[data-opname-fisik]").value.trim();
+    const row = _opnameAktif.baris.find((b) => b.id_part === parseInt(tr.dataset.part, 10));
+    const cell = tr.querySelector("[data-opname-selisih]");
+    if (!row || !cell) return;
+    if (raw === "") {
+      cell.textContent = "—";
+      cell.className = "px-3 py-2 text-center text-sm text-gray-300";
+      return;
+    }
+    const sel = parseInt(raw, 10) - row.stok_kini;
+    cell.textContent = (sel > 0 ? "+" : "") + sel;
+    cell.className =
+      "px-3 py-2 text-center text-sm " +
+      (sel === 0 ? "text-gray-400"
+        : sel > 0 ? "text-green-600 dark:text-green-400 font-bold"
+          : "text-red-600 dark:text-red-400 font-bold");
+  });
+
+  el("inv-opname-sheet")?.addEventListener("click", async (e) => {
+    if (e.target.closest("#inv-opname-simpan")) {
+      await _saveOpname(false);
+      return;
+    }
+    if (e.target.closest("#inv-opname-batal")) {
+      if (!(await customConfirm({
+        title: "Batalkan opname?",
+        message: "Hitungan yang sudah dimasukkan akan dibuang dan stok tidak diubah.",
+        confirmText: "Batalkan",
+        danger: true,
+      }))) return;
+      const res = await apiFetch(`/inventaris/opname/${_opnameAktif.id_opname}/batal`, {
+        method: "POST",
+      });
+      if (!res.ok) {
+        showToast("Gagal membatalkan opname.", "error");
+        return;
+      }
+      showToast("Opname dibatalkan.", "success");
+      loadOpname();
+      return;
+    }
+    if (e.target.closest("#inv-opname-selesai")) {
+      // Save first: posting reads the SERVER's copy of the sheet, so an unsaved
+      // number typed a second ago would otherwise be silently dropped.
+      if (!(await _saveOpname(true))) return;
+      const n = _collectOpname().filter((b) => b.stok_fisik !== null).length;
+      if (!(await customConfirm({
+        title: "Selesaikan opname?",
+        message:
+          `${n} baris akan dibandingkan dengan stok saat ini, dan setiap selisih ` +
+          "dicatat sebagai penyesuaian (ADJ_IN / ADJ_OUT). Tindakan ini mengubah stok.",
+        confirmText: "Selesaikan",
+      }))) return;
+
+      const res = await apiFetch(`/inventaris/opname/${_opnameAktif.id_opname}/selesai`, {
+        method: "POST",
+        body: JSON.stringify({}),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        showToast(d.detail || "Gagal menyelesaikan opname.", "error");
+        return;
+      }
+      showToast(d.message || "Opname selesai.", "success");
+      loadOpname();
+      loadInvParts();
+    }
+  });
+
+  el("inv-opname-buka")?.addEventListener("click", async () => {
+    const gid = parseInt(el("inv-opname-gudang")?.value, 10);
+    if (!gid) {
+      showToast("Pilih gudang dulu.", "warning");
+      return;
+    }
+    const res = await apiFetch("/inventaris/opname", {
+      method: "POST",
+      body: JSON.stringify({ id_gudang: gid }),
+    });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      showToast(d.detail || "Gagal membuka opname.", "error");
+      return;
+    }
+    showToast(d.message || "Opname dibuka.", "success");
+    loadOpname();
   });
 
 })();

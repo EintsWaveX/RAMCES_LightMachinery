@@ -24,7 +24,7 @@ Every number here was measured against the local seeded database, not estimated.
 
 ## 1. Where the project stands
 
-Branch `rev0.4.5-alpha`. Version naming is `revX.Y.Z-alpha` / `-beta`; the older
+Branch `rev0.4.6-alpha`. Version naming is `revX.Y.Z-alpha` / `-beta`; the older
 `-fe-be` suffix is retired.
 
 | Round | What it delivered |
@@ -39,13 +39,14 @@ Branch `rev0.4.5-alpha`. Version naming is `revX.Y.Z-alpha` / `-beta`; the older
 | **rev0.4.3** | Hierarki Part (BOM tree), Kartu Riwayat Part, Fast/Slow moving, the pengadaan scope rule |
 | **rev0.4.4** | `seeds/simulasi.py` — marked, reversible operational history for the real fleet |
 | **rev0.4.5** | Server-side paging, end to end: boot 1,062 KB → 19 KB. `api/query.py` (the server twin of the one matcher), `/ringkasan`, and one window scan instead of four |
+| **rev0.4.6** | MTBF/MTTR · calibration due-date reminder · stock opname — **the client matrix closes** |
 
 ### Current baseline — keep these honest
 
 ```text
-routes            88        openapi paths     60
-shadow pairs       0        require_role      43 guards
-broadcasts        37        manage.py verify  16/16
+routes            95        openapi paths     66
+shadow pairs       0        require_role      47 guards
+broadcasts        40        manage.py verify  16/16
 audit findings     0        console errors     0  (8 views x 2 widths x 2 themes)
 test_paging.py    46 filter + 16 riwayat + 10 order cases, client == server
 boot payload      19 KB / 7 requests   (was 1,062 KB) · per view ~1.2 KB
@@ -206,41 +207,57 @@ in the DOM at once" and `js/views/inventaris.js`'s eval-time DOM caching.
 - Tables were left on inline Tailwind. `.table-std td` (0,1,1) outranks the
   per-cell `.px-4` (0,1,0) that 22 tables rely on, so adopting it is a restyle
   per table, not a find-and-replace.
+- **`GET /api/aset/afkir` is the last unpaged list endpoint** — a bare `.all()`
+  over every scrapped asset, 44 rows today. After rev0.4.5 it is the only one
+  left, and `js/views/afkir.js` is the only view that still holds a whole list
+  client-side. Fine at this size; it is recorded here so the next person does
+  not have to rediscover that it is the exception.
 
 ---
 
-## 4. Remaining client-matrix features
+## 4. Client-matrix features — CLOSED at rev0.4.6
 
 From [CAKUPAN-TIMELINE-MAGANG.md](CAKUPAN-TIMELINE-MAGANG.md). Three of the
-original seven closed in rev0.4.3; these are what is left.
+original seven closed in rev0.4.3, and the last three buildable ones closed in
+rev0.4.6.
 
-| Feature | Blocked on | Notes |
+| Feature | Shipped in | How |
 |---|---|---|
-| **MTBF / MTTR** | ~~data~~ — **now unblocked** | `_scoped_repair_events()` already isolates the exact transitions; one added `lag(waktu_lapor)` supplies the durations. rev0.4.4 removed the blocker: `manage.py seed --simulasi` produces ~500 repair events with real timestamps, so the metric can be built and SEEN. Sits beside the existing Kurva MCF tab. |
-| **Calibration reminder** | ~~data~~ — **surface only** | rev0.4.4 fills `riwayat_kalibrasi`, so `tanggal_berlaku` now has something to compare against. What remains is the notification surface: the bell is session-scoped with no notifications table, deliberately. |
-| **Stock opname** | a new table | The only remaining gap needing schema: an opname session (count → variance → adjustment). `ADJ_IN`/`ADJ_OUT` already exist as the adjustment mechanism, so it is additive. |
-| **In-app QR scanner** | nothing, but low value | The field flow already works: the phone's native camera opens `landing.html?uid=…`. Needs camera-permission handling for marginal gain. |
+| **MTBF / MTTR** | rev0.4.6 | Two more columns on the window scan `_repair_facts()` already makes — `lag(waktu_lapor)` beside `lag(kondisi)`. Rendered as tiles on the Kurva MCF panel, because MCF/MTBF/MTTR are one reliability story. Verified by recomputing both in plain Python and comparing |
+| **Calibration reminder** | rev0.4.6 | `GET /api/kalibrasi/jatuh-tempo`, a STATE rather than a notification — so no notifications table, and nothing to mark read. Surfaced as a `JATUH TEMPO`/`SEGERA` card badge, a filter on the Kalibrasi tab, and one standing entry in the bell |
+| **Stock opname** | rev0.4.6 | `opname_sesi` / `opname_baris`, posting through the existing `ADJ_IN`/`ADJ_OUT` ledger in one transaction. The variance is measured against the CURRENT balance, not the opening snapshot — see CLAUDE.md |
+| **In-app QR scanner** | — | The ONLY line still open, and deliberately: the field flow already works through the phone's native camera, which is what technicians actually do. Needs browser camera permission for marginal gain |
 
-**This was the point of rev0.4.4.** Two of these four used to be blocked on the
-system being *used* rather than built — shipping a reliability metric that reads
-0.0 teaches users to ignore that panel, and it is hard to win that attention
-back. A marked, reversible simulation removes that block without pretending the
-data is real.
+**The whole matrix is now green except the QR button.** Two of these three used
+to be blocked on the system being *used* rather than built — shipping a
+reliability metric that reads 0.0 teaches users to ignore that panel, and it is
+hard to win that attention back. rev0.4.4's marked, reversible simulation is
+what removed that block without pretending the data is real.
 
 ---
 
 ## 5. Suggested order
 
+Renumbered at `rev0.4.6`. Everything the previous list ranked 1–4b is done; what
+is below it kept its relative order.
+
 | # | Work | Effort | Risk of leaving it |
 |---|---|---|---|
-| ~~1~~ | ~~Server-side paging (§3.1)~~ | — | **Done in rev0.4.5** — boot 1,062 KB → 19 KB |
-| ~~2~~ | ~~Repair-dashboard CTE (§3.2)~~ | — | **Done in rev0.4.5**, 2× on the endpoint |
-| 1 | Stock opname | Medium | Last client-matrix item that is purely build work |
-| 4 | MTBF/MTTR | Small | Unblocked by rev0.4.4 — build it next |
-| 4b | Calibration reminder | Small | Data is there; needs a notification surface |
-| 5 | Surrogate PK (§3.4) | Large | Makes every edit cheap; do after paging |
-| 6 | Redis-backed rate limiting (§3.3) | Small | Only matters once deployed multi-worker |
-| 7 | Tailwind build step (§3.6) | Medium | Only if a build step becomes acceptable |
+| 1 | Surrogate PK for `aset` (§3.4) | Large | Editing any id segment rewrites every child row. The largest remaining structural debt |
+| 2 | Redis-backed rate limiting (§3.3) | Small | Only matters once deployed multi-worker, but then it matters immediately |
+| 3 | Persisted audit log of failed sign-ins (§3.8) | Small | The rate limiter counts them in memory only, so a restart forgets an attack |
+| 4 | In-app QR scan button | Small | The last client-matrix line, and the doc rates it low value: the field flow already works through the phone's native camera |
+| 6 | Batch the `resolve_home_lokasi()` N+1 in the export loops (§3.5) | Small | Rare in practice; only bites if workshop traffic grows |
+| 5 | Tailwind build step (§3.6) | Medium | Only if a build step becomes acceptable — decide explicitly rather than drift |
+
+### Done, most recent first
+
+| Round | Work |
+|---|---|
+| rev0.4.6 | MTBF/MTTR · calibration reminder · stock opname — the client matrix closes |
+| rev0.4.5 | Server-side paging (§3.1), boot 1,062 KB → 19 KB · repair-dashboard single window scan (§3.2), 2× |
+| rev0.4.4 | `seeds/simulasi.py` — marked, reversible operational history |
+| rev0.4.3 | Hierarki Part · Kartu Riwayat Part · Fast/Slow moving · pengadaan scope |
 
 ---
 
@@ -299,4 +316,4 @@ seeded database is indistinguishable from demo data later.
 
 ---
 
-*Last updated against `rev0.4.5-alpha`.*
+*Last updated against `rev0.4.6-alpha`.*

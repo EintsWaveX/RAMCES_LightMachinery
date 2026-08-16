@@ -191,6 +191,42 @@
     }
   }
 
+  /**
+   * MTBF and MTTR tiles, on the Kurva MCF panel.
+   *
+   * Both are printed in DAYS with hours underneath, because a fleet MTBF of
+   * 4,612 hours means nothing to a maintenance planner and 192 days means
+   * "roughly twice a year".
+   *
+   * The note line carries the sample size and, for MTBF, what the average is
+   * over. That matters: an asset that has never failed contributes no interval,
+   * so MTBF describes the machines that DO break rather than the whole fleet.
+   * A bare number invites the opposite reading.
+   *
+   * `null` (no repairs closed yet, no failures yet) renders an em dash, never
+   * "0,0 hari" — a reliability metric that reads zero looks like an answer and
+   * teaches the reader to ignore the panel.
+   */
+  function _renderReliability(d) {
+    const fmt = (hari, jam) =>
+      hari == null ? "—" : `${hari.toLocaleString("id-ID")} hari`;
+    const note = (hari, jam, n, apa) =>
+      hari == null
+        ? "belum ada data"
+        : `${jam.toLocaleString("id-ID")} jam · dari ${n.toLocaleString("id-ID")} ${apa}`;
+
+    if (el("rd-mtbf")) el("rd-mtbf").textContent = fmt(d.mtbf_hari, d.mtbf_jam);
+    if (el("rd-mtbf-note"))
+      el("rd-mtbf-note").textContent = note(
+        d.mtbf_hari, d.mtbf_jam, d.mtbf_n, "kerusakan tercatat",
+      );
+    if (el("rd-mttr")) el("rd-mttr").textContent = fmt(d.mttr_hari, d.mttr_jam);
+    if (el("rd-mttr-note"))
+      el("rd-mttr-note").textContent = note(
+        d.mttr_hari, d.mttr_jam, d.mttr_n, "perbaikan selesai",
+      );
+  }
+
   function render(d) {
     const t = KAI_VIZ.theme();
 
@@ -234,6 +270,15 @@
         ? `${n} item sparepart terpakai`
         : "belum ada pemakaian tercatat";
     }
+
+    // ── MTBF / MTTR ──
+    //
+    // Rendered into the Kurva MCF panel, not this one: MCF, MTBF and MTTR are
+    // one reliability story and the client's matrix names them together. They
+    // ride on THIS payload because `_repair_facts()` computes them off the same
+    // single window scan the figures above come from — putting them on the MCF
+    // endpoint would have meant a second scan of `riwayat_kondisi` per page.
+    _renderReliability(d);
 
     // ── Completion gauge ──
     const pct = Number(d.persen_selesai || 0);
@@ -523,6 +568,8 @@
     if (!canvas) return;
 
     if (el("rd-mcf-risk")) el("rd-mcf-risk").textContent = (d.aset_berisiko ?? 0).toLocaleString("id-ID");
+    // (MTBF/MTTR are filled by _renderReliability from the perbaikan payload —
+    // this endpoint deliberately does not carry them.)
     if (el("rd-mcf-total")) el("rd-mcf-total").textContent = (d.total_perbaikan ?? 0).toLocaleString("id-ID");
     if (el("rd-mcf-akhir")) el("rd-mcf-akhir").textContent = Number(d.mcf_akhir || 0).toFixed(4);
     if (el("rd-mcf-caption")) {

@@ -135,6 +135,9 @@ async function checkAuth() {
     // costs one ~6 KB rollup rather than a walk through every page of the fleet.
     // Each view fetches its own page when it is opened; nothing is prefetched.
     await updateDashboardStats();
+    // The standing calibration item in the bell. Deliberately not awaited: it
+    // is an advisory count, and the dashboard must not wait on it to paint.
+    refreshKalibrasiDue();
   } else {
     const mainAppEl = document.getElementById("main-app");
     if (mainAppEl) {
@@ -1524,6 +1527,13 @@ function setupEventListeners() {
     renderMutasiCards();
   });
 
+  // Narrowing is a filter change, so it goes back to page 1 — otherwise a user
+  // on page 4 of 60 assets sees an empty page 4 of the 6 that are actually due.
+  document.getElementById("hist-jatuh-tempo")?.addEventListener("change", () => {
+    resetPage("history-kalibrasi");
+    renderKalibrasiCards();
+  });
+
   function _setHistoryTab(active) {
     // Was six hand-maintained Tailwind class arrays and the swapping logic to
     // go with them. `.segmented` in assets/style.css owns the appearance now.
@@ -1540,6 +1550,16 @@ function setupEventListeners() {
     document.getElementById("history-repair-pager")?.classList.toggle("hidden", active !== "repair");
     document.getElementById("history-kalibrasi-pager")?.classList.toggle("hidden", active !== "kalibrasi");
     document.getElementById("history-mutasi-pager")?.classList.toggle("hidden", active !== "mutasi");
+
+    // The "jatuh tempo" narrowing belongs to Kalibrasi alone. `flex` rather
+    // than removing `hidden` only, because the label lays its parts out in a
+    // row — toggling `hidden` on a element whose display is `flex` needs both
+    // classes managed or the checkbox and its caption stack.
+    const jt = document.getElementById("hist-jatuh-tempo-wrap");
+    if (jt) {
+      jt.classList.toggle("hidden", active !== "kalibrasi");
+      jt.classList.toggle("flex", active === "kalibrasi");
+    }
   }
 
   document
@@ -1827,6 +1847,50 @@ const ACTIVITY_META = {
   },
 };
 
+// ── The one standing item: calibration due ────────────────────────────────
+//
+// Everything else in this panel is an EVENT that happened during this session.
+// This is not — it is a CONDITION that is currently true, re-read from
+// GET /api/kalibrasi/jatuh-tempo each time the app boots and each time an asset
+// changes. That distinction is why it needs no notifications table and no
+// read-state: a machine is out of certification or it is not, and it stops
+// being listed when somebody calibrates it. There is nothing to mark read.
+//
+// It sits ABOVE the session feed, does not touch the unread counter, and
+// carries a link to the filtered list rather than being informational only.
+let _kalibrasiDue = null;
+
+async function refreshKalibrasiDue() {
+  try {
+    const res = await apiFetch(
+      `/kalibrasi/jatuh-tempo?hari=${KALIBRASI_SEGERA_HARI}`,
+      { background: true },
+    );
+    if (!res.ok) return;
+    _kalibrasiDue = await res.json();
+  } catch (e) {
+    _kalibrasiDue = null; // a failure must not invent a zero
+  }
+  paintActivityDot();
+  const open = !document
+    .getElementById("activity-panel")
+    ?.classList.contains("hidden");
+  if (open) renderActivity();
+}
+window.refreshKalibrasiDue = refreshKalibrasiDue;
+
+/** Jump from the bell to the actionable list. */
+window.bukaKalibrasiJatuhTempo = function bukaKalibrasiJatuhTempo() {
+  toggleActivityPanel(false);
+  switchView("history");
+  document.getElementById("hist-tab-kalibrasi")?.click();
+  const box = document.getElementById("hist-jatuh-tempo");
+  if (box && !box.checked) {
+    box.checked = true;
+    box.dispatchEvent(new Event("change", { bubbles: true }));
+  }
+};
+
 function pushActivity(kind) {
   const meta = ACTIVITY_META[kind];
   if (!meta) return; // unknown broadcast: acted on, but nothing to announce
@@ -1848,20 +1912,48 @@ window.pushActivity = pushActivity;
 function paintActivityDot() {
   const dot = document.getElementById("activity-dot");
   if (!dot) return;
-  dot.classList.toggle("hidden", _activityUnread === 0);
-  dot.textContent = _activityUnread > 9 ? "9+" : String(_activityUnread);
+  // A standing calibration backlog lights the bell even with no session
+  // activity — it is the one thing here worth interrupting someone for.
+  //
+  // It does NOT add to the unread count. The count means "things you have not
+  // looked at yet", and a condition that stays true would keep re-arming it
+  // after every open — which is how the hardcoded red dot this panel replaced
+  // used to behave.
+  const due = _kalibrasiDue?.jumlah_perlu_tindakan || 0;
+  dot.classList.toggle("hidden", _activityUnread === 0 && due === 0);
+  dot.textContent = _activityUnread > 9 ? "9+" : String(_activityUnread || "!");
 }
 
 function renderActivity() {
   const list = document.getElementById("activity-list");
   if (!list) return;
+
+  const n = _kalibrasiDue?.jumlah_perlu_tindakan || 0;
+  const due = n
+    ? `<li class="px-4 py-2.5 flex items-start gap-3 bg-amber-50/70 dark:bg-amber-900/15
+           border-b border-amber-100 dark:border-amber-900/40">
+         <i class="fas fa-ruler-combined text-amber-600 dark:text-amber-400 mt-0.5 text-sm w-4 text-center"></i>
+         <div class="min-w-0 flex-1">
+           <p class="text-xs text-gray-700 dark:text-gray-200 leading-snug">
+             <b>${n}</b> alat kerja perlu kalibrasi
+             ${_kalibrasiDue.jumlah_lewat ? `— <b>${_kalibrasiDue.jumlah_lewat}</b> sudah lewat` : ""}
+           </p>
+           <button type="button" onclick="window.bukaKalibrasiJatuhTempo()"
+             class="text-[10px] font-semibold text-kai-blue dark:text-blue-400 hover:underline mt-0.5">
+             Lihat daftarnya
+           </button>
+         </div>
+       </li>`
+    : "";
+
   if (!_activity.length) {
     list.innerHTML =
+      due +
       '<li class="px-4 py-8 text-center text-xs text-gray-400 italic">' +
       "Belum ada aktivitas pada sesi ini.</li>";
     return;
   }
-  list.innerHTML = _activity
+  list.innerHTML = due + _activity
     .map((a) => {
       const m = ACTIVITY_META[a.kind];
       const jam = a.at.toLocaleTimeString("id-ID", {

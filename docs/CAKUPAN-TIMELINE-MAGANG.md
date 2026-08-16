@@ -78,11 +78,11 @@ dinonaktifkan untuk peran itu.
 | Generate & cetak QR Code | ✅ | |
 | Form pemeliharaan & kalibrasi | ✅ | Form kalibrasi digerakkan `kategori_alat.perlu_kalibrasi` — genset diservis, bukan dikalibrasi |
 | Riwayat pemeliharaan & penggantian sparepart | ✅ | |
-| **Riwayat kalibrasi dan reminder** | ⚠️ | Riwayat ✅ dan `tanggal_berlaku` tersimpan, badge "BLM KALIBRASI" ada. **Reminder aktif** (notifikasi jatuh tempo) ❌ |
+| **Riwayat kalibrasi dan reminder** | ✅ | rev0.4.6. `GET /api/kalibrasi/jatuh-tempo` + badge `JATUH TEMPO`/`SEGERA` di kartu, filter "hanya yang jatuh tempo" di tab Kalibrasi, dan satu entri tetap di lonceng. Dibuat sebagai **keadaan**, bukan notifikasi — jadi tidak perlu tabel notifikasi dan tidak ada yang perlu ditandai "sudah dibaca" |
 | Persebaran alat kerja & status | ✅ | |
 | Monitoring availability alat | ✅ | Grafik Ketersediaan |
 | Grafik frekuensi kerusakan & riwayat resort | ✅ | |
-| **Analisis Reliability (MTBF, MTTR)** | ❌ | Kurva MCF ada; MTBF/MTTR tidak. Datanya cukup — `riwayat_kondisi` mencatat setiap masuk/keluar keadaan TSO dengan cap waktu — jadi ini perhitungan baru, bukan skema baru |
+| **Analisis Reliability (MTBF, MTTR)** | ✅ | rev0.4.6. Dua kolom tambahan pada window scan yang sudah ada (`lag(waktu_lapor)` di samping `lag(kondisi)`), ditampilkan sebagai tile di panel Kurva MCF — MCF/MTBF/MTTR satu cerita keandalan. Diverifikasi dengan menghitung ulang keduanya dari `riwayat_kondisi` di Python |
 | Laporan data & kondisi alat | ✅ | |
 | Laporan pemeliharaan | ✅ | |
 | Export Excel/PDF | ✅ | |
@@ -103,37 +103,53 @@ dinonaktifkan untuk peran itu.
 | Critical Part Analysis | ✅ | `critical_count` / `critical_list`, diturunkan dari stok vs `stok_min` — tidak disimpan sebagai boolean, karena part yang stoknya aman bukan part kritis |
 | Minimum stock part | ✅ | |
 | Nilai persediaan | ✅ | `total_value`, `top_value` |
-| Laporan stok & **stock opname** | ⚠️ | Laporan stok ✅. **Opname** (hitung fisik → selisih → penyesuaian) ❌, meski `ADJ_IN`/`ADJ_OUT` sudah jadi mekanisme penyesuaiannya |
+| Laporan stok & **stock opname** | ✅ | rev0.4.6. Tab **Stock Opname** di Kelola Inventaris: buka lembar per gudang → hitung fisik → selisih diposting sebagai `ADJ_IN`/`ADJ_OUT` dalam **satu transaksi**. Selisih dihitung terhadap stok **saat posting**, bukan snapshot saat lembar dibuka |
 | Laporan transaksi & pemakaian | ✅ | |
 | Laporan nilai gudang | ✅ | |
 | Export Excel/PDF | ✅ | |
 
 ---
 
-## Ringkasan yang belum ada
+## Ringkasan — matriks klien tertutup di rev0.4.6
 
 **rev0.4.3 menutup empat dari tujuh**: Hierarki Part (B-6, satu-satunya baris
 "High" yang belum ada sama sekali), Kartu Riwayat Part (B-5), Fast/Slow moving,
-dan aturan pengadaan untuk ADMIN_WILAYAH. Yang tersisa:
+dan aturan pengadaan untuk ADMIN_WILAYAH.
 
-1. **MTBF / MTTR** — ⛔ **terhalang DATA, bukan kode.**
-   `_scoped_repair_events()` sudah memisahkan transisi yang tepat, dan satu
-   `lag(waktu_lapor)` tambahan memberi durasinya. Tapi armada nyata punya **0
-   catatan perbaikan**, jadi metriknya akan tampil 0,0 jam. Bangun setelah
-   teknisi benar-benar mengisi laporan.
-2. **Reminder kalibrasi** — ⛔ **terhalang data DAN permukaan.** 18 jenis alat
-   dan 75 aset aktif perlu kalibrasi; ada **0 catatan kalibrasi**. Selain itu
-   belum ada permukaan notifikasi — lonceng sengaja hanya per-sesi, tanpa tabel
-   notifikasi.
-3. **Stock opname** — satu-satunya sisa yang butuh **tabel baru** (sesi opname:
-   hitung fisik → selisih → penyesuaian). `ADJ_IN`/`ADJ_OUT` sudah menjadi jalur
-   penyesuaiannya, jadi sifatnya menambah, bukan mengubah.
-4. **Tombol scan QR in-app** — A-8. Butuh izin kamera di browser; alur lapangan
-   sudah berjalan tanpanya lewat kamera bawaan ponsel.
+**rev0.4.6 menutup tiga sisanya.** Yang tersisa hanya satu baris, dan itu
+disengaja:
+
+1. **Tombol scan QR in-app** — A-8. Butuh izin kamera di browser, sementara alur
+   lapangan sudah berjalan tanpanya: teknisi memindai dengan kamera bawaan
+   ponsel, yang langsung membuka `landing.html?uid=…`. Nilainya kecil
+   dibandingkan biayanya.
 
 Tidak ada di daftar ini yang menghalangi alur integrasi utama.
 
-**Pola yang layak diperhatikan:** dua dari empat sisa itu terhalang oleh sistem
-yang belum *dipakai*, bukan oleh sistem yang belum *dibangun*. Menampilkan
-metrik keandalan yang berbunyi 0,0 mengajari pengguna untuk mengabaikan panel
-itu — dan perhatian itu sulit direbut kembali.
+### Catatan: dua di antaranya dulu terhalang DATA, bukan kode
+
+MTBF/MTTR dan reminder kalibrasi sempat tercatat sebagai ⛔ *terhalang data*.
+Armada nyata punya 0 catatan perbaikan dan 0 catatan kalibrasi, jadi keduanya
+akan tampil 0,0 — dan menampilkan metrik keandalan yang berbunyi nol mengajari
+pengguna untuk mengabaikan panel itu, perhatian yang sulit direbut kembali.
+
+`seeds/simulasi.py` (rev0.4.4) yang membuka jalannya: riwayat operasional yang
+**ditandai** atas nama akun `SIMULASI`, diberi label `[SIMULASI]`, dan bisa
+dihapus persis seperti semula dengan `manage.py hapus-simulasi`. Datanya cukup
+kaya untuk membangun dan MELIHAT metriknya, tanpa satu baris pun menyamar
+sebagai catatan teknisi sungguhan.
+
+### Bagaimana ketiganya diverifikasi
+
+`tools/verify/test_rev046.py`, 24 pemeriksaan, dijalankan terhadap basis data
+ber-`--simulasi` dan membersihkan setiap barisnya sendiri:
+
+- MTBF/MTTR dihitung ulang dengan menelusuri `riwayat_kondisi` di Python murni
+  lalu dibandingkan dengan endpoint — angka keandalan yang masuk akal tapi salah
+  lebih buruk daripada tidak ada;
+- identitas `masuk == selesai + diafkir + sedang` tetap berlaku;
+- daftar jatuh tempo, gerbang tab Kalibrasi, dan badge di kartu wajib menyebut
+  **aset yang sama**;
+- opname dijalankan penuh — termasuk kasus yang paling mudah salah dan tidak
+  terlihat pada uji yang tenang: **sparepart keluar SAAT lembar hitung terbuka**,
+  yang penyesuaiannya harus diukur terhadap saldo saat ini.

@@ -163,6 +163,86 @@ functions in real Chrome and the server filters over the same fleet and asserts
 identical id lists — 46 filter, 16 Pantau Riwayat and 10 ordering cases. Change
 either side without the other and it fails by name.
 
+### Reliability, calibration due dates and stock opname (rev0.4.6)
+
+The three remaining buildable items on the client's acceptance matrix. Each one
+reuses machinery that already existed rather than adding a parallel path.
+
+**MTBF / MTTR ride on the SAME window scan.** `_repair_events_subquery()` gained
+`lag(waktu_lapor)` beside its existing `lag(kondisi)`, and `_repair_facts()`
+sums two more columns out of the pass it already makes:
+
+    d_repair   TSO -> SO/AFKIR    seconds the machine was DOWN   -> MTTR
+    d_uptime   anything -> TSO    seconds it was UP              -> MTBF
+
+Putting them on `get_mcf()` instead would have been a SECOND scan of
+`riwayat_kondisi` on the same page load — the exact cost rev0.4.5 removed — so
+they are returned by `/api/aset/dashboard/perbaikan` and RENDERED on the Kurva
+MCF panel, which `load()` in [js/views/repair-dashboard.js](js/views/repair-dashboard.js)
+already fills from both payloads. Measured: the endpoint went 45–60 ms to
+~63 ms for two more metrics, against ~25 ms for a second scan.
+
+Two conventions, both deliberate and both stated in the docstring: a repair
+opened in December and closed in January books its whole duration to the
+CLOSING year (matching how `selesai` is already counted), and an asset that has
+never failed contributes NO interval — so MTBF describes the machines that do
+break, which is what the tile's note line says out loud.
+`tools/verify/test_rev046.py` recomputes both by walking `riwayat_kondisi` in
+plain Python and asserts equality.
+
+**The calibration reminder is a STATE, not a notification.** No notifications
+table was added, and the reasoning that rejected one still holds — deciding what
+"read" means per user across devices. A due date does not need that decision: it
+is a condition that is true right now and stops being true when someone
+calibrates the machine, so `GET /api/kalibrasi/jatuh-tempo` answers the
+condition and every caller re-reads it. Three surfaces, one rule:
+
+- **`kalibrasiBadgeState()` in [js/core.js](js/core.js)** is the ONE badge
+  ladder, used by Kelola Data Aset and Kelola Data Alat Kerja alike. The DUE
+  DATE outranks the verdict — an expired `LULUS` reads `JATUH TEMPO`, because a
+  pass that ran out in 2025 is not a pass. It needs `kalibrasi_berlaku`, which
+  `_card_facts()` carries alongside `kalibrasi_status`.
+- **`punya=kalibrasi-jatuh-tempo`** on `/api/history/summary` narrows the
+  Pantau Riwayat ▸ Kalibrasi tab to what is actionable. A different `punya`
+  VALUE rather than an extra parameter, so the two states cannot both be set.
+- **One standing entry in the bell**, above the session feed. It does not touch
+  the unread counter: that means "things you have not looked at", and a
+  condition that stays true would re-arm it after every open — which is how the
+  hardcoded red dot this panel replaced behaved.
+
+`belum_pernah` is counted separately and deliberately EXCLUDED from the bell's
+figure: a machine that has never been calibrated already shows `BLM KALIBRASI`
+on every card, and folding it in would read as a sudden backlog on a fresh
+install.
+
+**Stock opname is additive.** `ADJ_IN`/`ADJ_OUT` already existed as the way
+stock is corrected, so `opname_sesi` / `opname_baris` do not add a way for stock
+to move — they add a record of WHY one correction was made. Both are
+**DECLARED in [models.py](models.py)**, for the same reason `dokumen_alat` is:
+`manage.py reset` drops via `Base.metadata.drop_all`, so a raw-DDL-only table
+survives the drop and collides with the recreate on the next boot.
+`_ensure_schema()` adds only the `status` CHECK and the partial unique index
+that makes *one open count per warehouse* a database fact.
+
+Three invariants in `selesai_opname()`, and the third is the one to protect:
+
+- **One transaction, one commit**, modelled on `_record_pemakaian()`.
+- **Stock is never computed another way** — `_net_stok_map()` and
+  `GERAKAN_MASUK`/`GERAKAN_KELUAR` stay the single source of truth.
+- **The variance is recomputed AT POST against the CURRENT balance**, not the
+  snapshot taken when the sheet opened. Counting a warehouse takes hours; if a
+  part is issued to a repair mid-count and the posting trusts the opening
+  figure, the adjustment writes stock back up by the amount that was
+  legitimately issued — silently reversing a real movement. The count sheet
+  therefore shows BOTH figures and flags the rows where they moved, so the
+  counter is never asked to explain a variance the warehouse created.
+  `test_rev046.py` drives exactly this case.
+
+`stok_fisik IS NULL` means "not counted yet" and is skipped, never treated as
+zero — counting an unreached part as zero would scrap its whole balance.
+`selisih` is deliberately NOT a column: it is `stok_fisik - stok_sistem`, and a
+stored copy is a second source of truth that can disagree with its own inputs.
+
 ### Nothing holds the fleet any more
 
 Until rev0.4.5 the SPA downloaded every asset at login — `db` from `/api/aset`

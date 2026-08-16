@@ -394,6 +394,23 @@ def _ensure_schema():
         "CREATE UNIQUE INDEX IF NOT EXISTS ux_dokumen_alat_utama "
         "ON dokumen_alat (kode_alat, jenis) WHERE utama",
 
+        # ── Stock opname (rev0.4.6) ──
+        #
+        # The tables themselves are declared in models.py and created by
+        # `create_all`; these are the two things it cannot express.
+        #
+        # ONE OPEN COUNT PER WAREHOUSE, as a database fact rather than a
+        # check-then-insert in the endpoint. Two counters opening a session for
+        # the same gudang at the same moment would each snapshot the same
+        # balances and then each post an adjustment against them — double
+        # counting every variance. A partial unique index makes the second
+        # INSERT fail instead.
+        "CREATE UNIQUE INDEX IF NOT EXISTS ux_opname_draft_per_gudang "
+        "ON opname_sesi (id_gudang) WHERE status = 'DRAFT'",
+        # Posting reads every line of a session at once.
+        "CREATE INDEX IF NOT EXISTS ix_opname_baris_sesi "
+        "ON opname_baris (id_opname, id_part)",
+
         # ── Normalise status_terakhir ──
         #
         # Five queries wrapped this column in func.upper(), which makes both

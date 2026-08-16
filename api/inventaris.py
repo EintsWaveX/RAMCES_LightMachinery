@@ -58,6 +58,9 @@ from api.realtime import manager
 from api.schemas import (
     GudangCreate,
     GudangUpdate,
+    OpnameBarisBatch,
+    OpnameCreate,
+    OpnameSelesai,
     SparePartCreate,
     SparePartKategoriCreate,
     SparePartUpdate,
@@ -1669,3 +1672,382 @@ def trigger_seed(db: Session = Depends(get_db)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
+
+# ══════════════════════════════════════════════════════════════════════
+# STOCK OPNAME — count → variance → adjustment
+# ══════════════════════════════════════════════════════════════════════
+#
+# The last client-matrix item, and the only one that needed a table. It is
+# additive: `ADJ_IN`/`ADJ_OUT` already existed as the way stock is corrected,
+# so this does not introduce a new way for stock to move — it introduces a
+# record of WHY one particular correction was made, which the ledger alone
+# cannot answer.
+#
+# Three invariants, each with a precedent elsewhere in this codebase:
+#
+#  1. Posting is ONE transaction. Modelled on `_record_pemakaian()` in
+#     api/riwayat.py: every adjustment row and the session's own status flip
+#     land in a single commit. A partial post leaves stock nobody can explain.
+#
+#  2. Stock is NEVER computed another way. `_net_stok_map()` and
+#     `SparePartStok.GERAKAN_MASUK`/`GERAKAN_KELUAR` stay the single source of
+#     truth, exactly as they are for the movement form and for repairs.
+#
+#  3. THE VARIANCE IS RECOMPUTED AT POST, against the CURRENT balance — see
+#     `selesai_opname` below. This is the one most worth protecting and the
+#     easiest to get wrong.
+
+
+def _opname_baris_payload(b, stok_kini: dict):
+    """One count line, with both the opening figure and the live one."""
+    kini = int(stok_kini.get(b.id_part, 0))
+    return {
+        "id_baris": b.id_baris,
+        "id_part": b.id_part,
+        "nama_part": b.part_ref.nama_part if b.part_ref else None,
+        "unit": b.part_ref.unit if b.part_ref else None,
+        "harga_satuan": b.part_ref.harga_satuan if b.part_ref else None,
+        # What the system believed when the sheet was opened…
+        "stok_sistem": b.stok_sistem,
+        # …and what it believes now. These differ when a movement landed during
+        # the count, and both are shown so the counter is never asked to explain
+        # a variance the warehouse legitimately created.
+        "stok_kini": kini,
+        "stok_fisik": b.stok_fisik,
+        "selisih": None if b.stok_fisik is None else b.stok_fisik - kini,
+        "keterangan": b.keterangan,
+        "id_stok": b.id_stok,
+    }
+
+
+def _opname_payload(sesi, stok_kini: dict = None, with_baris: bool = False):
+    out = {
+        "id_opname": sesi.id_opname,
+        "id_gudang": sesi.id_gudang,
+        "nama_gudang": sesi.gudang_ref.nama if sesi.gudang_ref else None,
+        "status": sesi.status,
+        "waktu_mulai": sesi.waktu_mulai.strftime("%Y-%m-%d %H:%M:%S")
+        if sesi.waktu_mulai else None,
+        "waktu_selesai": sesi.waktu_selesai.strftime("%Y-%m-%d %H:%M:%S")
+        if sesi.waktu_selesai else None,
+        "oleh": sesi.pengguna_ref.username if sesi.pengguna_ref else None,
+        "keterangan": sesi.keterangan,
+        "jumlah_baris": len(sesi.baris),
+        "jumlah_dihitung": sum(1 for b in sesi.baris if b.stok_fisik is not None),
+    }
+    if with_baris:
+        km = stok_kini or {}
+        out["baris"] = [
+            _opname_baris_payload(b, km)
+            for b in sorted(
+                sesi.baris,
+                key=lambda x: (x.part_ref.nama_part if x.part_ref else ""),
+            )
+        ]
+    return out
+
+
+@router.post("/api/inventaris/opname",
+             dependencies=[Depends(require_role(["SUPER_ADMIN", "ADMIN_WILAYAH", "PETUGAS_GUDANG"]))])
+async def buka_opname(
+    data: OpnameCreate,
+    db: Session = Depends(get_db),
+    current_user: models.Pengguna = Depends(get_current_user),
+):
+    """
+    Open a count sheet for one warehouse, pre-filled with the WHOLE catalogue.
+
+    The whole catalogue, not only what the system thinks is present: counting
+    just the parts with a balance can never find stock that exists but was never
+    booked in, which is half of what an opname is for.
+
+    ONE open session per warehouse is enforced by a partial unique index
+    (`ux_opname_draft_per_gudang`, api/schema.py), not by the check below. The
+    check exists to give a readable 409 instead of an integrity error; the index
+    is what makes it true under concurrency, where two counters opening a sheet
+    at the same instant would each snapshot the same balances and each post an
+    adjustment against them, double-counting every variance.
+    """
+    gudang = db.query(models.Gudang).filter_by(id_gudang=data.id_gudang).first()
+    if not gudang:
+        raise HTTPException(status_code=404, detail="Gudang tidak ditemukan.")
+
+    existing = (
+        db.query(models.OpnameSesi)
+        .filter_by(id_gudang=data.id_gudang, status="DRAFT")
+        .first()
+    )
+    if existing:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Masih ada opname berjalan untuk gudang ini (#{existing.id_opname}). "
+                "Selesaikan atau batalkan dulu."
+            ),
+        )
+
+    sesi = models.OpnameSesi(
+        id_gudang=data.id_gudang,
+        status="DRAFT",
+        id_pengguna=current_user.id_pengguna,
+        keterangan=data.keterangan,
+    )
+    db.add(sesi)
+    db.flush()
+
+    stok = _net_stok_map(db, id_gudang=data.id_gudang)
+    parts = db.query(models.SparePart.id_part).all()
+    for (id_part,) in parts:
+        db.add(models.OpnameBaris(
+            id_opname=sesi.id_opname,
+            id_part=id_part,
+            stok_sistem=int(stok.get(id_part, 0)),
+        ))
+
+    db.commit()
+    db.refresh(sesi)
+    await manager.broadcast("REFRESH_INVENTARIS")
+    return {
+        "message": f"Opname #{sesi.id_opname} dibuka untuk {gudang.nama}.",
+        "id_opname": sesi.id_opname,
+        "jumlah_baris": len(parts),
+    }
+
+
+@router.get("/api/inventaris/opname")
+def list_opname(
+    id_gudang: Optional[int] = None,
+    status: Optional[str] = None,
+    limit: Optional[int] = Query(50, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db),
+    current_user: models.Pengguna = Depends(get_current_user),
+):
+    """Count sessions, newest first, in the standard paging envelope."""
+    q = db.query(models.OpnameSesi).options(
+        joinedload(models.OpnameSesi.gudang_ref),
+        joinedload(models.OpnameSesi.pengguna_ref),
+        joinedload(models.OpnameSesi.baris),
+    )
+    if id_gudang:
+        q = q.filter(models.OpnameSesi.id_gudang == id_gudang)
+    if status:
+        q = q.filter(models.OpnameSesi.status == status.upper())
+
+    total = q.order_by(None).count()
+    rows = (
+        q.order_by(models.OpnameSesi.id_opname.desc())
+        .limit(limit).offset(offset).all()
+    )
+    return {
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "items": [_opname_payload(s) for s in rows],
+    }
+
+
+@router.get("/api/inventaris/opname/{id_opname}")
+def get_opname(
+    id_opname: int,
+    db: Session = Depends(get_db),
+    current_user: models.Pengguna = Depends(get_current_user),
+):
+    """One session and its lines, each carrying the CURRENT balance too."""
+    sesi = (
+        db.query(models.OpnameSesi)
+        .options(
+            joinedload(models.OpnameSesi.gudang_ref),
+            joinedload(models.OpnameSesi.pengguna_ref),
+            joinedload(models.OpnameSesi.baris).joinedload(models.OpnameBaris.part_ref),
+        )
+        .filter_by(id_opname=id_opname)
+        .first()
+    )
+    if not sesi:
+        raise HTTPException(status_code=404, detail="Sesi opname tidak ditemukan.")
+    # A finished session is a historical record: freeze it against the figures
+    # it actually posted rather than re-reading a balance that has moved since.
+    stok = (
+        _net_stok_map(db, id_gudang=sesi.id_gudang)
+        if sesi.status == "DRAFT"
+        else {b.id_part: b.stok_sistem for b in sesi.baris}
+    )
+    return _opname_payload(sesi, stok, with_baris=True)
+
+
+@router.put("/api/inventaris/opname/{id_opname}/baris",
+            dependencies=[Depends(require_role(["SUPER_ADMIN", "ADMIN_WILAYAH", "PETUGAS_GUDANG"]))])
+def isi_opname_baris(
+    id_opname: int,
+    data: OpnameBarisBatch,
+    db: Session = Depends(get_db),
+    current_user: models.Pengguna = Depends(get_current_user),
+):
+    """
+    Record physical counts. Batched, because a counter walks a shelf and enters
+    a run of parts at once; one request per line would make a 200-part warehouse
+    200 round trips.
+
+    No broadcast: nothing has moved. The ledger is untouched until the session
+    is posted, and telling every connected client to refetch its stock figures
+    because somebody typed a number would be noise.
+    """
+    sesi = db.query(models.OpnameSesi).filter_by(id_opname=id_opname).first()
+    if not sesi:
+        raise HTTPException(status_code=404, detail="Sesi opname tidak ditemukan.")
+    if sesi.status != "DRAFT":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Opname #{id_opname} sudah {sesi.status.lower()} dan tidak bisa diubah.",
+        )
+
+    by_part = {b.id_part: b for b in sesi.baris}
+    diubah = 0
+    for item in data.baris:
+        row = by_part.get(item.id_part)
+        if row is None:
+            continue  # a part added to the catalogue after the sheet was opened
+        if item.stok_fisik is not None and item.stok_fisik < 0:
+            raise HTTPException(
+                status_code=400, detail="Jumlah fisik tidak boleh negatif."
+            )
+        row.stok_fisik = item.stok_fisik
+        row.keterangan = item.keterangan
+        diubah += 1
+
+    db.commit()
+    return {"message": f"{diubah} baris disimpan.", "jumlah_baris": diubah}
+
+
+@router.post("/api/inventaris/opname/{id_opname}/selesai",
+             dependencies=[Depends(require_role(["SUPER_ADMIN", "ADMIN_WILAYAH", "PETUGAS_GUDANG"]))])
+async def selesai_opname(
+    id_opname: int,
+    data: OpnameSelesai,
+    db: Session = Depends(get_db),
+    current_user: models.Pengguna = Depends(get_current_user),
+):
+    """
+    Post the variance: one ADJ_IN or ADJ_OUT per counted line that disagrees
+    with stock, and the session flips to SELESAI. ONE transaction, one commit.
+
+    ── The variance is measured against the CURRENT balance, not the snapshot ──
+    This is the invariant that matters here, and it is invisible in a quiet
+    test. `stok_sistem` was captured when the sheet was opened, and counting a
+    warehouse takes hours. If a part is issued to a repair while the count is
+    running and the posting trusts the OPENING figure, the adjustment writes
+    stock back up by the amount that was legitimately issued — silently undoing
+    a real movement and leaving two records that disagree about the same units.
+    So the balance is re-read here, and the adjustment closes the gap between
+    the PHYSICAL count and what the ledger says right now.
+
+    Lines with `stok_fisik IS NULL` are skipped, never treated as zero. An
+    uncounted part is an incomplete sheet; counting one as zero would scrap the
+    entire balance of everything the counter did not reach.
+    """
+    sesi = (
+        db.query(models.OpnameSesi)
+        .options(
+            joinedload(models.OpnameSesi.baris).joinedload(models.OpnameBaris.part_ref)
+        )
+        .filter_by(id_opname=id_opname)
+        .first()
+    )
+    if not sesi:
+        raise HTTPException(status_code=404, detail="Sesi opname tidak ditemukan.")
+    if sesi.status != "DRAFT":
+        raise HTTPException(
+            status_code=400, detail=f"Opname #{id_opname} sudah {sesi.status.lower()}."
+        )
+
+    dihitung = [b for b in sesi.baris if b.stok_fisik is not None]
+    if not dihitung:
+        raise HTTPException(
+            status_code=400,
+            detail="Belum ada baris yang dihitung. Isi jumlah fisik dulu.",
+        )
+
+    # THE re-read. See the docstring — this line is the invariant.
+    stok_kini = _net_stok_map(db, id_gudang=sesi.id_gudang)
+
+    naik = turun = 0
+    ringkas = []
+    for b in dihitung:
+        kini = int(stok_kini.get(b.id_part, 0))
+        selisih = b.stok_fisik - kini
+        if selisih == 0:
+            continue
+
+        row = models.SparePartStok(
+            id_part=b.id_part,
+            id_gudang=sesi.id_gudang,
+            tipe_gerakan="ADJ_IN" if selisih > 0 else "ADJ_OUT",
+            jumlah=abs(selisih),
+            harga_satuan=b.part_ref.harga_satuan if b.part_ref else None,
+            keterangan=f"Penyesuaian opname #{sesi.id_opname}",
+            id_pengguna=current_user.id_pengguna,
+        )
+        db.add(row)
+        db.flush()        # id_stok is a serial; the line points back at it
+        b.id_stok = row.id_stok
+        # Freeze what the adjustment was actually measured against, so the
+        # finished sheet explains itself a year later.
+        b.stok_sistem = kini
+
+        if selisih > 0:
+            naik += selisih
+        else:
+            turun += -selisih
+        ringkas.append({
+            "id_part": b.id_part,
+            "nama_part": b.part_ref.nama_part if b.part_ref else None,
+            "stok_sistem": kini,
+            "stok_fisik": b.stok_fisik,
+            "selisih": selisih,
+        })
+
+    sesi.status = "SELESAI"
+    sesi.waktu_selesai = datetime.now()
+    if data.keterangan:
+        sesi.keterangan = data.keterangan
+
+    db.commit()
+    await manager.broadcast("REFRESH_INVENTARIS")
+    return {
+        "message": (
+            f"Opname #{sesi.id_opname} selesai. {len(ringkas)} penyesuaian dicatat."
+        ),
+        "jumlah_penyesuaian": len(ringkas),
+        "total_naik": naik,
+        "total_turun": turun,
+        "penyesuaian": ringkas,
+    }
+
+
+@router.post("/api/inventaris/opname/{id_opname}/batal",
+             dependencies=[Depends(require_role(["SUPER_ADMIN", "ADMIN_WILAYAH", "PETUGAS_GUDANG"]))])
+async def batal_opname(
+    id_opname: int,
+    db: Session = Depends(get_db),
+    current_user: models.Pengguna = Depends(get_current_user),
+):
+    """
+    Abandon a count. Writes nothing to the ledger, and KEEPS the session as
+    BATAL rather than deleting it — "we counted and then stopped" is itself
+    worth being able to see, and deleting it would free the warehouse for a new
+    sheet with no trace of why the old one ended.
+    """
+    sesi = db.query(models.OpnameSesi).filter_by(id_opname=id_opname).first()
+    if not sesi:
+        raise HTTPException(status_code=404, detail="Sesi opname tidak ditemukan.")
+    if sesi.status != "DRAFT":
+        raise HTTPException(
+            status_code=400, detail=f"Opname #{id_opname} sudah {sesi.status.lower()}."
+        )
+    sesi.status = "BATAL"
+    sesi.waktu_selesai = datetime.now()
+    db.commit()
+    await manager.broadcast("REFRESH_INVENTARIS")
+    return {"message": f"Opname #{id_opname} dibatalkan."}

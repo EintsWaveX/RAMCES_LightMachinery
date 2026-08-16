@@ -1024,6 +1024,29 @@
                                                         id="rd-mcf-akhir">—</p>
                                                 </div>
                                             </div>
+                                            <!-- MTBF / MTTR — the same reliability story as the curve above,
+                                                 so they live on this tab rather than a seventh one. Both are
+                                                 read out of the Laporan Perbaikan payload, which load()
+                                                 already fetches; see _repair_facts() in api/dashboard.py. -->
+                                            <div
+                                                class="grid grid-cols-2 gap-3 mt-3 pt-3 border-t border-gray-100 dark:border-gray-700">
+                                                <div>
+                                                    <p
+                                                        class="text-[9px] font-bold tracking-widest text-gray-400 uppercase mb-0.5">
+                                                        MTBF — Rata-rata Waktu Antar Kerusakan</p>
+                                                    <p class="text-base font-bold text-green-600 dark:text-green-400"
+                                                        id="rd-mtbf">—</p>
+                                                    <p class="text-[10px] text-gray-400" id="rd-mtbf-note">—</p>
+                                                </div>
+                                                <div>
+                                                    <p
+                                                        class="text-[9px] font-bold tracking-widest text-gray-400 uppercase mb-0.5">
+                                                        MTTR — Rata-rata Waktu Perbaikan</p>
+                                                    <p class="text-base font-bold text-orange-600 dark:text-orange-400"
+                                                        id="rd-mttr">—</p>
+                                                    <p class="text-[10px] text-gray-400" id="rd-mttr-note">—</p>
+                                                </div>
+                                            </div>
                                         </div>
                             </div>
 
@@ -1312,6 +1335,10 @@
                         <button id="inv-tab-hirarki"
                             class="inv-tab-btn px-5 py-3 text-sm font-bold border-b-2 border-transparent text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition whitespace-nowrap">
                             Hierarki Suku Cadang
+                        </button>
+                        <button id="inv-tab-opname"
+                            class="inv-tab-btn px-5 py-3 text-sm font-bold border-b-2 border-transparent text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition whitespace-nowrap">
+                            Stock Opname
                         </button>
                     </div>
 
@@ -2086,6 +2113,59 @@
                         </div>
                     </div>
 
+                    <!-- ── Tab Panel: Opname → stock take ──────────────────
+                         Count sheet per warehouse. Nothing here touches the
+                         ledger until "Selesaikan" is pressed; the variance is
+                         then posted as ADJ_IN/ADJ_OUT rows in one transaction.
+                         Built by renderOpname() in js/views/inventaris.js. -->
+                    <div id="inv-panel-opname" class="hidden">
+                        <div
+                            class="bg-white dark:bg-gray-800 rounded-b-xl border border-t-0 border-gray-100 dark:border-gray-700 shadow-sm">
+                            <div
+                                class="flex flex-wrap items-end gap-3 px-4 py-3 border-b border-gray-100 dark:border-gray-700 bg-gray-50/60 dark:bg-gray-700/40">
+                                <div class="min-w-[14rem]">
+                                    <label for="inv-opname-gudang"
+                                        class="block text-[10px] font-bold tracking-widest text-gray-400 uppercase mb-1">
+                                        Gudang</label>
+                                    <select id="inv-opname-gudang"
+                                        class="w-full p-2.5 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm outline-none focus:border-kai-blue transition"></select>
+                                </div>
+                                <button id="inv-opname-buka" type="button" data-write="inventaris"
+                                    class="btn btn-primary">
+                                    <i class="fas fa-clipboard-list"></i> Mulai Opname
+                                </button>
+                                <div class="flex-1"></div>
+                                <p id="inv-opname-status" class="text-xs text-gray-500 dark:text-gray-400"></p>
+                            </div>
+
+                            <!-- The open count sheet, or an empty state. -->
+                            <div id="inv-opname-sheet" class="p-4" aria-live="polite"></div>
+
+                            <div class="px-4 pb-4">
+                                <h4
+                                    class="text-[10px] font-bold tracking-widest text-gray-400 uppercase mb-2 mt-2">
+                                    Riwayat Opname</h4>
+                                <div class="overflow-x-auto table-stack-wrap">
+                                    <table class="w-full text-sm table-stack">
+                                        <thead
+                                            class="text-[10px] uppercase tracking-wider text-gray-400 border-b border-gray-100 dark:border-gray-700">
+                                            <tr>
+                                                <th class="px-3 py-2 text-left">No</th>
+                                                <th class="px-3 py-2 text-left">Gudang</th>
+                                                <th class="px-3 py-2 text-left">Mulai</th>
+                                                <th class="px-3 py-2 text-left">Selesai</th>
+                                                <th class="px-3 py-2 text-left">Petugas</th>
+                                                <th class="px-3 py-2 text-center">Dihitung</th>
+                                                <th class="px-3 py-2 text-center">Status</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="inv-opname-riwayat"></tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
                 </section>
 
                 <!-- ─────────────────────────────────────────────
@@ -2534,6 +2614,18 @@
                             <i class="fas fa-sort-amount-down text-sm"></i>
                         </button>
                     </div>
+                    <!-- Kalibrasi-only: narrow the tab to what actually needs
+                         doing. Shown by _setHistoryTab(), so it cannot appear
+                         over the Perbaikan or Mutasi lists where it means
+                         nothing. -->
+                    <label id="hist-jatuh-tempo-wrap"
+                        class="hidden items-center gap-2 mb-3 text-xs font-semibold text-gray-600 dark:text-gray-300 cursor-pointer">
+                        <input type="checkbox" id="hist-jatuh-tempo"
+                            class="w-4 h-4 accent-kai-orange cursor-pointer" />
+                        Hanya yang jatuh tempo atau segera
+                        <span id="hist-jatuh-tempo-count"
+                            class="badge badge-warn hidden"></span>
+                    </label>
                     <div id="history-repair-container" class="grid grid-cols-1 lg:grid-cols-2 gap-4 flex-1"></div>
                     <div id="history-repair-pager" class="mt-4"></div>
                     <div id="history-kalibrasi-container" class="grid grid-cols-1 lg:grid-cols-2 gap-4 flex-1 hidden">

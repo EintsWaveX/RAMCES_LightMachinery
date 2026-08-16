@@ -207,20 +207,18 @@ FILTER_JS = """
     }).map((x) => x.id_aset));
 """
 
+# The SHIPPED comparator, not a copy of it.
+#
+# `_historyComparator` reads the module-level `_histSortField` / `_histSortDir`,
+# so the case is driven by setting those and calling it — which is exactly how
+# Pantau Riwayat drove it before rev0.4.5 moved sorting to the server. Writing
+# the comparison out again here would be the "second copy of the rule" this
+# codebase keeps deleting, and it would agree with the server right up until
+# somebody changed one of them.
 ORDER_JS = """
-    const field = %s, dir = %s;
-    const rows = db.slice();
-    rows.sort((a, b) => {
-        if (dir === "date-desc")
-            return new Date(b.tanggal_pembelian || 0) - new Date(a.tanggal_pembelian || 0);
-        if (dir === "date-asc")
-            return new Date(a.tanggal_pembelian || 0) - new Date(b.tanggal_pembelian || 0);
-        if (dir === "count-desc") return _eventCount(b) - _eventCount(a);
-        if (dir === "count-asc") return _eventCount(a) - _eventCount(b);
-        const av = (a[field] || "").toString().toUpperCase();
-        const bv = (b[field] || "").toString().toUpperCase();
-        return dir === "asc" ? av.localeCompare(bv) : bv.localeCompare(av);
-    });
+    _histSortField = %s;
+    _histSortDir = %s;
+    const rows = db.slice().sort(_historyComparator);
     return JSON.stringify(rows.map((x) => x.id_aset));
 """
 

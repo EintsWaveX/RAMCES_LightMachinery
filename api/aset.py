@@ -53,6 +53,7 @@ drift apart.
 
 import asyncio
 import os
+from datetime import date, timedelta
 from typing import Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
@@ -369,6 +370,7 @@ def get_all_aset(
             "identitas_lokasi_name": names.get(ident) or ident,
             "jumlah_kejadian": f.get("jumlah_kejadian", 0),
             "kalibrasi_status": f.get("kalibrasi_status"),
+            "kalibrasi_berlaku": f.get("kalibrasi_berlaku"),
             "mutasi_count": f.get("mutasi_count", 0),
             "mutasi_sudah_kembali": a.id_lokasi == ident,
         }
@@ -437,12 +439,20 @@ def _card_facts(db: Session, ids):
         order_by=(RKAL.tanggal_kalibrasi.desc(), RKAL.waktu_input.desc()),
     ).label("rn")
     kal = (
-        db.query(RKAL.id_aset.label("id_aset"), RKAL.status.label("status"), krn)
+        db.query(
+            RKAL.id_aset.label("id_aset"),
+            RKAL.status.label("status"),
+            # The due date, so the card can say JATUH TEMPO / SEGERA without a
+            # second request. One more column on a query that already runs.
+            RKAL.tanggal_berlaku.label("berlaku"),
+            krn,
+        )
         .filter(RKAL.id_aset.in_(ids))
         .subquery()
     )
     for r in db.execute(select(kal).where(kal.c.rn == 1)):
         out[r.id_aset]["kalibrasi_status"] = r.status
+        out[r.id_aset]["kalibrasi_berlaku"] = str(r.berlaku) if r.berlaku else None
 
     return out
 
@@ -701,6 +711,121 @@ async def upload_sertifikat_kalibrasi(
     db.commit()
     await manager.broadcast("REFRESH_ASSET_LIST")
     return {"message": "Sertifikat berhasil diunggah.", "file_sertifikat": stored}
+
+
+@router.get("/api/kalibrasi/jatuh-tempo")
+def get_kalibrasi_jatuh_tempo(
+    hari: int = Query(30, ge=1, le=365),
+    id_lokasi: Optional[str] = None,
+    limit: Optional[int] = Query(200, ge=1, le=MAX_PAGE),
+    db: Session = Depends(get_db),
+    current_user: models.Pengguna = Depends(get_current_user),
+):
+    """
+    Alat kerja whose calibration has expired, is about to, or was never done.
+
+    ── Why this is a STATE and not a notification ──
+    The bell is session-scoped on purpose: there is no notifications table, and
+    inventing one means deciding what "read" means per user across devices. A
+    calibration due date does not need that decision. It is not an event that
+    happened once — it is a condition that is either true right now or is not,
+    and it stops being true when somebody calibrates the machine. So this
+    endpoint answers the condition, every caller re-reads it, and nothing is
+    ever marked read or goes stale.
+
+    Three buckets, and the third is the one an event feed could never produce:
+
+      lewat         tanggal_berlaku is in the past
+      segera        tanggal_berlaku falls within `hari` days
+      belum_pernah  the katalog flags the tool type as needing calibration and
+                    there is NO riwayat_kalibrasi row at all
+
+    `belum_pernah` is gated on `kategori_alat.perlu_kalibrasi`, the same flag
+    that decides whether the Kalibrasi form is offered at all. A genset is
+    serviced, not calibrated, and listing one as overdue would be noise that
+    teaches people to ignore the list.
+
+    Scoped with `resolve_lokasi_scope()` so an ADMIN_WILAYAH sees its own
+    region — never a bare `==`, which misses every UPT under the parent.
+    """
+    AS = models.Aset
+    KA = models.KategoriAlat
+    RKAL = models.RiwayatKalibrasi
+
+    hari_ini = date.today()
+    batas = hari_ini + timedelta(days=hari)
+
+    # An admin's own region wins over the parameter, for the same reason
+    # `milik_saya` reads the token: a scope a caller can widen is not a scope.
+    scope_code = id_lokasi
+    if current_user.role == "ADMIN_WILAYAH":
+        scope_code = current_user.id_lokasi
+    lokasi_ids, _parent, _children = resolve_lokasi_scope(db, scope_code)
+
+    # Latest calibration per asset — the same row_number the card facts and the
+    # history summary pick, so all three agree on which record is "latest".
+    rn = func.row_number().over(
+        partition_by=RKAL.id_aset,
+        order_by=(RKAL.tanggal_kalibrasi.desc(), RKAL.waktu_input.desc()),
+    ).label("rn")
+    latest = (
+        db.query(
+            RKAL.id_aset.label("id_aset"),
+            RKAL.tanggal_berlaku.label("berlaku"),
+            RKAL.status.label("status"),
+            rn,
+        ).subquery()
+    )
+    last = select(latest).where(latest.c.rn == 1).subquery()
+
+    q = (
+        db.query(AS, KA.nama_alat, last.c.berlaku, last.c.status)
+        .join(KA, KA.kode_alat == AS.kode_alat)
+        .outerjoin(last, last.c.id_aset == AS.id_aset)
+        .options(joinedload(models.Aset.lokasi_ref))
+        .filter(AS.status_terakhir != "AFKIR", KA.perlu_kalibrasi.is_(True))
+    )
+    if lokasi_ids:
+        q = q.filter(AS.id_lokasi.in_(lokasi_ids))
+
+    lewat, segera, belum = [], [], []
+    for aset, nama_alat, berlaku, status in q.all():
+        row = {
+            "id_aset": aset.id_aset,
+            "kode_alat": aset.kode_alat,
+            "kode_alat_name": nama_alat,
+            "id_lokasi": aset.id_lokasi,
+            "lokasi_name": aset.lokasi_ref.nama_lokasi if aset.lokasi_ref else aset.id_lokasi,
+            "tanggal_berlaku": str(berlaku) if berlaku else None,
+            "status_kalibrasi": status,
+            "sisa_hari": (berlaku - hari_ini).days if berlaku else None,
+        }
+        if berlaku is None:
+            belum.append(row)
+        elif berlaku < hari_ini:
+            lewat.append(row)
+        elif berlaku <= batas:
+            segera.append(row)
+
+    # Soonest first within each bucket, and the most urgent bucket first — the
+    # list is a work queue, so its order is the order to act in.
+    lewat.sort(key=lambda r: r["tanggal_berlaku"])
+    segera.sort(key=lambda r: r["tanggal_berlaku"])
+    belum.sort(key=lambda r: r["id_aset"])
+
+    items = (lewat + segera + belum)[:limit]
+    return {
+        "hari": hari,
+        "jumlah_lewat": len(lewat),
+        "jumlah_segera": len(segera),
+        "jumlah_belum_pernah": len(belum),
+        # What the bell prints. Deliberately EXCLUDES belum_pernah: a machine
+        # that has never been calibrated is already flagged on every card as
+        # "BLM KALIBRASI", and folding it in here would make the count read as
+        # a sudden backlog on a fresh install.
+        "jumlah_perlu_tindakan": len(lewat) + len(segera),
+        "items": items,
+    }
 
 
 @router.get("/api/kalibrasi/sertifikat/{nama_file}")

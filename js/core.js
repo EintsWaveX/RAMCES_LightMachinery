@@ -1132,6 +1132,70 @@ function formatDateOnly(dateStr) {
   return `${d} ${m} ${y}`;
 }
 
+// ── Calibration status, as ONE badge rule ─────────────────────────────────
+//
+// How many days ahead counts as "due soon". Must match the `hari` default on
+// GET /api/kalibrasi/jatuh-tempo, or the bell's count and the badges on the
+// cards would describe different sets of machines.
+const KALIBRASI_SEGERA_HARI = 30;
+
+/**
+ * The calibration badge for one asset row → {teks, kelas}.
+ *
+ * ── Why the due date outranks the verdict ──
+ * The badge used to print the last verdict and nothing else, so a machine that
+ * passed in 2024 and has been out of certification since 2025 still showed a
+ * green LULUS. An expired pass is not a pass. Order of precedence:
+ *
+ *   no record at all           BLM KALIBRASI   (neutral — nothing has happened)
+ *   tanggal_berlaku in the past  JATUH TEMPO   (red — act now)
+ *   within KALIBRASI_SEGERA_HARI      SEGERA   (amber — plan it)
+ *   otherwise                  the verdict: LULUS / BERSYARAT / GAGAL
+ *
+ * GAGAL keeps its own red even when in date, because a failed calibration is
+ * not made acceptable by the certificate still being valid on paper.
+ *
+ * ONE definition, used by Kelola Data Aset and Kelola Data Alat Kerja alike.
+ * Those two hand-rolled the same four-branch ladder before this existed, and
+ * they had already begun to drift — which is exactly what the `.badge`
+ * component layer in assets/style.css was introduced to stop.
+ */
+function kalibrasiBadgeState(item) {
+  const status = item?.kalibrasi_status;
+  const berlaku = item?.kalibrasi_berlaku;
+
+  if (!status && !berlaku) return { teks: "BLM KALIBRASI", kelas: "badge-neutral" };
+
+  if (berlaku) {
+    // Compare as plain dates. `new Date("2026-08-12")` is UTC midnight while
+    // Date.now() is local, so a same-day comparison can be off by the timezone
+    // offset — day-granularity arithmetic on the string avoids that entirely.
+    const hariIni = new Date();
+    const today = Date.UTC(hariIni.getFullYear(), hariIni.getMonth(), hariIni.getDate());
+    const due = Date.parse(`${berlaku.slice(0, 10)}T00:00:00Z`);
+    if (!isNaN(due)) {
+      const sisa = Math.round((due - today) / 86400000);
+      if (sisa < 0) return { teks: "JATUH TEMPO", kelas: "badge-tso" };
+      if (sisa <= KALIBRASI_SEGERA_HARI)
+        return { teks: `SEGERA ${sisa}H`, kelas: "badge-warn" };
+    }
+  }
+
+  if (status === "LULUS") return { teks: "LULUS", kelas: "badge-so" };
+  if (status === "BERSYARAT") return { teks: "BERSYARAT", kelas: "badge-warn" };
+  if (status === "GAGAL") return { teks: "GAGAL", kelas: "badge-tso" };
+  return { teks: "BLM KALIBRASI", kelas: "badge-neutral" };
+}
+
+/** The badge as markup, since both callers render it the same way. */
+function kalibrasiBadgeHtml(item) {
+  const s = kalibrasiBadgeState(item);
+  return `<span class="badge ${s.kelas}"><i class="fas fa-circle text-[6px]"></i>${s.teks}</span>`;
+}
+
+window.kalibrasiBadgeState = kalibrasiBadgeState;
+window.kalibrasiBadgeHtml = kalibrasiBadgeHtml;
+
 function formatUtcToLocal(utcStr) {
   if (!utcStr) return "—";
   // Server sends naive local time (UTC+7). Append offset to parse correctly as local.
