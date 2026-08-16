@@ -24,7 +24,7 @@ Every number here was measured against the local seeded database, not estimated.
 
 ## 1. Where the project stands
 
-Branch `rev0.4.4-alpha`. Version naming is `revX.Y.Z-alpha` / `-beta`; the older
+Branch `rev0.4.5-alpha`. Version naming is `revX.Y.Z-alpha` / `-beta`; the older
 `-fe-be` suffix is retired.
 
 | Round | What it delivered |
@@ -38,14 +38,18 @@ Branch `rev0.4.4-alpha`. Version naming is `revX.Y.Z-alpha` / `-beta`; the older
 | **rev0.4.2** | Self-registration + approval + captcha + rate limiting; `manage.py`; `dokumen_alat`; declarative role gating |
 | **rev0.4.3** | Hierarki Part (BOM tree), Kartu Riwayat Part, Fast/Slow moving, the pengadaan scope rule |
 | **rev0.4.4** | `seeds/simulasi.py` — marked, reversible operational history for the real fleet |
+| **rev0.4.5** | Server-side paging, end to end: boot 1,062 KB → 19 KB. `api/query.py` (the server twin of the one matcher), `/ringkasan`, and one window scan instead of four |
 
 ### Current baseline — keep these honest
 
-```
-routes            87        openapi paths     59
+```text
+routes            88        openapi paths     60
 shadow pairs       0        require_role      43 guards
 broadcasts        37        manage.py verify  16/16
 audit findings     0        console errors     0  (8 views x 2 widths x 2 themes)
+test_paging.py    46 filter + 16 riwayat + 10 order cases, client == server
+boot payload      19 KB / 7 requests   (was 1,062 KB) · per view ~1.2 KB
+syntax.py         17/17 js files parse
 
 CLEAN IMPORT (manage.py seed, nothing optional):
   kategori_alat 104 · lokasi        273 · alat_varian   87
@@ -82,7 +86,7 @@ Each was reproduced live before the fix and verified live after.
 | **FK `ondelete`** | deleting a user 500'd | `SET NULL` / `CASCADE` applied by a guarded `DO $$` block |
 | **`lokasi` re-read per request** | 4x per dashboard load | 60 s TTL cache of plain tuples, explicitly invalidated |
 | **Exports built in memory** | 223 KB and growing | `StreamingResponse` over a row-at-a-time generator |
-| **Pagination transport** | one 4.5 MB / 16 MB response | `{total, limit, offset, items}` + `fetchAllPages()` |
+| **Pagination** | the whole fleet at every login — 1,062 KB, 460 ms, linear in fleet size | server-side filter + sort + page; boot is 19 KB and flat. `test_paging.py` proves the server's filters equal the client matcher's |
 | **Seeding** | a second run DOUBLED the fleet; the dummy step was never idempotent | `manage.py`, identity gates, `DEMO-` serials, 16/16 asserted |
 | **Documents** | 3 PDFs (5.6 MB) reachable by nothing | `dokumen_alat`; verified from the DISK side |
 | **`landing.html` sign-in** | 422'd for every user, and let you pick your own role | username + password + progressive captcha |
@@ -94,29 +98,63 @@ Each was reproduced live before the fix and verified live after.
 
 ## 3. Known gaps, ranked by what breaks first
 
-### 3.1 Server-side paging for the deep screens — the scaling wall
+### 3.1 ~~Server-side paging for the deep screens~~ — CLOSED
 
-Transport is done: `/api/aset` and `/api/history/summary` return the envelope and
-accept `q` / `kode_alat` / `id_lokasi` / `status` / `tahun`. **The total bytes are
-not** — the frontend still caches the whole fleet in `db` and filters client-side
-through the one matcher in `js/search.js`.
+**The scaling wall is gone. The boot went from 1,062 KB to 19 KB**, measured in
+a real browser by `tools/verify/test_boot.py`, and it no longer grows with the
+fleet at all.
 
-The server filters exist as a *superset gate* precisely so Kelola Data Aset and
-Pantau Riwayat can move to server-side paging without another API change. Doing
-it means teaching those two views to render from a page rather than from `db`.
-That is the work; the API is ready.
+```text
+                        before      after
+login -> first screen  1,062 KB     19 KB   (7 requests)
+opening a deep screen        0     ~1.2 KB  (one page of 20)
+scaling                 linear     flat
+```
 
-### 3.2 The repair-events window subquery runs four times per dashboard load
+Three pieces, and the release is only correct because of the third:
 
-`_scoped_repair_events` is a subquery *expression*, re-executed by each of the
-four `db.execute()` calls, and it contains a deliberately unfiltered `LAG` over
-the whole `riwayat_kondisi` table. Wants a materialised CTE or a rollup table.
-The dashboard is the first screen after login.
+1. **`/api/aset` and `/api/history/summary` take the complete filter set** the
+   sort modals can produce — `q`, `alat`, `pengadaan`, `peruntukan`, `lokasi`,
+   `upt`, `status`, `tahun_from/to`, `id_from/to`, `milik_saya` / `punya` — plus
+   `sort` and `dir`, and the answers are **exact**, not the superset gate they
+   used to be. Both deep screens render straight from a page.
+2. **`GET /api/aset/dashboard/ringkasan`** supplies every fleet-wide number the
+   four dashboard panels, both KPI strips, the KDAK tiles, every year dropdown
+   and the KDAK id preview's sequence number. ~6 KB regardless of fleet size.
+   `ensureFleet()` still fetches every row for the three things that genuinely
+   need one line per asset — the Excel/PDF export and the KDAK grouping
+   modals — but on demand, not at login.
+3. **`api/query.py` is a line-by-line port of `js/search.js`**, and
+   `tools/verify/test_paging.py` proves it by running the shipped client
+   functions in real Chrome and the server filters over the same fleet and
+   comparing id lists: 46 filter, 16 Pantau Riwayat and 10 ordering cases, all
+   agreeing. Without that, "faster" would have meant "differently wrong".
 
-**Its real cost is now measurable for the first time.** `riwayat_kondisi` was
-1,121 rows of nothing but registrations; `--simulasi` takes it past 3,000 with
-genuine transitions to scan. Profile it against a simulated database rather than
-a clean one, or the optimisation will look unnecessary.
+What to know before touching it is in [CLAUDE.md](../CLAUDE.md) under *Nothing
+holds the fleet any more*. The short version: `db` and `_historySummary` are
+ONE PAGE each, and scanning them for a fleet-wide answer fails silently with a
+plausible smaller number.
+
+### 3.2 ~~The repair-events window subquery runs four times per dashboard load~~ — CLOSED
+
+`_scoped_repair_events` returns a subquery EXPRESSION, so each of the four
+`db.execute()` calls re-ran it — including the deliberately unfiltered `LAG` over
+all of `riwayat_kondisi` — and re-planned the nested query four times.
+
+`_repair_facts()` now scans it **once**, grouped by `(bucket, lokasi, alat)`, and
+the headline totals, the trend series, the per-resort table and the per-alat
+table are summed out of that one result set in Python. The grouping key is the
+resolution the trend is drawn at, so nothing is approximated.
+
+Measured against a `--simulasi` database (3,218 `riwayat_kondisi` rows, which is
+what made the cost visible at all):
+
+```text
+the four scans alone     64 ms (Semua Tahun) · 73 ms (one year)
+one grouped pass         25 ms               · 19 ms
+endpoint, end to end    100-123 ms  ->  45-60 ms
+14 payloads compared before and after: byte-identical
+```
 
 ### 3.3 The rate limiter is per-process
 
@@ -195,9 +233,9 @@ data is real.
 
 | # | Work | Effort | Risk of leaving it |
 |---|---|---|---|
-| 1 | Server-side paging for the deep screens (§3.1) | Large (FE) | The wall the system hits as the fleet grows |
-| 2 | Repair-dashboard CTE (§3.2) | Medium | Dashboard is the first screen after login |
-| 3 | Stock opname | Medium | Last client-matrix item that is purely build work |
+| ~~1~~ | ~~Server-side paging (§3.1)~~ | — | **Done in rev0.4.5** — boot 1,062 KB → 19 KB |
+| ~~2~~ | ~~Repair-dashboard CTE (§3.2)~~ | — | **Done in rev0.4.5**, 2× on the endpoint |
+| 1 | Stock opname | Medium | Last client-matrix item that is purely build work |
 | 4 | MTBF/MTTR | Small | Unblocked by rev0.4.4 — build it next |
 | 4b | Calibration reminder | Small | Data is there; needs a notification surface |
 | 5 | Surrogate PK (§3.4) | Large | Makes every edit cheap; do after paging |
@@ -220,6 +258,17 @@ py -3.10 tools/check_js.py        # duplicate top-level decls, eval-order, brack
 py -3.10 tools/check_html.py      # 5 index.html invariants
 py -3.10 tools/check_py_names.py  # unresolved globals in main.py + api/
 ```
+
+A fourth needs Chrome and answers the one question the others cannot:
+
+```bash
+py -3.10 tools/verify/syntax.py   # does js/ actually PARSE?
+```
+
+`check_js.py` has no JavaScript engine — it tokenises and counts brackets. An
+`await` inside a listener that is not `async` is a SyntaxError that blanks the
+page, and it passes every other check. `syntax.py` compiles each file with
+`new Function(source)` in headless Chrome, which parses without executing.
 
 `check_js.py`'s duplicate check is the one that matters most: two files
 declaring the same top-level `let`/`const` is a fatal `SyntaxError` that blanks
@@ -250,4 +299,4 @@ seeded database is indistinguishable from demo data later.
 
 ---
 
-*Last updated against `rev0.4.4-alpha`.*
+*Last updated against `rev0.4.5-alpha`.*

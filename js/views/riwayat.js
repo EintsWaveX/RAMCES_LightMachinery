@@ -39,24 +39,61 @@ function _historyEmptyState(mode, searchQ, filters) {
   return `<div class="empty-state col-span-2"><i class="fas ${cfg.icon}"></i>${msg}</div>`;
 }
 
-function renderHistoryCards() {
+// ═══════════════════════════════════════════════════════════════════════
+// ONE PAGE, FILTERED AND SORTED BY THE SERVER  (rev0.4.5)
+// ═══════════════════════════════════════════════════════════════════════
+//
+// All three tabs used to filter, sort and slice `_historySummary`, a copy of
+// the whole fleet's history rollup — 667 KB and 317 ms, downloaded at login
+// whether or not this screen was ever opened.
+//
+// `_historySummary` is now the CURRENT PAGE. Everything the filters did in
+// JavaScript travels as query parameters and `api/query.py` applies the
+// identical rules, including the eleven card-only fields the search reaches
+// (technician, certificate number, transfer reason) and the per-tab gate.
+// `tools/verify/test_paging.py` asserts client and server agree on all of it.
+//
+// One helper, three tabs — the same shape `_historySearchMatches` and
+// `_historyFilterMatches` shared, so a tab cannot silently ignore a criterion.
+// Those two remain: they are what the parity harness compares against.
+async function _loadHistoryTab(tab, key) {
+  const params = asetFilterParams(_histSortFilters, {
+    q: document.getElementById("search-history")?.value || "",
+    sort: _histSortField,
+    dir: _histSortDir,
+    punya: tab === "repair" ? "" : tab,
+  });
+  const { limit, offset } = pagerRequest(key);
+  params.set("limit", limit);
+  params.set("offset", offset);
+  return loadHistoryPage(params);
+}
+
+async function renderHistoryCards() {
   const container = document.getElementById("history-repair-container");
   const searchInput = document.getElementById("search-history");
   if (!container) return;
 
+  const searchQ = searchInput?.value || "";
+  let res;
+  try {
+    res = await _loadHistoryTab("repair", "history-repair");
+  } catch (e) {
+    container.innerHTML =
+      `<div class="empty-state col-span-2"><i class="fas fa-triangle-exclamation"></i>${e.message}</div>`;
+    return;
+  }
+
+  // Slice AFTER filter + sort — both of which now happen on the server,
+  // before it counts. A narrowed list can leave the user past the end, and
+  // unlike the client paginator we cannot clamp and slice in one pass.
+  const _page = serverPage("history-repair", res.total, res.items);
+  if (_page.stale) return renderHistoryCards();
+
   container.innerHTML = "";
+  renderPagerBar("history-repair-pager", _page, renderHistoryCards);
 
-  const searchQ = (searchInput?.value || "").toUpperCase();
-
-  let filtered = _historySummary.filter((item) => {
-    if (!_historySearchMatches(item, searchQ)) return false;
-    return _historyFilterMatches(item, _histSortFilters);
-  });
-
-  filtered = filtered.sort(_historyComparator);
-
-  if (!filtered.length) {
-    renderPagerBar("history-repair-pager", paginateList("history-repair", filtered), renderHistoryCards);
+  if (!_page.items.length) {
     // Per-mode wording, and it distinguishes "nothing recorded yet" from
     // "nothing matches your filter" — those need different next actions.
     container.innerHTML = _historyEmptyState("repair", searchQ, _histSortFilters);
@@ -64,10 +101,6 @@ function renderHistoryCards() {
   }
 
   const fragment = document.createDocumentFragment();
-
-  // Slice AFTER filter + sort, so paging never reorders the list.
-  const _page = paginateList("history-repair", filtered);
-  renderPagerBar("history-repair-pager", _page, renderHistoryCards);
 
   _page.items.forEach((item) => {
     const r = item.repair || {};
@@ -219,34 +252,36 @@ function _historyComparator(a, b) {
   return _histSortDir === "asc" ? av.localeCompare(bv) : bv.localeCompare(av);
 }
 
-function renderKalibrasiCards() {
+async function renderKalibrasiCards() {
   const container = document.getElementById("history-kalibrasi-container");
   const searchInput = document.getElementById("search-history");
   if (!container) return;
 
+  const searchQ = searchInput?.value || "";
+  let res;
+  try {
+    res = await _loadHistoryTab("kalibrasi", "history-kalibrasi");
+  } catch (e) {
+    container.innerHTML =
+      `<div class="empty-state col-span-2"><i class="fas fa-triangle-exclamation"></i>${e.message}</div>`;
+    return;
+  }
+
+  // Slice AFTER filter + sort — both of which now happen on the server,
+  // before it counts. A narrowed list can leave the user past the end, and
+  // unlike the client paginator we cannot clamp and slice in one pass.
+  const _page = serverPage("history-kalibrasi", res.total, res.items);
+  if (_page.stale) return renderKalibrasiCards();
+
   container.innerHTML = "";
+  renderPagerBar("history-kalibrasi-pager", _page, renderKalibrasiCards);
 
-  const searchQ = (searchInput?.value || "").toUpperCase();
-
-  let filtered = _historySummary.filter((item) => {
-    if (!item.has_kalibrasi) return false;
-    if (!_historySearchMatches(item, searchQ)) return false;
-    return _historyFilterMatches(item, _histSortFilters);
-  });
-
-  filtered = filtered.sort(_historyComparator);
-
-  if (!filtered.length) {
-    renderPagerBar("history-kalibrasi-pager", paginateList("history-kalibrasi", filtered), renderKalibrasiCards);
+  if (!_page.items.length) {
     container.innerHTML = _historyEmptyState("kalibrasi", searchQ, _histSortFilters);
     return;
   }
 
   const fragment = document.createDocumentFragment();
-
-  // Slice AFTER filter + sort, so paging never reorders the list.
-  const _page = paginateList("history-kalibrasi", filtered);
-  renderPagerBar("history-kalibrasi-pager", _page, renderKalibrasiCards);
 
   _page.items.forEach((item) => {
     const r = item.kalibrasi || {};
@@ -290,35 +325,36 @@ function renderKalibrasiCards() {
   container.appendChild(fragment);
 }
 
-function renderMutasiCards() {
+async function renderMutasiCards() {
   const container = document.getElementById("history-mutasi-container");
   const searchInput = document.getElementById("search-history");
   if (!container) return;
 
+  const searchQ = searchInput?.value || "";
+  let res;
+  try {
+    res = await _loadHistoryTab("mutasi", "history-mutasi");
+  } catch (e) {
+    container.innerHTML =
+      `<div class="empty-state col-span-2"><i class="fas fa-triangle-exclamation"></i>${e.message}</div>`;
+    return;
+  }
+
+  // Slice AFTER filter + sort — both of which now happen on the server,
+  // before it counts. A narrowed list can leave the user past the end, and
+  // unlike the client paginator we cannot clamp and slice in one pass.
+  const _page = serverPage("history-mutasi", res.total, res.items);
+  if (_page.stale) return renderMutasiCards();
+
   container.innerHTML = "";
+  renderPagerBar("history-mutasi-pager", _page, renderMutasiCards);
 
-  const searchQ = (searchInput?.value || "").toUpperCase();
-
-  // Only show assets that have at least one mutation
-  let filtered = _historySummary.filter((item) => {
-    if (!item.mutasi) return false;
-    if (!_historySearchMatches(item, searchQ)) return false;
-    return _historyFilterMatches(item, _histSortFilters);
-  });
-
-  filtered = filtered.sort(_historyComparator);
-
-  if (!filtered.length) {
-    renderPagerBar("history-mutasi-pager", paginateList("history-mutasi", filtered), renderMutasiCards);
+  if (!_page.items.length) {
     container.innerHTML = _historyEmptyState("mutasi", searchQ, _histSortFilters);
     return;
   }
 
   const fragment = document.createDocumentFragment();
-
-  // Slice AFTER filter + sort, so paging never reorders the list.
-  const _page = paginateList("history-mutasi", filtered);
-  renderPagerBar("history-mutasi-pager", _page, renderMutasiCards);
 
   _page.items.forEach((item) => {
     const m = item.mutasi;

@@ -122,6 +122,7 @@ document — that was the gate the whole move was verified against.
 | Module | Contents |
 |---|---|
 | `api/deps.py` | The hinge. Lokasi hierarchy + the TTL cache, `resolve_lokasi_scope`, `assert_*_region_scope`, `normalise_*`, `get_db`, `SECRET_KEY`/bcrypt/`require_role`, the paging envelope |
+| `api/query.py` | The server-side twin of `js/search.js` — see below. Imports `deps` and `models` only |
 | `api/files.py` | `PROJECT_ROOT`, the uploads tree, the cache-header policy, `file_response_conditional` |
 | `api/realtime.py` | `ConnectionManager` + the `manager` singleton |
 | `api/schema.py` | `_ensure_schema()` — defined here, still CALLED from main.py at import |
@@ -129,6 +130,92 @@ document — that was the gate the whole move was verified against.
 | `api/captcha.py` | Stateless HMAC-signed challenge, rendered as inline SVG. Leaf module — imports nothing from `api/` |
 | `api/ratelimit.py` | In-process buckets for `/api/login`, `/api/register`, `/api/captcha`. Also a leaf |
 | `api/auth.py` · `master.py` · `aset.py` · `riwayat.py` · `inventaris.py` · `dashboard.py` | The routers |
+
+#### `api/query.py` — one matcher, now on both sides
+
+`js/search.js` is the ONE matcher: three location term shapes, one identity per
+asset, and the rule that a label printed on a card is by construction findable
+by searching that string. It was correct *because* the client held the whole
+fleet — which is exactly what cost 1.06 MB and 460 ms at every login.
+
+rev0.4.5 gave the server the same matcher rather than a looser approximation.
+`api/query.py` is a deliberate line-by-line port, and three things in it are
+load-bearing:
+
+- **`identity_lokasi_expr()` is the FIRST TRANSFER'S ORIGIN**, not `id_lokasi`
+  and **not `resolve_home_lokasi()`**. `assetLokasiIdentity()` prefers
+  `summary.mutasi.original_lokasi_code` for any asset that has ever moved;
+  `resolve_home_lokasi()` only substitutes while the asset sits at a Balaiyasa.
+  The two answer different questions and disagree on every permanently
+  redeployed machine — 213 of 1,077 in the seeded fleet. The dashboard panels
+  key on the RAW `id_lokasi` instead, and must keep doing so.
+- **A region label is a code SET resolved in Python, never a `LIKE`.** The
+  table is 273 rows and cached, so `lokasi_codes_matching_term()` inverts the
+  question — "which codes would this term match?" — and the SQL is an `IN ()`.
+  Pushing the three shapes into SQL needs the roman-numeral parent map in an
+  unindexable `CASE`, which is a second copy of the rule.
+- **`peruntukan_letter_expr()` reads the composite id, not the column.** The
+  client's filter has always gone through `decodeAsetId()`, and the two can
+  legitimately disagree — an edit changes the column, the id is minted once.
+
+**`tools/verify/test_paging.py` is the gate.** It runs the shipped client
+functions in real Chrome and the server filters over the same fleet and asserts
+identical id lists — 46 filter, 16 Pantau Riwayat and 10 ordering cases. Change
+either side without the other and it fails by name.
+
+### Nothing holds the fleet any more
+
+Until rev0.4.5 the SPA downloaded every asset at login — `db` from `/api/aset`
+and `_historySummary` from `/api/history/summary`, walked page by page by
+`fetchAllPages()`. **1,062 KB and 460 ms at 1,121 assets, on every sign-in and
+again after every mutation**, and linear in fleet size. `tools/verify/test_boot.py`
+drives a real browser through a login and five views and measures it; the boot
+is now **19 KB in 7 requests**, and each view costs about 1.2 KB when opened.
+
+Three replacements did it, and each is load-bearing:
+
+- **`db` is ONE PAGE of Kelola Data Aset, and `_historySummary` one page of
+  Pantau Riwayat.** Both views send their filters and sort to the server and
+  render what comes back. Anything that wants a fleet-wide answer must NOT scan
+  them — that is the mistake this section exists to prevent, and it fails
+  silently, with a plausible smaller number.
+- **`GET /api/aset/dashboard/ringkasan`** is the fleet-wide answer: SO/TSO
+  counts keyed by lokasi, by alat and by purchase month, plus the year counts
+  and `urutan_berikutnya`. ~6 KB regardless of fleet size, cached client-side per
+  filter by `getRingkasan()` and cleared by every `REFRESH_ASSET_LIST`. The four
+  dashboard panels, both KPI strips, the KDAK tiles and every year dropdown read
+  it.
+- **`ensureFleet()`** ([js/api.js](js/api.js)) fetches every row ON DEMAND, once,
+  and caches it. Three things genuinely need every asset and no amount of paging
+  changes that: the Excel/PDF export writes one line per asset, the KDAK grouping
+  modals roll the fleet up by alat and by lokasi, and Proses Laporan joins each
+  export row back to its asset. What changed is WHEN — pressing the button, not
+  signing in. `fleetIfLoaded()` is the non-fetching peek.
+
+Consequences worth knowing before touching any of it:
+
+- **`db.find(uid)` is gone.** `asetById(uid)` in [js/core.js](js/core.js) reads a
+  session cache that every page fetch writes into, falling back to
+  `summaryFor()`. A modal opened from Pantau Riwayat finds its asset even though
+  that asset was never on a Kelola Data Aset page.
+- **The card badges ride on `/api/aset`.** `identitas_lokasi`,
+  `jumlah_kejadian`, `kalibrasi_status`, `mutasi_count` and
+  `mutasi_sudah_kembali` come from `_card_facts()` in [api/aset.py](api/aset.py),
+  batched over the ids on the page. Those five fields are the *only* reason the
+  client used to download the whole history summary.
+- **`assetLokasiIdentity()` prefers the server's `identitas_lokasi`.** The label
+  on a card is now by construction the value the server filtered and sorted on,
+  rather than a second derivation kept in step by hand.
+- **The renderers are `async`.** `renderDbCards`, `renderKdakTable`, the three
+  Pantau Riwayat renderers, `updateDashboardStats` and `updateKdakStats` all
+  await a fetch. `serverPage()` returns `stale: true` when a narrowed filter has
+  left the user past the last page, and the caller re-issues the request — the
+  client paginator clamped and sliced in one pass, which is not available once
+  the request has already gone out.
+- **The KDAK id preview's sequence number comes from the server** and is now
+  EXACT. Deriving it client-side was always slightly wrong: the cached fleet
+  excludes AFKIR assets, so a scrapped machine holding the highest number made
+  the preview disagree with the id `create_aset` went on to mint.
 
 **THE INVARIANT: no module in `api/` may import `main`.** `main.py` imports every
 router to call `include_router`, so an import back is a hard cycle. That is why
@@ -193,7 +280,16 @@ stand in for all of it. Run all three after any large mechanical edit:
 py -3.10 tools/check_js.py        # js/ — see the four checks below
 py -3.10 tools/check_html.py      # index.html — five checks
 py -3.10 tools/check_py_names.py  # main.py + api/ — unresolved global names
+py -3.10 tools/verify/syntax.py   # js/ — does it PARSE? (needs Chrome)
 ```
+
+**`tools/verify/syntax.py` is the one that needs a JavaScript engine**, and it
+exists because `check_js.py` cannot have one. It compiles each file with
+`new Function(source)` in the same headless Chrome the rest of the harness
+drives — parsing without executing. rev0.4.5 is why: an `await` added inside a
+listener that was not `async` is a SyntaxError, the whole file fails to load,
+every function it declares is undefined and the page blanks. Brackets balanced,
+declarations unique, load order fine — every other check passed.
 
 **`tools/check_html.py`** asserts the invariants this file describes in prose
 and that nothing else enforces: every `.view-section` is reachable from a
@@ -855,20 +951,16 @@ for seeding), `uploads/`, `sql_backup/`, `temp/`, `*.sql`, and
 
 Ranked by what breaks first as the fleet grows.
 
-- **Pagination is transport-only so far.** `/api/aset` and `/api/history/summary` now
-  return the `{total, limit, offset, items}` envelope and accept
-  `q` / `kode_alat` / `id_lokasi` / `status` / `tahun`; `fetchAllPages()` in
-  [js/api.js](js/api.js) walks the pages into `db` with a progress caption. That
-  removes the single 4.5 MB / 16 MB response and the stall, but **not the total
-  bytes** — the frontend still caches the whole fleet and filters it client-side
-  through the one matcher in [js/search.js](js/search.js). The server filters exist
-  as a *superset gate* precisely so the deep screens (Kelola Data Aset, Pantau
-  Riwayat) can move to server-side paging later without another API change. Doing
-  that means teaching those two views to render from a page rather than from `db`.
-- **The repair-events window subquery runs four times per dashboard load**
-  (`_scoped_repair_events` is a subquery *expression*, re-executed by each of the
-  four `db.execute()` calls), and it contains a deliberately unfiltered `LAG` over
-  the whole `riwayat_kondisi` table. Wants a materialised CTE or a rollup table.
+- ~~**Pagination is transport-only**~~ — closed in rev0.4.5. The boot went
+  from **1,062 KB to 19 KB**, measured in a real browser by
+  `tools/verify/test_boot.py`. See "Nothing holds the fleet any more" below.
+- ~~**The repair-events window subquery runs four times per dashboard load**~~ —
+  closed in rev0.4.5. `_repair_facts()` scans the `LAG` window ONCE, grouped by
+  `(bucket, lokasi, alat)`, and the four figures are summed out of that one
+  result set in Python. Measured against a `--simulasi` database (3,218
+  `riwayat_kondisi` rows): the endpoint went 100–123 ms → 45–60 ms, and all
+  fourteen payloads are byte-identical before and after. Anything added there
+  that needs the window must read `facts`, not re-execute the subquery.
 - **`resolve_home_lokasi()` is still N+1 inside the export loops.** The lokasi table
   itself is cached now, but the `RiwayatMutasi` lookup for an asset sitting at a
   Balaiyasa still fires per asset. Rare in practice; batch it if workshop traffic

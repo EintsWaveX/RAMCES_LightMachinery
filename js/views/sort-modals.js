@@ -130,7 +130,7 @@ window.renderFilterChips = renderFilterChips;
 // site passes its own array.
 
 // How many rows fall in each year of `dateField`.
-function _yearCounts(rows = db, dateField = "tanggal_pembelian") {
+function _yearCounts(rows, dateField = "tanggal_pembelian") {
   const counts = new Map();
   (rows || []).forEach((r) => {
     const y = String(r?.[dateField] ?? "").slice(0, 4);
@@ -208,9 +208,29 @@ function fillYearSelect(sel, counts, allLabel = "Semua Tahun") {
   if (sel.selectedIndex < 0) sel.selectedIndex = 0;
 }
 
-/** Fill a from/to pair. Both get the same option list. */
-function _populateYearDropdowns(fromId, toId, rows = db, dateField = "tanggal_pembelian") {
-  const counts = _yearCounts(rows, dateField);
+/**
+ * Fill a from/to pair. Both get the same option list.
+ *
+ * With no `rows`, the counts come from the fleet ROLLUP rather than from a
+ * client-side array — since rev0.4.5 `db` and `_historySummary` are one page
+ * each, and counting a page would offer a Tahun Beli list that changed every
+ * time the user turned to the next one. Pass `rows` explicitly where the
+ * question really is about a specific list (Pulihkan Aset Afkir counts
+ * scrapped assets, which are not in the rollup at all).
+ *
+ * Async for the same reason; the callers await it or fire and forget, and
+ * fillYearSelect() keeps whatever value was already selected either way.
+ */
+async function _populateYearDropdowns(fromId, toId, rows = null, dateField = "tanggal_pembelian") {
+  let counts;
+  if (rows) {
+    counts = _yearCounts(rows, dateField);
+  } else {
+    counts = new Map();
+    (await getRingkasan()).tahun_counts.forEach((r) =>
+      counts.set(String(r.tahun), r.jumlah),
+    );
+  }
   [fromId, toId].forEach((id) =>
     fillYearSelect(document.getElementById(id), counts),
   );
@@ -504,7 +524,7 @@ document.getElementById("btn-reset-sort")?.addEventListener("click", () => {
 // ── History Sort Modal ──
 document.getElementById("btn-sort-history")?.addEventListener("click", () => {
   // Counts come from the summary rows this view actually lists.
-  _populateYearDropdowns("hist-sort-tgl-from", "hist-sort-tgl-to", _historySummary);
+  _populateYearDropdowns("hist-sort-tgl-from", "hist-sort-tgl-to");
 
   // Sync panels and Terbaru/Terlama visibility for current field
   const curField = document.getElementById("hist-sort-field")?.value || "id_aset";

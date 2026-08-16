@@ -41,7 +41,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
-from sqlalchemy import func
+from sqlalchemy import exists, func
 from sqlalchemy.orm import Session, joinedload
 
 import models
@@ -56,6 +56,11 @@ from api.deps import (
     resolve_home_lokasi,
 )
 from api.inventaris import _net_stok_map
+from api.query import (
+    apply_aset_filters,
+    apply_aset_sort,
+    history_extra_conditions,
+)
 from api.realtime import manager
 from api.schemas import PerbaikanCreate
 
@@ -311,6 +316,21 @@ def get_history_summary(
     id_aset: Optional[str] = None,
     limit: Optional[int] = Query(None, ge=1, le=MAX_PAGE),
     offset: int = Query(0, ge=0),
+    # ── The Pantau Riwayat filter set, added in rev0.4.5 ──
+    q: Optional[str] = None,
+    alat: Optional[str] = None,
+    pengadaan: Optional[str] = None,
+    peruntukan: Optional[str] = None,
+    lokasi: Optional[str] = None,
+    upt: Optional[str] = None,
+    status: Optional[str] = None,
+    tahun_from: Optional[int] = None,
+    tahun_to: Optional[int] = None,
+    id_from: Optional[int] = None,
+    id_to: Optional[int] = None,
+    punya: Optional[str] = None,
+    sort: Optional[str] = None,
+    dir: Optional[str] = None,
     db: Session = Depends(get_db),
     current_user: models.Pengguna = Depends(get_current_user),
 ):
@@ -323,30 +343,78 @@ def get_history_summary(
     one entry out of it, four times per page view, on a phone in the field.
 
     Returns the standard {total, limit, offset, items} envelope. This is the
-    heaviest response the app produces per asset (~493 B against ~194 B for
+    heaviest response the app produces per asset (~636 B against ~366 B for
     /api/aset), so it is the one that most needed paging: every one of the six
     batch queries below is scoped to the ids on the CURRENT PAGE, which is what
     makes the cost proportional to the page rather than to the fleet.
+
+    ── Filtering, added in rev0.4.5 ──
+    Pantau Riwayat now renders from a page of this endpoint rather than from a
+    client-side copy of the whole fleet, so the filters have to be exact. They
+    are the same set `/api/aset` takes and go through the same `api/query.py`
+    port of `js/search.js` — plus two things only this screen has:
+
+      q       also matches the eleven fields the history CARDS show and the
+              asset payload does not: the technician who filed the last report,
+              the certificate number and pelaksana, the reason for the last
+              transfer, the origin it was transferred from
+      punya   the tab gate. 'kalibrasi' keeps assets with a calibration record
+              (the client's `has_kalibrasi`), 'mutasi' keeps assets with a
+              transfer (its `item.mutasi` truthiness). Absent keeps everything,
+              which is the Perbaikan tab.
+
+    `id_aset` bypasses all of it: landing.html asks for one row by name.
     """
     from sqlalchemy.orm import joinedload
     from sqlalchemy import func
 
     # Batch load all assets with their relationships
-    q = (
+    base = (
         db.query(models.Aset)
         .options(joinedload(models.Aset.kategori), joinedload(models.Aset.lokasi_ref))
         .filter(models.Aset.status_terakhir != "AFKIR")
     )
     if id_aset:
-        q = q.filter(models.Aset.id_aset == id_aset)
+        base = base.filter(models.Aset.id_aset == id_aset)
+    else:
+        base = apply_aset_filters(
+            base,
+            db,
+            q=q,
+            alat=alat,
+            pengadaan=pengadaan,
+            peruntukan=peruntukan,
+            lokasi=lokasi,
+            upt=upt,
+            status=status,
+            tahun_from=tahun_from,
+            tahun_to=tahun_to,
+            id_from=id_from,
+            id_to=id_to,
+            extra_q=history_extra_conditions,
+        )
+        if punya == "kalibrasi":
+            base = base.filter(
+                exists().where(
+                    models.RiwayatKalibrasi.id_aset == models.Aset.id_aset
+                )
+            )
+        elif punya == "mutasi":
+            base = base.filter(
+                exists().where(models.RiwayatMutasi.id_aset == models.Aset.id_aset)
+            )
 
     # Same stable ordering as /api/aset, for the same reason: without it a paged
-    # bootstrap can receive one row twice and another never.
-    total = q.order_by(None).count()
-    q = q.order_by(models.Aset.id_aset)
+    # view can receive one row twice and another never.
+    total = base.order_by(None).count()
+    base = (
+        apply_aset_sort(base, sort, dir)
+        if (sort or dir)
+        else base.order_by(models.Aset.id_aset)
+    )
     if limit is not None:
-        q = q.limit(limit).offset(offset)
-    asets = q.all()
+        base = base.limit(limit).offset(offset)
+    asets = base.all()
 
     envelope = {"total": total, "limit": limit, "offset": offset}
 

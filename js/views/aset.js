@@ -11,7 +11,7 @@
 // ── RENDER & DISPLAY ───────────────────────────────────────────────────────
 
 window.openEdit = (uid) => {
-  const item = db.find((x) => x.id_aset === uid);
+  const item = asetById(uid);
   if (!item) return;
 
   document.getElementById("form-edit").reset();
@@ -408,7 +408,7 @@ document.getElementById("pakai-rows")?.addEventListener("click", (e) => {
 });
 document.getElementById("pakai-add-row")?.addEventListener("click", _addPakaiRow);
 function _reloadPakaiForCurrentAsset() {
-  const item = db.find((x) => x.id_aset === document.getElementById("edit-uid")?.value);
+  const item = asetById(document.getElementById("edit-uid")?.value);
   if (item) _reloadPakaiParts(item);
 }
 document.getElementById("pakai-gudang")?.addEventListener("change", _reloadPakaiForCurrentAsset);
@@ -468,7 +468,7 @@ function _switchEditFormTab(tab) {
 
 window.openHistoryDetail = async (uid, tab = "repair") => {
   activeHistoryUid = uid;
-  const item = summaryFor(uid) || db.find((x) => x.id_aset === uid);
+  const item = summaryFor(uid) || asetById(uid);
   if (!item) return;
 
   document.getElementById("hist-detail-subtitle").innerText = `${item.id_aset}`;
@@ -481,7 +481,7 @@ window.openHistoryDetail = async (uid, tab = "repair") => {
 // It also still pointed QR links at the old tunnel variable.
 
 window.deleteAset = async (uid) => {
-  const item = db.find((x) => x.id_aset === uid);
+  const item = asetById(uid);
   if (!item) return;
 
   const confirmed = await customConfirm(
@@ -545,7 +545,7 @@ async function loadDetailRepair(uid) {
       return;
     }
 
-    const asetTerkait = db.find((x) => x.id_aset === uid);
+    const asetTerkait = asetById(uid);
 
     // Spareparts consumed, grouped by the repair that consumed them. Fetched
     // alongside rather than joined into /api/riwayat-kondisi: most assets have
@@ -849,8 +849,12 @@ const cardDetailRow = (label, val) =>
 // the counts the summary endpoint now returns, so "urutkan menurut jumlah"
 // finally has real numbers behind it.
 function _eventCount(item) {
-  // O(1). This is called from inside sort comparators, so the old linear scan
-  // made "urutkan menurut jumlah" O(n^2 log n).
+  // `jumlah_kejadian` is the server's own figure, added to /api/aset in
+  // rev0.4.5 and computed by the same rule — TSO rows plus transfers, never
+  // every riwayat row, because an SO row is a repair being CLOSED. Sorting by
+  // it now happens server-side; this remains for the summary-shaped rows on
+  // Pantau Riwayat and for the parity harness.
+  if (typeof item?.jumlah_kejadian === "number") return item.jumlah_kejadian;
   const s = summaryFor(item.id_aset);
   if (!s) return 0;
   return (s.repair?.count || 0) + (s.mutasi?.count || 0);
@@ -859,20 +863,19 @@ function _eventCount(item) {
 // KPI tiles for Kelola Data Aset. Deliberately scoped to the filtered list
 // rather than the whole fleet: the tiles sit directly above the cards they
 // summarise, so a figure describing a different set would simply read as wrong.
-function _renderDbStats(items, mode, myRegion) {
+function _renderDbStats(ringkas, total, fleetTotal, mode, myRegion) {
   const set = (id, value) => {
     const node = document.getElementById(id);
     if (node) node.textContent = value;
   };
-  const total = items.length;
-  const so = items.filter((i) => (i.status_terakhir || "").toUpperCase() === "SO").length;
-  const tso = items.filter((i) => (i.status_terakhir || "").toUpperCase() === "TSO").length;
+  const so = ringkas.so || 0;
+  const tso = ringkas.tso || 0;
 
   set("db-stat-total", total.toLocaleString("id-ID"));
   set("db-stat-so", so.toLocaleString("id-ID"));
   set("db-stat-tso", tso.toLocaleString("id-ID"));
   set("db-stat-avail", total ? `${((so / total) * 100).toFixed(1)}%` : "—");
-  set("db-stat-total-note", `dari ${db.length.toLocaleString("id-ID")} terdaftar`);
+  set("db-stat-total-note", `dari ${fleetTotal.toLocaleString("id-ID")} terdaftar`);
 
   // Scope line mirrors the two dashboards' header: which slice is on screen.
   const scope =
@@ -916,7 +919,21 @@ document.getElementById("btn-db-density")?.addEventListener("click", () => {
   applyDbDensity();
 });
 
-function renderDbCards() {
+/**
+ * Kelola Data Aset — ONE page, filtered and sorted by the server.
+ *
+ * Until rev0.4.5 this filtered, sorted and sliced a client-side copy of the
+ * whole fleet. Everything it used to do in JavaScript now travels as query
+ * parameters, and `api/query.py` applies the identical rules — including the
+ * three location term shapes and the identity-location rule that decides which
+ * region an asset belongs to. `tools/verify/test_paging.py` asserts the two
+ * agree; if you change a filter here, change it there and re-run it.
+ *
+ * The two paging rules from js/core.js still hold, and now hold on the server:
+ * the slice happens AFTER filtering and sorting, and the search narrows the
+ * DATA rather than hiding rendered rows.
+ */
+async function renderDbCards() {
   const container = document.getElementById("db-cards-container");
   const searchInput = document.getElementById("search-db");
   const modeSelect = document.getElementById("filter-mode");
@@ -924,66 +941,54 @@ function renderDbCards() {
 
   applyDbDensity();
 
-  container.innerHTML = "";
-
   const isTeknisi = _currentRole === "TEKNISI";
   if (modeSelect) modeSelect.style.display = isTeknisi ? "none" : "";
 
-  const searchQ = (searchInput?.value || "").toUpperCase();
+  const searchQ = searchInput?.value || "";
   // "Aset Saya" narrows the list to the region the logged-in user belongs to.
-  // (This select was previously read into an unused variable, so the control
-  // did nothing at all.)
+  // The server reads the region out of the caller's own token rather than
+  // trusting a parameter — see own_region_codes() in api/query.py.
   const mode = isTeknisi ? "public" : modeSelect ? modeSelect.value : "public";
   const myLokasiRaw = getJwtPayload(authToken)?.id_lokasi || "";
   const myRegion = getParentLokasiCode(myLokasiRaw) || myLokasiRaw;
   const isAdmin =
     _currentRole === "SUPER_ADMIN" || _currentRole === "ADMIN_WILAYAH";
 
-  const filteredItems = db.filter((item) => {
-    // One identity per row, reused by the region scope, the search and the
-    // Lokasi/UPT filters — so all three agree with the label on the card.
-    const ident = assetLokasiIdentity(item);
-
-    if (mode === "local" && myRegion) {
-      if (ident.parentCode !== myRegion && ident.uptCode !== myLokasiRaw)
-        return false;
-    }
-    if (!assetMatchesSearch(item, searchQ)) return false;
-
-    // Apply custom sort filters
-    const f = _sortFilters;
-    if (f.alat && item.kode_alat !== f.alat)
-        return false;
-    if (!_pengadaanMatches(item.sumber_pengadaan, f.pengadaan)) return false;
-    if (f.peruntukan) {
-      const dec = decodeAsetId(item.id_aset);
-      if (dec.peruntukan !== f.peruntukan)
-        return false;
-    }
-    if (!lokasiMatchesCode(ident, f.lokasi)) return false;
-    if (f.upt && ident.uptCode !== f.upt) return false;
-    if (f.tahunFrom || f.tahunTo) {
-      const yr = parseInt((item.tanggal_pembelian || "").slice(0, 4));
-      if (f.tahunFrom && yr < parseInt(f.tahunFrom))
-        return false;
-      if (f.tahunTo && yr > parseInt(f.tahunTo))
-        return false;
-    }
-    if (f.idFrom || f.idTo) {
-      const num = parseInt((item.id_aset || "").split(".")[0]) || 0;
-      if (f.idFrom && num < f.idFrom)
-        return false;
-      if (f.idTo && num > f.idTo)
-        return false;
-    }
-    return true;
+  const params = asetFilterParams(_sortFilters, {
+    q: searchQ,
+    sort: _sortField,
+    dir: _sortDir,
+    milikSaya: mode === "local",
   });
+  const { limit, offset } = pagerRequest("db");
+  params.set("limit", limit);
+  params.set("offset", offset);
+
+  skeletonCards("db-cards-container", Math.min(limit, 6));
+
+  let page;
+  try {
+    page = await fetchAsetPage(params);
+  } catch (e) {
+    container.innerHTML = `<div class="empty-state col-span-full"><i class="fas fa-triangle-exclamation"></i>${e.message}</div>`;
+    return;
+  }
+
+  // `db` is now this page, not the fleet. Replaced wholesale rather than
+  // mutated, because the Map indexes in js/search.js key off array identity.
+  db = page.items;
+
+  const meta = serverPage("db", page.total, page.items);
+  // A narrowing filter can leave the user past the end of the new list. The
+  // client-side paginator clamped and sliced in one pass; here the request has
+  // already gone out, so re-issue it rather than render the empty page.
+  if (meta.stale) return renderDbCards();
 
   // Stats describe the whole FILTERED set, not the current page — they answer
-  // "how much matches", which paging must not change. Updated before the
-  // empty-state return, or a search that matches nothing would leave the
-  // previous filter's numbers standing.
-  _renderDbStats(filteredItems, mode, myRegion);
+  // "how much matches", which paging must not change. `ringkas` is computed by
+  // the server over the same filter, before the slice.
+  const fleetTotal = (await getRingkasan()).total;
+  _renderDbStats(page.ringkas, page.total, fleetTotal, mode, myRegion);
 
   // The active sort/filter state used to be visible nowhere outside the modal,
   // so a view showing 12 of 1,121 assets looked like one showing all of them.
@@ -1002,44 +1007,21 @@ function renderDbCards() {
     },
   ]);
 
-  if (!filteredItems.length) {
-    renderPagerBar("db-pager", paginateList("db", filteredItems), renderDbCards);
+  container.innerHTML = "";
+  renderPagerBar("db-pager", meta, renderDbCards);
+
+  if (!page.items.length) {
     container.innerHTML = `<div class="empty-state col-span-full"><i class="fas fa-inbox"></i>Tidak ada aset alat kerja yang cocok dengan filter ini.</div>`;
     return;
   }
 
   const fragment = document.createDocumentFragment();
 
-  // Sort the FULL filtered list first, then slice — paging an unsorted list
-  // shows the right number of the wrong cards.
-  const _dbSorted = filteredItems
-    .sort((a, b) => {
-      if (_sortDir === "date-desc") {
-        return new Date(b.tanggal_pembelian || 0) - new Date(a.tanggal_pembelian || 0);
-      }
-      if (_sortDir === "date-asc") {
-        return new Date(a.tanggal_pembelian || 0) - new Date(b.tanggal_pembelian || 0);
-      }
-      // Real event counts. This used to count how many SUMMARY ROWS matched the
-      // asset — and the summary holds exactly one row per asset, so every score
-      // was 1 and the two "jumlah" directions did nothing at all.
-      if (_sortDir === "count-desc") return _eventCount(b) - _eventCount(a);
-      if (_sortDir === "count-asc") return _eventCount(a) - _eventCount(b);
-      const av = (a[_sortField] || "").toString().toUpperCase();
-      const bv = (b[_sortField] || "").toString().toUpperCase();
-      return _sortDir === "asc" ? av.localeCompare(bv) : bv.localeCompare(av);
-    });
-
-  const _dbPage = paginateList("db", _dbSorted);
-  renderPagerBar("db-pager", _dbPage, renderDbCards);
-
-  _dbPage.items
+  page.items
     .forEach((item) => {
       const isSuperAdmin = _currentRole === "SUPER_ADMIN";
       const isAdminWilayah = _currentRole === "ADMIN_WILAYAH";
       const canDelete = isSuperAdmin || isAdminWilayah;
-
-      const summaryItem = summaryFor(item.id_aset);
 
       // Decode original data dari id_aset menggunakan fungsi yang baru
       const dec = decodeAsetId(item.id_aset);
@@ -1082,8 +1064,11 @@ function renderDbCards() {
         ? `<span class="badge badge-so"><i class="fas fa-circle text-[6px]"></i>SO</span>`
         : `<span class="badge badge-tso"><i class="fas fa-circle text-[6px]"></i>TSO</span>`;
 
-      // Badge 2: Kalibrasi status
-      const kalibStatus = summaryItem?.kalibrasi?.latest_status;
+      // Badge 2: Kalibrasi status.
+      // These three badges are why the SPA used to download the entire
+      // /api/history/summary at login. They ride on /api/aset itself now —
+      // batched over the ids on this page, see _card_facts() in api/aset.py.
+      const kalibStatus = item.kalibrasi_status;
       const kalibBadge = kalibStatus === "LULUS"
         ? `<span class="badge badge-so"><i class="fas fa-circle text-[6px]"></i>LULUS</span>`
         : kalibStatus === "BERSYARAT"
@@ -1093,9 +1078,8 @@ function renderDbCards() {
         : `<span class="badge badge-neutral"><i class="fas fa-circle text-[6px]"></i>BLM KALIBRASI</span>`;
 
       // Badge 3: Mutasi status
-      const mutasiInfo = summaryItem?.mutasi;
-      const mutasiBadge = (mutasiInfo && mutasiInfo.count > 0)
-        ? mutasiInfo.sudah_kembali
+      const mutasiBadge = (item.mutasi_count > 0)
+        ? item.mutasi_sudah_kembali
           ? `<span class="badge badge-so"><i class="fas fa-circle text-[6px]"></i>DI LOKASI ASAL</span>`
           : `<span class="badge badge-move"><i class="fas fa-circle text-[6px]"></i>SEDANG TERMUTASI</span>`
         : `<span class="badge badge-neutral"><i class="fas fa-circle text-[6px]"></i>TIDAK TERMUTASI</span>`;
@@ -1174,7 +1158,7 @@ function renderDbCards() {
 }
 
 window.openMutasiModal = (uid) => {
-  const item = db.find((x) => x.id_aset === uid);
+  const item = asetById(uid);
   if (!item) return;
 
   document.getElementById("mutasi-uid").value = uid;
@@ -1351,7 +1335,7 @@ function drawQrOnCanvas(text, targetCanvas) {
 }
 
 window.openQrModal = async (uid) => {
-  const item = db.find((x) => x.id_aset === uid);
+  const item = asetById(uid);
   if (!item) return;
 
   _qrActiveItem = item;

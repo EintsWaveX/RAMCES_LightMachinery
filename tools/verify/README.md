@@ -34,6 +34,9 @@ DevTools Protocol — no Playwright, no Node.
 | `test_ux.py` | app, Chrome | The rev0.5.1 per-view features still behave |
 | `test_simulasi.py` | DB, app | The simulated-history step: marked, idempotent, plausible, and **exactly reversible**. Snapshots every row count plus each asset's `(status, lokasi)`, generates, and fails if the undo is not byte-for-byte |
 | `test_rev043.py` | app, Chrome | The rev0.4.3 inventory work: the BOM tree (coverage honesty + stock agreeing with the Items Master + the collapse rule), the part history card, fast/slow partitioning the catalogue, the vanished "Di Atas Maksimum" band, and the pengadaan scope rule in BOTH halves |
+| `syntax.py` | Chrome | **Does js/ PARSE?** `new Function(src)` per file in headless Chrome — the `node --check` this project cannot have. Catches the SyntaxError class (`await` in a non-async function, a stray brace) that blanks the page and that every other checker passes |
+| `test_boot.py` | app, Chrome | **The rev0.4.5 gate.** Measures what the SPA downloads to put a screen up: counts every `/api/` request through a login and five views. Asserts the boot is under 400 KB, that no view walks the fleet page by page, that `db` / `_historySummary` hold a PAGE, and that the export still fetches every row on demand |
+| `test_paging.py` | app, Chrome | **The rev0.4.5 gate.** Runs the client matcher (`assetMatchesSearch` / `lokasiMatchesCode` / `_historySearchMatches` — the shipped functions, in Chrome) and the server's `api/query.py` filters over the same fleet, and asserts identical id lists. 46 filter, 16 Pantau Riwayat and 10 ordering cases |
 | `test_rev042.py` | app, Chrome | The rev0.4.2 frontend: registration panel, progressive captcha, role gating, the peruntukan-filtered UPT list, the KDAK form fitting, landing.html's sign-in, `dokumen_alat`, and the scroll affordance |
 | `test_auth.py` | app | Registration, approval, suspension, the captcha token, and the rate limiter. **The one script here that is not immediately re-runnable** — it exhausts the limits it tests, so it detects a hot bucket and exits 2 rather than reporting a false failure. Restart the app to clear them |
 | `audit.py` | app, Chrome | UI/UX findings sweep — a report, **not** a gate |
@@ -45,13 +48,17 @@ DevTools Protocol — no Playwright, no Node.
 Hold these unless a change is deliberate:
 
 ```
-routes                87      (85 + hirarki/parts-detail, rev0.4.3)
-openapi paths         59
+routes                88      (87 + /api/aset/dashboard/ringkasan, rev0.4.5)
+openapi paths         60
 shadow pairs           0
 require_role          43 guards
 broadcasts            37
 manage.py verify   16/16
 audit.py findings      0
+test_paging.py        46 filter + 16 riwayat + 10 order cases, all agreeing
+boot payload          19 KB in 7 requests   (was 1,062 KB in 6)
+  per view opened     ~1.2 KB               (one page of 20)
+syntax.py             17/17 files parse
 
 with `--simulasi` (opt-in, and every row is marked):
   aset unchanged · riwayat_kondisi +~2000 · riwayat_mutasi +~1000

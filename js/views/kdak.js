@@ -11,21 +11,19 @@
 // ── KDAK (Kelola Aset Alat Kerja) ────────────────────────────────────────
 
 // ── Stats ──
-function updateKdakStats() {
-  const total = db.length;
-  const so = db.filter((a) => a.status_terakhir === "SO").length;
-  const tso = db.filter((a) => a.status_terakhir === "TSO").length;
-  const jenisUnik = new Set(db.map((a) => a.kode_alat)).size;
-  const lokasiUnik = new Set(db.map((a) => a.id_lokasi_raw || a.id_lokasi)).size;
+// Six fleet-wide numbers. They used to reduce `db`, a client-side copy of every
+// asset; the same six are grouped server-side and arrive as one ~6 KB rollup.
+async function updateKdakStats() {
+  const agg = await getRingkasan();
+  const total = agg.total;
+  const so = agg.so;
+  const tso = agg.tso;
+  const jenisUnik = agg.jenis_unik;
+  const lokasiUnik = agg.lokasi_unik;
   const avail = total > 0 ? Math.round((so / total) * 100) : null;
   const delta = avail !== null ? avail - _benchmarkPct : null;
 
-  const now = new Date();
-  const terbaru = db.filter((a) => {
-    if (!a.tanggal_pembelian) return false;
-    const d = new Date(a.tanggal_pembelian);
-    return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
-  }).length;
+  const terbaru = agg.bulan_ini;
 
   const _s = (id, val) => {
     const el = document.getElementById(id);
@@ -53,48 +51,18 @@ let _kdakSortField = "id_aset";
 let _kdakSortDir = "date-desc";
 let _kdakSortFilters = {};
 
-function renderKdakTable() {
+/**
+ * Kelola Data Alat Kerja — ONE page, filtered and sorted by the server.
+ *
+ * The same conversion as Kelola Data Aset, and for the same reason: this used
+ * to filter and sort a client-side copy of the whole fleet. `_kdakSortFilters`
+ * is the same shape as `_sortFilters`, so it goes through the same
+ * asetFilterParams() and the same api/query.py rules.
+ */
+async function renderKdakTable() {
   const tbody = document.getElementById("kdak-table-body");
   const countEl = document.getElementById("kdak-table-count");
   if (!tbody) return;
-
-  const q = _kdakSearch.toUpperCase();
-  const f = _kdakSortFilters;
-
-  let filtered = db.filter((a) => {
-    const ident = assetLokasiIdentity(a);
-
-    // Search filter — shared matcher, so "DAOP 1" here behaves exactly as it
-    // does in Kelola Data Aset, Pantau Riwayat and Aset Afkir.
-    if (!assetMatchesSearch(a, q)) return false;
-
-    // Custom sort filters (same logic as renderDbCards)
-    if (f.alat && a.kode_alat !== f.alat)
-      return false;
-    if (!_pengadaanMatches(a.sumber_pengadaan, f.pengadaan)) return false;
-    if (f.peruntukan) {
-      const dec = decodeAsetId(a.id_aset);
-      if (dec.peruntukan !== f.peruntukan)
-        return false;
-    }
-    if (!lokasiMatchesCode(ident, f.lokasi)) return false;
-    if (f.upt && ident.uptCode !== f.upt) return false;
-    if (f.tahunFrom || f.tahunTo) {
-      const yr = parseInt((a.tanggal_pembelian || "").slice(0, 4));
-      if (f.tahunFrom && yr < parseInt(f.tahunFrom))
-        return false;
-      if (f.tahunTo && yr > parseInt(f.tahunTo))
-        return false;
-    }
-    if (f.idFrom || f.idTo) {
-      const num = parseInt((a.id_aset || "").split(".")[0]) || 0;
-      if (f.idFrom && num < f.idFrom)
-        return false;
-      if (f.idTo && num > f.idTo)
-        return false;
-    }
-    return true;
-  });
 
   // Third caller of the shared renderer. `_kdakSortFilters` is the same shape
   // as `_sortFilters` and `_afkirSortFilters`, so all three surface identically.
@@ -114,46 +82,50 @@ function renderKdakTable() {
     },
   ]);
 
-  // Sort — mirrors renderDbCards logic
-  filtered = [...filtered].sort((a, b) => {
-    if (_kdakSortDir === "date-desc") return new Date(b.tanggal_pembelian || 0) - new Date(a.tanggal_pembelian || 0);
-    if (_kdakSortDir === "date-asc") return new Date(a.tanggal_pembelian || 0) - new Date(b.tanggal_pembelian || 0);
-    // The buttons are labelled "Terbanyak / Tersedikit", but this used to
-    // partition on SO vs TSO — a two-value status, not a count. Now it sorts by
-    // real activity (perbaikan + mutasi), matching the other three modals.
-    if (_kdakSortDir === "count-desc") return _eventCount(b) - _eventCount(a);
-    if (_kdakSortDir === "count-asc") return _eventCount(a) - _eventCount(b);
-    const av = (a[_kdakSortField] || "").toString().toUpperCase();
-    const bv = (b[_kdakSortField] || "").toString().toUpperCase();
-    return _kdakSortDir === "asc" ? av.localeCompare(bv) : bv.localeCompare(av);
+  const params = asetFilterParams(_kdakSortFilters, {
+    q: _kdakSearch,
+    sort: _kdakSortField,
+    dir: _kdakSortDir,
   });
+  const { limit, offset } = pagerRequest("kdak");
+  params.set("limit", limit);
+  params.set("offset", offset);
+
+  skeletonRows("kdak-table-body", 11, Math.min(limit, 6));
+
+  let page;
+  try {
+    page = await fetchAsetPage(params);
+  } catch (e) {
+    tbody.innerHTML = `<tr><td colspan="11" class="text-center py-10 text-sm text-red-500">${e.message}</td></tr>`;
+    return;
+  }
+
+  const _kdakPage = serverPage("kdak", page.total, page.items);
+  if (_kdakPage.stale) return renderKdakTable();
 
   // The count reports the whole filtered set, not the page — it answers "how
   // many match", which paging must not change.
-  if (countEl) countEl.textContent = `${filtered.length} aset`;
+  if (countEl) countEl.textContent = `${page.total} aset`;
 
-  if (!filtered.length) {
-    renderPagerBar("kdak-pager", paginateList("kdak", filtered), renderKdakTable);
+  renderPagerBar("kdak-pager", _kdakPage, renderKdakTable);
+
+  if (!_kdakPage.items.length) {
     tbody.innerHTML = `<tr><td colspan="11" class="text-center py-10 text-sm text-gray-400">Tidak ada data ditemukan.</td></tr>`;
     return;
   }
 
-  // Slice AFTER filter + sort.
-  const _kdakPage = paginateList("kdak", filtered);
-  renderPagerBar("kdak-pager", _kdakPage, renderKdakTable);
-
   tbody.innerHTML = _kdakPage.items
     .map((a) => {
-      const summaryItem = summaryFor(a.id_aset);
-
       // Badge 1: SO / TSO
       const isSO = a.status_terakhir === "SO";
       const kondisiBadge = isSO
         ? `<span class="badge badge-so"><i class="fas fa-circle text-[6px]"></i>SO</span>`
         : `<span class="badge badge-tso"><i class="fas fa-circle text-[6px]"></i>TSO</span>`;
 
-      // Badge 2: Kalibrasi status
-      const kalibStatus = summaryItem?.kalibrasi?.latest_status;
+      // Badge 2: Kalibrasi status. Carried by /api/aset since rev0.4.5 —
+      // see _card_facts() — rather than by a fleet-wide summary download.
+      const kalibStatus = a.kalibrasi_status;
       const kalibBadge = kalibStatus === "LULUS"
         ? `<span class="badge badge-so"><i class="fas fa-circle text-[6px]"></i>LULUS</span>`
         : kalibStatus === "BERSYARAT"
@@ -163,9 +135,8 @@ function renderKdakTable() {
         : `<span class="badge badge-neutral"><i class="fas fa-circle text-[6px]"></i>BLM KALIBRASI</span>`;
 
       // Badge 3: Mutasi status
-      const mutasiInfo = summaryItem?.mutasi;
-      const mutasiBadge = (mutasiInfo && mutasiInfo.count > 0)
-        ? mutasiInfo.sudah_kembali
+      const mutasiBadge = (a.mutasi_count > 0)
+        ? a.mutasi_sudah_kembali
           ? `<span class="badge badge-so"><i class="fas fa-circle text-[6px]"></i>DI LOKASI ASAL</span>`
           : `<span class="badge badge-move"><i class="fas fa-circle text-[6px]"></i>SEDANG TERMUTASI</span>`
         : `<span class="badge badge-neutral"><i class="fas fa-circle text-[6px]"></i>TIDAK TERMUTASI</span>`;
@@ -254,9 +225,12 @@ function _renderGroupList(containerId, groups, iconClass, colorClass, opts = {})
     .join("");
 }
 
-function _buildAlatGroups(filterCode, sortVal) {
+// The three grouping views below roll the WHOLE fleet up, so they take it as an
+// argument rather than reading `db` — which is now one page. `ensureFleet()`
+// fetches it once, on the first modal that asks, and caches it until a mutation.
+function _buildAlatGroups(fleet, filterCode, sortVal) {
   const map = {};
-  db.forEach((a) => {
+  (fleet || []).forEach((a) => {
     const code = a.kode_alat || "—";
     const name = a.kode_alat_name || code;
     if (!map[code]) map[code] = { code, name, count: 0 };
@@ -271,9 +245,9 @@ function _buildAlatGroups(filterCode, sortVal) {
   return arr;
 }
 
-function _buildLokasiGroups(filterLokasi, filterUpt, sortVal) {
+function _buildLokasiGroups(fleet, filterLokasi, filterUpt, sortVal) {
   const map = {};
-  db.forEach((a) => {
+  (fleet || []).forEach((a) => {
     // Shared identity, not a second derivation. This used to read the parent
     // out of uptDatabase, which silently fell back to treating a UPT code as
     // its own parent whenever the code was missing from that table.
@@ -303,12 +277,13 @@ function _buildLokasiGroups(filterLokasi, filterUpt, sortVal) {
 }
 
 // ── Terbaru modal helpers ──
-function _renderTerbaruList(from, to) {
+async function _renderTerbaruList(from, to) {
   const list = document.getElementById("kdak-terbaru-list");
   const label = document.getElementById("kdak-terbaru-count-label");
   if (!list) return;
 
-  const filtered = db.filter((a) => {
+  const fleet = await ensureFleet({ silent: true });
+  const filtered = fleet.filter((a) => {
     if (!a.tanggal_pembelian) return false;
     const d = new Date(a.tanggal_pembelian);
     if (from && d < new Date(from)) return false;
@@ -599,28 +574,22 @@ const KDAK_ID_SEGMENTS = [
  *
  * create_aset() takes max(urutan) + 1 over every asset sharing the kode_alat —
  * never a row count, because deleting one would then make the next create reuse
- * a live number. The same max is derivable here because the client already
- * caches the whole fleet in `db`.
+ * a live number.
  *
- * Returns null when it cannot be trusted: `db` holds only non-AFKIR assets, so
- * a scrapped asset with a higher number is invisible to us and the server would
- * pick a larger one. Rather than print a number that may be wrong, the caller
- * renders a placeholder — the segments that are actually the user's to get
- * right are all exact.
+ * The SERVER answers this now (`urutan_berikutnya` on /ringkasan), and that made
+ * the preview EXACT rather than an estimate. Deriving it from the client's
+ * cached fleet was always slightly wrong: that array excludes AFKIR assets, so
+ * a scrapped machine holding the highest number made the preview disagree with
+ * the id the server went on to mint. The server's max is over every row.
+ *
+ * Still returns null if the rollup has not arrived, and the caller still renders
+ * a placeholder for this ONE segment — every other segment is the user's own
+ * input and stays exact either way.
  */
 function _kdakNextUrutan(kodeAlat) {
-  if (!kodeAlat || typeof db === "undefined" || !Array.isArray(db)) return null;
-  let max = 0;
-  let seen = false;
-  for (const a of db) {
-    if (a.kode_alat !== kodeAlat) continue;
-    const n = parseInt(String(a.id_aset || "").split(".")[0], 10);
-    if (Number.isFinite(n)) {
-      seen = true;
-      if (n > max) max = n;
-    }
-  }
-  return seen ? max + 1 : 1;
+  const agg = window.ringkasanIfLoaded?.();
+  if (!kodeAlat || !agg || !agg.urutan_berikutnya) return null;
+  return agg.urutan_berikutnya[kodeAlat] ?? 1;
 }
 
 /**
@@ -762,7 +731,7 @@ window.refreshTambahPreview = refreshTambahPreview;
 window.refreshEditPreview = refreshEditPreview;
 
 window.openKdakEdit = function(idAset) {
-  const a = db.find((x) => x.id_aset === idAset);
+  const a = asetById(idAset);
   if (!a) { showToast("Data aset tidak ditemukan.", "error"); return; }
 
   document.getElementById("kdak-edit-id").value = idAset;
@@ -1217,25 +1186,28 @@ document.getElementById("kdak-btn-reset-sort")?.addEventListener("click", () => 
 });
 
 // ── Helper functions ──
-const _refreshAlatList = () => {
+const _refreshAlatList = async () => {
   const alatFilter = document.getElementById("kdak-alat-filter");
   const alatSort = document.getElementById("kdak-alat-sort");
+  const fleet = await ensureFleet({ silent: true });
   _renderGroupList(
     "kdak-alat-list",
-    _buildAlatGroups(alatFilter?.value || "", alatSort?.value || "count-desc"),
+    _buildAlatGroups(fleet, alatFilter?.value || "", alatSort?.value || "count-desc"),
     "fas fa-wrench",
     "bg-kai-blue/10 dark:bg-blue-900/30 text-kai-blue",
     { pagerMount: "kdak-alat-pager", pagerKey: "group-alat", rerender: () => _refreshAlatList() }
   );
 };
 
-const _refreshLokasiList = () => {
+const _refreshLokasiList = async () => {
   const lokasiFilter = document.getElementById("kdak-lokasi-filter");
   const uptFilter = document.getElementById("kdak-upt-filter");
   const lokasiSort = document.getElementById("kdak-lokasi-sort");
+  const fleet = await ensureFleet({ silent: true });
   _renderGroupList(
     "kdak-lokasi-list",
     _buildLokasiGroups(
+      fleet,
       lokasiFilter?.value || "",
       uptFilter?.value || "",
       lokasiSort?.value || "count-desc"
@@ -1256,13 +1228,15 @@ const _refreshTerbaru = () => {
 };
 
 // ── Daftar per Alat Kerja card ──
-document.getElementById("kdak-card-per-alat")?.addEventListener("click", () => {
+document.getElementById("kdak-card-per-alat")?.addEventListener("click", async () => {
     const modal = document.getElementById("kdak-alat-modal");
     if (modal) modal.classList.remove("hidden");
 
     const alatFilter = document.getElementById("kdak-alat-filter");
     if (alatFilter) {
-      const existing = new Set(db.map((a) => a.kode_alat));
+      // Which tool types the fleet actually holds — from the rollup's per_alat
+      // keys rather than from a client-side scan of every asset.
+      const existing = new Set(Object.keys((await getRingkasan()).per_alat));
       alatFilter.innerHTML =
         '<option value="">— Semua Alat Kerja —</option>' +
         alatKerjaData
@@ -1282,17 +1256,18 @@ document.getElementById("kdak-alat-filter")?.addEventListener("change", _refresh
 document.getElementById("kdak-alat-sort")?.addEventListener("change", _refreshAlatList);
 
 // ── Daftar per Lokasi card (SINGLE event listener - removed duplicate) ──
-document.getElementById("kdak-card-per-lokasi")?.addEventListener("click", () => {
+document.getElementById("kdak-card-per-lokasi")?.addEventListener("click", async () => {
     const modal = document.getElementById("kdak-lokasi-modal");
     if (modal) modal.classList.remove("hidden");
 
     const lokasiFilter = document.getElementById("kdak-lokasi-filter");
     if (lokasiFilter) {
+      // Which parent regions actually hold assets — from the rollup's per_lokasi
+      // keys rather than from a scan of every asset.
       const usedParents = new Set(
-        db.map((a) => {
-        const uptEntry = uptDatabase.find((u) => u.upt === (a.id_lokasi_raw || a.id_lokasi));
-        return uptEntry ? uptEntry.lokasi : (a.id_lokasi_raw || a.id_lokasi);
-      })
+        Object.keys((await getRingkasan()).per_lokasi).map(
+          (code) => getParentLokasiCode(code) || code,
+        ),
       );
       lokasiFilter.innerHTML =
         '<option value="">— Semua Lokasi —</option>' +
@@ -1363,13 +1338,16 @@ document.querySelector('[data-view="input"]')?.addEventListener("click", () => {
   });
 
 // ── Jenis Alat card ──
-document.getElementById("kdak-card-jenis")?.addEventListener("click", () => {
+document.getElementById("kdak-card-jenis")?.addEventListener("click", async () => {
   const modal = document.getElementById("kdak-jenis-modal");
   if (modal) modal.classList.remove("hidden");
   const tbody = document.getElementById("kdak-jenis-table-body");
   if (!tbody) return;
+  // Counts per tool type, from the rollup. `per_alat` is keyed by kode_alat and
+  // splits SO/TSO, which together are the total this column prints.
+  const per = (await getRingkasan()).per_alat;
   const countByKode = {};
-  db.forEach((a) => { countByKode[a.kode_alat] = (countByKode[a.kode_alat] || 0) + 1; });
+  Object.entries(per).forEach(([k, v]) => { countByKode[k] = v.so + v.tso; });
   tbody.innerHTML = alatKerjaData.map((a) => `
     <tr class="border-b border-gray-50 dark:border-gray-700/50 hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
       <td class="px-4 py-3 font-mono text-xs text-purple-500 font-bold">${a.code}</td>
@@ -1447,24 +1425,19 @@ document.getElementById("close-kdak-benchmark-modal")?.addEventListener("click",
 }
 
 // ── Shared helper: renders Ketersediaan or Benchmark table from matrix data ──
-function _renderKdakAvailBenchmarkTable(mode) {
+async function _renderKdakAvailBenchmarkTable(mode) {
   const tbodyId = mode === "ketersediaan" ? "kdak-ketersediaan-table-body" : "kdak-benchmark-table-body";
   const tbody = document.getElementById(tbodyId);
   if (!tbody) return;
 
-  const assetsByParent = {};
-  db.forEach((a) => {
-    const uptCode = a.id_lokasi_raw || a.id_lokasi;
-    if (!uptCode) return;
-    const parentCode = (uptDatabase.find((u) => u.upt === uptCode)?.lokasi) || uptCode;
-    if (!assetsByParent[parentCode]) assetsByParent[parentCode] = [];
-    assetsByParent[parentCode].push(a);
-  });
+  // SO/TSO per parent region. `_rollUpLokasi` adds every UPT to its parent,
+  // which is what the per-asset loop here used to do one asset at a time.
+  const byParent = _rollUpLokasi((await getRingkasan()).per_lokasi);
 
   tbody.innerHTML = lokasiData.map((region) => {
-      const assets = assetsByParent[region.code] || [];
-      const so = assets.filter((a) => a.status_terakhir === "SO").length;
-      const total = assets.length;
+      const counts = byParent[region.code] || { so: 0, tso: 0 };
+      const so = counts.so;
+      const total = counts.so + counts.tso;
       const avail = total > 0 ? Math.round((so / total) * 100) : null;
       const delta = avail !== null ? avail - _benchmarkPct : null;
 

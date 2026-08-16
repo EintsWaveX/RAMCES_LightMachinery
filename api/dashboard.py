@@ -25,16 +25,19 @@ Two things here are load-bearing and easy to undo:
 every row broke `masuk == selesai + diafkir + sedang` the moment anyone filed a
 second fault report on a machine that was still down.
 
-Known cost, unchanged by this split: the subquery is an EXPRESSION, so each of
-the four `db.execute()` calls re-runs it, and it contains a deliberately
-unfiltered LAG over the whole `riwayat_kondisi` table.
+The LAG window is scanned ONCE per dashboard load. `_scoped_repair_events()`
+returns a subquery EXPRESSION, and four `db.execute()` calls against it meant
+four scans and four plannings of the same nested query; `_repair_facts()` now
+runs it once, grouped by `(bucket, lokasi, alat)`, and the four figures are
+summed out of that one result set in Python. Anything added here that needs the
+window must read `facts`, not re-execute the subquery.
 """
 
 from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import func, case, extract, select, text as sa_text
+from sqlalchemy import Integer, cast, func, case, extract, select, text as sa_text
 from sqlalchemy.orm import Session
 
 import models
@@ -47,6 +50,7 @@ from api.deps import (
     short_lokasi_label,
     upt_sort_key,
 )
+from api.query import pengadaan_values
 
 router = APIRouter()
 
@@ -197,6 +201,73 @@ def _scoped_repair_events(year: int, lokasi_ids):
     return scoped.subquery("s")
 
 
+def _repair_facts(db, year, lokasi_ids):
+    """
+    ONE pass over the window subquery, grouped finely enough that every figure
+    the repair dashboard prints can be summed back out of it in Python.
+
+    ── Why this exists ──
+    `_scoped_repair_events()` returns a subquery EXPRESSION, not a result. It
+    was consumed by four separate `db.execute()` calls — headline totals, the
+    trend series, per-resort and per-alat — so PostgreSQL re-ran the whole
+    thing four times per dashboard load, including the deliberately unfiltered
+    `LAG` over every row of `riwayat_kondisi`, and planned the nested subquery
+    four times as well.
+
+    The cost was invisible while `riwayat_kondisi` held nothing but one
+    registration row per asset. Measured at 3,218 rows (`manage.py seed
+    --simulasi`), against the local database:
+
+        four separate executes   64 ms (Semua Tahun) · 73 ms (one year)
+        this single pass         25 ms               · 19 ms
+        rows it returns        1,111                ·  367
+
+    ── The grouping key ──
+    `(bucket, eff_lokasi, kode_alat)`, where `bucket` is the YEAR when "Semua
+    Tahun" is active and the MONTH otherwise — which is exactly the resolution
+    the trend series is drawn at, so no finer key is needed. Every consumer is
+    a sum over some projection of that key, so aggregating in Python is exact,
+    not an approximation:
+
+        totals      sum over everything
+        trend       sum by bucket        (a NULL bucket is dropped, as before)
+        per_resort  sum by eff_lokasi    (a NULL lokasi is dropped, as before)
+        per_alat    sum by kode_alat, then merged by nama_alat
+
+    The returned row count is bounded by the number of events, and is small:
+    grouping the entire fleet's history, all years, is 1,111 tuples.
+
+    Returns [(bucket|None, eff_lokasi, kode_alat, masuk, selesai, afkir)].
+    """
+    S = _scoped_repair_events(year, lokasi_ids)
+    bucket = (
+        extract("year", S.c.waktu_lapor)
+        if year is None
+        else extract("month", S.c.waktu_lapor)
+    ).label("bucket")
+    rows = db.execute(
+        select(
+            bucket,
+            S.c.eff_lokasi,
+            S.c.kode_alat,
+            func.coalesce(func.sum(S.c.f_masuk), 0),
+            func.coalesce(func.sum(S.c.f_selesai), 0),
+            func.coalesce(func.sum(S.c.f_afkir), 0),
+        ).group_by(bucket, S.c.eff_lokasi, S.c.kode_alat)
+    ).all()
+    return [
+        (
+            None if r[0] is None else int(r[0]),
+            r[1],
+            r[2],
+            int(r[3] or 0),
+            int(r[4] or 0),
+            int(r[5] or 0),
+        )
+        for r in rows
+    ]
+
+
 @router.get("/api/aset/dashboard/perbaikan")
 def get_aset_perbaikan_dashboard(
     id_lokasi: Optional[str] = None,
@@ -243,17 +314,15 @@ def get_aset_perbaikan_dashboard(
         else:
             year = years_with_data[0]
 
-    S = _scoped_repair_events(year, lokasi_ids)
+    # ONE scan of the LAG window, grouped by (bucket, lokasi, alat). The four
+    # aggregations below are projections of that one result set — see
+    # _repair_facts() for why they are no longer four queries.
+    facts = _repair_facts(db, year, lokasi_ids)
 
     # ── Headline totals ──────────────────────────────────────────────────────
-    totals = db.execute(
-        select(
-            func.coalesce(func.sum(S.c.f_masuk), 0),
-            func.coalesce(func.sum(S.c.f_selesai), 0),
-            func.coalesce(func.sum(S.c.f_afkir), 0),
-        )
-    ).one()
-    masuk, selesai, diafkir = int(totals[0]), int(totals[1]), int(totals[2])
+    masuk = sum(f[3] for f in facts)
+    selesai = sum(f[4] for f in facts)
+    diafkir = sum(f[5] for f in facts)
 
     # An asset's HOME region as a SQL expression: `id_lokasi` normally, but the
     # origin of its first mutation while it is away at a Balaiyasa. This is
@@ -350,35 +419,28 @@ def get_aset_perbaikan_dashboard(
     # One year selected → 12 monthly points, densified so the line always spans
     # the whole year. "Semua Tahun" → one point per year instead; 12 months
     # summed across a decade would be meaningless (every January added up).
+    #
+    # `bucket` is already the right resolution for whichever mode is active —
+    # the year when "Semua Tahun" is on, the month otherwise.
+    b_map = {}
+    for bucket, _lok, _alat, mk, sl, _af in facts:
+        if bucket is None:
+            continue  # a row with no waktu_lapor belongs to no point on the axis
+        prev = b_map.get(bucket, (0, 0))
+        b_map[bucket] = (prev[0] + mk, prev[1] + sl)
+
     if year is None:
-        y_col = extract("year", S.c.waktu_lapor).label("y")
-        y_rows = db.execute(
-            select(y_col, func.sum(S.c.f_masuk), func.sum(S.c.f_selesai))
-            .group_by(y_col)
-            .order_by(y_col)
-        ).all()
         monthly_trend = [
             {
-                "bulan": str(int(r[0])),
-                "masuk": int(r[1] or 0),
-                "selesai": int(r[2] or 0),
+                "bulan": str(y),
+                "masuk": b_map[y][0],
+                "selesai": b_map[y][1],
             }
-            for r in y_rows
-            if r[0] is not None
+            for y in sorted(b_map)
         ]
         trend_mode = "tahun"
     else:
-        m_col = extract("month", S.c.waktu_lapor).label("m")
-        m_rows = db.execute(
-            select(m_col, func.sum(S.c.f_masuk), func.sum(S.c.f_selesai))
-            .group_by(m_col)
-            .order_by(m_col)
-        ).all()
-        m_map = {
-            int(r[0]): (int(r[1] or 0), int(r[2] or 0))
-            for r in m_rows
-            if r[0] is not None
-        }
+        m_map = b_map
         monthly_trend = [
             {
                 "bulan": BULAN_SINGKAT[i],
@@ -390,16 +452,12 @@ def get_aset_perbaikan_dashboard(
         trend_mode = "bulan"
 
     # ── Per resort (UPT) ─────────────────────────────────────────────────────
-    r_rows = db.execute(
-        select(
-            S.c.eff_lokasi,
-            func.sum(S.c.f_masuk),
-            func.sum(S.c.f_selesai),
-        ).group_by(S.c.eff_lokasi)
-    ).all()
-    r_map = {
-        r[0]: (int(r[1] or 0), int(r[2] or 0)) for r in r_rows if r[0] is not None
-    }
+    r_map = {}
+    for _bucket, lok, _alat, mk, sl, _af in facts:
+        if lok is None:
+            continue
+        prev = r_map.get(lok, (0, 0))
+        r_map[lok] = (prev[0] + mk, prev[1] + sl)
 
     # A Balaiyasa is a workshop, not an operating region, so it must never be a
     # row in a resort table — "BALAIYASA CIREBONPRUNJAKAN" listed alongside
@@ -455,20 +513,22 @@ def get_aset_perbaikan_dashboard(
     top_resort = sorted(per_resort, key=lambda x: -x["masuk"])[:10]
 
     # ── Per alat kerja ───────────────────────────────────────────────────────
-    a_rows = db.execute(
-        select(
-            KA.nama_alat,
-            func.sum(S.c.f_masuk).label("masuk"),
-            func.sum(S.c.f_selesai).label("selesai"),
-        )
-        .select_from(S)
-        .join(KA, KA.kode_alat == S.c.kode_alat)
-        .group_by(KA.nama_alat)
-        .order_by(func.sum(S.c.f_masuk).desc(), KA.nama_alat)
-    ).all()
+    # The name map stands in for the INNER JOIN this used to carry: a kode_alat
+    # with no kategori_alat row was dropped from this list (and only this list),
+    # and still is. 104 rows, one query — it does not re-scan the window.
+    alat_names = dict(
+        db.execute(select(KA.kode_alat, KA.nama_alat)).all()
+    )
+    a_map = {}
+    for _bucket, _lok, kode, mk, sl, _af in facts:
+        nama = alat_names.get(kode)
+        if nama is None:
+            continue
+        prev = a_map.get(nama, (0, 0))
+        a_map[nama] = (prev[0] + mk, prev[1] + sl)
     per_alat = [
-        {"nama_alat": r[0], "masuk": int(r[1] or 0), "selesai": int(r[2] or 0)}
-        for r in a_rows
+        {"nama_alat": nama, "masuk": v[0], "selesai": v[1]}
+        for nama, v in sorted(a_map.items(), key=lambda kv: (-kv[1][0], kv[0]))
     ]
     top_alat = per_alat[:10]
     # Zero-count categories are dropped: a doughnut slice of 0 renders as an
@@ -535,6 +595,160 @@ def get_aset_perbaikan_dashboard(
         "top_alat": top_alat,
         "by_alat": by_alat,
         "monthly_trend": monthly_trend,
+    }
+
+
+# ── The fleet rollup that replaced a client-side copy of the fleet ─
+
+@router.get("/api/aset/dashboard/ringkasan")
+def get_aset_ringkasan(
+    alat: Optional[str] = None,
+    pengadaan: Optional[str] = None,
+    tahun: Optional[int] = None,
+    db: Session = Depends(get_db),
+    current_user: models.Pengguna = Depends(get_current_user),
+):
+    """
+    Every fleet-wide number the dashboard, the KPI strip and the Kelola Data
+    Alat Kerja tiles print — as counts, not as assets.
+
+    ── Why ──
+    Four dashboard panels, two stat strips and three modals all reduced an
+    in-memory copy of the whole fleet. That copy was the reason the SPA fetched
+    1.06 MB at every login: Kelola Data Aset and Pantau Riwayat could page from
+    the server, but `db` had to stay whole for these. Every one of them turns
+    out to want only SO/TSO counts keyed by something, so one grouped query
+    answers all of them and the response stops growing with the fleet.
+
+    Measured on the seeded fleet: 1,077 assets → 1 request, ~6 KB, against
+    395 KB for `/api/aset`.
+
+    ── The groupings, and which screen each one feeds ──
+      per_lokasi     Matriks Kesiapan, Grafik Ketersediaan, the bar chart —
+                     all three key on the asset's CURRENT `id_lokasi`, never
+                     the identity location the search uses. They roll UPT up
+                     into the parent themselves; the raw per-code counts are
+                     sent so that rollup stays exactly where it already is
+      per_alat       the "Jenis Alat Kerja" modal and the KDAK alat filter
+      per_bulan      Tren Kesiapan — twelve months of one year, by purchase
+                     date (the panel reads `waktu_update || tanggal_pembelian`
+                     and `/api/aset` has never carried `waktu_update`)
+      tahun_counts   the year dropdowns, scoped by alat + pengadaan but NOT by
+                     tahun, so the list does not collapse to the year already
+                     chosen — same rule as `_renderDashFilterRow`
+      bulan_ini      the KDAK "baru bulan ini" tile
+
+    AFKIR is excluded throughout, exactly as `db` was.
+    """
+    AS = models.Aset
+
+    def scoped(with_tahun: bool):
+        conds = [AS.status_terakhir != "AFKIR"]
+        if alat:
+            conds.append(AS.kode_alat == alat)
+        if pengadaan:
+            vals = pengadaan_values(db, pengadaan)
+            conds.append(AS.sumber_pengadaan.in_(vals or []))
+        if with_tahun and tahun:
+            conds.append(extract("year", AS.tanggal_pembelian) == tahun)
+        return conds
+
+    conds = scoped(with_tahun=True)
+    st = func.upper(func.coalesce(AS.status_terakhir, ""))
+
+    def counts_by(*cols):
+        rows = db.execute(
+            select(*cols, st.label("st"), func.count().label("n"))
+            .where(*conds)
+            .group_by(*cols, st)
+        ).all()
+        out = {}
+        for r in rows:
+            key = r[0] if len(cols) == 1 else tuple(r[: len(cols)])
+            slot = out.setdefault(key, {"so": 0, "tso": 0})
+            if r[-2] == "SO":
+                slot["so"] += int(r[-1])
+            elif r[-2] == "TSO":
+                slot["tso"] += int(r[-1])
+        return out
+
+    per_lokasi = counts_by(AS.id_lokasi)
+    per_alat = counts_by(AS.kode_alat)
+
+    y = extract("year", AS.tanggal_pembelian).label("y")
+    m = extract("month", AS.tanggal_pembelian).label("m")
+    per_bulan = [
+        {"tahun": int(k[0]), "bulan": int(k[1]), **v}
+        for k, v in counts_by(y, m).items()
+        if k[0] is not None and k[1] is not None
+    ]
+
+    # Year list: scoped by alat + pengadaan but NOT by the year itself.
+    tahun_rows = db.execute(
+        select(y, func.count())
+        .where(*scoped(with_tahun=False))
+        .group_by(y)
+    ).all()
+    tahun_counts = sorted(
+        ({"tahun": int(r[0]), "jumlah": int(r[1])} for r in tahun_rows if r[0] is not None),
+        key=lambda r: -r["tahun"],
+    )
+
+    so = sum(v["so"] for v in per_lokasi.values())
+    tso = sum(v["tso"] for v in per_lokasi.values())
+
+    # The sequence number `create_aset` would mint next, per kode_alat — what
+    # the KDAK live id preview prints for the first segment.
+    #
+    # Deliberately NOT filtered by anything above: it must match `create_aset`'s
+    # own rule exactly, which is max over EVERY asset of that kode_alat, AFKIR
+    # included. The client used to derive this from its cached fleet, which
+    # excludes AFKIR — so a scrapped asset holding the highest number made the
+    # preview disagree with the id the server then minted. Answering it here
+    # makes the preview exact rather than an estimate.
+    urut = func.max(
+        case(
+            (
+                func.split_part(AS.id_aset, ".", 1).op("~")("^[0-9]+$"),
+                cast(func.split_part(AS.id_aset, ".", 1), Integer),
+            ),
+            else_=0,
+        )
+    )
+    urutan_berikutnya = {
+        r[0]: int(r[1] or 0) + 1
+        for r in db.execute(select(AS.kode_alat, urut).group_by(AS.kode_alat))
+    }
+
+    now = datetime.now()
+    bulan_ini = int(
+        db.execute(
+            select(func.count())
+            .select_from(AS)
+            .where(
+                *conds,
+                extract("year", AS.tanggal_pembelian) == now.year,
+                extract("month", AS.tanggal_pembelian) == now.month,
+            )
+        ).scalar_one()
+        or 0
+    )
+
+    return {
+        # `total` is so + tso, NOT the row count: the KPI strip has always
+        # printed the two states it shows, and a third status appearing in the
+        # data must not make the tiles stop adding up.
+        "total": so + tso,
+        "so": so,
+        "tso": tso,
+        "jenis_unik": len(per_alat),
+        "lokasi_unik": len(per_lokasi),
+        "bulan_ini": bulan_ini,
+        "per_lokasi": per_lokasi,
+        "per_alat": per_alat,
+        "per_bulan": per_bulan,
+        "tahun_counts": tahun_counts,
+        "urutan_berikutnya": urutan_berikutnya,
     }
 
 

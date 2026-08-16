@@ -178,19 +178,19 @@ function applyExportFilters() {
     if (kondisi  && r.kondisi !== kondisi)  return false;
     if (lokasi) {
       // Use r.id_lokasi (per-row, from schema); fall back to aset current lokasi for legacy rows
-      const asetItem  = db.find((x) => x.id_aset === r.id_aset);
+      const asetItem  = asetById(r.id_aset);
       const rowCode   = r.id_lokasi || (asetItem ? (asetItem.id_lokasi_raw || asetItem.id_lokasi || "") : "");
       const parentCode = getParentLokasiCode(rowCode) || rowCode;
       if (parentCode !== lokasi && rowCode !== lokasi) return false;
     }
     if (uptPengirim) {
-      const asetItem = db.find((x) => x.id_aset === r.id_aset);
+      const asetItem = asetById(r.id_aset);
       const rowCode  = r.id_lokasi || (asetItem ? (asetItem.id_lokasi_raw || asetItem.id_lokasi || "") : "");
       if (rowCode !== uptPengirim) return false;
     }
     if (peruntukan) {
       // Use r.peruntukan (per-row); fall back to aset current value for legacy rows
-      const asetItem = db.find((x) => x.id_aset === r.id_aset);
+      const asetItem = asetById(r.id_aset);
       const rowPeruntukan = r.peruntukan || asetItem?.peruntukan || "";
       if (rowPeruntukan !== peruntukan) return false;
     }
@@ -346,7 +346,10 @@ function _populateExpLokasiDropdowns() {
   // Pemeliharaan: Peruntukan
   const peruntukanEl = document.getElementById("exp-filter-peruntukan");
   if (peruntukanEl && peruntukanEl.options.length <= 1) {
-    const uniquePeruntukan = [...new Set(db.map((x) => x.peruntukan).filter(Boolean))].sort();
+    // The four peruntukan values are a CLOSED set (api/deps.py
+     // normalise_peruntukan), so the list is the constants themselves rather
+     // than whatever happens to be in the page currently loaded.
+    const uniquePeruntukan = Object.values(PERUNTUKAN_MAP).sort();
     peruntukanEl.innerHTML = `<option value="">Semua Peruntukan</option>` +
       uniquePeruntukan.map((p) => `<option value="${p}">${p}</option>`).join("");
   }
@@ -489,7 +492,7 @@ function _resolveLokasiUpt(kode) {
 }
 
 function _buildExpPemeliharaanDisplay(r, i = 0) {
-  const aset = db.find((x) => x.id_aset === r.id_aset);
+  const aset = asetById(r.id_aset);
   // r.id_lokasi is the per-row lokasi stored by the backend (from the new schema column).
   // Fall back to the aset's current lokasi only for legacy rows that predate the schema change.
   const rowLokasi = r.id_lokasi || (aset ? (aset.id_lokasi_raw || aset.id_lokasi || "") : "");
@@ -511,7 +514,7 @@ function _buildExpPemeliharaanDisplay(r, i = 0) {
 }
 
 function _buildExpKalibrasiDisplay(r, i = 0) {
-  const aset = db.find((x) => x.id_aset === r.id_aset);
+  const aset = asetById(r.id_aset);
   const summaryItem = summaryFor(r.id_aset);
   const waktuInput = summaryItem?.kalibrasi?.latest_waktu_input
     ? formatUtcToLocal(summaryItem.kalibrasi.latest_waktu_input)
@@ -531,7 +534,7 @@ function _buildExpKalibrasiDisplay(r, i = 0) {
 }
 
 function _buildExpMutasiDisplay(r, i = 0) {
-  const aset = db.find((x) => x.id_aset === r.id_aset);
+  const aset = asetById(r.id_aset);
 
   // The API returns lokasi_asal/lokasi_tujuan as nama_upt strings.
   // Look them up in uptDatabase by nama to get the UPT code, then resolve

@@ -710,6 +710,121 @@ function resetPage(key) {
   if (st) st.page = 1;
 }
 
+// ── The same paginator, driven by the SERVER (rev0.4.5) ────────────────────
+//
+// Kelola Data Aset and Pantau Riwayat no longer hold the fleet, so they cannot
+// slice an array — they ask for a page and are told the total. These two are
+// `paginateList()` split in half: the half that decides what to REQUEST, and
+// the half that builds the same metadata `renderPagerBar()` already renders.
+//
+// Everything else about paging is unchanged, including both of the rules above:
+// filtering and sorting now happen on the server, still BEFORE the slice.
+
+// "Semua" on a server-paged list. Matches MAX_PAGE in api/deps.py — asking for
+// more is a 422, and a silently clamped page would misreport its own range.
+const SERVER_PAGE_ALL = 5000;
+
+/** → {limit, offset} for the current page of `key`. */
+function pagerRequest(key, defaultSize) {
+  const st = _pagerFor(key, defaultSize);
+  const size = st.size === "all" ? SERVER_PAGE_ALL : st.size;
+  return { limit: size, offset: (st.page - 1) * size };
+}
+
+/**
+ * The metadata `renderPagerBar()` wants, from a server `total` and the rows it
+ * actually returned.
+ *
+ * `stale` is true when the current page sits past the end of a list that has
+ * just shrunk — a filter narrowing under a user who was on page 9. The client
+ * version clamps and slices in one pass; here the request has already gone out
+ * against the old page, so the caller has to re-issue it. Rendering the empty
+ * page instead is what makes a search look like it matched nothing.
+ */
+function serverPage(key, total, items, defaultSize) {
+  const st = _pagerFor(key, defaultSize);
+  const size = st.size === "all" ? Math.max(total, 1) : st.size;
+  const pages = Math.max(1, Math.ceil(total / size));
+  const stale = st.page > pages;
+  if (stale) st.page = pages;
+  if (st.page < 1) st.page = 1;
+  const start = (st.page - 1) * size;
+  return {
+    key,
+    items,
+    total,
+    pages,
+    page: st.page,
+    size: st.size,
+    from: total ? start + 1 : 0,
+    to: Math.min(start + items.length, total),
+    stale,
+  };
+}
+
+// ── Asset lookup by id, without holding the fleet ──────────────────────────
+//
+// `db.find(x => x.id_aset === uid)` appears in openEdit, deleteAset, the mutasi
+// modal and the history detail screen. `db` used to be every asset, so it
+// always hit; it is now ONE PAGE, so it would miss any asset reached from a
+// different screen — Pantau Riwayat opening a detail view, most obviously.
+//
+// Every row the client receives from anywhere is written here instead. The cache
+// grows with what the user has actually looked at, not with the fleet, and
+// `summaryFor()` backs it up for rows that arrived only as history summaries.
+const _asetById = new Map();
+
+function cacheAset(rows) {
+  (rows || []).forEach((r) => {
+    if (r && r.id_aset) _asetById.set(r.id_aset, r);
+  });
+}
+
+/** The asset row for `uid`, from anything the client has already seen. */
+function asetById(uid) {
+  if (!uid) return undefined;
+  return _asetById.get(uid) || (typeof summaryFor === "function" ? summaryFor(uid) : undefined);
+}
+
+window.cacheAset = cacheAset;
+window.asetById = asetById;
+
+/**
+ * A sort-modal filter object → the query string /api/aset and
+ * /api/history/summary take.
+ *
+ * `_sortFilters`, `_histSortFilters` and `_kdakSortFilters` are three variables
+ * holding ONE shape, which is what lets three views share this. The names on
+ * the wire are snake_case to match the endpoints; the names in the object are
+ * the ones renderFilterChips() already prints.
+ *
+ * An empty value is OMITTED rather than sent blank — the server treats a
+ * present-but-empty `pengadaan` as "matches nothing", which is right for a real
+ * term and wrong for an unset control.
+ */
+function asetFilterParams(f, extra = {}) {
+  const p = new URLSearchParams();
+  const set = (k, v) => {
+    if (v !== null && v !== undefined && v !== "") p.set(k, v);
+  };
+  set("q", (extra.q || "").trim());
+  set("alat", f?.alat);
+  set("pengadaan", f?.pengadaan);
+  set("peruntukan", f?.peruntukan);
+  set("lokasi", f?.lokasi);
+  set("upt", f?.upt);
+  set("tahun_from", f?.tahunFrom);
+  set("tahun_to", f?.tahunTo);
+  set("id_from", f?.idFrom);
+  set("id_to", f?.idTo);
+  set("sort", extra.sort);
+  set("dir", extra.dir);
+  if (extra.milikSaya) p.set("milik_saya", "1");
+  if (extra.punya) p.set("punya", extra.punya);
+  return p;
+}
+window.asetFilterParams = asetFilterParams;
+
 /**
  * Render the controls into `mountId`. `rerender` is the caller's own render
  * function, re-invoked after the state changes so the list and the bar can

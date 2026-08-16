@@ -131,7 +131,10 @@ async function checkAuth() {
     // without ever opening Pusat Data would otherwise find that select empty.
     if (typeof loadAlatVarian === "function") await loadAlatVarian();
     setupWebSocket();
-    await fetchAsetFromServer();
+    // The dashboard is the first screen after login, and since rev0.4.5 that
+    // costs one ~6 KB rollup rather than a walk through every page of the fleet.
+    // Each view fetches its own page when it is opened; nothing is prefetched.
+    await updateDashboardStats();
   } else {
     const mainAppEl = document.getElementById("main-app");
     if (mainAppEl) {
@@ -592,17 +595,17 @@ function switchView(viewId) {
     const tv = document.getElementById(`view-${viewId}`);
     if (tv) tv.classList.add("is-flex");
   }
-  if (viewId === "database" || viewId === "history") {
-    // This already calls loadHistorySummary() and re-renders whichever view is
-    // visible, so History must not fetch the summary a second time — it used to
-    // request /history/summary twice on every visit.
-    fetchAsetFromServer();
+  if (viewId === "database") renderDbCards();
+  if (viewId === "history") {
+    // Each tab fetches its own page; rendering the active one is enough.
+    if (_historyMode === "repair") renderHistoryCards();
+    else if (_historyMode === "mutasi") renderMutasiCards();
+    else if (_historyMode === "kalibrasi") renderKalibrasiCards();
   }
   if (viewId === "input") {
     // KDAK used to render ONLY from inside fetchAsetFromServer(), and only when
     // this view already happened to be visible — so arriving here from any other
-    // view showed an empty table until some unrelated refresh fired. The data is
-    // already cached in `db`, so render it directly.
+    // view showed an empty table until some unrelated refresh fired.
     updateKdakStats();
     renderKdakTable();
   }
@@ -771,12 +774,17 @@ function setupEventListeners() {
   document
     .getElementById("btn-db-download-xlsx")
     ?.addEventListener("click", async () => {
-      if (!db.length) {
+      // An export writes one line per asset, so it genuinely needs every row —
+      // no amount of server paging changes that. What changed in rev0.4.5 is
+      // WHEN: the fleet is fetched here, when the button is pressed, instead of
+      // at login for every user whether or not they ever export.
+      const fleet = await ensureFleet();
+      if (!fleet.length) {
         showToast("Belum ada aset yang terdaftar.", "warning");
         return;
       }
       if (!(await ensureXLSX())) return;
-      const rows = db.map((item) => ({
+      const rows = fleet.map((item) => ({
         "ID Aset": item.id_aset,
         "Kode Alat": item.kode_alat,
         Lokasi: item.id_lokasi,
@@ -796,7 +804,8 @@ function setupEventListeners() {
   document
     .getElementById("btn-db-download-pdf")
     ?.addEventListener("click", async () => {
-      if (!db.length) {
+      const fleet = await ensureFleet();
+      if (!fleet.length) {
         showToast("Belum ada aset yang terdaftar.", "warning");
         return;
       }
@@ -809,13 +818,13 @@ function setupEventListeners() {
       doc.setFontSize(8);
       doc.setFont("helvetica", "normal");
       doc.text(
-        `Dicetak: ${new Date().toLocaleString("id-ID")}  |  Total: ${db.length} aset`,
+        `Dicetak: ${new Date().toLocaleString("id-ID")}  |  Total: ${fleet.length} aset`,
         14,
         20,
       );
       doc.autoTable({
         head: [["ID Aset", "Kode Alat", "Lokasi", "Status"]],
-        body: db.map((item) => [
+        body: fleet.map((item) => [
           item.id_aset,
           item.kode_alat,
           item.id_lokasi,
@@ -1601,7 +1610,6 @@ function setupEventListeners() {
         showToast(data.message || "Mutasi berhasil", "success");
         document.getElementById("mutasi-modal").classList.add("hidden");
         await fetchAsetFromServer();
-        await loadHistorySummary();
       } catch (e) {
         showToast(e.message, "error");
       } finally {

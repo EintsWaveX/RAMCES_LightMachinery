@@ -57,7 +57,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
-from sqlalchemy import or_, func, extract
+from sqlalchemy import or_, func, extract, select
 from sqlalchemy.orm import Session, joinedload
 
 import models
@@ -69,6 +69,7 @@ from api.deps import (
     get_current_user,
     get_db,
     get_parent_lokasi_code,
+    lokasi_rows,
     normalise_peruntukan,
     normalise_sumber_pengadaan,
     require_role,
@@ -82,6 +83,7 @@ from api.files import (
     _save_certificate,
 )
 from api.master import _varian_payload
+from api.query import apply_aset_filters, apply_aset_sort, own_region_codes
 from api.realtime import manager
 from api.schemas import AsetCreate, AsetUpdate, KalibrasiCreate, MutasiCreate
 
@@ -208,17 +210,48 @@ def get_all_aset(
     id_lokasi: Optional[str] = None,
     status: Optional[str] = None,
     tahun: Optional[int] = None,
+    # ── The sort-modal filter set, added in rev0.4.5 ──
+    alat: Optional[str] = None,
+    pengadaan: Optional[str] = None,
+    peruntukan: Optional[str] = None,
+    lokasi: Optional[str] = None,
+    upt: Optional[str] = None,
+    tahun_from: Optional[int] = None,
+    tahun_to: Optional[int] = None,
+    id_from: Optional[int] = None,
+    id_to: Optional[int] = None,
+    milik_saya: bool = False,
+    sort: Optional[str] = None,
+    dir: Optional[str] = None,
     db: Session = Depends(get_db),
     current_user: models.Pengguna = Depends(get_current_user),
 ):
     """
-    The active fleet, paginated.
+    The active fleet, paginated, filtered and sorted.
 
-    Every filter here is OPTIONAL and every one is a superset gate — see the
-    note above `_page_envelope`. `q` in particular matches only the two fields
-    a substring test cannot get wrong (`id_aset`, `nomor_seri`) plus the tool
-    name; location terms are left entirely to the client matcher, because
-    "DAOP 1" must not match DAOP 10 and SQL LIKE cannot express that rule.
+    ── This used to be a superset gate; it is now the whole answer ──
+    Until rev0.4.5 these filters only narrowed what went over the wire and the
+    client's matcher ran last and decided. That was correct but it meant the
+    client had to hold the entire fleet — 1.06 MB and 460 ms at 1,121 assets, on
+    every login and after every mutation. Kelola Data Aset now renders straight
+    from a page of this endpoint, so the filters have to be EXACT.
+
+    `api/query.py` is the line-by-line port of `js/search.js` that makes them
+    exact, and `tools/verify/test_paging.py` asserts the two agree by running
+    both over the real fleet and comparing the id sets. In particular:
+
+      q            the full matcher — a region label resolves to an explicit
+                   code set ("DAOP 1" never matches DAOP 10), a bare code
+                   compares exactly, free text is a substring over NAMES only
+      lokasi/upt   compared against the asset's IDENTITY location, which is the
+                   origin of its first transfer rather than where it sits today
+      peruntukan   read out of the composite id, not the column — see
+                   `peruntukan_letter_expr()`
+      milik_saya   "Aset Saya": the caller's own region, from the token
+
+    `kode_alat`, `id_lokasi`, `status` and `tahun` are the ORIGINAL superset
+    parameters and are kept working unchanged — `landing.html` and the export
+    paths still send them.
     """
     query = (
         db.query(models.Aset)
@@ -237,8 +270,6 @@ def get_all_aset(
 
     if kode_alat:
         query = query.filter(models.Aset.kode_alat == kode_alat)
-    if status:
-        query = query.filter(models.Aset.status_terakhir == status.upper())
     if tahun:
         query = query.filter(extract("year", models.Aset.tanggal_pembelian) == tahun)
     if id_lokasi:
@@ -247,22 +278,61 @@ def get_all_aset(
         scope, _parent, _children = resolve_lokasi_scope(db, id_lokasi)
         if scope:
             query = query.filter(models.Aset.id_lokasi.in_(scope))
-    if q:
-        term = f"%{q.strip()}%"
-        query = query.outerjoin(models.Aset.kategori).filter(
-            or_(
-                models.Aset.id_aset.ilike(term),
-                models.Aset.nomor_seri.ilike(term),
-                models.KategoriAlat.nama_alat.ilike(term),
-            )
-        )
+
+    query = apply_aset_filters(
+        query,
+        db,
+        q=q,
+        alat=alat,
+        pengadaan=pengadaan,
+        peruntukan=peruntukan,
+        lokasi=lokasi,
+        upt=upt,
+        status=status,
+        tahun_from=tahun_from,
+        tahun_to=tahun_to,
+        id_from=id_from,
+        id_to=id_to,
+        scope_codes=own_region_codes(db, current_user) if milik_saya else None,
+    )
 
     # Stable order so page N is the same rows on every request; without it
-    # PostgreSQL may return a different arrangement per page and the paged
-    # bootstrap in js/api.js would both duplicate and miss rows.
-    query = query.order_by(models.Aset.id_aset)
+    # PostgreSQL may return a different arrangement per page and a paged view
+    # would both duplicate and miss rows. Every branch of apply_aset_sort ends
+    # in id_aset for exactly that reason.
+    query = apply_aset_sort(query, sort, dir) if (sort or dir) else query.order_by(
+        models.Aset.id_aset
+    )
+
+    # `total` before paging, then the page itself. Not `_page_envelope()`: the
+    # card facts below are batched over the page's ids, which needs the rows in
+    # hand — the same shape /api/history/summary uses, and for the same reason.
+    total = query.order_by(None).count()
+
+    # SO/TSO for the WHOLE filtered set, not the page. The KPI tiles above the
+    # Kelola Data Aset cards describe "how much matches", which paging must not
+    # change — they used to be computed from a client-side copy of the fleet.
+    st_rows = db.execute(
+        query.order_by(None)
+        .with_entities(models.Aset.status_terakhir, func.count())
+        .group_by(models.Aset.status_terakhir)
+    ).all()
+    ringkas = {"so": 0, "tso": 0}
+    for r in st_rows:
+        if (r[0] or "").upper() == "SO":
+            ringkas["so"] += int(r[1])
+        elif (r[0] or "").upper() == "TSO":
+            ringkas["tso"] += int(r[1])
+
+    if limit is not None:
+        query = query.limit(limit).offset(offset)
+    rows = query.all()
+    facts = _card_facts(db, [a.id_aset for a in rows])
+    names = {r.id_lokasi: r.nama_lokasi for r in lokasi_rows(db)}
 
     def serialise(a):
+        f = facts.get(a.id_aset, {})
+        ident = f.get("identitas_lokasi") or a.id_lokasi
         return {
             "id_aset": a.id_aset,
             "kode_alat": a.kode_alat,
@@ -285,9 +355,96 @@ def get_all_aset(
             # index, its card labels and its region filters all agree on one
             # value instead of each re-deriving it from a different field.
             "parent_lokasi": get_parent_lokasi_code(a.id_lokasi) or a.id_lokasi,
+            # ── The card facts, added in rev0.4.5 ──
+            # Kelola Data Aset used to read all five out of `_historySummary`,
+            # a second full-fleet download held only so its cards could show
+            # three badges and its location label. They ride here instead, one
+            # batched query each over the ids on this page.
+            #
+            # `identitas_lokasi` in particular is `assetLokasiIdentity().uptCode`
+            # — the origin of the asset's first transfer — so the client no
+            # longer derives it, and the label on the card is by construction
+            # the value the server filtered on.
+            "identitas_lokasi": ident,
+            "identitas_lokasi_name": names.get(ident) or ident,
+            "jumlah_kejadian": f.get("jumlah_kejadian", 0),
+            "kalibrasi_status": f.get("kalibrasi_status"),
+            "mutasi_count": f.get("mutasi_count", 0),
+            "mutasi_sudah_kembali": a.id_lokasi == ident,
         }
 
-    return _page_envelope(query, limit, offset, serialise)
+    return {
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "ringkas": ringkas,
+        "items": [serialise(a) for a in rows],
+    }
+
+
+def _card_facts(db: Session, ids):
+    """
+    The per-asset facts a Kelola Data Aset card shows that `aset` does not hold:
+    the identity location, the recorded-activity count the "jumlah" sort uses,
+    the latest calibration verdict and the transfer count.
+
+    Four batched queries scoped to ONE PAGE of ids — never the fleet. Written
+    the same way `/api/history/summary` batches its six, because the alternative
+    (correlated subqueries inside the ORM serialiser) is per-row and invisible.
+    """
+    if not ids:
+        return {}
+
+    RM = models.RiwayatMutasi
+    RK = models.RiwayatKondisi
+    RKAL = models.RiwayatKalibrasi
+    out = {i: {} for i in ids}
+
+    # First transfer per asset → the identity location, and the count.
+    rn = func.row_number().over(
+        partition_by=RM.id_aset, order_by=RM.waktu_mutasi.asc()
+    ).label("rn")
+    first = (
+        db.query(RM.id_aset.label("id_aset"), RM.id_lokasi_asal.label("asal"), rn)
+        .filter(RM.id_aset.in_(ids))
+        .subquery()
+    )
+    for r in db.execute(select(first).where(first.c.rn == 1)):
+        if r.asal:
+            out[r.id_aset]["identitas_lokasi"] = r.asal
+
+    mut_count = dict(
+        db.query(RM.id_aset, func.count())
+        .filter(RM.id_aset.in_(ids))
+        .group_by(RM.id_aset)
+        .all()
+    )
+    # TSO rows only — an SO row is a repair being CLOSED, and counting both
+    # double-counts every completed job. Same rule as `repair_count_map`.
+    rep_count = dict(
+        db.query(RK.id_aset, func.count())
+        .filter(RK.id_aset.in_(ids), RK.kondisi == "TSO")
+        .group_by(RK.id_aset)
+        .all()
+    )
+    for i in ids:
+        m = int(mut_count.get(i, 0))
+        out[i]["mutasi_count"] = m
+        out[i]["jumlah_kejadian"] = int(rep_count.get(i, 0)) + m
+
+    krn = func.row_number().over(
+        partition_by=RKAL.id_aset,
+        order_by=(RKAL.tanggal_kalibrasi.desc(), RKAL.waktu_input.desc()),
+    ).label("rn")
+    kal = (
+        db.query(RKAL.id_aset.label("id_aset"), RKAL.status.label("status"), krn)
+        .filter(RKAL.id_aset.in_(ids))
+        .subquery()
+    )
+    for r in db.execute(select(kal).where(kal.c.rn == 1)):
+        out[r.id_aset]["kalibrasi_status"] = r.status
+
+    return out
 
 
 @router.get("/api/aset/afkir", dependencies=[Depends(require_role(["SUPER_ADMIN"]))])

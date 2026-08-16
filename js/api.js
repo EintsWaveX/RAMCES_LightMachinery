@@ -189,8 +189,51 @@ async function fetchAllPages(endpoint, { background, onProgress } = {}) {
 }
 window.fetchAllPages = fetchAllPages;
 
-async function fetchAsetFromServer(opts = {}) {
-  try {
+/**
+ * ONE page of /api/aset, with the filters and sort applied by the SERVER.
+ *
+ * `params` is a URLSearchParams the caller has already filled from its own
+ * filter state. The response envelope carries `ringkas` — SO/TSO over the whole
+ * filtered set, not the page — because the KPI tiles above the cards answer
+ * "how much matches", which paging must not change.
+ *
+ * Every row is written into the by-id cache on the way past, so a modal opened
+ * from this page can still find its asset after the page has moved on.
+ */
+async function fetchAsetPage(params, { background = true } = {}) {
+  const res = await apiFetch(`/aset?${params}`, { background });
+  if (!res.ok) throw new Error(`Gagal mengambil data aset (${res.status})`);
+  const body = await res.json();
+  const items = (body.items || []).map(_decorateAset);
+  cacheAset(items);
+  return {
+    items,
+    total: body.total ?? items.length,
+    ringkas: body.ringkas || { so: 0, tso: 0 },
+  };
+}
+window.fetchAsetPage = fetchAsetPage;
+
+// ── The whole fleet, fetched ONLY when something genuinely needs every row ──
+//
+// Three things do, and no amount of server paging changes that: the Excel/PDF
+// export writes one line per asset, the Kelola Data Alat Kerja grouping modals
+// roll the fleet up by alat and by lokasi, and Proses Laporan joins every
+// export row back to its asset.
+//
+// The difference from rev0.4.4 is WHEN. This used to run at login, for every
+// user, whether or not they ever opened any of those — 1.06 MB and 460 ms
+// before the dashboard appeared. Now it runs when one of them is actually
+// asked for, and the result is cached until a mutation invalidates it.
+let _fleetCache = null;
+let _fleetPromise = null;
+
+async function ensureFleet(opts = {}) {
+  if (_fleetCache) return _fleetCache;
+  // Concurrent callers share one request rather than starting a second walk.
+  if (_fleetPromise) return _fleetPromise;
+
+  _fleetPromise = (async () => {
     const rows = await fetchAllPages("/aset", {
       background: !!opts.silent,
       onProgress: (loaded, total) => {
@@ -200,30 +243,62 @@ async function fetchAsetFromServer(opts = {}) {
           );
       },
     });
+    _fleetCache = rows.map(_decorateAset);
+    cacheAset(_fleetCache);
+    return _fleetCache;
+  })();
 
-    // Replaced wholesale, not mutated: rebuildSummaryIndex() and the Map
-    // indexes in js/search.js key off the array identity being swapped.
-    db = rows.map(_decorateAset);
+  try {
+    return await _fleetPromise;
+  } finally {
+    _fleetPromise = null;
+  }
+}
+
+/** Drop the cached fleet. Called by every REFRESH_ASSET_LIST broadcast. */
+function invalidateFleet() {
+  _fleetCache = null;
+}
+
+/**
+ * The fleet IF it has already been fetched, otherwise null — never a fetch.
+ *
+ * The KDAK id preview needs max(urutan) over every asset sharing a kode_alat,
+ * and would rather print a placeholder than trigger a megabyte download while
+ * someone is typing into a form.
+ */
+function fleetIfLoaded() {
+  return _fleetCache;
+}
+window.fleetIfLoaded = fleetIfLoaded;
+
+window.ensureFleet = ensureFleet;
+window.invalidateFleet = invalidateFleet;
+
+/**
+ * "The asset data changed — show the new state."
+ *
+ * Called from every mutation handler and from the WebSocket refresh. It used to
+ * re-download the fleet into `db`; it now invalidates the caches and re-renders
+ * whichever view is actually on screen, each of which fetches its own page.
+ */
+async function fetchAsetFromServer(opts = {}) {
+  try {
+    invalidateFleet();
+    invalidateRingkasan();
 
     const isVisible = (id) =>
       !!document.getElementById(id)?.classList.contains("is-visible");
 
-    updateDashboardStats();
-    updateKdakStats();
-    if (isVisible("view-input")) {
-      renderKdakTable();
+    await updateDashboardStats();
+    await updateKdakStats();
+    if (isVisible("view-input")) await renderKdakTable();
+    if (isVisible("view-database")) await renderDbCards();
+    if (isVisible("view-history")) {
+      if (_historyMode === "repair") await renderHistoryCards();
+      else if (_historyMode === "mutasi") await renderMutasiCards();
+      else if (_historyMode === "kalibrasi") await renderKalibrasiCards();
     }
-    // Always refresh summary so badges are up to date everywhere
-    loadHistorySummary().then(() => {
-      if (isVisible("view-database")) {
-        renderDbCards();
-      }
-      if (isVisible("view-history")) {
-        if (_historyMode === "repair") renderHistoryCards();
-        else if (_historyMode === "mutasi") renderMutasiCards();
-        else if (_historyMode === "kalibrasi") renderKalibrasiCards();
-      }
-    });
 
     if (activeHistoryUid && isVisible("view-history-detail")) {
       window.openHistoryDetail(activeHistoryUid);

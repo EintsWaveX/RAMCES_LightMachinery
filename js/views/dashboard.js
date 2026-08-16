@@ -90,22 +90,97 @@ function _dashFilterFor(tabId) {
   return _dashFilters[tabId] || { alat: "", pengadaan: "", tahun: "" };
 }
 
-function _dashFilteredDb(tabId) {
-  const f = _dashFilterFor(tabId);
-  return db.filter((item) => {
-    if (f.alat && item.kode_alat !== f.alat) return false;
+// ══════════════════════════════════════════════════════════════════════
+// THE FLEET ROLLUP — /api/aset/dashboard/ringkasan
+// ══════════════════════════════════════════════════════════════════════
+//
+// Every panel here used to reduce `db`, a client-side copy of the whole fleet,
+// and that copy was the single reason the SPA downloaded 1.06 MB at login. All
+// four panels and the KPI strip turn out to want only SO/TSO counts keyed by
+// something, so the server groups them and sends 5.6 KB instead — and it stops
+// growing with the fleet.
+//
+// What did NOT change: the panels still key on the asset's CURRENT `id_lokasi`
+// and still roll UPT up into the parent themselves. The identity location
+// (js/search.js) is a different rule for a different question, and quietly
+// swapping it here would move assets between regions on the matrix.
+//
+// Keyed by the exact filter triple, so switching tabs back and forth is free
+// and a mutation clears the lot.
+const _ringkasanCache = new Map();
 
-    // The dropdown's values are the ID segments "1"/"2"; canonicalPengadaan
-    // maps those and every stored spelling onto the same two constants. The
-    // old code mapped "2" to the literal "DAOP" and then substring-tested it,
-    // so any asset stored as plain "DIVRE" was silently excluded.
-    if (!_pengadaanMatches(item.sumber_pengadaan, f.pengadaan)) return false;
+function invalidateRingkasan() {
+  _ringkasanCache.clear();
+}
+window.invalidateRingkasan = invalidateRingkasan;
 
-    if (f.tahun && String(item.tanggal_pembelian ?? "").slice(0, 4) !== f.tahun)
-      return false;
+const RINGKASAN_EMPTY = {
+  total: 0, so: 0, tso: 0, jenis_unik: 0, lokasi_unik: 0, bulan_ini: 0,
+  per_lokasi: {}, per_alat: {}, per_bulan: [], tahun_counts: [],
+};
 
-    return true;
+async function getRingkasan(f = {}) {
+  const p = new URLSearchParams();
+  if (f.alat) p.set("alat", f.alat);
+  if (f.pengadaan) p.set("pengadaan", f.pengadaan);
+  if (f.tahun) p.set("tahun", f.tahun);
+  const key = p.toString();
+  if (_ringkasanCache.has(key)) return _ringkasanCache.get(key);
+  try {
+    const res = await apiFetch(`/aset/dashboard/ringkasan?${key}`, {
+      background: true,
+    });
+    if (!res.ok) throw new Error();
+    const body = await res.json();
+    _ringkasanCache.set(key, body);
+    return body;
+  } catch (e) {
+    // A failed rollup must not blank a panel that was showing real numbers a
+    // second ago — an empty shape renders the same empty state a genuinely
+    // empty fleet does, and the toast in apiFetch already reported the failure.
+    return RINGKASAN_EMPTY;
+  }
+}
+window.getRingkasan = getRingkasan;
+
+/**
+ * The unfiltered rollup IF it is already cached, otherwise null — never a fetch.
+ *
+ * The KDAK live id preview runs on every keystroke and must stay synchronous.
+ * `updateDashboardStats()` populates this at login, so by the time any form is
+ * open it is there; the preview degrades to a placeholder rather than blocking
+ * if it somehow is not.
+ */
+function ringkasanIfLoaded() {
+  return _ringkasanCache.get("") || null;
+}
+window.ringkasanIfLoaded = ringkasanIfLoaded;
+
+/** The rollup for one tab's own filter. */
+function _dashAgg(tabId) {
+  return getRingkasan(_dashFilterFor(tabId));
+}
+
+/**
+ * SO/TSO per lokasi code, with each UPT ALSO added to its parent.
+ *
+ * The availability and bar panels both did this by pushing every asset into two
+ * buckets; the matrix deliberately does not, and sums only the resorts it draws.
+ * Same rollup, done once over ~270 codes instead of once per asset.
+ */
+function _rollUpLokasi(perLokasi) {
+  const out = {};
+  const add = (k, v) => {
+    if (!out[k]) out[k] = { so: 0, tso: 0 };
+    out[k].so += v.so;
+    out[k].tso += v.tso;
+  };
+  Object.entries(perLokasi || {}).forEach(([code, v]) => {
+    add(code, v);
+    const parent = getParentLokasiCode(code);
+    if (parent && parent !== code) add(parent, v);
   });
+  return out;
 }
 
 /**
@@ -119,7 +194,7 @@ function _dashFilteredDb(tabId) {
  * attached to the ROW via delegation instead of to each control. That also
  * means there is exactly one listener per tab no matter how often this runs.
  */
-function _renderDashFilterRow(tabId) {
+async function _renderDashFilterRow(tabId) {
   const mount = document.getElementById(`dash-filters-${tabId}`);
   const spec = _DASH_FILTER_SPEC[tabId];
   if (!mount || !spec) return;
@@ -127,12 +202,16 @@ function _renderDashFilterRow(tabId) {
   const f = _dashFilterFor(tabId);
   // Counts are scoped to this tab's OTHER filters, so the year list answers
   // "how many of what I am currently looking at", not "how many in the fleet".
-  const scoped = db.filter(
-    (item) =>
-      (!f.alat || item.kode_alat === f.alat) &&
-      _pengadaanMatches(item.sumber_pengadaan, f.pengadaan),
-  );
-  const counts = _yearCounts(scoped);
+  // `tahun_counts` is computed the same way server-side — narrowed by alat and
+  // pengadaan but NOT by the year, or the list would collapse to the one year
+  // already chosen and there would be no way back.
+  //
+  // A Map keyed by the year as a STRING, which is the shape fillYearSelect()
+  // and yearOptionLabel() read (`counts.get(String(year))`). A plain object
+  // here throws inside the option builder and takes the whole row with it.
+  const counts = new Map();
+  (await getRingkasan({ alat: f.alat, pengadaan: f.pengadaan })).tahun_counts
+    .forEach((r) => counts.set(String(r.tahun), r.jumlah));
 
   const SELECT_CLASS =
     "text-xs px-3 py-2.5 rounded-lg border border-gray-200 dark:border-gray-600 " +
@@ -255,18 +334,23 @@ function _switchDashTab(idx) {
   _renderDashActivePanel();
 }
 
-function _renderDashActivePanel() {
+async function _renderDashActivePanel() {
   const tabId = _DASH_TABS[_dashTabIndex];
+
+  // ONE rollup per render, handed to both the filter row and the panel. Two
+  // fetches would be two chances for them to disagree about what is on screen.
+  const agg = _DASH_FILTER_SPEC[tabId] ? await _dashAgg(tabId) : RINGKASAN_EMPTY;
+
   // Only the ACTIVE tab's row is rebuilt. The others keep their DOM and their
   // selection, which is what makes the filters independent per tab rather than
   // four copies of one shared value.
-  _renderDashFilterRow(tabId);
+  await _renderDashFilterRow(tabId);
   _syncDashKpiScope(tabId);
 
-  if (tabId === "matrix") _renderMatrixPanel();
-  if (tabId === "bar") _renderBarPanel();
-  if (tabId === "avail") _renderAvailPanel();
-  if (tabId === "trend") _renderTrendPanel();
+  if (tabId === "matrix") _renderMatrixPanel(agg);
+  if (tabId === "bar") _renderBarPanel(agg);
+  if (tabId === "avail") _renderAvailPanel(agg);
+  if (tabId === "trend") _renderTrendPanel(agg);
   // Unlike the computed panels, these two are server-driven rather than derived
   // from the cached `db` array, so they fetch on activation. Both are filled by
   // the same load() inside repair-dashboard.js.
@@ -274,12 +358,15 @@ function _renderDashActivePanel() {
 }
 
 // ── PANEL 1: Matrix ────────────────────────────────────────────────────────
-function _renderMatrixPanel() {
+function _renderMatrixPanel(agg) {
   const thead = document.getElementById("dash-matrix-thead");
   const tbody = document.getElementById("dash-matrix-tbody");
   if (!thead || !tbody) return;
 
-  const filtered = _dashFilteredDb("matrix");
+  // Raw per-code counts, NOT rolled up: the matrix sums only the resorts it
+  // actually draws, so an asset sitting directly on a parent code is
+  // deliberately absent from the row it would otherwise inflate.
+  const countsByLokasi = agg.per_lokasi || {};
 
   // FIX 3: Jangan membuang BALAIYASA. Gunakan seluruh lokasiData.
   let regions = lokasiData.filter(r => (r.tipe || "").toUpperCase() !== "BALAIYASA");
@@ -304,17 +391,6 @@ function _renderMatrixPanel() {
   });
 
   const maxUpt = Math.max(1, ...regions.map((r) => uptByParent[r.code].length));
-
-  // Map aset berdasarkan UPT spesifik dan berdasarkan Region Induk
-  const assetsByLokasi = {};
-
-  filtered.forEach((a) => {
-    const uptCode = a.id_lokasi_raw || a.id_lokasi;
-    if (!uptCode) return;
-
-    if (!assetsByLokasi[uptCode]) assetsByLokasi[uptCode] = [];
-    assetsByLokasi[uptCode].push(a);
-  });
 
   // Header Table
   const thCols = Array.from(
@@ -343,9 +419,10 @@ function _renderMatrixPanel() {
       let regionTso = 0;
 
       upts.forEach(upt => {
-        const assets = assetsByLokasi[upt.upt] || [];
-        regionSo += assets.filter(a => a.status_terakhir === "SO").length;
-        regionTso += assets.filter(a => a.status_terakhir === "TSO").length;
+        const c = countsByLokasi[upt.upt];
+        if (!c) return;
+        regionSo += c.so;
+        regionTso += c.tso;
       });
 
       const total = regionSo + regionTso;
@@ -355,17 +432,16 @@ function _renderMatrixPanel() {
         if (!upt)
           return `<td class="text-center px-2 text-gray-300 dark:text-gray-700">—</td>`;
 
-        const assets = assetsByLokasi[upt.upt];
-        if (!assets || !assets.length) {
+        const c = countsByLokasi[upt.upt];
+        const n = c ? c.so + c.tso : 0;
+        if (!n) {
           return `<td class="text-center px-2 text-gray-300 dark:text-gray-600" title="${upt.upt}">—</td>`;
         }
 
-        const soCount = assets.filter((a) => a.status_terakhir === "SO").length;
-        const tsoCount = assets.filter(
-          (a) => a.status_terakhir === "TSO",
-        ).length;
+        const soCount = c.so;
+        const tsoCount = c.tso;
 
-        if (assets.length === 1) {
+        if (n === 1) {
           const isSo = soCount > 0;
           return `<td class="text-center px-2 rounded font-bold ${
             isSo
@@ -415,40 +491,26 @@ function _renderMatrixPanel() {
 }
 
 // ── PANEL: Availability Rate per Lokasi ───────────────────────────────────
-function _renderAvailPanel() {
+function _renderAvailPanel(agg) {
   const canvas = document.getElementById("dash-chart-avail");
   if (!canvas) return;
-
-  const filtered = _dashFilteredDb("avail");
 
   // Use non-BALAIYASA lokasi, same as matrix
   const regions = lokasiData.filter(
     (r) => (r.tipe || "").toUpperCase() !== "BALAIYASA"
   );
 
-  // Aggregate assets per lokasi (roll up UPT → parent)
-  const assetsByLokasi = {};
-  filtered.forEach((a) => {
-    const key = a.id_lokasi_raw || a.id_lokasi;
-    if (!key) return;
-    if (!assetsByLokasi[key]) assetsByLokasi[key] = [];
-    assetsByLokasi[key].push(a);
-    const parentKey = getParentLokasiCode(key);
-    if (parentKey && parentKey !== key) {
-      if (!assetsByLokasi[parentKey]) assetsByLokasi[parentKey] = [];
-      assetsByLokasi[parentKey].push(a);
-    }
-  });
+  // Rolled up UPT → parent, exactly as this panel always did it.
+  const byLokasi = _rollUpLokasi(agg.per_lokasi);
 
   // Build labels and availability rates
   const labels = [];
   const rates = [];
 
   regions.forEach((r) => {
-    const assets = assetsByLokasi[r.code] || [];
-    const total = assets.length;
-    const so = assets.filter((a) => a.status_terakhir === "SO").length;
-    const rate = total > 0 ? Math.round((so / total) * 100) : 0;
+    const c = byLokasi[r.code] || { so: 0, tso: 0 };
+    const total = c.so + c.tso;
+    const rate = total > 0 ? Math.round((c.so / total) * 100) : 0;
     labels.push(r.name.replace("DAOP ", "D").replace("DIVRE ", "DR"));
     rates.push(rate);
   });
@@ -558,40 +620,21 @@ function _renderAvailPanel() {
 }
 
 // ── PANEL 2: Bar chart ─────────────────────────────────────────────────────
-function _renderBarPanel() {
+function _renderBarPanel(agg) {
   const canvas = document.getElementById("dash-chart-bar");
   if (!canvas) return;
 
-  const filtered = _dashFilteredDb("bar");
   const regions = lokasiData.filter((r) => (r.tipe || "").toUpperCase() !== "BALAIYASA");
-
-  const assetsByLokasi = {};
-  filtered.forEach((a) => {
-    const key = a.id_lokasi_raw || a.id_lokasi;
-    if (!key) return;
-
-    // Index by the raw key (UPT code)
-    if (!assetsByLokasi[key]) assetsByLokasi[key] = [];
-    assetsByLokasi[key].push(a);
-
-    // Roll up to parent region for bar chart aggregation
-    const parentKey = getParentLokasiCode(key);
-    if (parentKey && parentKey !== key) {
-      if (!assetsByLokasi[parentKey]) assetsByLokasi[parentKey] = [];
-      assetsByLokasi[parentKey].push(a);
-    }
-  });
+  const byLokasi = _rollUpLokasi(agg.per_lokasi);
 
   const labels = [],
     soData = [],
     tsoData = [];
   regions.forEach((r) => {
-    const assets = assetsByLokasi[r.code] || [];
-    const so = assets.filter((a) => a.status_terakhir === "SO").length;
-    const tso = assets.filter((a) => a.status_terakhir === "TSO").length;
+    const c = byLokasi[r.code] || { so: 0, tso: 0 };
     labels.push(r.name.replace("DAOP ", "D").replace("DIVRE ", "DR"));
-    soData.push(so);
-    tsoData.push(tso);
+    soData.push(c.so);
+    tsoData.push(c.tso);
   });
 
   const isDark = document.documentElement.classList.contains("dark");
@@ -638,7 +681,7 @@ function _renderBarPanel() {
 }
 
 // ── PANEL 3: Trend line chart ──────────────────────────────────────────────
-function _renderTrendPanel() {
+function _renderTrendPanel(agg) {
   const canvas = document.getElementById("dash-chart-trend");
   if (!canvas) return;
 
@@ -651,27 +694,19 @@ function _renderTrendPanel() {
     _dashFilterFor("trend").tahun || String(new Date().getFullYear());
   const months = BULAN_PANJANG;
 
-  // Count perbaikan per month from db riwayat — we derive from latest_date in history summary
-  // Use db directly: each item has repair.latest_date — for full tren we need per-month count
-  // Since frontend db doesn't carry full riwayat, we approximate from `db` entries that were
-  // updated in each month. For a full chart, wire to /api/export/riwayat — lazy-fetch here.
+  // Assets by PURCHASE month and current status. This has always been what the
+  // panel plots: it read `item.waktu_update || item.tanggal_pembelian`, and
+  // /api/aset has never carried a `waktu_update`, so the first half never fired.
+  // `per_bulan` groups the same thing server-side, under the same tab filter.
   const monthSo = new Array(12).fill(0);
   const monthTso = new Array(12).fill(0);
 
-  // Was `db.forEach` — the panel ignored its own alat and pengadaan filters
-  // entirely, so narrowing to one tool type changed the dropdown and nothing
-  // else on the chart.
-  _dashFilteredDb("trend").forEach((item) => {
-    const d = item.waktu_update || item.tanggal_pembelian;
-    if (!d) return;
-    // Normalize: handle "YYYY-MM-DD", "YYYY-MM-DD HH:MM:SS", ISO strings
-    const dateObj = new Date(String(d).replace(" ", "T"));
-    if (isNaN(dateObj.getTime())) return;
-    const yr = String(dateObj.getFullYear());
-    const mo = dateObj.getMonth(); // 0-indexed
-    if (yr !== selectedYear || mo < 0 || mo > 11) return;
-    if (item.status_terakhir === "SO") monthSo[mo]++;
-    if (item.status_terakhir === "TSO") monthTso[mo]++;
+  (agg.per_bulan || []).forEach((r) => {
+    if (String(r.tahun) !== selectedYear) return;
+    const mo = r.bulan - 1;
+    if (mo < 0 || mo > 11) return;
+    monthSo[mo] += r.so;
+    monthTso[mo] += r.tso;
   });
 
   const isDark = document.documentElement.classList.contains("dark");
@@ -753,17 +788,19 @@ function _syncDashKpiScope(tabId) {
   el.textContent = bits.length ? bits.join(" · ") : "seluruh armada";
 }
 
-function updateDashboardStats() {
+async function updateDashboardStats() {
   _wireDashChrome();
 
   // The headline follows the ACTIVE tab's filter, so the numbers above the
   // panel and the panel itself can never disagree. Tabs with no alat/pengadaan
   // filter of their own (perbaikan, mcf) fall back to the whole fleet.
   const tabId = _DASH_TABS[_dashTabIndex];
-  const filtered = _DASH_FILTER_SPEC[tabId] ? _dashFilteredDb(tabId) : db;
+  const agg = _DASH_FILTER_SPEC[tabId]
+    ? await _dashAgg(tabId)
+    : await getRingkasan();
 
-  const so = filtered.filter((i) => i.status_terakhir === "SO").length;
-  const tso = filtered.filter((i) => i.status_terakhir === "TSO").length;
+  const so = agg.so;
+  const tso = agg.tso;
 
   const total = so + tso;
 

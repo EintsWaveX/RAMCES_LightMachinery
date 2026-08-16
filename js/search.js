@@ -130,7 +130,15 @@ function assetLokasiIdentity(item) {
   // the app's hottest function, called ~2x per asset per render.
   const summary = summaryFor(item?.id_aset);
 
+  // `identitas_lokasi` is the server's own answer, added to /api/aset in
+  // rev0.4.5 and computed by identity_lokasi_expr() in api/query.py. Preferring
+  // it is not an optimisation: the client no longer holds the whole
+  // `_historySummary`, so the `summary.mutasi` fallback is only populated for
+  // assets that happen to be on the Pantau Riwayat page. Reading it first also
+  // means the label on a card is BY CONSTRUCTION the value the server filtered
+  // and sorted on, rather than a second derivation that has to be kept in step.
   const uptCode =
+    item?.identitas_lokasi ||
     summary?.mutasi?.original_lokasi_code ||
     item?.id_lokasi_raw ||
     item?.id_lokasi ||
@@ -145,6 +153,7 @@ function assetLokasiIdentity(item) {
     parentCode,
     uptName:
       uptEntry?.nama ||
+      item?.identitas_lokasi_name ||
       summary?.mutasi?.original_lokasi_name ||
       item?.lokasi_name ||
       item?.id_lokasi_display ||
@@ -285,24 +294,33 @@ function _pengadaanMatches(value, wanted) {
 let _historyMode = "repair"; // 'repair' | 'kalibrasi' | 'mutasi'
 let _historySummary = []; // cached from /api/history/summary
 
-async function loadHistorySummary() {
-  try {
-    // Paged: this is the heaviest per-asset payload the app fetches (~493 B
-    // against ~194 B for /api/aset), so at 10k assets a single request was
-    // ~16 MB. fetchAllPages() walks the {total, limit, offset, items} envelope.
-    _historySummary = await fetchAllPages("/history/summary", {
-      background: true,
-    });
-    // Keep the id_aset index in step with the array it mirrors. Every read
-    // path goes through summaryFor(), so forgetting this would silently
-    // return stale identities rather than crash — hence it lives on the same
-    // line as the assignment. Rebuilt once, after the LAST page: doing it per
-    // page would publish a half-built index to anything rendering meanwhile.
-    rebuildSummaryIndex();
-  } catch (e) {
-    /* silent */
-  }
+/**
+ * ONE page of /api/history/summary, filtered and sorted by the server.
+ *
+ * This is the heaviest per-asset payload the app produces (~636 B against
+ * ~366 B for /api/aset), and until rev0.4.5 the whole of it was downloaded at
+ * login — 667 KB and 317 ms at 1,121 assets, on every sign-in and again after
+ * every mutation — because the Kelola Data Aset cards needed three badges out
+ * of it. Those badges now ride on /api/aset itself, so this is fetched only by
+ * the screen that actually displays it, one page at a time.
+ *
+ * `_historySummary` is therefore the CURRENT PAGE, not the fleet. Anything that
+ * used to scan it for a fleet-wide answer must use /ringkasan or ensureFleet().
+ */
+async function loadHistoryPage(params, { background = true } = {}) {
+  const res = await apiFetch(`/history/summary?${params}`, { background });
+  if (!res.ok) throw new Error(`Gagal mengambil riwayat (${res.status})`);
+  const body = await res.json();
+  _historySummary = body.items || [];
+  // Keep the id_aset index in step with the array it mirrors. Every read path
+  // goes through summaryFor(), so forgetting this would silently return stale
+  // identities rather than crash — hence it lives on the same line as the
+  // assignment.
+  rebuildSummaryIndex();
+  if (typeof cacheAset === "function") cacheAset(_historySummary);
+  return { items: _historySummary, total: body.total ?? _historySummary.length };
 }
+window.loadHistoryPage = loadHistoryPage;
 
 // ── Asset ID decoder ───────────────────────────────────────────────────────
 
