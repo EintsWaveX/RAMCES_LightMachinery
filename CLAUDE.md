@@ -77,7 +77,7 @@ loudly with the line to add:
 | [main.py](main.py) (~320 lines) | App construction only — GZip, the Cache-Control middleware, the WebSocket endpoint, the router includes, static serving |
 | [api/](api/) (14 modules) | The FastAPI backend, split out of main.py in rev0.5.1. See below. |
 | [models.py](models.py) | All SQLAlchemy models |
-| [js/](js/) (17 files, ~13k lines) | The frontend — vanilla JS, no modules, no build step. See below. |
+| [js/](js/) (18 files, ~14k lines) | The frontend — vanilla JS, no modules, no build step. See below. |
 | [index.html](index.html) (~6k lines) | SPA shell; every view/modal exists in the DOM at once |
 | [manage.py](manage.py) | The one database CLI — `seed` / `reset` / `verify` / `status` / `list` |
 
@@ -162,6 +162,138 @@ load-bearing:
 functions in real Chrome and the server filters over the same fleet and asserts
 identical id lists — 46 filter, 16 Pantau Riwayat and 10 ordering cases. Change
 either side without the other and it fails by name.
+
+### The Dashboard, rebuilt (rev0.4.7)
+
+Every KPI number is a door now, the tab strip fits, and the matrix stopped
+under-reporting by two thirds. Five things carry it.
+
+**`GET /api/aset/dashboard/hirarki` is the ATTENTION rollup.** `ringkasan`
+answers "how many, and where"; three of the seven KPI cards ask "what needs
+somebody to do something today", which needs the latest calibration and the
+first transfer per asset — neither of which `ringkasan` carries. Same filter
+triple, same cache discipline, and **keyed by the RAW `id_lokasi`** so
+`_rollUpLokasi()` works on its `per_lokasi` unchanged. One grouped query, ~1.6 KB
+gzipped, no schema change.
+
+Three mutation signals, and only one of them is actionable:
+
+- `mut_pernah` — has ever moved. 543 of 1,077. What the Mutasi card lists.
+- `mut_belum_kembali` — `id_lokasi <> first_mutasi.id_lokasi_asal`. **213 assets,
+  and it never clears**, because most of them are permanently redeployed and
+  settled. Reported, never counted as actionable.
+- `mut_di_balaiyasa` — sitting at a workshop right now. **This is the one that
+  feeds `perhatian`**: it is genuinely actionable and it clears itself when the
+  machine comes back.
+
+`kal_belum` (never calibrated) is likewise counted but excluded from `perhatian`,
+for the same reason the bell excludes `belum_pernah`. **`perhatian` is a
+per-asset boolean summed, not a sum of the reason columns** — a machine that is
+both TSO and at a workshop counts once. The three figures nested under
+`perhatian` are individual reason counts and *may* overlap; only `.total` is
+de-duplicated, which is why the drill-down footer prints both ("123 aset · 124
+alasan").
+
+**The KPI strip lives INSIDE `#dash-panel-matrix`.** It always followed the
+active tab's filter, which is exactly why it needed a `Menghitung: …` caption
+underneath explaining which tab it was obeying — a caption is what you add when
+the layout is lying. Seven `<button>` cards built from `_DASH_KPI_CARDS`, each
+opening the drill-down modal. `getDashHirarki()` is fetched from
+`_renderDashActivePanel()` **only while the matrix tab is showing**, never from
+`updateDashboardStats()` — that runs at login and after every mutation.
+
+**`js/views/dash-drill.js` is the drill-down**, one IIFE exporting only
+`openDashDrill(mode)` / `closeDashDrill()`. Left pane is a lazy region → asset
+tree (level 1 from the cached rollups, **zero fetch**; a region's assets come
+from `GET /api/aset?id_lokasi=` on first expand). Right pane's four tabs reuse
+`renderRepairRows` / `renderKalibrasiRows` / `renderMutasiOriginBar`, exported
+from [js/views/aset.js](js/views/aset.js) so the modal and the asset detail
+screen physically cannot render different shapes. Mobile stacks the panes with
+the `.is-drilled` idiom borrowed from Pusat Data.
+
+**The banner has ONE writer.** `_syncDashBanner()` alone touches
+`#dash-banner-title/sub/dateline`. Laporan Perbaikan and Kurva MCF *publish*
+their resolved region and dateline through `window.setDashBanner()`, which
+caches and re-applies — their `load()` resolves after the tab switch, so a
+direct write would race. `_renderDashActivePanel()` calls `_syncDashBanner()`
+**before** dispatching to `initRepairDashboard()`, so on those two tabs the
+repair values win. The KAI and BUMN marks are real files
+(`assets/logo_kai.svg`, `logo_bumn.svg` + `_putih` knockouts, provenance in
+`assets/LOGO-SUMBER.md`) on a light bar — both are official multi-colour logos
+and `brightness-0 invert` misrepresents them.
+
+**The tab strip is a GRID, not a scroller** — `grid-cols-3 sm:grid-cols-6`, two
+rows on a phone and one from `sm:` up. `.scroll-hint` is gone (its sticky left
+fade is what clipped "Matriks Kesiapan"), and `#dash-tab-prev`/`#dash-tab-next`
+are deleted; ArrowLeft/ArrowRight on the bar replace them. Tabs and dots are now
+bound by the **`data-dash-tab` attribute**, not DOM position — the attributes
+were already in the markup and were dead, so reordering the buttons silently
+misrouted every tab. `tools/verify/test_rev042.py` section 7 asserts the
+INVERTED contract: does not scroll, nothing clipped, two rows at 390px and one
+at 1440px.
+
+**The `KW` column is where 63% of the fleet was hiding.** 680 of 1,077 assets
+carry a PARENT code as their `id_lokasi` (D1 holds 87, DIVRE VIII and VIV 66
+each) rather than a resort code, and the matrix sums only the resorts it draws —
+so the table totalled **397** while the strip above it said 1,077, and nothing
+said so. Each region now gets its own code as an explicit first column, headed
+`KW`, and the matrix totals 1,069. The remaining 8 are the assets at a
+Balaiyasa, which `regions` excludes on purpose — *Balaiyasa is a workshop, never
+a reporting region* — and they are exactly the 8 the flag column drops relative
+to the KPI (115 vs 123). The KW column is **omitted under a JR/JB/ME branch
+filter**: an asset at the wilayah office has no branch, and folding it into "JR"
+would file non-JR machines under a JR heading.
+
+`_benchmarkPct` is **dead on the Dashboard** — the card and its Δ column are
+gone — but the declaration stays in `js/views/dashboard.js` because
+`js/views/kdak.js` and `js/views/laporan.js` still read it. Deleting it before
+those two screens lose their own Benchmark cards is a `ReferenceError` on both.
+
+#### rev0.5.0 — using it surfaced five more
+
+- **The drill-down modal had `padding: 0`.** `.dash-drill-split` overrode
+  `.modal-body`'s `1.25rem` to zero, so every edge of the two-pane view
+  pressed flush against the modal border. Restored, and `.modal-xl` widened
+  from 76rem to `min(96vw, 84rem)` — a 9-column detail table still forced its
+  own inner scroll at the old width with room to spare on a 1440px screen.
+- **Sort selects had no direction indicator.** `#dash-drill-sort` and
+  `#dash-drill-rsort` were bare `<select>`s. A new `.toolbar-select` /
+  `.toolbar-select-icon` pair (mirrors `.toolbar-search`) flips between
+  `fa-arrow-up-short-wide` and `fa-arrow-down-wide-short` as the selection
+  changes — each option in `_sortOptionsForMode()` / `_rSortOptions()` now
+  carries an explicit `dir`, never guessed from its label.
+- **The three detail tabs were `disabled` until an asset was picked**, even
+  though every one of them already rendered `_pilihAsetEmpty()` for that
+  exact case. `_tabEnabled()` now always returns `true`.
+- **"Muat Ulang" only existed on two of six tabs.** Laporan Perbaikan and
+  Kurva MCF had their own `#rd-refresh`/`#rd-mcf-refresh`; the four computed
+  panels (Matriks, Grafik Ketersediaan, Ketersediaan per Lokasi, Tren
+  Perbaikan) had no way to force a fresh read without leaving the tab.
+  `_renderDashFilterRow()` now appends the same button to all four, wired
+  through the mount's existing delegated click listener.
+- **The matrix's per-UPT cells printed an em dash for two different kinds of
+  "nothing."** A dash reads as a fillable placeholder, not as "no data," so
+  neither state prints text any more — `.dash-matrix-cell-zero` (a real UPT,
+  currently empty) and `.dash-matrix-slot-empty` (this region simply has
+  fewer UPTs in that branch than the widest one, diagonal hatch, no tap
+  target) replace it with background alone. JR/JB/ME now render as fixed-
+  width column BLOCKS in "Semua" mode — column N means the same branch-slot
+  on every row, with a two-row grouped `<thead>` and a divider between
+  blocks — instead of a region's own UPT count deciding what each numbered
+  column held, which is what made mixed branches unreadable. `title`
+  tooltips never fire on touch, so every informative cell carries
+  `data-tip` + `tabindex="0"` instead, read by ONE delegated listener into
+  `#dash-matrix-info` — the same mechanism for a mouse, a finger, and a
+  keyboard.
+
+Also: the KPI drill-down (open/close fade+scale, guarded against a rapid
+close-then-reopen race), `.dash-panel` (tab-switch fade), the KPI cards
+(hover lift) and `.dash-drill-region-body` (expand reveal) all picked up
+small, scoped animations — deliberately NOT on the shared
+`.modal-backdrop`/`.modal-panel` base rules, which back ~30 unrelated modals
+across the app. A `translateY` "pop" on the active dashboard tab was tried
+and reverted: it shifts the tab's rendered box 1px above its row-mates,
+which `tools/verify/test_rev042.py` correctly read as a third row.
 
 ### Reliability, calibration due dates and stock opname (rev0.4.6)
 
@@ -329,7 +461,7 @@ Other things that are load-bearing and easy to undo:
 
 ### The `js/` split — plain scripts, fixed order
 
-`app.js` was a single 11.6k-line file. It is now sixteen **classic scripts** loaded in a fixed order by the tag list at the bottom of [index.html](index.html). No bundler, no ES modules, and the `window.foo = foo` convention is unchanged — the `onclick=` handlers these files generate inside template strings resolve against the global scope, so the exports must stay global.
+`app.js` was a single 11.6k-line file. It is now eighteen **classic scripts** loaded in a fixed order by the tag list at the bottom of [index.html](index.html). No bundler, no ES modules, and the `window.foo = foo` convention is unchanged — the `onclick=` handlers these files generate inside template strings resolve against the global scope, so the exports must stay global.
 
 | Load order | File | Contents |
 |---|---|---|
@@ -339,9 +471,9 @@ Other things that are load-bearing and easy to undo:
 | 4 | `js/api.js` | `apiFetch`, `fetchAsetFromServer`, `fetchMasterData` |
 | 5 | `js/search.js` | The shared matcher, the Map indexes, `decodeAsetId`, `resolveLokasi`, `_historySummary` |
 | 6 | `js/shell.js` | Auth, `switchView`, `setupEventListeners`, WebSocket/presence/polling |
-| 7–15 | `js/views/*.js` | `dashboard`, `aset`, `riwayat`, `kdak`, `afkir`, `masterdata`, `sort-modals`, `laporan`, `repair-dashboard` |
-| 16 | `js/views/spektek.js` | `renderSpekCard()` — the Model/Type spec card. **Also loaded by landing.html**, along with `js/captcha.js` and nothing else |
-| 17 | `js/views/inventaris.js` | Kelola Inventaris — must stay last, see below |
+| 7–16 | `js/views/*.js` | `dashboard`, `dash-drill`, `aset`, `riwayat`, `kdak`, `afkir`, `masterdata`, `sort-modals`, `laporan`, `repair-dashboard` |
+| 17 | `js/views/spektek.js` | `renderSpekCard()` — the Model/Type spec card. **Also loaded by landing.html**, along with `js/captcha.js` and nothing else |
+| 18 | `js/views/inventaris.js` | Kelola Inventaris — must stay last, see below |
 
 Two rules govern this:
 
@@ -808,7 +940,7 @@ The client reconnects with exponential backoff + jitter and falls back to period
 
 ### Frontend conventions
 
-No modules, no bundler. The seventeen files in [js/](js/) share one global scope and hold top-level functions plus mutable state (`db`, `lokasiData`, `uptDatabase`, `authToken`, …) declared in [js/core.js](js/core.js); the `onclick=` handlers generated inside template strings resolve against the global scope, so cross-file callers reach functions via explicit `window.foo = foo` exports. Libraries come from CDN `<script>` tags in [index.html](index.html): Tailwind (config inline in the head), Chart.js, SheetJS (`xlsx`), jsPDF + autotable, qrcodejs, Font Awesome. Excel/PDF export is done **client-side**; the `/api/export/*` endpoints only return JSON rows.
+No modules, no bundler. The eighteen files in [js/](js/) share one global scope and hold top-level functions plus mutable state (`db`, `lokasiData`, `uptDatabase`, `authToken`, …) declared in [js/core.js](js/core.js); the `onclick=` handlers generated inside template strings resolve against the global scope, so cross-file callers reach functions via explicit `window.foo = foo` exports. Libraries come from CDN `<script>` tags in [index.html](index.html): Tailwind (config inline in the head), Chart.js, SheetJS (`xlsx`), jsPDF + autotable, qrcodejs, Font Awesome. Excel/PDF export is done **client-side**; the `/api/export/*` endpoints only return JSON rows.
 
 Views are `.view-section` divs toggled by `switchView(viewId)` via an `is-visible` class — all views live in the DOM simultaneously, so code frequently guards work with `document.getElementById(id)?.classList.contains("is-visible")`. Dark mode is a `dark` class on `<html>` persisted in `localStorage`.
 

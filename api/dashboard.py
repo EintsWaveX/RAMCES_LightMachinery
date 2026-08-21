@@ -33,7 +33,7 @@ summed out of that one result set in Python. Anything added here that needs the
 window must read `facts`, not re-execute the subquery.
 """
 
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Query
@@ -844,6 +844,250 @@ def get_aset_ringkasan(
         "per_bulan": per_bulan,
         "tahun_counts": tahun_counts,
         "urutan_berikutnya": urutan_berikutnya,
+    }
+
+
+# ── Hirarki — kalibrasi + mutasi state, per RAW lokasi ──────────────
+
+@router.get("/api/aset/dashboard/hirarki")
+def get_aset_dashboard_hirarki(
+    alat: Optional[str] = None,
+    pengadaan: Optional[str] = None,
+    tahun: Optional[int] = None,
+    hari: int = Query(30, ge=1, le=365),
+    db: Session = Depends(get_db),
+    current_user: models.Pengguna = Depends(get_current_user),
+):
+    """
+    Calibration and mutation state, per RAW lokasi, for the Dashboard KPI strip
+    and its "Perlu Perhatian" drill-down.
+
+    `alat` / `pengadaan` / `tahun` are the identical triple `get_aset_ringkasan()`
+    takes, canonicalised the same way through `pengadaan_values()` — the two
+    endpoints are meant to be called with the same filter state and must agree
+    on what they scope in. `hari` is the calibration horizon (default 30),
+    matching `KALIBRASI_SEGERA_HARI` on the client and the `hari` default on
+    `/api/kalibrasi/jatuh-tempo`.
+
+    ── Group by the RAW `aset.id_lokasi` ──
+    Not `identity_lokasi_expr()` and not `resolve_home_lokasi()`. Every other
+    dashboard panel — `ringkasan.per_lokasi`, the matrix, the availability
+    chart — keys on the raw column, and this endpoint feeds the same matrix.
+    Keying on the asset's first-transfer identity or its home-while-at-a-
+    Balaiyasa location instead would move assets between regions on screen
+    relative to every other panel; the two disagree on 213 of 1,077 seeded
+    assets. This is deliberately DIFFERENT from `get_aset_perbaikan_dashboard`,
+    which scopes its `sedang` count by `home_lokasi_expr` on purpose — that
+    endpoint is a report about which DAOP owns a repair, this one is a rollup
+    of where machines physically sit right now. A machine parked at a
+    Balaiyasa is therefore counted under the WORKSHOP's code here, not its
+    home region. Do not "fix" one to match the other; they are answering
+    different questions by design.
+
+    ── Calibration buckets agree with `get_kalibrasi_jatuh_tempo()` ──
+    Same latest-kalibrasi `row_number() OVER (PARTITION BY id_aset ORDER BY
+    tanggal_kalibrasi DESC, waktu_input DESC)` subquery, same three rules: only
+    `kategori_alat.perlu_kalibrasi IS TRUE` assets count at all; `belum` when
+    `tanggal_berlaku IS NULL`; `lewat` when it is before today; `segera` when it
+    is on or before `today + hari` and not already `lewat`.
+
+    `belum` is counted in the `kalibrasi` block but DELIBERATELY EXCLUDED from
+    `perhatian` — a machine that has never been calibrated already reads "BLM
+    KALIBRASI" on every card, and folding hundreds of them into an "attention"
+    figure would read as a sudden backlog on a fresh install. Same reasoning the
+    notification bell uses to exclude `belum_pernah`.
+
+    ── Mutation state — THREE separate signals, only one of them actionable ──
+    `mut_pernah` is the coarse fact the Mutasi KPI card lists: the asset has at
+    least one `riwayat_mutasi` row at all. Not actionable on its own — 213 of
+    1,077 seeded assets have moved at least once, most of them permanently
+    redeployed and settled at their new home.
+
+    `mut_belum_kembali` is `aset.id_lokasi <> first_mutasi.id_lokasi_asal` over
+    assets that have moved — the same predicate as `mutasi_sudah_kembali` at
+    api/aset.py:375, negated, reusing the same `row_number() ... rn == 1`
+    first-mutation subquery `_card_facts()` uses rather than inventing a fourth
+    copy of it. It is reported but NOT fed into `perhatian`: it is true for
+    every permanently redeployed machine, not just ones that are away and
+    should come back, so folding it in would make "Perlu Perhatian" read a
+    near-constant ~20% of the fleet and never go down — the exact noise problem
+    `kal_belum` is already excluded for.
+
+    `mut_di_balaiyasa` is the one that actually feeds `perhatian`: the asset's
+    CURRENT `aset.id_lokasi` is in `balaiyasa_lokasi_ids(db)`. A machine sitting
+    at a workshop right now is away for repair and someone should recall it —
+    that is genuinely actionable, and it clears itself the moment the machine
+    comes back, unlike `mut_belum_kembali` which stays true forever for a
+    redeployed asset.
+
+    ── `perhatian` is a de-duplicated UNION, not a sum ──
+    Computed per asset — one row per asset, before any grouping — as a single
+    boolean `tso OR kal_lewat OR kal_segera OR mut_di_balaiyasa`, assigned ONCE
+    to `perhatian_cond` below so that changing which mutation signal counts as
+    "actionable" is a one-line edit rather than a rewrite. Summing that 0/1 flag
+    by lokasi is already `COUNT(DISTINCT id_aset)` over the union: a machine
+    that is both TSO and sitting at a Balaiyasa contributes exactly 1, not 2.
+    The three figures nested under `perhatian` (`tso`, `kalibrasi`, `mutasi`)
+    are the individual reason counts and MAY overlap each other and
+    `perhatian.total` — only `.total` is deduplicated.
+
+    ── No schema change ──
+    Reads `aset`, `kategori_alat`, `riwayat_kalibrasi` and `riwayat_mutasi`
+    exactly as they are, and calls the already-cached `balaiyasa_lokasi_ids()`.
+    No new column, no new index — `models.py` and `_ensure_schema()` are
+    untouched by this endpoint.
+
+    One grouped query does all of it: every flag is a per-asset 0/1 computed in
+    the SELECT list against two LEFT JOINed one-row-per-asset subqueries, then
+    summed by `GROUP BY aset.id_lokasi`. The response stays O(number of lokasi
+    codes) — at most ~273 rows — never O(fleet size).
+    """
+    AS_ = models.Aset
+    KA = models.KategoriAlat
+    RKAL = models.RiwayatKalibrasi
+    RM = models.RiwayatMutasi
+
+    hari_ini = date.today()
+    batas = hari_ini + timedelta(days=hari)
+
+    conds = [AS_.status_terakhir != "AFKIR"]
+    if alat:
+        conds.append(AS_.kode_alat == alat)
+    if pengadaan:
+        vals = pengadaan_values(db, pengadaan)
+        conds.append(AS_.sumber_pengadaan.in_(vals or []))
+    if tahun:
+        conds.append(extract("year", AS_.tanggal_pembelian) == tahun)
+
+    # Latest kalibrasi per asset — byte-identical rule to get_kalibrasi_jatuh_tempo().
+    krn = func.row_number().over(
+        partition_by=RKAL.id_aset,
+        order_by=(RKAL.tanggal_kalibrasi.desc(), RKAL.waktu_input.desc()),
+    ).label("rn")
+    kal_ranked = select(
+        RKAL.id_aset.label("id_aset"), RKAL.tanggal_berlaku.label("berlaku"), krn
+    ).subquery()
+    latest_kal = select(kal_ranked).where(kal_ranked.c.rn == 1).subquery()
+
+    # First mutation per asset — the same subquery shape _card_facts() uses.
+    mrn = func.row_number().over(
+        partition_by=RM.id_aset, order_by=RM.waktu_mutasi.asc()
+    ).label("rn")
+    mut_ranked = select(
+        RM.id_aset.label("id_aset"), RM.id_lokasi_asal.label("asal"), mrn
+    ).subquery()
+    first_mut = select(mut_ranked).where(mut_ranked.c.rn == 1).subquery()
+
+    by_ids = balaiyasa_lokasi_ids(db)
+
+    perlu_cond = KA.perlu_kalibrasi.is_(True)
+    tso_cond = AS_.status_terakhir == "TSO"
+    kal_lewat_cond = (
+        perlu_cond & latest_kal.c.berlaku.isnot(None) & (latest_kal.c.berlaku < hari_ini)
+    )
+    kal_segera_cond = (
+        perlu_cond
+        & latest_kal.c.berlaku.isnot(None)
+        & (latest_kal.c.berlaku >= hari_ini)
+        & (latest_kal.c.berlaku <= batas)
+    )
+    kal_belum_cond = perlu_cond & latest_kal.c.berlaku.is_(None)
+    mut_pernah_cond = first_mut.c.id_aset.isnot(None)
+    mut_belum_kembali_cond = mut_pernah_cond & (AS_.id_lokasi != first_mut.c.asal)
+    mut_di_balaiyasa_cond = AS_.id_lokasi.in_(by_ids)
+
+    # THE union that feeds `perhatian`. `kal_belum` and `mut_belum_kembali` are
+    # excluded on purpose — see the docstring. Swapping which mutation signal
+    # counts as actionable is a one-line edit here.
+    perhatian_cond = tso_cond | kal_lewat_cond | kal_segera_cond | mut_di_balaiyasa_cond
+
+    def _flag_sum(cond):
+        return func.sum(case((cond, 1), else_=0))
+
+    rows = db.execute(
+        select(
+            AS_.id_lokasi.label("id_lokasi"),
+            _flag_sum(AS_.status_terakhir == "SO").label("so"),
+            _flag_sum(tso_cond).label("tso"),
+            _flag_sum(perlu_cond).label("perlu"),
+            _flag_sum(kal_lewat_cond).label("kal_lewat"),
+            _flag_sum(kal_segera_cond).label("kal_segera"),
+            _flag_sum(kal_belum_cond).label("kal_belum"),
+            _flag_sum(mut_pernah_cond).label("mut_pernah"),
+            _flag_sum(mut_belum_kembali_cond).label("mut_belum_kembali"),
+            _flag_sum(mut_di_balaiyasa_cond).label("mut_di_balaiyasa"),
+            _flag_sum(perhatian_cond).label("perhatian"),
+        )
+        .select_from(AS_)
+        .join(KA, KA.kode_alat == AS_.kode_alat)
+        .outerjoin(latest_kal, latest_kal.c.id_aset == AS_.id_aset)
+        .outerjoin(first_mut, first_mut.c.id_aset == AS_.id_aset)
+        .where(*conds)
+        .group_by(AS_.id_lokasi)
+    ).all()
+
+    per_lokasi = {}
+    tot_so = tot_tso = tot_perlu = 0
+    tot_lewat = tot_segera = tot_belum = 0
+    tot_pernah = tot_belum_kembali = tot_di_balaiyasa = tot_perhatian = 0
+
+    for r in rows:
+        entry = {
+            "so": int(r.so or 0),
+            "tso": int(r.tso or 0),
+            "perlu_kalibrasi": int(r.perlu or 0),
+            "kal_lewat": int(r.kal_lewat or 0),
+            "kal_segera": int(r.kal_segera or 0),
+            "kal_belum": int(r.kal_belum or 0),
+            "mut_pernah": int(r.mut_pernah or 0),
+            "mut_belum_kembali": int(r.mut_belum_kembali or 0),
+            "mut_di_balaiyasa": int(r.mut_di_balaiyasa or 0),
+            "perhatian": int(r.perhatian or 0),
+        }
+        per_lokasi[r.id_lokasi] = entry
+
+        tot_so += entry["so"]
+        tot_tso += entry["tso"]
+        tot_perlu += entry["perlu_kalibrasi"]
+        tot_lewat += entry["kal_lewat"]
+        tot_segera += entry["kal_segera"]
+        tot_belum += entry["kal_belum"]
+        tot_pernah += entry["mut_pernah"]
+        tot_belum_kembali += entry["mut_belum_kembali"]
+        tot_di_balaiyasa += entry["mut_di_balaiyasa"]
+        tot_perhatian += entry["perhatian"]
+
+    # Same rule get_aset_ringkasan() uses: the two states the KPI strip shows,
+    # not a raw row count. status_terakhir has exactly three values and AFKIR is
+    # already excluded above, so so + tso is the whole scoped population.
+    total = tot_so + tot_tso
+
+    return {
+        "hari": hari,
+        "total": total,
+        "so": tot_so,
+        "tso": tot_tso,
+        "kalibrasi": {
+            "perlu": tot_perlu,
+            "tidak_perlu": total - tot_perlu,
+            "lewat": tot_lewat,
+            "segera": tot_segera,
+            "belum": tot_belum,
+        },
+        "mutasi": {
+            "pernah": tot_pernah,
+            "belum_kembali": tot_belum_kembali,
+            "di_balaiyasa": tot_di_balaiyasa,
+        },
+        # `tso` / `kalibrasi` / `mutasi` here are individual reason counts and
+        # may overlap each other and `.total` — only `.total` is deduplicated.
+        "perhatian": {
+            "total": tot_perhatian,
+            "tso": tot_tso,
+            "kalibrasi": tot_lewat + tot_segera,
+            "mutasi": tot_di_balaiyasa,
+        },
+        "per_lokasi": per_lokasi,
     }
 
 

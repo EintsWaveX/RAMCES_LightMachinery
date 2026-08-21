@@ -497,76 +497,12 @@
                             class="fas fa-chart-line text-2xl text-kai-blue/30 dark:text-gray-600 hidden sm:block shrink-0"></i>
                     </div>
 
-                    <!-- What the KPI strip is currently counting.
-                         The strip sits ABOVE the tab bar but follows the ACTIVE
-                         tab's filter, so it has to say so: "Total 250" over a
-                         panel showing the whole fleet is just a wrong number
-                         with no way to tell. Filled by _syncDashKpiScope(). -->
-                    <p class="text-[11px] text-gray-500 dark:text-gray-400 -mt-1 flex items-center gap-1.5">
-                        <i class="fas fa-filter text-[9px] opacity-60"></i>
-                        Menghitung: <span class="font-semibold text-gray-700 dark:text-gray-200"
-                            id="dash-kpi-scope">seluruh armada</span>
-                    </p>
-
-                    <!-- KPI cards: 2 col mobile → 3 col sm → 5 col lg -->
-                    <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-                        <div
-                            class="bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm relative overflow-hidden group hover:border-kai-blue transition-colors">
-                            <p class="text-[9px] font-bold tracking-widest text-gray-400 uppercase mb-1">
-                                Total Aset
-                            </p>
-                            <h3 class="text-2xl font-bold text-gray-800 dark:text-white" id="stat-total">
-                                —
-                            </h3>
-                            <i
-                                class="fas fa-boxes absolute -bottom-3 -right-1 text-5xl text-slate-100 dark:text-slate-700/50 group-hover:scale-125 transition-transform"></i>
-                        </div>
-                        <div
-                            class="bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm relative overflow-hidden group hover:border-green-400 transition-colors">
-                            <p class="text-[9px] font-bold tracking-widest text-gray-400 uppercase mb-1">
-                                Siap Operasi
-                            </p>
-                            <h3 class="text-2xl font-bold text-green-500" id="stat-so">
-                                —
-                            </h3>
-                            <i
-                                class="fas fa-check-circle absolute -bottom-3 -right-1 text-5xl text-green-100 dark:text-green-900/30 group-hover:scale-125 transition-transform"></i>
-                        </div>
-                        <div
-                            class="bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm relative overflow-hidden group hover:border-red-400 transition-colors">
-                            <p class="text-[9px] font-bold tracking-widest text-gray-400 uppercase mb-1">
-                                Tidak Siap
-                            </p>
-                            <h3 class="text-2xl font-bold text-red-500" id="stat-tso">—</h3>
-                            <i
-                                class="fas fa-times-circle absolute -bottom-3 -right-1 text-5xl text-red-100 dark:text-red-900/30 group-hover:scale-125 transition-transform"></i>
-                        </div>
-                        <div
-                            class="bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm relative overflow-hidden group hover:border-kai-blue transition-colors">
-                            <p class="text-[9px] font-bold tracking-widest text-gray-400 uppercase mb-1">
-                                Ketersediaan
-                            </p>
-                            <h3 class="text-2xl font-bold text-kai-blue dark:text-blue-400" id="stat-avail">
-                                —
-                            </h3>
-                            <i
-                                class="fas fa-gauge-high absolute -bottom-3 -right-1 text-5xl text-blue-100 dark:text-blue-900/30 group-hover:scale-125 transition-transform"></i>
-                        </div>
-                        <div
-                            class="bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm relative overflow-hidden group hover:border-slate-400 transition-colors col-span-2 sm:col-span-1">
-                            <p class="text-[9px] font-bold tracking-widest text-gray-400 uppercase mb-1">
-                                Benchmark
-                            </p>
-                            <div class="flex items-end gap-1">
-                                <h3 class="text-2xl font-bold text-slate-500 dark:text-slate-400" id="stat-benchmark">
-                                    59%
-                                </h3>
-                                <span id="stat-benchmark-delta" class="text-xs font-bold mb-0.5"></span>
-                            </div>
-                            <i
-                                class="fas fa-flag-checkered absolute -bottom-3 -right-1 text-5xl text-slate-100 dark:text-slate-700/50 group-hover:scale-125 transition-transform"></i>
-                        </div>
-                    </div>
+                    <!-- The KPI strip and its "Menghitung: …" caption used to sit
+                         here, above the tab bar, and had to explain which tab's
+                         filter it was following. It now lives INSIDE
+                         #dash-panel-matrix (the only tab it ever made sense for)
+                         as #dash-kpi-strip, rendered by _renderDashKpiStrip() in
+                         js/views/dashboard.js. See _DASH_KPI_CARDS there. -->
 
                     <!-- ── Separator ── -->
                     <hr class="border-gray-200 dark:border-gray-700" />
@@ -594,62 +530,132 @@
                     <!-- ── Zone 4+5: Tab switcher + panels ── -->
                     <div
                         class="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm overflow-hidden">
+                        <!-- ── Letterhead banner ──
+                             Shown above ALL SIX tabs, unlike the old blue bar that
+                             lived only inside #dash-panel-perbaikan. Two writers:
+                             _syncDashBanner() (js/views/dashboard.js) sets the
+                             title + filter-scope line per tab from _DASH_BANNER;
+                             Laporan Perbaikan / Kurva MCF overwrite the sub/dateline
+                             with their OWN region + dateline via
+                             window.setDashBanner() once their load() resolves — see
+                             js/views/repair-dashboard.js. _renderDashActivePanel()
+                             calls the former BEFORE dispatching to
+                             initRepairDashboard(), so on those two tabs the repair
+                             tab's own values win.
+
+                             Light surface + a kai-blue accent rule, not a solid blue
+                             field: the KAI and BUMN marks are official multi-colour
+                             logos, and inverting them with a CSS filter
+                             (brightness-0 invert) misrepresents both. Downloaded
+                             from Wikimedia Commons — see assets/LOGO-SUMBER.md. Dark
+                             mode swaps to the real white knockout files instead of
+                             filtering the colour ones. -->
+                        <div id="dash-banner"
+                            class="flex flex-wrap items-center gap-4 px-5 py-3 border-l-4 border-kai-blue bg-white dark:bg-gray-800">
+                            <img src="./assets/logo_kai.svg" alt="Logo PT Kereta Api Indonesia (Persero)"
+                                class="h-8 w-auto shrink-0 dark:hidden" />
+                            <img src="./assets/logo_kai_putih.svg" alt="Logo PT Kereta Api Indonesia (Persero)"
+                                class="h-8 w-auto shrink-0 hidden dark:block" />
+                            <div class="min-w-0 flex-1">
+                                <p class="font-bold text-sm leading-tight truncate text-gray-800 dark:text-white"
+                                    id="dash-banner-title">Matriks Kesiapan</p>
+                                <p class="text-xs font-semibold leading-tight truncate text-gray-500 dark:text-gray-400"
+                                    id="dash-banner-sub">seluruh armada</p>
+                                <p class="text-[10px] leading-tight mt-0.5 text-gray-400 dark:text-gray-500"
+                                    id="dash-banner-dateline">—</p>
+                            </div>
+                            <div class="hidden md:flex items-center gap-2 shrink-0">
+                                <p
+                                    class="text-[9px] font-semibold tracking-[0.15em] text-right leading-tight text-gray-400 dark:text-gray-500">
+                                    UPT MEKANIK<br />JALAN REL DAN JEMBATAN</p>
+                                <img src="./assets/logo_bumn.svg" alt="Logo BUMN Untuk Indonesia"
+                                    class="h-6 w-auto dark:hidden" />
+                                <img src="./assets/logo_bumn_putih.svg" alt="Logo BUMN Untuk Indonesia"
+                                    class="h-6 w-auto hidden dark:block" />
+                            </div>
+                        </div>
+
                         <!-- Tab header row -->
-                        <div class="flex items-center gap-2 px-4 pt-4 border-b border-gray-100 dark:border-gray-700">
-                            <!-- Left arrow -->
-                            <button id="dash-tab-prev" aria-label="Tab sebelumnya"
-                                class="shrink-0 w-7 h-7 flex items-center justify-center rounded-full border border-gray-200 dark:border-gray-600 text-kai-blue dark:text-blue-400 hover:bg-kai-blue hover:text-white transition text-xs hidden sm:flex">
-                                <i class="fas fa-chevron-left"></i>
-                            </button>
-                            <!-- Scrollable tab list -->
-                            <!-- `.scroll-hint` is what tells a phone user the
-                                 other tabs exist. At 390px this bar is 925px of
-                                 content in 308px of viewport with no scrollbar
-                                 (scrollbar-none) and no other cue, so three of
-                                 the six tabs were simply invisible. The wrapper
-                                 paints a fade at whichever end has more to
-                                 scroll; see assets/style.css. -->
-                            <div id="dash-tab-bar"
-                                class="scroll-hint flex gap-1 overflow-x-auto pb-0 scrollbar-none flex-1">
-                                <button class="dash-tab-btn is-active px-4 py-2.5 rounded-t-lg text-xs"
+                        <div class="px-4 pt-4 border-b border-gray-100 dark:border-gray-700">
+                            <!-- Equal-stretch grid: 3 cols × 2 rows under `sm`, 6 in
+                                 one row at `sm` and up. Replaces the old
+                                 `.scroll-hint` horizontal scroller, whose left fade
+                                 overlaid and clipped "Matriks Kesiapan" at 390px, and
+                                 the #dash-tab-prev / #dash-tab-next arrows, which
+                                 were `hidden sm:flex` — visible only at widths where
+                                 there was nothing left to scroll. ArrowLeft /
+                                 ArrowRight on the bar is the ARIA-correct
+                                 replacement; see _wireDashChrome() in
+                                 js/views/dashboard.js. Bound by the `data-dash-tab`
+                                 attribute, not position — see _switchDashTab(). -->
+                            <div id="dash-tab-bar" class="grid grid-cols-3 sm:grid-cols-6 gap-1 w-full">
+                                <button class="dash-tab-btn is-active px-2 py-2.5 rounded-t-lg text-xs"
                                     data-dash-tab="matrix">
-                                    <i class="fas fa-table mr-1.5"></i>Matriks Kesiapan
+                                    <i class="fas fa-table"></i>
+                                    <span class="sm:hidden">Matriks</span><span class="hidden sm:inline">Matriks
+                                        Kesiapan</span>
                                 </button>
-                                <button class="dash-tab-btn px-4 py-2.5 rounded-t-lg text-xs" data-dash-tab="bar">
-                                    <i class="fas fa-chart-bar mr-1.5"></i>Grafik Ketersediaan
+                                <button class="dash-tab-btn px-2 py-2.5 rounded-t-lg text-xs" data-dash-tab="bar">
+                                    <i class="fas fa-chart-bar"></i>
+                                    <span class="sm:hidden">Grafik</span><span class="hidden sm:inline">Grafik
+                                        Ketersediaan</span>
                                 </button>
-                                <button class="dash-tab-btn px-4 py-2.5 rounded-t-lg text-xs" data-dash-tab="avail">
-                                    <i class="fas fa-chart-column mr-1.5"></i>Ketersediaan per Lokasi
+                                <button class="dash-tab-btn px-2 py-2.5 rounded-t-lg text-xs" data-dash-tab="avail">
+                                    <i class="fas fa-chart-column"></i>
+                                    <span class="sm:hidden">Lokasi</span><span class="hidden sm:inline">Ketersediaan
+                                        per Lokasi</span>
                                 </button>
-                                <button class="dash-tab-btn px-4 py-2.5 rounded-t-lg text-xs" data-dash-tab="trend">
-                                    <i class="fas fa-chart-line mr-1.5"></i>Tren Perbaikan
+                                <button class="dash-tab-btn px-2 py-2.5 rounded-t-lg text-xs" data-dash-tab="trend">
+                                    <i class="fas fa-chart-line"></i>
+                                    <span class="sm:hidden">Tren</span><span class="hidden sm:inline">Tren
+                                        Perbaikan</span>
                                 </button>
-                                <button class="dash-tab-btn px-4 py-2.5 rounded-t-lg text-xs whitespace-nowrap"
+                                <button class="dash-tab-btn px-2 py-2.5 rounded-t-lg text-xs"
                                     data-dash-tab="perbaikan">
-                                    <i class="fas fa-screwdriver-wrench mr-1.5"></i>Laporan Perbaikan
+                                    <i class="fas fa-screwdriver-wrench"></i>
+                                    <span class="sm:hidden">Laporan</span><span class="hidden sm:inline">Laporan
+                                        Perbaikan</span>
                                 </button>
-                                <button class="dash-tab-btn px-4 py-2.5 rounded-t-lg text-xs whitespace-nowrap"
-                                    data-dash-tab="mcf">
-                                    <i class="fas fa-chart-line mr-1.5"></i>Kurva MCF
+                                <button class="dash-tab-btn px-2 py-2.5 rounded-t-lg text-xs" data-dash-tab="mcf">
+                                    <i class="fas fa-chart-line"></i>
+                                    <span class="sm:hidden">MCF</span><span class="hidden sm:inline">Kurva MCF</span>
                                 </button>
                             </div>
-                            <!-- Right arrow -->
-                            <button id="dash-tab-next" aria-label="Tab berikutnya"
-                                class="shrink-0 w-7 h-7 flex items-center justify-center rounded-full border border-gray-200 dark:border-gray-600 text-kai-blue dark:text-blue-400 hover:bg-kai-blue hover:text-white transition text-xs hidden sm:flex">
-                                <i class="fas fa-chevron-right"></i>
-                            </button>
                         </div>
 
                         <!-- Tab panels -->
                         <div class="relative">
-                            <!-- Panel: Matrix -->
-                            <div id="dash-panel-matrix" class="dash-panel p-2 overflow-x-auto overflow-y-auto"
-                                style="max-height: 70vh">
-                                <div id="dash-filters-matrix" class="dash-filter-row"></div>
-                                <table id="dash-matrix-table" class="w-full border-collapse text-xs">
-                                    <thead id="dash-matrix-thead"></thead>
-                                    <tbody id="dash-matrix-tbody"></tbody>
-                                </table>
+                            <!-- Panel: Matrix
+                                 The KPI strip and the Matriks table used to share the
+                                 PANEL as their scroller, and the panel carried its
+                                 own p-2 padding — so the matrix's sticky first
+                                 column pinned against that padding instead of the
+                                 scroller's edge, which read as left-clipping. The
+                                 table now owns its own scroller
+                                 (#dash-matrix-scroll) so the sticky column pins
+                                 against the right edge. -->
+                            <div id="dash-panel-matrix" class="dash-panel">
+                                <div class="px-4 pt-4">
+                                    <!-- Rendered by _renderDashKpiStrip() from
+                                         _DASH_KPI_CARDS — never hand-written card
+                                         markup here. -->
+                                    <div id="dash-kpi-strip"
+                                        class="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-7 gap-2 mb-4"></div>
+                                    <div id="dash-filters-matrix" class="dash-filter-row"></div>
+                                    <!-- Replaces `title` tooltips, which never fire on touch. One
+                                         mechanism for mouse, finger and keyboard alike — see
+                                         _wireMatrixInfo() in js/views/dashboard.js. -->
+                                    <p id="dash-matrix-info" class="dash-matrix-info" aria-live="polite">
+                                        Arahkan atau ketuk sel untuk melihat detail UPT.
+                                    </p>
+                                </div>
+                                <div id="dash-matrix-scroll" class="overflow-x-auto overflow-y-auto px-4 pb-4"
+                                    style="max-height:62vh">
+                                    <table id="dash-matrix-table" class="w-full border-collapse text-xs">
+                                        <thead id="dash-matrix-thead"></thead>
+                                        <tbody id="dash-matrix-tbody"></tbody>
+                                    </table>
+                                </div>
                             </div>
                             <!-- Panel: Bar chart -->
                             <div id="dash-panel-bar" class="dash-panel hidden p-4"
@@ -686,30 +692,14 @@
                             <div id="dash-panel-perbaikan" class="dash-panel hidden p-4 space-y-4"
                                 style="max-height: 78vh; overflow-y: auto">
 
-                                <!-- ══ Report header: branding, region, dateline, filters ══ -->
+                                <!-- ══ Report filters ══
+                                     The letterhead that used to open this card lives
+                                     in #dash-banner now, shared by all six tabs — see
+                                     window.setDashBanner() in
+                                     js/views/repair-dashboard.js and _syncDashBanner()
+                                     in js/views/dashboard.js. -->
                                 <div
                                     class="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm overflow-hidden">
-                                    <div class="bg-kai-blue px-5 py-3 flex flex-wrap items-center justify-between gap-4">
-                                        <div class="flex items-center gap-3 min-w-0">
-                                            <img src="./assets/logo_nav.svg" alt="KAI"
-                                                class="h-8 w-auto shrink-0 brightness-0 invert" />
-                                            <div class="min-w-0">
-                                                <p class="text-white font-bold text-sm leading-tight truncate"
-                                                    id="rd-upt-name">
-                                                    UPT MEKANIK JALAN REL DAN JEMBATAN
-                                                </p>
-                                                <p class="text-white/75 text-xs font-semibold leading-tight truncate"
-                                                    id="rd-region-name">—</p>
-                                                <p class="text-white/50 text-[10px] leading-tight mt-0.5" id="rd-dateline">
-                                                    —</p>
-                                            </div>
-                                        </div>
-                                        <div class="hidden md:block text-right shrink-0">
-                                            <p class="text-white font-black text-lg leading-none tracking-tight">BUMN</p>
-                                            <p class="text-white/60 text-[9px] font-semibold tracking-[0.2em] leading-tight">
-                                                UNTUK INDONESIA</p>
-                                        </div>
-                                    </div>
                                     <!-- Filter row -->
                                     <div
                                         class="px-5 py-3 flex flex-wrap items-center gap-3 border-b border-gray-100 dark:border-gray-700 bg-gray-50/60 dark:bg-gray-800">
@@ -948,15 +938,22 @@
                                     </div>
                                 </div>
                             </div>
-                        </div>
 
                             <!-- ═══ Kurva MCF ═══
                                  Promoted out of the Laporan Perbaikan panel, where it sat below
                                  an inner scroll container and was effectively undiscoverable.
                                  It keeps its own Lokasi/Tahun row rather than borrowing the
                                  report header's; repair-dashboard.js holds one copy of the
-                                 filter state and keeps both rows in step. -->
-                            <div id="dash-panel-mcf" class="dash-panel hidden p-4 space-y-4">
+                                 filter state and keeps both rows in step.
+
+                                 This panel used to sit OUTSIDE the `.relative` tab-panel
+                                 container that all five of its siblings share — the container
+                                 closed one `</div>` too early, right before this comment — so
+                                 it was also the only panel with no max-height/overflow-y and
+                                 could grow past the card's bottom. Both are fixed by moving the
+                                 closing `</div>` to after this panel instead of before it. -->
+                            <div id="dash-panel-mcf" class="dash-panel hidden p-4 space-y-4"
+                                style="max-height: 70vh; overflow-y: auto">
                                 <div
                                     class="flex flex-wrap items-center gap-3 px-4 py-3 bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm">
                                     <div class="flex items-center gap-2">
@@ -1049,17 +1046,28 @@
                                             </div>
                                         </div>
                             </div>
+                        </div>
 
-
-                        <!-- Dot indicators -->
+                        <!-- Dot indicators. Buttons, not decorative divs — each
+                             carries `data-dash-tab` (the SAME attribute the tab
+                             buttons use, so _switchDashTab() can bind both with one
+                             selector) plus a real aria-label, and gets a 44px
+                             coarse-pointer hit area in assets/style.css without
+                             growing visually. -->
                         <div id="dash-dots"
                             class="flex justify-center gap-2 py-3 border-t border-gray-100 dark:border-gray-700">
-                            <div class="dash-dot is-active" data-dot="0"></div>
-                            <div class="dash-dot" data-dot="1"></div>
-                            <div class="dash-dot" data-dot="2"></div>
-                            <div class="dash-dot" data-dot="3"></div>
-                            <div class="dash-dot" data-dot="4"></div>
-                            <div class="dash-dot" data-dot="5"></div>
+                            <button type="button" class="dash-dot is-active" data-dash-tab="matrix"
+                                aria-label="Tab 1: Matriks Kesiapan"></button>
+                            <button type="button" class="dash-dot" data-dash-tab="bar"
+                                aria-label="Tab 2: Grafik Ketersediaan"></button>
+                            <button type="button" class="dash-dot" data-dash-tab="avail"
+                                aria-label="Tab 3: Ketersediaan per Lokasi"></button>
+                            <button type="button" class="dash-dot" data-dash-tab="trend"
+                                aria-label="Tab 4: Tren Perbaikan"></button>
+                            <button type="button" class="dash-dot" data-dash-tab="perbaikan"
+                                aria-label="Tab 5: Laporan Perbaikan"></button>
+                            <button type="button" class="dash-dot" data-dash-tab="mcf"
+                                aria-label="Tab 6: Kurva MCF"></button>
                         </div>
                     </div>
                 </section>
@@ -5966,6 +5974,95 @@
     </div>
 
     <!-- ══════════════════════════════════════════════════════════════════
+     Dashboard: KPI drill-down.
+
+     Every card in #dash-kpi-strip (Total Aset, Siap Operasi, Tidak Siap,
+     Kalibrasi, Mutasi, Ketersediaan, Perlu Perhatian) opens THIS modal via
+     window.openDashDrill(mode) — js/views/dash-drill.js. One shell, seven
+     scopes: a lazy region -> asset tree on the left, a four-tab detail pane
+     on the right. `.modal-xl` (76rem) and `.dash-drill-split` are defined in
+     assets/style.css; `.is-drilled` on the root is the mobile one-pane-at-a-
+     time state, the same idiom Pusat Data uses.
+    ══════════════════════════════════════════════════════════════════ -->
+    <div id="dash-drill-modal" class="hidden modal-backdrop">
+        <div class="modal-panel modal-xl">
+            <div class="modal-head">
+                <div class="flex items-center gap-3 min-w-0">
+                    <div
+                        class="w-10 h-10 rounded-xl bg-kai-blue/10 dark:bg-blue-900/30 flex items-center justify-center shrink-0">
+                        <i id="dash-drill-icon" class="fas fa-boxes text-kai-blue text-lg"></i>
+                    </div>
+                    <div class="min-w-0">
+                        <h3 id="dash-drill-title" class="truncate">Total Aset</h3>
+                        <p id="dash-drill-sub" class="truncate"></p>
+                    </div>
+                </div>
+                <button id="close-dash-drill-modal" class="btn-icon" title="Tutup">
+                    <i class="fas fa-times text-lg"></i>
+                </button>
+            </div>
+            <div class="modal-body dash-drill-split">
+                <!-- Left: the lazy region -> asset tree. -->
+                <div id="dash-drill-left">
+                    <div class="dash-drill-left-controls">
+                        <div class="toolbar-search">
+                            <i class="fas fa-search toolbar-search-icon"></i>
+                            <input type="text" id="dash-drill-search" class="field-input"
+                                placeholder="Cari aset, alat, lokasi..." autocomplete="off" />
+                        </div>
+                        <div class="toolbar-select">
+                            <i class="fas fa-arrow-up-short-wide toolbar-select-icon"></i>
+                            <select id="dash-drill-sort" class="field-input"></select>
+                        </div>
+                    </div>
+                    <p id="dash-drill-note" class="dash-drill-note hidden"></p>
+                    <div id="dash-drill-tree" aria-live="polite"></div>
+                    <p id="dash-drill-count" class="dash-drill-count"></p>
+                </div>
+                <!-- Right: subject + the four detail tabs. -->
+                <div id="dash-drill-right">
+                    <button id="dash-drill-back" type="button"
+                        class="lg:hidden flex items-center gap-2 text-xs font-semibold text-kai-blue dark:text-blue-400 mb-1">
+                        <i class="fas fa-arrow-left"></i> Kembali ke daftar
+                    </button>
+                    <div id="dash-drill-subject"></div>
+                    <div id="dash-drill-tabs" class="segmented is-stretch" role="tablist"
+                        aria-label="Detail aset">
+                        <button id="dash-drill-tab-repair" type="button" role="tab" data-tab="repair"
+                            class="segmented-btn">
+                            <i class="fas fa-wrench"></i> <span class="hidden sm:inline">Pemeliharaan</span>
+                        </button>
+                        <button id="dash-drill-tab-kalibrasi" type="button" role="tab" data-tab="kalibrasi"
+                            class="segmented-btn">
+                            <i class="fas fa-ruler-combined"></i> <span class="hidden sm:inline">Kalibrasi</span>
+                        </button>
+                        <button id="dash-drill-tab-mutasi" type="button" role="tab" data-tab="mutasi"
+                            class="segmented-btn">
+                            <i class="fas fa-exchange-alt"></i> <span class="hidden sm:inline">Mutasi</span>
+                        </button>
+                        <button id="dash-drill-tab-ketersediaan" type="button" role="tab" data-tab="ketersediaan"
+                            class="segmented-btn">
+                            <i class="fas fa-gauge-high"></i> <span class="hidden sm:inline">Ketersediaan</span>
+                        </button>
+                    </div>
+                    <div id="dash-drill-rtools">
+                        <div class="toolbar-search">
+                            <i class="fas fa-search toolbar-search-icon"></i>
+                            <input type="text" id="dash-drill-rsearch" class="field-input"
+                                placeholder="Cari di tabel ini..." autocomplete="off" />
+                        </div>
+                        <div class="toolbar-select">
+                            <i class="fas fa-arrow-up-short-wide toolbar-select-icon"></i>
+                            <select id="dash-drill-rsort" class="field-input"></select>
+                        </div>
+                    </div>
+                    <div id="dash-drill-panel" aria-live="polite"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ══════════════════════════════════════════════════════════════════
      Inventaris: Transfer Antar Gudang
 
      POST /api/inventaris/transfer existed with no form anywhere, so a transfer
@@ -6213,6 +6310,7 @@
 
     <!-- Views -->
     <script src="js/views/dashboard.js"></script>
+    <script src="js/views/dash-drill.js"></script>
     <script src="js/views/aset.js"></script>
     <script src="js/views/riwayat.js"></script>
     <script src="js/views/kdak.js"></script>

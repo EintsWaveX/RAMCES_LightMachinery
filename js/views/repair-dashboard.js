@@ -59,8 +59,9 @@
       const res = await apiFetch("/master/lokasi?tipe=DAOP&tipe=DIVRE&tipe=PUSAT&tipe=BALAIYASA");
       if (!res.ok) return;
       const data = await res.json();
+      const escL = window.spekEscape;
       const html = '<option value="">— Semua Lokasi —</option>' +
-        data.map((l) => `<option value="${l.id_lokasi}">${l.nama_lokasi}</option>`).join("");
+        data.map((l) => `<option value="${escL(l.id_lokasi)}">${escL(l.nama_lokasi)}</option>`).join("");
       eachSel(LOKASI_SELECTS, (e) => { e.innerHTML = html; });
       const preferred = await resolveDefaultRegion();
       if (preferred && data.some((l) => l.id_lokasi === preferred)) {
@@ -229,18 +230,24 @@
 
   function render(d) {
     const t = KAI_VIZ.theme();
+    const esc = window.spekEscape;
 
     // ── Header ──
     syncTahunOptions(d.tahun, d.available_years, d.all_years);
     if (el("rd-kpi-year"))
       el("rd-kpi-year").textContent = d.all_years ? "Semua Tahun" : (d.tahun ?? "—");
-    if (el("rd-region-name"))
-      el("rd-region-name").textContent = d.region_label || "Semua Daerah Operasi";
-    if (el("rd-dateline")) {
-      const now = new Date();
-      el("rd-dateline").textContent =
-        `${d.kota || "Bandung"}, ${now.getDate()} ${BULAN_PANJANG[now.getMonth()]} ${now.getFullYear()}`;
-    }
+    // The letterhead used to live inside this one tab's panel, so five of the
+    // six dashboard tabs had no header at all. It now lives in a banner shared
+    // above the whole tab strip, and this function only PUBLISHES into it
+    // rather than owning it — hence the optional chain: this tab can render
+    // before the chrome that defines `setDashBanner` has landed, and a missing
+    // banner must be a harmless no-op, never a thrown error that kills the
+    // rest of render().
+    const now = new Date();
+    window.setDashBanner?.({
+      sub: d.region_label || "Semua Daerah Operasi",
+      dateline: `${d.kota || "Bandung"}, ${now.getDate()} ${BULAN_PANJANG[now.getMonth()]} ${now.getFullYear()}`,
+    });
 
     // ── KPI strip ──
     if (el("rd-masuk")) el("rd-masuk").textContent = d.masuk ?? "—";
@@ -320,8 +327,8 @@
           <tr class="border-b border-gray-50 dark:border-gray-700/50 hover:bg-amber-50 dark:hover:bg-amber-900/10 transition">
             <td class="px-2 py-1.5 text-gray-400 font-mono align-top">${i + 1}</td>
             <td class="px-2 py-1.5">
-              <p class="font-semibold text-gray-700 dark:text-gray-200 leading-tight">${r.nama_alat}</p>
-              <p class="text-[9px] text-gray-400">${r.lokasi_label || r.id_lokasi || "—"}</p>
+              <p class="font-semibold text-gray-700 dark:text-gray-200 leading-tight">${esc(r.nama_alat)}</p>
+              <p class="text-[9px] text-gray-400">${esc(r.lokasi_label || r.id_lokasi || "—")}</p>
             </td>
             <td class="px-2 py-1.5 text-right font-bold text-amber-600 align-top">${r.jumlah}</td>
           </tr>`).join("");
@@ -518,7 +525,7 @@
           legEl.innerHTML = slices.map(([k, v], i) => `
             <div class="flex items-center gap-2">
               <span class="w-2.5 h-2.5 rounded-sm shrink-0" style="background:${t.categorical[i]}"></span>
-              <span class="truncate" title="${k}">${k}</span>
+              <span class="truncate" title="${esc(k)}">${esc(k)}</span>
               <span class="ml-auto shrink-0 tabular-nums font-bold text-gray-700 dark:text-gray-200">${((v / total) * 100).toFixed(1)}%</span>
             </div>`).join("");
         }

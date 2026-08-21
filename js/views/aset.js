@@ -537,7 +537,9 @@ async function loadDetailRepair(uid) {
       return;
     }
 
-    // Filter out KALIBRASI entries — they belong to the Kalibrasi tab only
+    // Filter out KALIBRASI entries — they belong to the Kalibrasi tab only.
+    // A caller's policy, not a rendering concern: renderRepairRows() renders
+    // whatever rows it is handed.
     const repairEntries = history.filter((h) => h.kondisi !== "KALIBRASI");
 
     if (!repairEntries.length) {
@@ -556,51 +558,91 @@ async function loadDetailRepair(uid) {
       if (pres.ok) pakaiByRiwayat = (await pres.json()).per_riwayat || {};
     } catch (_) { /* the table is still useful without the parts */ }
 
-    const resolveLokasiCode = (kode) => {
-      if (!kode) return { parentName: "—", uptName: "—" };
-      const uptEntry = uptDatabase.find((u) => u.upt === kode);
-      if (uptEntry) {
-        const parentCode = getParentLokasiCode(kode) || uptEntry.lokasi;
-        const parentEntry = lokasiData.find((l) => l.code === parentCode);
-        return { parentName: parentEntry ? parentEntry.name : parentCode, uptName: uptEntry.nama };
-      }
-      const parentEntry = lokasiData.find((l) => l.code === kode);
-      if (parentEntry) return { parentName: parentEntry.name, uptName: "—" };
-      return { parentName: kode, uptName: "—" };
-    };
-
-    tbody.innerHTML = repairEntries
-      .map((h, i) => {
-        // Use the per-row id_lokasi now returned by the backend.
-        // Fall back to the asset's current lokasi for legacy rows that predate the schema change.
-        const rowLokasi = h.id_lokasi || asetTerkait?.id_lokasi_raw || asetTerkait?.id_lokasi || "";
-        const lokasi = resolveLokasiCode(rowLokasi);
-
-        // Use per-row peruntukan from backend; fall back to asset's current value for legacy rows.
-        const peruntukanName = h.peruntukan || asetTerkait?.peruntukan || "—";
-
-        return `
-            <tr class="border-b dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50">
-                <td class="p-3 text-center text-gray-400">${i + 1}</td>
-                <td class="p-3 font-mono text-xs">${formatUtcToLocal(h.waktu_lapor)}</td>
-                <td class="p-3 text-sm">${lokasi.parentName}</td>
-                <td class="p-3 text-sm">${lokasi.uptName}</td>
-                <td class="p-3 text-center">
-                    <span class="text-xs text-gray-600 dark:text-gray-300 capitalize">${peruntukanName}</span>
-                </td>
-                <td class="p-3 text-sm font-medium">${h.id_pengguna}</td>
-                <td class="p-3 text-center">
-                    <span class="text-xs font-bold px-2 py-0.5 rounded ${h.kondisi === "SO" ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"}">${h.kondisi}</span>
-                </td>
-                <td class="p-3 text-xs text-gray-500 whitespace-pre-wrap">${h.keterangan || "—"}${_pakaiChips(pakaiByRiwayat[String(h.id_riwayat)])}</td>
-            </tr>`;
-      })
-      .join("");
+    tbody.innerHTML = window.renderRepairRows(repairEntries, {
+      pemakaian: pakaiByRiwayat,
+      asetTerkait,
+    });
   } catch (e) {
     if (e.message !== "Unauthorized")
       tbody.innerHTML = `<tr><td colspan="8" class="p-4 text-center text-red-500">${e.message}</td></tr>`;
   }
 }
+
+/** Region + UPT display names for a stored lokasi code: exact UPT-code match,
+ * then exact parent-code match, then the code itself as a last resort.
+ *
+ * Deliberately NOT resolveLokasi() from js/search.js — that adds two more
+ * fallback branches (fuzzy match by UPT/parent NAME) that a stored code never
+ * needs, and substituting it was rejected rather than risk a behaviour change
+ * for input this function was never exercised against. */
+function resolveLokasiCode(kode) {
+  if (!kode) return { parentName: "—", uptName: "—" };
+  const uptEntry = uptDatabase.find((u) => u.upt === kode);
+  if (uptEntry) {
+    const parentCode = getParentLokasiCode(kode) || uptEntry.lokasi;
+    const parentEntry = lokasiData.find((l) => l.code === parentCode);
+    return { parentName: parentEntry ? parentEntry.name : parentCode, uptName: uptEntry.nama };
+  }
+  const parentEntry = lokasiData.find((l) => l.code === kode);
+  if (parentEntry) return { parentName: parentEntry.name, uptName: "—" };
+  return { parentName: kode, uptName: "—" };
+}
+
+/**
+ * The condition-history table body — one <tr> per row, eight columns. Shared
+ * by loadDetailRepair() (the asset detail view) and the Dashboard drill-down
+ * modal, so the two can never drift.
+ *
+ * `rows` is expected already filtered of KALIBRASI entries — see the caller's
+ * note above; this renderer does not re-apply that filter.
+ *
+ * `opts`:
+ *   pemakaian   — the `.per_riwayat` map from GET /api/aset/{uid}/pemakaian,
+ *                 keyed by id_riwayat, fed to _pakaiChips().
+ *   onlyKondisi — optional "SO" | "TSO". When set, only rows whose kondisi
+ *                 matches are rendered (row numbering restarts over the
+ *                 filtered set). loadDetailRepair() passes nothing here, so
+ *                 its output is unchanged; the Dashboard modal uses it when
+ *                 opened from the Siap Operasi / Tidak Siap card.
+ *   asetTerkait — the asset row (asetById/summaryFor), used only as a
+ *                 fallback for legacy rows written before id_lokasi/peruntukan
+ *                 were captured per-row.
+ */
+window.renderRepairRows = function renderRepairRows(rows, opts = {}) {
+  const pemakaian = opts.pemakaian || {};
+  const asetTerkait = opts.asetTerkait || null;
+  const entries = opts.onlyKondisi
+    ? rows.filter((h) => h.kondisi === opts.onlyKondisi)
+    : rows;
+
+  return entries
+    .map((h, i) => {
+      // Use the per-row id_lokasi now returned by the backend.
+      // Fall back to the asset's current lokasi for legacy rows that predate the schema change.
+      const rowLokasi = h.id_lokasi || asetTerkait?.id_lokasi_raw || asetTerkait?.id_lokasi || "";
+      const lokasi = resolveLokasiCode(rowLokasi);
+
+      // Use per-row peruntukan from backend; fall back to asset's current value for legacy rows.
+      const peruntukanName = h.peruntukan || asetTerkait?.peruntukan || "—";
+
+      return `
+          <tr class="border-b dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50">
+              <td class="p-3 text-center text-gray-400">${i + 1}</td>
+              <td class="p-3 font-mono text-xs">${formatUtcToLocal(h.waktu_lapor)}</td>
+              <td class="p-3 text-sm">${lokasi.parentName}</td>
+              <td class="p-3 text-sm">${lokasi.uptName}</td>
+              <td class="p-3 text-center">
+                  <span class="text-xs text-gray-600 dark:text-gray-300 capitalize">${peruntukanName}</span>
+              </td>
+              <td class="p-3 text-sm font-medium">${h.id_pengguna}</td>
+              <td class="p-3 text-center">
+                  <span class="text-xs font-bold px-2 py-0.5 rounded ${h.kondisi === "SO" ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"}">${h.kondisi}</span>
+              </td>
+              <td class="p-3 text-xs text-gray-500 whitespace-pre-wrap">${h.keterangan || "—"}${_pakaiChips(pemakaian[String(h.id_riwayat)])}</td>
+          </tr>`;
+    })
+    .join("");
+};
 
 /** The parts consumed by one repair, as chips under its Keterangan cell. */
 function _pakaiChips(items) {
@@ -690,58 +732,77 @@ async function loadDetailKalibrasi(uid) {
     const canDelete =
       _currentRole === "SUPER_ADMIN" || _currentRole === "ADMIN_WILAYAH";
 
-    tbody.innerHTML = history
-      .map((h) => {
-        const statusClass =
-          h.status === "LULUS"
-            ? "badge badge-so"
-            : h.status === "GAGAL"
-              ? "badge badge-tso"
-              : "badge badge-warn";
-        // h.file_sertifikat has always been in this payload and was never read,
-        // so an uploaded certificate was unreachable from the UI.
-        const berkas = h.file_sertifikat
-          ? `<div class="flex items-center justify-center gap-1">
-               <button type="button" onclick="window.downloadSertifikat('${h.file_sertifikat}')"
-                 title="Unduh ${h.file_sertifikat}"
-                 class="text-cyan-600 dark:text-cyan-400 hover:underline text-xs font-semibold">
-                 <i class="fas fa-file-arrow-down mr-1"></i>Unduh</button>
-               ${
-                 canDelete
-                   ? `<button type="button" class="btn-icon btn-icon-danger"
-                        title="Hapus berkas sertifikat"
-                        onclick="window.hapusSertifikat(${h.id_kalibrasi}, '${uid}')">
-                        <i class="fas fa-trash-alt text-[11px]"></i></button>`
-                   : ""
-               }
-             </div>`
-          : `<span class="text-gray-300 dark:text-gray-600 text-xs">—</span>`;
-
-        return `
-          <tr class="border-b dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50">
-            <td class="p-3 text-center text-gray-400">${h.no}</td>
-            <td class="p-3 font-mono text-xs">${formatUtcToLocal(h.waktu_input)}</td>
-            <td class="p-3 font-mono text-xs">${h.tanggal_kalibrasi ? formatDateOnly(h.tanggal_kalibrasi) : "—"}</td>
-            <td class="p-3 font-mono text-xs">${h.tanggal_berlaku ? formatDateOnly(h.tanggal_berlaku) : "—"}</td>
-            <td class="p-3 text-sm text-center">
-              <span class="${statusClass}">${h.status || "—"}</span>
-            </td>
-            <td class="p-3 text-sm">${h.pelaksana_kalibrasi || "—"}</td>
-            <td class="p-3 text-sm">${h.nomor_sertifikat || "—"}</td>
-            <td class="p-3 text-center">${berkas}</td>
-            <td class="p-3 text-xs text-gray-500 whitespace-pre-wrap">${h.keterangan || "—"}</td>
-          </tr>`;
-      })
-      .join("");
+    tbody.innerHTML = window.renderKalibrasiRows(history, { uid, canDelete });
   } catch (e) {
     if (e.message !== "Unauthorized")
       tbody.innerHTML = `<tr><td colspan="${COLS}" class="p-4 text-center text-red-500">${e.message}</td></tr>`;
   }
 }
 
+/**
+ * The certificate-history table body — one <tr> per row, nine columns.
+ * Shared by loadDetailKalibrasi() (the asset detail view) and the Dashboard
+ * drill-down modal.
+ *
+ * `opts`:
+ *   uid       — the asset id, threaded into the delete button's
+ *               loadDetailKalibrasi(uid) refresh call.
+ *   canDelete — computed by the CALLER from _currentRole; this renderer does
+ *               not read role state itself.
+ */
+window.renderKalibrasiRows = function renderKalibrasiRows(rows, opts = {}) {
+  const uid = opts.uid;
+  const canDelete = !!opts.canDelete;
+
+  return rows
+    .map((h) => {
+      const statusClass =
+        h.status === "LULUS"
+          ? "badge badge-so"
+          : h.status === "GAGAL"
+            ? "badge badge-tso"
+            : "badge badge-warn";
+      // h.file_sertifikat has always been in this payload and was never read,
+      // so an uploaded certificate was unreachable from the UI.
+      const berkas = h.file_sertifikat
+        ? `<div class="flex items-center justify-center gap-1">
+             <button type="button" onclick="window.downloadSertifikat('${h.file_sertifikat}')"
+               title="Unduh ${h.file_sertifikat}"
+               class="text-cyan-600 dark:text-cyan-400 hover:underline text-xs font-semibold">
+               <i class="fas fa-file-arrow-down mr-1"></i>Unduh</button>
+             ${
+               canDelete
+                 ? `<button type="button" class="btn-icon btn-icon-danger"
+                      title="Hapus berkas sertifikat"
+                      onclick="window.hapusSertifikat(${h.id_kalibrasi}, '${uid}')">
+                      <i class="fas fa-trash-alt text-[11px]"></i></button>`
+                 : ""
+             }
+           </div>`
+        : `<span class="text-gray-300 dark:text-gray-600 text-xs">—</span>`;
+
+      return `
+        <tr class="border-b dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50">
+          <td class="p-3 text-center text-gray-400">${h.no}</td>
+          <td class="p-3 font-mono text-xs">${formatUtcToLocal(h.waktu_input)}</td>
+          <td class="p-3 font-mono text-xs">${h.tanggal_kalibrasi ? formatDateOnly(h.tanggal_kalibrasi) : "—"}</td>
+          <td class="p-3 font-mono text-xs">${h.tanggal_berlaku ? formatDateOnly(h.tanggal_berlaku) : "—"}</td>
+          <td class="p-3 text-sm text-center">
+            <span class="${statusClass}">${h.status || "—"}</span>
+          </td>
+          <td class="p-3 text-sm">${h.pelaksana_kalibrasi || "—"}</td>
+          <td class="p-3 text-sm">${h.nomor_sertifikat || "—"}</td>
+          <td class="p-3 text-center">${berkas}</td>
+          <td class="p-3 text-xs text-gray-500 whitespace-pre-wrap">${h.keterangan || "—"}</td>
+        </tr>`;
+    })
+    .join("");
+};
+
 async function loadDetailMutasi(uid) {
   const timeline = document.getElementById("mutasi-timeline");
   const originBar = document.getElementById("mutasi-origin-bar");
+  if (!timeline || !originBar) return;
   timeline.setAttribute("aria-busy", "true");
   timeline.innerHTML = Array.from({ length: 3 })
     .map(
@@ -757,29 +818,10 @@ async function loadDetailMutasi(uid) {
     if (!res.ok) throw new Error("Gagal mengambil riwayat mutasi.");
     const data = await res.json();
 
-    const returnedBadge = data.sudah_kembali
-      ? `<span class="bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 px-3 py-1 rounded-full text-xs font-bold">✓ Sudah Kembali ke Lokasi Awal</span>`
-      : `<span class="bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 px-3 py-1 rounded-full text-xs font-bold">⟳ Belum Kembali ke Asal</span>`;
-
-    const asal = resolveLokasi(data.original_lokasi);
-    const kini = resolveLokasi(data.lokasi_sekarang);
-
-    originBar.innerHTML = `
-        <div class="flex-1 min-w-0">
-            <p class="font-bold text-xs text-gray-400">Lokasi Asal</p>
-            <p class="font-bold text-base text-gray-700 dark:text-gray-200">${asal.parentName}</p>
-            <p class="font-bold text-sm text-gray-700 dark:text-gray-200 mt-0.5">${asal.uptName !== "—" ? `${asal.uptName} (${asal.uptCode})` : "—"}</p>
-        </div>
-        <div class="flex-1 min-w-0">
-            <p class="font-bold text-xs text-gray-400">Lokasi Sekarang</p>
-            <p class="font-bold text-base text-gray-700 dark:text-gray-200">${kini.parentName}</p>
-            <p class="font-bold text-sm text-gray-700 dark:text-gray-200 mt-0.5">${kini.uptName !== "—" ? `${kini.uptName} (${kini.uptCode})` : "—"}</p>
-        </div>
-        ${returnedBadge}
-    `;
+    originBar.innerHTML = window.renderMutasiOriginBar(data);
 
     if (!data.mutasi || !data.mutasi.length) {
-      timeline.innerHTML = `<div class="text-center text-gray-400 py-6">Belum ada riwayat mutasi.</div>`;
+      timeline.innerHTML = `<div class="empty-state">Belum ada riwayat mutasi.</div>`;
       return;
     }
 
@@ -835,6 +877,44 @@ async function loadDetailMutasi(uid) {
       timeline.innerHTML = `<div class="text-center text-red-400 py-6">${e.message}</div>`;
   }
 }
+
+/**
+ * The mutasi tab's origin bar ONLY — "Lokasi Asal" / "Lokasi Sekarang" plus
+ * the sudah_kembali badge. Shared by loadDetailMutasi() (the asset detail
+ * view) and the Dashboard drill-down modal, which deliberately shows only
+ * this block and not the full timeline below it.
+ *
+ * `data` is the GET /api/mutasi/{id} payload.
+ *
+ * The returned/not-returned pill was hand-rolled inline Tailwind; converted
+ * here to the .badge component layer per CLAUDE.md ("status badges go
+ * through .badge, never inline Tailwind") — .badge-so for "sudah kembali",
+ * .badge-move for "belum kembali" (the same orange "SEDANG TERMUTASI" state
+ * used elsewhere for an asset still away from its origin). This is the one
+ * intentional visual change in this extraction.
+ */
+window.renderMutasiOriginBar = function renderMutasiOriginBar(data) {
+  const returnedBadge = data.sudah_kembali
+    ? `<span class="badge badge-so">✓ Sudah Kembali ke Lokasi Awal</span>`
+    : `<span class="badge badge-move">⟳ Belum Kembali ke Asal</span>`;
+
+  const asal = resolveLokasi(data.original_lokasi);
+  const kini = resolveLokasi(data.lokasi_sekarang);
+
+  return `
+      <div class="flex-1 min-w-0">
+          <p class="font-bold text-xs text-gray-400">Lokasi Asal</p>
+          <p class="font-bold text-base text-gray-700 dark:text-gray-200">${asal.parentName}</p>
+          <p class="font-bold text-sm text-gray-700 dark:text-gray-200 mt-0.5">${asal.uptName !== "—" ? `${asal.uptName} (${asal.uptCode})` : "—"}</p>
+      </div>
+      <div class="flex-1 min-w-0">
+          <p class="font-bold text-xs text-gray-400">Lokasi Sekarang</p>
+          <p class="font-bold text-base text-gray-700 dark:text-gray-200">${kini.parentName}</p>
+          <p class="font-bold text-sm text-gray-700 dark:text-gray-200 mt-0.5">${kini.uptName !== "—" ? `${kini.uptName} (${kini.uptCode})` : "—"}</p>
+      </div>
+      ${returnedBadge}
+  `;
+};
 
 // ── SHARED ASSET-CARD LOOK ─────────────────────────────────────────────────
 // One definition so the Kelola Data Aset cards and the Pulihkan Aset Afkir

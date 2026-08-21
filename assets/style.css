@@ -568,6 +568,40 @@
   color: #93c5fd;
 }
 
+/* A `translateY` "pop" on .is-active was tried here and reverted: it shifts
+   the active tab's rendered box 1px above its row-mates, which reads as a
+   THIRD row to anything measuring tab position — including the harness that
+   asserts the six tabs form exactly two clean rows at 390px. The background
+   colour + shadow + bold weight already carry the "active" signal; a
+   position shift is the one kind of motion this control cannot afford. */
+
+/* ── Dashboard tab-panel fade ──
+   _switchDashTab() (js/views/dashboard.js) toggles `hidden` on `.dash-panel`
+   instantly, same as it always has — no JS timing to get right here. A CSS
+   animation restarts on its own whenever the element it is on goes from
+   `display:none` back to displayed, so removing `hidden` alone is enough to
+   replay this on every switch. */
+.dash-panel:not(.hidden) {
+  animation: dash-panel-fade 0.16s ease-out;
+}
+
+@keyframes dash-panel-fade {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dash-panel:not(.hidden) {
+    animation: none;
+  }
+}
+
 /* ── Dashboard dot indicators ── */
 .dash-dot {
   width: 7px;
@@ -650,6 +684,106 @@
 
 #dash-matrix-table th:first-child {
   text-align: center !important;
+}
+
+/* ── Matrix: JR/JB/ME column groups, empty-cell language, tap/hover info ──
+
+   The per-UPT cells used to print an em dash "—" for BOTH "this region has
+   no UPT in this slot" and "a real UPT with zero assets right now" — a dash
+   reads as a fillable placeholder, not as "nothing here," so neither state
+   prints any text any more. The two are told apart by background alone:
+   `.dash-matrix-cell-zero` (a real UPT, just empty) vs
+   `.dash-matrix-slot-empty` (the column doesn't apply to this region at all,
+   diagonal hatch, unfocusable — there is nothing to say about it). See
+   _matrixCell() / _matrixSlotEmptyCell() in js/views/dashboard.js.
+
+   Native `title` tooltips never fire on touch, so every informative cell
+   carries `data-tip` + `tabindex="0"` instead, read by ONE delegated
+   listener (_wireMatrixInfo()) into the `#dash-matrix-info` strip above the
+   table — the same mechanism on a mouse, a finger, or a keyboard. */
+.dash-matrix-cell-zero {
+  background: var(--surface-2);
+}
+
+.dark .dash-matrix-cell-zero {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.dash-matrix-slot-empty {
+  background-color: var(--surface);
+  background-image: repeating-linear-gradient(
+    45deg,
+    var(--border) 0,
+    var(--border) 1px,
+    transparent 1px,
+    transparent 7px
+  );
+  opacity: 0.55;
+}
+
+.dark .dash-matrix-slot-empty {
+  opacity: 0.32;
+}
+
+#dash-matrix-table td[data-tip],
+#dash-matrix-table th[data-tip] {
+  cursor: pointer;
+  transition: filter 0.15s ease, box-shadow 0.15s ease;
+}
+
+#dash-matrix-table td[data-tip]:hover,
+#dash-matrix-table th[data-tip]:hover,
+#dash-matrix-table td[data-tip]:focus-visible,
+#dash-matrix-table th[data-tip]:focus-visible {
+  filter: brightness(0.96);
+  box-shadow: inset 0 0 0 2px var(--kai-blue);
+  outline: none;
+}
+
+.dark #dash-matrix-table td[data-tip]:hover,
+.dark #dash-matrix-table th[data-tip]:hover,
+.dark #dash-matrix-table td[data-tip]:focus-visible,
+.dark #dash-matrix-table th[data-tip]:focus-visible {
+  filter: brightness(1.2);
+}
+
+/* JR/JB/ME column-group header + the divider between blocks. Only rendered
+   in "Semua" mode — a single-branch tab has nothing to separate. */
+.dash-matrix-group-th {
+  font-weight: 700;
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  background: var(--surface-2);
+  color: var(--text-muted);
+}
+
+.dash-matrix-group-start {
+  border-left: 2px solid var(--border-strong) !important;
+}
+
+/* The info strip. Fixed min-height so its text changing does not reflow the
+   panel above/below it, and a dashed border that turns solid + kai-blue once
+   it is actually reporting something rather than showing the hint. */
+.dash-matrix-info {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  min-height: 1.75rem;
+  padding: 0.375rem 0.625rem;
+  margin: 0 0 0.75rem;
+  background: var(--surface-2);
+  border: 1px dashed var(--border);
+  border-radius: 0.5rem;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.dash-matrix-info.is-active {
+  color: var(--text);
+  border-style: solid;
+  border-color: var(--kai-blue);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -2142,4 +2276,364 @@
 
 :root:not(.dark) .text-gray-300 {
   color: #9ca3af;
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   DASHBOARD DRILL-DOWN MODAL (js/views/dash-drill.js)
+
+   Every KPI card on the Dashboard opens the same modal, scoped to what the
+   card counts: a two-pane view, a lazy region → asset tree on the left, four
+   tabs (Pemeliharaan / Kalibrasi / Mutasi / Ketersediaan) on the right. See
+   the module docstring for the full contract; this block is only its shape.
+   ══════════════════════════════════════════════════════════════════════ */
+
+/* `.modal-wide` tops out at 48rem — fine for a form, too narrow for a
+   two-pane tree-plus-detail view. Widened again from 76rem: at that width the
+   right pane's 8-9 column tables still forced their own horizontal scroll on
+   a 1440px screen with room to spare. */
+.modal-panel.modal-xl {
+  max-width: 84rem;
+  width: min(96vw, 84rem);
+}
+
+.dash-drill-split {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1.25rem;
+  /* `.modal-body` already sets 1.25rem — this used to override it to 0,
+     which is why every edge of the two-pane view pressed flush against the
+     modal border. Padding restored, and bumped slightly on the sides since a
+     two-pane grid reads more cramped than a single form at the same inset. */
+  padding: 1.25rem 1.5rem;
+  min-height: 0;
+}
+
+@media (max-width: 639px) {
+  /* The full-bleed modal below `sm:` has no border-radius or backdrop margin
+     to spare, so its own inset can shrink without the content reading as
+     pinned to the glass again. */
+  .dash-drill-split {
+    padding: 1rem;
+  }
+}
+
+@media (min-width: 1024px) {
+  .dash-drill-split {
+    grid-template-columns: minmax(0, 23rem) minmax(0, 1fr);
+    align-items: stretch;
+  }
+}
+
+#dash-drill-left,
+#dash-drill-right {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  gap: 0.75rem;
+}
+
+.dash-drill-left-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.dash-drill-left-controls .toolbar-search {
+  flex: 1 1 10rem;
+}
+
+/* The select used to be the flex item directly; wrapping it in
+   `.toolbar-select` (for the new direction icon) moved that wrapper into the
+   flex row instead, so the sizing rule moves with it. */
+.dash-drill-left-controls .toolbar-select {
+  flex: 0 0 auto;
+}
+
+#dash-drill-sort {
+  width: auto;
+  min-width: 9rem;
+}
+
+.dash-drill-note {
+  font-size: 0.75rem;
+  line-height: 1.3;
+  color: var(--text-muted);
+  padding: 0.5rem 0.625rem;
+  background: var(--surface-2);
+  border: 1px dashed var(--border-strong);
+  border-radius: 0.5rem;
+}
+
+#dash-drill-tree {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  max-height: 46vh;
+  border: 1px solid var(--border);
+  border-radius: 0.625rem;
+  background: var(--surface);
+}
+
+@media (min-width: 1024px) {
+  #dash-drill-tree {
+    max-height: none;
+  }
+}
+
+.dash-drill-region-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.625rem 0.75rem;
+  text-align: left;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text);
+  background: var(--surface-2);
+  border: none;
+  border-bottom: 1px solid var(--border);
+}
+
+.dash-drill-region-btn:hover {
+  background: var(--surface-sunken);
+}
+
+/* Plays automatically every time a region is expanded: the body is freshly
+   inserted HTML each render (innerHTML replaces it wholesale — see
+   _renderRegionRow() in js/views/dash-drill.js), and a CSS animation
+   restarts whenever the element it is on is newly mounted, so no JS class
+   toggling is needed to trigger it. */
+.dash-drill-region-body {
+  animation: dash-drill-reveal 0.16s ease-out;
+}
+
+@keyframes dash-drill-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dash-drill-region-body {
+    animation: none;
+  }
+}
+
+.dash-drill-asset-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.625rem;
+  padding: 0.5rem 0.75rem 0.5rem 1.5rem;
+  text-align: left;
+  font-size: 0.75rem;
+  color: var(--text);
+  background: var(--surface);
+  border: none;
+  border-bottom: 1px solid var(--border);
+}
+
+.dash-drill-asset-row:hover {
+  background: var(--surface-2);
+}
+
+.dash-drill-asset-row.is-selected {
+  background: rgba(22, 76, 129, 0.1);
+  box-shadow: inset 3px 0 0 var(--kai-blue);
+}
+
+.dark .dash-drill-asset-row.is-selected {
+  background: rgba(59, 130, 246, 0.16);
+}
+
+.dash-drill-group-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: var(--text-muted);
+  background: var(--surface-sunken);
+  border-bottom: 1px solid var(--border);
+}
+
+.dash-drill-group-count {
+  margin-left: auto;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.dash-drill-count {
+  font-size: 0.6875rem;
+  color: var(--text-faint);
+  text-align: right;
+  padding: 0.125rem 0.125rem 0;
+}
+
+.dash-drill-subject {
+  padding: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 0.625rem;
+  background: var(--surface-2);
+}
+
+.dash-drill-kal-status {
+  padding: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 0.625rem;
+  background: var(--surface-2);
+}
+
+#dash-drill-rtools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+#dash-drill-rtools .toolbar-search {
+  flex: 1 1 10rem;
+}
+
+#dash-drill-rtools .toolbar-select {
+  flex: 0 0 auto;
+}
+
+#dash-drill-rsort {
+  width: auto;
+  min-width: 9rem;
+}
+
+/* ── Sort direction indicator ──
+   Mirrors .toolbar-search / .toolbar-search-icon exactly: a leading icon
+   inside a relatively-positioned wrapper, with the control's own left padding
+   pushed clear of it. Both #dash-drill-sort and #dash-drill-rsort were bare
+   selects with nothing on screen to say "this sorts, and here is which way" —
+   the icon flips between fa-arrow-up-short-wide (ascending) and
+   fa-arrow-down-wide-short (descending) as the selection changes; see
+   _updateSortIcon() in js/views/dash-drill.js. */
+.toolbar-select {
+  position: relative;
+}
+
+.toolbar-select select {
+  padding-left: 2.25rem;
+}
+
+.toolbar-select .toolbar-select-icon {
+  position: absolute;
+  left: 0.75rem;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-faint);
+  font-size: 0.75rem;
+  pointer-events: none;
+  transition: transform 0.15s ease;
+}
+
+#dash-drill-panel {
+  flex: 1 1 auto;
+  overflow-y: auto;
+}
+
+/* Equal-stretch tab strip. `.segmented` is normally sized to its content; a
+   four-tab detail switcher reads better filling the whole right pane width,
+   at every viewport — not only the phone-only rule .segmented already had. */
+.segmented.is-stretch {
+  display: flex;
+  width: 100%;
+}
+
+.segmented.is-stretch .segmented-btn {
+  flex: 1 1 0;
+}
+
+.segmented-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.segmented-btn:disabled:hover {
+  background: transparent;
+  color: var(--text-muted);
+}
+
+/* ── Mobile: one pane at a time ──────────────────────────────────────────
+   Same idiom as #view-masterdata.is-drilled: the modal root carries
+   .is-drilled once an asset is picked, which hides the tree and shows the
+   right pane plus the back button. Above lg: both panes sit side by side and
+   this block does not apply at all. */
+@media (max-width: 1023px) {
+  #dash-drill-modal:not(.is-drilled) #dash-drill-right {
+    display: none;
+  }
+
+  #dash-drill-modal.is-drilled #dash-drill-left {
+    display: none;
+  }
+}
+
+@media (min-width: 1024px) {
+  #dash-drill-back {
+    display: none !important;
+  }
+}
+
+/* Full-bleed below sm: a two-pane view has no room to spare for a backdrop
+   margin on a 360px screen. */
+@media (max-width: 639px) {
+  #dash-drill-modal.modal-backdrop {
+    padding: 0;
+  }
+
+  #dash-drill-modal .modal-panel {
+    max-width: none;
+    width: 100%;
+    height: 100dvh;
+    max-height: 100dvh;
+    border-radius: 0;
+  }
+}
+
+/* ── Open/close fade + scale ──
+   Scoped to THIS modal's own id, deliberately not on the shared
+   `.modal-backdrop`/`.modal-panel` base rules — those back ~30 other modals
+   across the app that this pass never touched, and giving every one of them
+   new motion was never asked for. `.is-open` is toggled by
+   openDashDrill()/closeDashDrill() in js/views/dash-drill.js, which also
+   defers re-adding `hidden` on close until this transition has had time to
+   finish. */
+#dash-drill-modal {
+  opacity: 0;
+  transition: opacity 0.18s ease;
+}
+
+#dash-drill-modal.is-open {
+  opacity: 1;
+}
+
+#dash-drill-modal .modal-panel {
+  transform: scale(0.97) translateY(8px);
+  transition: transform 0.18s ease, opacity 0.18s ease;
+}
+
+#dash-drill-modal.is-open .modal-panel {
+  transform: scale(1) translateY(0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #dash-drill-modal,
+  #dash-drill-modal .modal-panel {
+    transition: none;
+  }
 }

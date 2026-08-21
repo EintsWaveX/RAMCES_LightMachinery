@@ -23,6 +23,11 @@ Six things, each of which was a defect a console-error sweep could not see:
      declare their own role and region.
   6. **`dokumen_alat` reaches the client.** Three PDFs were on disk and
      reachable by nothing.
+  7. **The dashboard tab strip.** Section 7 asserts the rev0.4.7 dashboard-
+     overhaul contract, not the rev0.4.2 one any more — see the comment at
+     that section for why the assertion inverted from "it scrolls, and the
+     fade tells you so" to "it does not scroll, so there is nothing left to
+     hint at".
 
 Writes nothing to the database.
 """
@@ -30,6 +35,7 @@ Writes nothing to the database.
 import asyncio
 import json
 import os
+import re
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -71,7 +77,19 @@ async def run():
     try:
         # ── 1. Login screen: registration + progressive captcha ──
         print("\n1. Login screen, registration panel, captcha widget")
-        await c.goto(f"{BASE}/", wait=3.0)
+        await c.goto(f"{BASE}/", wait=1.0)
+        # POLL, do not sleep. index.html is ~460 KB and pulls 23 scripts, so a
+        # fixed wait is a race that is lost only occasionally — which is worse
+        # than losing it always, because the failure reads as "the register
+        # button is gone" rather than "the page had not parsed yet". Wait for
+        # the last js/ file to have EVALUATED (RamcesCaptcha is the global that
+        # js/captcha.js exports) rather than for a wall-clock guess.
+        await c.wait_for(
+            "document.readyState === 'complete'"
+            " && !!document.getElementById('btn-open-register')"
+            " && typeof window.RamcesCaptcha === 'object'",
+            timeout=25.0,
+        )
         check("login screen: 0 console errors", not c.drain_console(IGNORE))
 
         r = await c.js("""
@@ -264,34 +282,154 @@ async def run():
         check("IMP has BOTH spektek PDFs", len(spek) == 2, spek)
         check("exactly one is marked primary", sum(1 for d in spek if d["u"]) == 1, spek)
 
-        # ── 7. The scroll affordance ──
-        print("\n7. Horizontal scroll affordance")
+        # ── 7. The dashboard tab strip: grid, not scroll ──
+        print("\n7. Dashboard tab strip (rev0.4.7: fits, does not scroll)")
+        # rev0.4.2 shipped `#dash-tab-bar` as a `.scroll-hint` horizontal
+        # scroller — 925px of six tabs in a 308px box at 390px wide — and this
+        # section used to assert exactly that: the strip DOES overflow, and the
+        # fade tells you so. That was correct for the markup that existed then.
+        #
+        # The rev0.4.7 dashboard overhaul (see the plan's "Tab strip — equal
+        # stretch, no clipping") replaces it with a non-scrolling CSS grid —
+        # `grid-cols-3` over two rows under `sm:`, `grid-cols-6` in one row from
+        # `sm:` up — and deletes `#dash-tab-prev`/`#dash-tab-next` and
+        # `.scroll-hint` outright, because the sticky fade's own
+        # `margin-inline:-1.75rem` pseudo-element was what clipped "Matriks
+        # Kesiapan" at the left edge in the first place. So the assertion
+        # INVERTS on purpose: the strip used to scroll and the fade was the
+        # only affordance telling a phone user the other tabs existed; it now
+        # fits entirely on screen, and a fade painted over a bar with nothing
+        # left to reveal would be a lie rather than a weaker check. This is a
+        # rewrite of the check to match a real, approved markup change — not a
+        # relaxation. Until the dashboard-overhaul workstream lands this new
+        # markup, every assertion below is EXPECTED to fail (old flex/overflow
+        # markup is still in index.html).
         await c.goto(f"{BASE}/", wait=2.5)
         await c.login("superadmin", PW)
         await asyncio.sleep(4)
-        await c.viewport(390, 844, mobile=True)
-        await c.js("switchView('dashboard'); return 1;")
-        await asyncio.sleep(1.5)
-        r = await c.js("""
-          const bar = document.getElementById('dash-tab-bar');
-          bar.scrollLeft = 0; bar.dispatchEvent(new Event('scroll'));
-          await new Promise(r => setTimeout(r, 100));
-          const atStart = { s: bar.getAttribute('data-scroll-start'), e: bar.getAttribute('data-scroll-end') };
-          bar.scrollLeft = bar.scrollWidth;
-          bar.dispatchEvent(new Event('scroll'));
-          await new Promise(r => setTimeout(r, 100));
-          const atEnd = { s: bar.getAttribute('data-scroll-start'), e: bar.getAttribute('data-scroll-end') };
-          return { atStart, atEnd, hinted: bar.classList.contains('scroll-hint'),
-                   scrollW: bar.scrollWidth, clientW: bar.clientWidth };""",
-                       awaitPromise=True)
-        check("dash-tab-bar carries .scroll-hint", r["hinted"], r)
-        check("it genuinely overflows at 390px", r["scrollW"] > r["clientW"] + 4, r)
-        # "0" means there IS more in that direction; the fade follows the
-        # scroll position, which is the part pure CSS cannot do.
-        check("at the left edge: no left fade, right fade shown",
-              r["atStart"] == {"s": "1", "e": "0"}, r["atStart"])
-        check("at the right edge: left fade shown, no right fade",
-              r["atEnd"] == {"s": "0", "e": "1"}, r["atEnd"])
+
+        # The 44px touch-target minimum for `.dash-tab-btn` may be supplied by
+        # the project's `@media (pointer: coarse) { ... } ` rule in
+        # assets/style.css (it already is, today). CLAUDE.md and
+        # tools/verify/audit.py both document that
+        # `matchMedia('(pointer: coarse)')` is FALSE under headless Chrome and
+        # cannot be forced via `Emulation.setEmitTouchEventsForMouse` — so if
+        # the tab strip's height still depends on that media query, headless
+        # rendering will measure it short even though a real phone renders it
+        # correctly, and asserting the rendered box would be a false failure
+        # baked into the harness (exactly what caused ~30 bogus tap-target
+        # failures before audit.py switched that one check to reading the CSS
+        # SOURCE). We measure the rendered box first — it's the strongest
+        # evidence when it clears the bar on its own — and only fall back to
+        # the source, scoped specifically to `.dash-tab-btn` inside a
+        # `pointer: coarse` block, if the render comes up short. Which path
+        # actually fires is decided at run time below, not assumed here.
+        _css_path = os.path.join(ROOT, "assets", "style.css")
+        with open(_css_path, encoding="utf-8") as _fh:
+            _css = _fh.read()
+        _coarse_block = ""
+        _m = re.search(r"@media\s*\(pointer:\s*coarse\)\s*\{", _css)
+        if _m:
+            depth = 0
+            start = _m.end() - 1  # index of the media query's own '{'
+            for j in range(start, len(_css)):
+                if _css[j] == "{":
+                    depth += 1
+                elif _css[j] == "}":
+                    depth -= 1
+                    if depth == 0:
+                        _coarse_block = _css[start:j + 1]
+                        break
+        _tab_btn_44_via_coarse = ".dash-tab-btn" in _coarse_block and (
+            "44px" in _coarse_block or "2.75rem" in _coarse_block
+        )
+
+        async def _measure_tab_bar(width, height, mobile):
+            await c.viewport(width, height, mobile=mobile)
+            await c.js("switchView('dashboard'); return 1;")
+            await asyncio.sleep(1.2)
+            return await c.js("""
+              const bar = document.getElementById('dash-tab-bar');
+              const btns = Array.from(document.querySelectorAll('.dash-tab-btn'));
+              const barRect = bar.getBoundingClientRect();
+              const rects = btns.map(b => b.getBoundingClientRect());
+              return {
+                hasScrollHint: bar.classList.contains('scroll-hint'),
+                scrollW: bar.scrollWidth, clientW: bar.clientWidth,
+                count: btns.length,
+                widths: rects.map(r => Math.round(r.width)),
+                heights: rects.map(r => Math.round(r.height)),
+                lefts: rects.map(r => Math.round(r.left)),
+                rights: rects.map(r => Math.round(r.right)),
+                tops: rects.map(r => Math.round(r.top)),
+                barLeft: Math.round(barRect.left),
+                barRight: Math.round(barRect.right),
+                prevExists: !!document.getElementById('dash-tab-prev'),
+                nextExists: !!document.getElementById('dash-tab-next'),
+              };""")
+
+        for width, height, mobile, label in (
+            (390, 844, True, "390px"),
+            (1440, 900, False, "1440px"),
+        ):
+            r = await _measure_tab_bar(width, height, mobile)
+
+            check(f"[{label}] dash-tab-bar does not scroll",
+                  r["scrollW"] <= r["clientW"] + 4,
+                  f"scrollW={r['scrollW']} clientW={r['clientW']}")
+            check(f"[{label}] .scroll-hint removed — nothing left to hint at",
+                  not r["hasScrollHint"], r["hasScrollHint"])
+            check(f"[{label}] #dash-tab-prev deleted", not r["prevExists"], r["prevExists"])
+            check(f"[{label}] #dash-tab-next deleted", not r["nextExists"], r["nextExists"])
+
+            check(f"[{label}] all six .dash-tab-btn are present",
+                  r["count"] == 6, r["count"])
+            check(f"[{label}] every tab has a non-zero rendered box",
+                  r["count"] == 6
+                  and all(w > 0 for w in r["widths"])
+                  and all(h > 0 for h in r["heights"]),
+                  {"widths": r["widths"], "heights": r["heights"]})
+            # The requirement this protects: "Matriks Kesiapan" must not be
+            # clipped at the left the way `.scroll-hint`'s fade used to clip it.
+            check(f"[{label}] first tab is not clipped at the bar's left edge",
+                  bool(r["lefts"]) and r["lefts"][0] >= r["barLeft"] - 2,
+                  {"tabLeft": r["lefts"][0] if r["lefts"] else None, "barLeft": r["barLeft"]})
+            check(f"[{label}] last tab is not clipped at the bar's right edge",
+                  bool(r["rights"]) and r["rights"][-1] <= r["barRight"] + 2,
+                  {"tabRight": r["rights"][-1] if r["rights"] else None, "barRight": r["barRight"]})
+
+            min_h = min(r["heights"]) if r["heights"] else 0
+            if min_h >= 44 - 0.5:
+                check(f"[{label}] every tab is >=44px tall (touch-target rule)",
+                      True,
+                      f"measured {min_h}px rendered — the grid's own content "
+                      f"(icon+label, padding) clears 44px unconditionally, not "
+                      f"only under pointer:coarse")
+            else:
+                check(f"[{label}] every tab is >=44px tall (touch-target rule, "
+                      f"asserted from CSS SOURCE — rendered box measured "
+                      f"{min_h}px because matchMedia('(pointer: coarse)') "
+                      f"cannot be forced headless, see comment above)",
+                      _tab_btn_44_via_coarse,
+                      {"measured_px": min_h,
+                       "style.css has '.dash-tab-btn { min-height: 44px }' "
+                       "inside @media (pointer: coarse)": _tab_btn_44_via_coarse})
+
+            tops = r["tops"][:6]
+            distinct_tops = sorted(set(tops))
+            if width < 640:
+                # `grid-cols-3` under `sm:` — two rows of three, not a scroller.
+                rows = {}
+                for t in tops:
+                    rows[t] = rows.get(t, 0) + 1
+                check(f"[{label}] tabs form exactly two rows",
+                      len(distinct_tops) == 2, tops)
+                check(f"[{label}] three tabs per row",
+                      sorted(rows.values()) == [3, 3], rows)
+            else:
+                check(f"[{label}] tabs form exactly one row (grid-cols-6 from sm:)",
+                      len(distinct_tops) == 1, tops)
+
         check("mobile dashboard: 0 console errors", not c.drain_console(IGNORE))
     finally:
         await c.close()

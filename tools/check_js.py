@@ -129,6 +129,7 @@ LOAD_ORDER = [
     "search.js",
     "shell.js",
     "views/dashboard.js",
+    "views/dash-drill.js",
     "views/aset.js",
     "views/riwayat.js",
     "views/kdak.js",

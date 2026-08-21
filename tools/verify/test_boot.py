@@ -71,15 +71,19 @@ async def main():
     c = Chrome(port=9335)
     await c.start()
     try:
-        await c.goto(BASE, wait=3.0)
-        await c.js("""
-            const deadline = Date.now() + 20000;
-            while (Date.now() < deadline) {
-                if (document.getElementById('login-username')) return 1;
-                await new Promise(r => setTimeout(r, 200));
-            }
-            return 0;
-        """, awaitPromise=True)
+        await c.goto(BASE, wait=1.0)
+        # Waiting for #login-username is not enough: that element is static
+        # markup and lands while the 23 script tags are still evaluating, so the
+        # form could be submitted before shell.js had wired its submit handler
+        # and the token would never arrive — surfacing as "login failed: timed
+        # out" rather than as a slow page. Wait for a global that only exists
+        # once a js/ file has RUN.
+        await c.wait_for(
+            "document.readyState === 'complete'"
+            " && !!document.getElementById('login-username')"
+            " && typeof window.RamcesCaptcha === 'object'",
+            timeout=30.0,
+        )
         await c.js(TAP)
 
         who = await c.login(USER, PW)

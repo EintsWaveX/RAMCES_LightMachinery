@@ -164,8 +164,48 @@ class Chrome:
 
     # ── page ─────────────────────────────────────────────────────
     async def goto(self, url, wait=2.0):
+        """Navigate, wait for the document to finish loading, THEN settle.
+
+        `wait` used to be the whole story, and every caller guessed 3.0 s. On a
+        cold browser index.html (~460 KB, 23 script tags) sometimes needs more,
+        so the guess was lost occasionally rather than never — and the symptom
+        was never "slow page", it was the next assertion reporting that the
+        login form or the register button did not exist. Intermittent failures
+        that name the wrong cause are the most expensive kind.
+
+        Polling `readyState === 'complete'` first is the fix, and it is enough
+        on its own for the js/ files: they are CLASSIC scripts with no `defer`,
+        so they have all evaluated before the document is complete. The original
+        `wait` is still honoured afterwards, unchanged, because several callers
+        use it to let the app's own async boot (login, master data, the first
+        rollups) settle — this only ever ADDS time where the page was not ready.
+        """
         await self.send("Page.navigate", url=url)
+        await self.wait_for("document.readyState === 'complete'", timeout=30.0)
         await asyncio.sleep(wait)
+
+    async def wait_for(self, expr, timeout=15.0, every=0.25):
+        """Poll until a JS expression is truthy. Returns True, or False on timeout.
+
+        `goto(wait=N)` is a wall-clock guess, and index.html is ~460 KB pulling
+        23 scripts — so on a cold browser the guess is lost occasionally rather
+        than never. That is the worst failure mode a harness can have: the check
+        that runs next reports "the register button is gone" when the truth is
+        "the page had not parsed yet", and it does so intermittently. Poll for
+        the condition the test actually depends on instead.
+
+        Never raises: a timeout returns False so the caller's own check() reports
+        the real assertion rather than the harness exploding with a KeyError.
+        """
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            try:
+                if await self.eval(f"(function(){{ return !!({expr}); }})()"):
+                    return True
+            except Exception:
+                pass  # document not ready enough to evaluate yet
+            await asyncio.sleep(every)
+        return False
 
     async def viewport(self, width, height, mobile=False):
         self.width, self.height = width, height
