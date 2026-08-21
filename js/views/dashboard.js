@@ -96,7 +96,7 @@ const _DASH_FILTER_SPEC = {
       <span class="dash-key"><span class="dash-swatch bg-green-500"></span>SO — Siap Operasi</span>
       <span class="dash-key"><span class="dash-swatch bg-red-500"></span>TSO — Tidak Siap</span>
       <span class="dash-key"><span class="dash-swatch matrix-cell-mixed"></span>Campuran SO / TSO</span>
-      <span class="dash-key"><span class="dash-swatch dash-matrix-cell-zero"></span>UPT ada, 0 aset</span>
+      <span class="dash-key"><span class="dash-swatch dash-matrix-cell-zero"></span>— UPT ada, 0 aset</span>
       <span class="dash-key"><span class="dash-swatch dash-matrix-slot-empty"></span>Slot tidak berlaku</span>`,
   },
   bar: {
@@ -744,7 +744,12 @@ function _matrixCell(upt, countsByLokasi, groupStart) {
   const n = c ? c.so + c.tso : 0;
 
   if (!n) {
-    return `<td class="dash-matrix-cell-zero${startCls}" data-tip="${spekEscape(judul)}: 0 aset" tabindex="0"></td>`;
+    // A dash HERE is a real answer: this UPT exists, this region has it, and
+    // it currently holds zero assets — worth saying, unlike a slot that does
+    // not correspond to anything for this row at all (_matrixSlotEmptyCell,
+    // no text, no data-tip, hatched). Muted colour keeps it visually distinct
+    // from the bold SO/TSO counts a real cell prints.
+    return `<td class="text-center px-2 text-gray-400 dark:text-gray-500 dash-matrix-cell-zero${startCls}" data-tip="${spekEscape(judul)}: 0 aset" tabindex="0">—</td>`;
   }
 
   const soCount = c.so;
