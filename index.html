@@ -565,9 +565,14 @@
                                     id="dash-banner-dateline">—</p>
                             </div>
                             <div class="hidden md:flex items-center gap-2 shrink-0">
-                                <p
-                                    class="text-[9px] font-semibold tracking-[0.15em] text-right leading-tight text-gray-400 dark:text-gray-500">
-                                    UPT MEKANIK<br />JALAN REL DAN JEMBATAN</p>
+                                <!-- The signed-in user's own org/region, not a hardcoded UPT
+                                     name — resolved client-side (JWT id_lokasi -> lokasiData,
+                                     falling back to the role) by _resolveDashBannerOrg() in
+                                     js/views/dashboard.js, no extra request. One line, not a
+                                     hardcoded <br/> split: the old two-line layout only fit
+                                     that one specific string. -->
+                                <p id="dash-banner-org"
+                                    class="text-[9px] font-semibold tracking-[0.15em] text-right leading-tight text-gray-400 dark:text-gray-500 max-w-[170px] truncate"></p>
                                 <img src="./assets/logo_bumn.svg" alt="Logo BUMN Untuk Indonesia"
                                     class="h-6 w-auto dark:hidden" />
                                 <img src="./assets/logo_bumn_putih.svg" alt="Logo BUMN Untuk Indonesia"
@@ -661,12 +666,30 @@
                             <div id="dash-panel-bar" class="dash-panel hidden p-4"
                                 style="max-height: 70vh; overflow-y: auto">
                                 <div id="dash-filters-bar" class="dash-filter-row"></div>
+                                <!-- Painted by _showChartSkeleton()/_hideChartSkeleton() in
+                                     js/views/dashboard.js while the rollup fetch that feeds
+                                     _renderBarPanel() is in flight — a real window on a cache
+                                     miss, since the chart is otherwise built synchronously
+                                     once the data lands. Hidden by default; toggles with the
+                                     canvas so exactly one of the two is ever visible. -->
+                                <div id="dash-chart-bar-skeleton" class="dash-chart-skeleton hidden"
+                                    aria-hidden="true">
+                                    <span class="skeleton"></span><span class="skeleton"></span><span
+                                        class="skeleton"></span><span class="skeleton"></span><span
+                                        class="skeleton"></span><span class="skeleton"></span>
+                                </div>
                                 <canvas id="dash-chart-bar" style="max-height: 420px"></canvas>
                             </div>
                             <!-- Panel: Availability rate chart -->
                             <div id="dash-panel-avail" class="dash-panel hidden p-4"
                                 style="max-height: 70vh; overflow-y: auto">
                                 <div id="dash-filters-avail" class="dash-filter-row"></div>
+                                <div id="dash-chart-avail-skeleton" class="dash-chart-skeleton hidden"
+                                    aria-hidden="true">
+                                    <span class="skeleton"></span><span class="skeleton"></span><span
+                                        class="skeleton"></span><span class="skeleton"></span><span
+                                        class="skeleton"></span><span class="skeleton"></span>
+                                </div>
                                 <canvas id="dash-chart-avail" style="max-height: 420px"></canvas>
                             </div>
                             <!-- Panel: Trend line chart
@@ -678,6 +701,12 @@
                             <div id="dash-panel-trend" class="dash-panel hidden p-4"
                                 style="max-height: 70vh; overflow-y: auto">
                                 <div id="dash-filters-trend" class="dash-filter-row"></div>
+                                <div id="dash-chart-trend-skeleton" class="dash-chart-skeleton hidden"
+                                    aria-hidden="true">
+                                    <span class="skeleton"></span><span class="skeleton"></span><span
+                                        class="skeleton"></span><span class="skeleton"></span><span
+                                        class="skeleton"></span><span class="skeleton"></span>
+                                </div>
                                 <canvas id="dash-chart-trend" style="max-height: 420px"></canvas>
                             </div>
 
@@ -731,8 +760,14 @@
                                     <!-- ─────────── Report body ─────────── -->
                                     <div class="xl:col-span-3 space-y-4">
 
-                                        <!-- KPI strip + completion gauge -->
-                                        <div
+                                        <!-- KPI strip + completion gauge
+                                             #rd-kpi-card carries a small reveal fade replayed by
+                                             _replayFade() in js/views/repair-dashboard.js on every
+                                             render() — these tiles are persistent nodes whose
+                                             textContent is overwritten in place, not freshly
+                                             inserted, so the CSS "animate on mount" trick the rest
+                                             of the redesigned dashboard uses does not apply here. -->
+                                        <div id="rd-kpi-card"
                                             class="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm overflow-hidden">
                                             <div
                                                 class="px-5 py-2.5 border-b border-gray-100 dark:border-gray-700 bg-gray-50/60 dark:bg-gray-700/30">
@@ -756,8 +791,11 @@
                                                      now", which is why it does not change when the year does. The
                                                      qualifier is part of the label so the difference is readable
                                                      without hunting for the footnote. -->
-                                                <div class="p-5 text-center bg-amber-50 dark:bg-amber-900/10"
-                                                    title="Jumlah alat yang berstatus TSO hari ini — tidak mengikuti Tahun yang dipilih.">
+                                                <!-- The `title` this tile used to carry never fires on
+                                                     touch, and this note is the actionable part of what
+                                                     it said — so it is now a small line printed under
+                                                     the number, always visible on every input device. -->
+                                                <div class="p-5 text-center bg-amber-50 dark:bg-amber-900/10">
                                                     <p
                                                         class="text-[10px] font-bold tracking-widest text-amber-600 uppercase mb-1">
                                                         Sedang Perbaikan
@@ -766,6 +804,9 @@
                                                     </p>
                                                     <p class="text-4xl font-black text-amber-500" id="rd-sedang">—</p>
                                                     <p class="text-[10px] text-amber-500/80 mt-1" id="rd-sedang-pct">—</p>
+                                                    <p class="text-[9px] text-amber-500/60 dark:text-amber-400/50 mt-1 italic leading-tight">
+                                                        Tidak mengikuti Tahun yang dipilih
+                                                    </p>
                                                 </div>
                                                 <div class="p-5 text-center">
                                                     <p
@@ -778,14 +819,16 @@
                                                 <!-- Cost of the spareparts actually consumed by these repairs,
                                                      attributed to the region that OWNS each machine — a Balaiyasa
                                                      visit does not move the spend out of the owning DAOP. -->
-                                                <div class="p-5 text-center"
-                                                    title="Total nilai sparepart yang dipakai pada perbaikan dalam cakupan ini.">
+                                                <div class="p-5 text-center">
                                                     <p
                                                         class="text-[10px] font-bold tracking-widest text-gray-400 uppercase mb-1">
                                                         Biaya Sparepart</p>
                                                     <p class="text-3xl font-black text-emerald-600 dark:text-emerald-400"
                                                         id="rd-biaya">—</p>
                                                     <p class="text-[10px] text-gray-400 mt-1" id="rd-biaya-item">—</p>
+                                                    <p class="text-[9px] text-gray-400/70 mt-1 italic leading-tight">
+                                                        Nilai sparepart terpakai dalam cakupan ini
+                                                    </p>
                                                 </div>
                                                 <div class="p-4 flex items-center justify-center gap-3">
                                                     <div class="relative w-24 h-24 shrink-0">
@@ -893,7 +936,7 @@
                                                 class="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-widest leading-tight">
                                                 Sedang Perbaikan / Di Workshop Mekanik</p>
                                             <span id="rd-workshop-badge"
-                                                class="bg-amber-100 dark:bg-amber-900/40 text-amber-600 text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0">0</span>
+                                                class="badge badge-warn shrink-0">0</span>
                                         </div>
                                         <div class="overflow-y-auto flex-1 max-h-[560px]">
                                             <table class="table-stack w-full text-[10px]">
@@ -980,8 +1023,12 @@
                                              Sits alongside the monthly IN/OUT view: same scope, same
                                              year, but normalised per asset so regions of different
                                              fleet sizes can be compared. Single measure on a single
-                                             axis; the absolute counts ride in the tooltip. -->
-                                        <div
+                                             axis; the absolute counts ride in the tooltip.
+
+                                             #rd-mcf-card gets the same replayed reveal fade as
+                                             #rd-kpi-card above — see _replayFade() in
+                                             js/views/repair-dashboard.js. -->
+                                        <div id="rd-mcf-card"
                                             class="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm p-4">
                                             <div class="flex flex-wrap items-baseline justify-between gap-2 mb-1">
                                                 <p

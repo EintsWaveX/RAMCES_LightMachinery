@@ -85,6 +85,15 @@
   let _hirRoll = {}; // hir.per_lokasi, same rollup
   let _activeTab = "repair";
   let _onlyKondisi = null;
+  // Set only for mode "perhatian" opened from the matrix's ⚑ flag button
+  // (data-action="matrix-flag" in js/views/dashboard.js), never from the KPI
+  // card. When set, narrows the LEFT TREE to just this one region — see
+  // _buildPerhatianTreeHtml(). Does NOT narrow `_agg`/`_hir` (still the same
+  // fleet-wide rollup the KPI card itself reads) or the header/footer counts,
+  // which stay fleet-wide on purpose: scoping those too would need a second,
+  // differently-filtered fetch for a modal that already has everything it
+  // needs to draw the one region the user actually asked to see.
+  let _scopeLokasi = null;
   let _selected = null; // the asset row object, or null
   let _treeSearch = "";
   let _treeSort = "nama-asc";
@@ -380,7 +389,12 @@
   }
 
   function _buildPerhatianTreeHtml() {
-    const regions = _regionList();
+    // Scoped open (matrix ⚑ button): only the one region requested, still
+    // split into the same three reason groups. Unscoped (KPI card): every
+    // region, exactly as before.
+    const regions = _scopeLokasi
+      ? _regionList().filter((r) => r.code === _scopeLokasi)
+      : _regionList();
     return _PERHATIAN_GROUPS.map((g) => {
       const totalG =
         g.key === "tso"
@@ -1095,7 +1109,13 @@
   // modal would vanish 180ms later.
   let _closeTimer = null;
 
-  window.openDashDrill = async function openDashDrill(mode) {
+  // `opts.lokasi` — a region code (the same codes `lokasiData` carries, e.g.
+  // "D1", "VIII", "BY1") — scopes mode "perhatian"'s left tree to just that
+  // region. Only the matrix's ⚑ button (js/views/dashboard.js) passes it;
+  // every other caller (all seven KPI cards) calls with one argument, and
+  // `opts = {}` there is exactly the fleet-wide behaviour this modal has
+  // always had.
+  window.openDashDrill = async function openDashDrill(mode, opts = {}) {
     const modal = el("dash-drill-modal");
     if (!modal) return;
 
@@ -1114,6 +1134,7 @@
     _rSort = "";
     _activeTab = spec.tab;
     _onlyKondisi = spec.onlyKondisi;
+    _scopeLokasi = _mode === "perhatian" && opts && opts.lokasi ? opts.lokasi : null;
 
     _wireOnce();
     modal.classList.remove("hidden");
@@ -1162,6 +1183,17 @@
       "so",
       "tso",
     ]);
+
+    // Scoped open: pre-expand the one region's three reason groups and fetch
+    // its assets right away, rather than making the user click to expand a
+    // tree that can only ever show one row. Mirrors _wireTree()'s own
+    // expand-then-fetch sequence (render the skeleton immediately, then
+    // render again once the fetch resolves).
+    if (_scopeLokasi) {
+      _PERHATIAN_GROUPS.forEach((g) => _expanded.add(`${g.key}::${_scopeLokasi}`));
+      _renderTreeBody();
+      await _ensureRegionLoaded(_scopeLokasi);
+    }
 
     _renderHead();
     _renderNote();

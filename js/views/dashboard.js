@@ -52,7 +52,11 @@ let _dashFilters = {
   // `uptTipe` is the matrix's alone: "" | JR | JB | ME. The other three panels
   // roll UPT into the parent region, so a branch filter would have nothing to
   // narrow — the matrix is the only place the individual resorts are drawn.
-  matrix: { alat: "", pengadaan: "", tahun: "", uptTipe: "" },
+  // `sortRegion` is likewise matrix-only — the row order of a table with a
+  // fixed set of tools has nothing to sort by; a table of REGIONS does. See
+  // _renderMatrixPanel()'s sort block and the control built in
+  // _renderDashFilterRow() below.
+  matrix: { alat: "", pengadaan: "", tahun: "", uptTipe: "", sortRegion: "nama-asc" },
   bar: { alat: "", pengadaan: "", tahun: "" },
   avail: { alat: "", pengadaan: "", tahun: "" },
   // Trend plots twelve months of ONE year, so its `tahun` is never "" —
@@ -70,12 +74,25 @@ const _UPT_TIPE_OPSI = [
   { val: "ME", label: "ME" },
 ];
 
+// The matrix's row-order control. `dir` drives the leading icon on the
+// `.toolbar-select` the same way `_updateSortIcon()` does for the KPI
+// drill-down's own region sort (js/views/dash-drill.js) — asc for the two
+// alphabetical options, desc for the three "highest first" ones. Read by
+// _renderMatrixPanel() via `_dashFilterFor("matrix").sortRegion`.
+const _MATRIX_SORT_OPSI = [
+  { val: "nama-asc", label: "Wilayah A-Z", dir: "asc" },
+  { val: "nama-desc", label: "Wilayah Z-A", dir: "desc" },
+  { val: "total-desc", label: "Total Tertinggi", dir: "desc" },
+  { val: "avail-desc", label: "Ada% Tertinggi", dir: "desc" },
+  { val: "flag-desc", label: "⚑ Terbanyak", dir: "desc" },
+];
+
 // `legend` is rendered to the right of the controls. Only the matrix gets the
 // four-swatch key: it is the only panel that paints cells by status, and the
 // Chart.js panels draw their own legends from the series they actually plot.
 const _DASH_FILTER_SPEC = {
   matrix: {
-    fields: ["alat", "pengadaan", "tahun", "uptTipe"],
+    fields: ["alat", "pengadaan", "tahun", "uptTipe", "sortRegion"],
     // The third swatch carries `.matrix-cell-mixed` — the SAME class the cell
     // itself uses, not a lookalike. It used to be a soft Tailwind
     // `from-green-300 to-red-300` diagonal blend while the real cell is a hard
@@ -534,6 +551,28 @@ async function _renderDashFilterRow(tabId) {
        </div>`,
     );
   }
+  if (spec.fields.includes("sortRegion")) {
+    // Every other list in the app has a sort control; the matrix table drew
+    // `regions` in whatever order `lokasiData` returned them. Reuses the
+    // `.toolbar-select` shape from #dash-drill-sort (js/views/dash-drill.js)
+    // rather than a bare <select>, so the direction is visible at a glance.
+    // The generic `data-dash-field` delegated `change` listener below already
+    // handles this control — no separate wiring needed.
+    const cur = _MATRIX_SORT_OPSI.some((o) => o.val === f.sortRegion) ? f.sortRegion : "nama-asc";
+    const curOpt = _MATRIX_SORT_OPSI.find((o) => o.val === cur) || _MATRIX_SORT_OPSI[0];
+    const iconCls = curOpt.dir === "desc" ? "fa-arrow-down-wide-short" : "fa-arrow-up-short-wide";
+    controls.push(
+      `<div class="toolbar-select">
+         <i class="fas ${iconCls} toolbar-select-icon"></i>
+         <select data-dash-field="sortRegion" aria-label="Urutkan wilayah"
+                 class="${SELECT_CLASS} min-w-[170px]">
+           ${_MATRIX_SORT_OPSI.map(
+             (o) => `<option value="${o.val}"${o.val === cur ? " selected" : ""}>${spekEscape(o.label)}</option>`,
+           ).join("")}
+         </select>
+       </div>`,
+    );
+  }
 
   mount.className =
     "dash-filter-row flex flex-col sm:flex-row sm:items-center gap-3 mb-4 " +
@@ -678,8 +717,34 @@ function _switchDashTab(tabId) {
   _renderDashActivePanel();
 }
 
+/**
+ * The three Chart.js panels build their canvas synchronously once the rollup
+ * is in hand — there is nothing to show while `await _dashAgg(tabId)` below
+ * is in flight on a cache miss, so a tab switch shows an empty/stale canvas
+ * for that whole window. Every other Dashboard surface (KPI strip, matrix,
+ * drill-down) already has a skeleton for this exact moment; these two
+ * functions are it for the chart panels. `_hideChartSkeleton()` is called
+ * from inside each `_render*Panel()` once it actually has a canvas to draw
+ * into, so the two never both show and the skeleton can never get stuck —
+ * whichever panel renders is the one that clears its own placeholder.
+ */
+function _showChartSkeleton(tabId) {
+  document.getElementById(`dash-chart-${tabId}-skeleton`)?.classList.remove("hidden");
+  document.getElementById(`dash-chart-${tabId}`)?.classList.add("hidden");
+}
+
+function _hideChartSkeleton(tabId) {
+  document.getElementById(`dash-chart-${tabId}-skeleton`)?.classList.add("hidden");
+  document.getElementById(`dash-chart-${tabId}`)?.classList.remove("hidden");
+}
+
 async function _renderDashActivePanel() {
   const tabId = _DASH_TABS[_dashTabIndex];
+
+  // Paint BEFORE the fetch below, not after — the whole point is covering the
+  // await window on a cache miss. Cleared by the render function itself once
+  // it draws, whether that resolves fast (cache hit) or slow.
+  if (tabId === "bar" || tabId === "avail" || tabId === "trend") _showChartSkeleton(tabId);
 
   // ONE rollup per render, handed to both the filter row and the panel. Two
   // fetches would be two chances for them to disagree about what is on screen.
@@ -809,12 +874,31 @@ function _wireMatrixInfo(table) {
   });
 }
 
+/**
+ * The ⚑ flag badge is a door into Perlu Perhatian scoped to just that
+ * region. A SEPARATE delegated listener from _wireMatrixInfo() above, which
+ * answers a different question ("what does this cell mean") — adding this
+ * alongside it rather than folding the two together means neither can break
+ * the other. Guarded the same way: wired once per <table> element, which
+ * survives the thead/tbody replacement every render does.
+ */
+function _wireMatrixFlag(table) {
+  if (!table || table.dataset.flagWired) return;
+  table.dataset.flagWired = "1";
+  table.addEventListener("click", (e) => {
+    const btn = e.target.closest('[data-action="matrix-flag"]');
+    if (!btn) return;
+    window.openDashDrill?.("perhatian", { lokasi: btn.dataset.region });
+  });
+}
+
 function _renderMatrixPanel(agg, hir) {
   const table = document.getElementById("dash-matrix-table");
   const thead = document.getElementById("dash-matrix-thead");
   const tbody = document.getElementById("dash-matrix-tbody");
   if (!thead || !tbody) return;
   _wireMatrixInfo(table);
+  _wireMatrixFlag(table);
 
   // Raw per-code counts, NOT rolled up: the matrix sums only the resorts it
   // actually draws, so an asset sitting directly on a parent code is
@@ -977,37 +1061,75 @@ function _renderMatrixPanel(agg, hir) {
   thead.innerHTML = theadHtml;
 
   // Body Table
-  const rowsHtml = regions
-    .map((region) => {
-      const codes = drawnCodesFor(region);
+  //
+  // Facts computed ONCE per region, keyed by code — sorting needs to read
+  // regionSo/regionTso/avail/flagN before the row order is decided, and the
+  // row itself must print exactly the same numbers, so this is the one place
+  // either is derived rather than recomputing inside .map() a second time.
+  const factsByRegion = {};
+  regions.forEach((region) => {
+    const codes = drawnCodesFor(region);
 
-      // Hitung SO dan TSO secara ketat hanya dari kode yang divisualisasikan
-      let regionSo = 0;
-      let regionTso = 0;
+    // Hitung SO dan TSO secara ketat hanya dari kode yang divisualisasikan
+    let regionSo = 0;
+    let regionTso = 0;
+    codes.forEach((code) => {
+      const c = countsByLokasi[code];
+      if (!c) return;
+      regionSo += c.so;
+      regionTso += c.tso;
+    });
+    const total = regionSo + regionTso;
+    const avail = total > 0 ? Math.round((regionSo / total) * 100) : null;
+
+    // Replaces the Benchmark Δ, which compared this region against a
+    // hardcoded 59% that no screen in the app could ever set. The flag counts
+    // machines in this region that need somebody to do something today, summed
+    // over exactly the codes this row draws — the same rule regionSo/regionTso
+    // follow, so the flag can never disagree with the row it sits on.
+    let flagN = 0;
+    if (hir && hir.per_lokasi) {
       codes.forEach((code) => {
-        const c = countsByLokasi[code];
-        if (!c) return;
-        regionSo += c.so;
-        regionTso += c.tso;
+        flagN += hir.per_lokasi[code]?.perhatian || 0;
       });
-      const total = regionSo + regionTso;
+    }
 
-      const avail = total > 0 ? Math.round((regionSo / total) * 100) : null;
+    factsByRegion[region.code] = { total, regionSo, regionTso, avail, flagN };
+  });
+
+  // Sort control — see _dashFilters.matrix.sortRegion and the select built in
+  // _renderDashFilterRow(). "nama-asc" is the default and reads the region
+  // list in the same alphabetical order it has always used.
+  const sortRegion = _dashFilterFor("matrix").sortRegion || "nama-asc";
+  const sortedRegions = regions.slice().sort((a, b) => {
+    const fa = factsByRegion[a.code];
+    const fb = factsByRegion[b.code];
+    switch (sortRegion) {
+      case "nama-desc":
+        return (b.name || "").localeCompare(a.name || "", "id");
+      case "total-desc":
+        return fb.total - fa.total;
+      case "avail-desc":
+        return (fb.avail ?? -1) - (fa.avail ?? -1);
+      case "flag-desc":
+        return fb.flagN - fa.flagN;
+      default: // nama-asc
+        return (a.name || "").localeCompare(b.name || "", "id");
+    }
+  });
+
+  const rowsHtml = sortedRegions
+    .map((region) => {
+      const { total, regionSo, regionTso, avail, flagN } = factsByRegion[region.code];
       const availStr = avail !== null ? `${avail}%` : "—";
 
-      // Replaces the Benchmark Δ, which compared this region against a
-      // hardcoded 59% that no screen in the app could ever set. The flag counts
-      // machines in this region that need somebody to do something today, summed
-      // over exactly the codes this row draws — the same rule regionSo/regionTso
-      // follow, so the flag can never disagree with the row it sits on.
-      let flagN = 0;
-      if (hir && hir.per_lokasi) {
-        codes.forEach((code) => {
-          flagN += hir.per_lokasi[code]?.perhatian || 0;
-        });
-      }
+      // A door into Perlu Perhatian scoped to just this region — see
+      // _wireMatrixFlag() above and openDashDrill(mode, opts) in
+      // js/views/dash-drill.js. Zero stays a plain span: there is nothing to
+      // click through to.
       const flagStr = flagN
-        ? `<span class="badge badge-warn" title="${flagN} aset perlu tindakan di ${region.name}">${flagN}</span>`
+        ? `<button type="button" class="badge badge-warn" data-action="matrix-flag"
+             data-region="${region.code}" title="${flagN} aset perlu tindakan di ${region.name}">${flagN}</button>`
         : `<span class="text-gray-300 dark:text-gray-600">—</span>`;
 
       return `<tr class="border-t border-gray-100 dark:border-gray-700/50 hover:bg-gray-50 dark:hover:bg-gray-700/30">
@@ -1035,6 +1157,7 @@ function _renderMatrixPanel(agg, hir) {
 function _renderAvailPanel(agg) {
   const canvas = document.getElementById("dash-chart-avail");
   if (!canvas) return;
+  _hideChartSkeleton("avail");
 
   // Use non-BALAIYASA lokasi, same as matrix
   const regions = lokasiData.filter(
@@ -1103,6 +1226,12 @@ function _renderAvailPanel(agg) {
     },
     options: {
       responsive: true,
+      // Tap-anywhere-near, not pixel-precise: the Chart.js default
+      // (`nearest` + `intersect: true`) requires landing exactly on a bar or
+      // point, which is the touch-tooltip failure class this whole redesign
+      // pass has been fixing elsewhere (see _wireMatrixInfo()'s comment
+      // block above). `index` triggers on the whole column under a tap.
+      interaction: { mode: "index", intersect: false },
       plugins: {
         title: { display: false },
         subtitle: { display: false },
@@ -1164,6 +1293,7 @@ function _renderAvailPanel(agg) {
 function _renderBarPanel(agg) {
   const canvas = document.getElementById("dash-chart-bar");
   if (!canvas) return;
+  _hideChartSkeleton("bar");
 
   const regions = lokasiData.filter((r) => (r.tipe || "").toUpperCase() !== "BALAIYASA");
   const byLokasi = _rollUpLokasi(agg.per_lokasi);
@@ -1204,6 +1334,9 @@ function _renderBarPanel(agg) {
     },
     options: {
       responsive: true,
+      // See the avail panel's comment on this: `index` + `intersect: false`
+      // is what lets a tap anywhere near a bar trigger its tooltip.
+      interaction: { mode: "index", intersect: false },
       plugins: { legend: { labels: { color: textColor, font: { size: 11 } } } },
       scales: {
         x: {
@@ -1225,6 +1358,7 @@ function _renderBarPanel(agg) {
 function _renderTrendPanel(agg) {
   const canvas = document.getElementById("dash-chart-trend");
   if (!canvas) return;
+  _hideChartSkeleton("trend");
 
   // This tab's own year. It is never "" — _renderDashFilterRow seeds it with
   // the newest year that holds data, because the chart is twelve months of ONE
@@ -1284,6 +1418,9 @@ function _renderTrendPanel(agg) {
     },
     options: {
       responsive: true,
+      // See the avail panel's comment on this: `index` + `intersect: false`
+      // is what lets a tap anywhere near a point trigger its tooltip.
+      interaction: { mode: "index", intersect: false },
       plugins: { legend: { labels: { color: textColor, font: { size: 11 } } } },
       scales: {
         x: {
@@ -1366,12 +1503,65 @@ function _dashScopeLabel(tabId) {
   return bits.length ? bits.join(" · ") : "seluruh armada";
 }
 
+// ══════════════════════════════════════════════════════════════════════
+// BANNER ORG LINE — the signed-in user's own scope, not hardcoded text
+// ══════════════════════════════════════════════════════════════════════
+//
+// The letterhead's right-hand line used to be a static "UPT MEKANIK / JALAN
+// REL DAN JEMBATAN" for every user regardless of who signed in. Resolved
+// entirely from the JWT already sitting in `authToken` — NO new request:
+// tools/verify/test_boot.py asserts the dashboard opens at 0 requests and
+// that budget must not regress, so this must never call GET /me (that
+// pattern exists in js/views/repair-dashboard.js's resolveDefaultRegion(),
+// which is not reusable here for exactly that reason).
+//
+// Computed once and cached: id_lokasi and role do not change without a
+// fresh login, and _syncDashBanner() runs on every tab switch.
+let _dashBannerOrgText = null;
+
+function _resolveDashBannerOrg() {
+  if (_dashBannerOrgText !== null) return _dashBannerOrgText;
+  const payload = typeof authToken !== "undefined" ? getJwtPayload(authToken) : null;
+  const idLokasi = payload?.id_lokasi;
+  if (idLokasi) {
+    // A DAOP/DIVRE/PUSAT/BALAIYASA code is already the altitude a letterhead
+    // wants — ADMIN_WILAYAH, PETUGAS_GUDANG and PIMPINAN are scoped directly
+    // to one of those. Checked first, exact match only.
+    const direct = lokasiData.find((l) => l.code === idLokasi);
+    if (direct) {
+      _dashBannerOrgText = direct.name;
+      return _dashBannerOrgText;
+    }
+    // A UPT-level code (JR1.7, ME2, ...) is too granular for a letterhead —
+    // resolve UP to its parent region, the same rule the matrix and every
+    // regional filter already use.
+    const parentCode = getParentLokasiCode(idLokasi);
+    const parent = parentCode && lokasiData.find((l) => l.code === parentCode);
+    if (parent) {
+      _dashBannerOrgText = parent.name;
+      return _dashBannerOrgText;
+    }
+  }
+  // SUPER_ADMIN and TEKNISI are deliberately unscoped — no id_lokasi at all —
+  // so the line falls back to the role itself, formatted exactly the way
+  // #topbar-role already does it (js/shell.js).
+  _dashBannerOrgText = (payload?.role || _currentRole || "").replace("_", " ");
+  return _dashBannerOrgText;
+}
+
 function _syncDashBanner(tabId) {
   const spec = _DASH_BANNER[tabId];
   const elJudul = document.getElementById("dash-banner-title");
   const elSub = document.getElementById("dash-banner-sub");
   const elTgl = document.getElementById("dash-banner-dateline");
   if (!spec || !elJudul || !elSub || !elTgl) return;
+
+  const elOrg = document.getElementById("dash-banner-org");
+  if (elOrg) {
+    const orgText = _resolveDashBannerOrg();
+    elOrg.textContent = orgText;
+    elOrg.title = orgText;
+  }
 
   elJudul.textContent = spec.judul;
 

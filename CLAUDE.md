@@ -273,18 +273,23 @@ those two screens lose their own Benchmark cards is a `ReferenceError` on both.
   through the mount's existing delegated click listener.
 - **The matrix's per-UPT cells printed an em dash for two different kinds of
   "nothing."** A dash reads as a fillable placeholder, not as "no data," so
-  neither state prints text any more — `.dash-matrix-cell-zero` (a real UPT,
-  currently empty) and `.dash-matrix-slot-empty` (this region simply has
-  fewer UPTs in that branch than the widest one, diagonal hatch, no tap
-  target) replace it with background alone. JR/JB/ME now render as fixed-
-  width column BLOCKS in "Semua" mode — column N means the same branch-slot
-  on every row, with a two-row grouped `<thead>` and a divider between
-  blocks — instead of a region's own UPT count deciding what each numbered
-  column held, which is what made mixed branches unreadable. `title`
-  tooltips never fire on touch, so every informative cell carries
-  `data-tip` + `tabindex="0"` instead, read by ONE delegated listener into
-  `#dash-matrix-info` — the same mechanism for a mouse, a finger, and a
-  keyboard.
+  the FIRST cut removed it from both states entirely — background alone,
+  `.dash-matrix-cell-zero` (a real UPT, currently empty) vs
+  `.dash-matrix-slot-empty` (this region simply has fewer UPTs in that branch
+  than the widest one, diagonal hatch, no tap target). That over-corrected:
+  a real UPT holding zero assets IS an answer worth stating, unlike a slot
+  that does not correspond to anything for that row at all — so the dash
+  came back for `.dash-matrix-cell-zero` alone, muted (`text-gray-400
+  dark:text-gray-500`) so it stays visually subordinate to a real bold
+  SO/TSO count; `.dash-matrix-slot-empty` stayed text-free, exactly as
+  before. JR/JB/ME render as fixed-width column BLOCKS in "Semua" mode —
+  column N means the same branch-slot on every row, with a two-row grouped
+  `<thead>` and a divider between blocks — instead of a region's own UPT
+  count deciding what each numbered column held, which is what made mixed
+  branches unreadable. `title` tooltips never fire on touch, so every
+  informative cell carries `data-tip` + `tabindex="0"` instead, read by ONE
+  delegated listener into `#dash-matrix-info` — the same mechanism for a
+  mouse, a finger, and a keyboard.
 
 Also: the KPI drill-down (open/close fade+scale, guarded against a rapid
 close-then-reopen race), `.dash-panel` (tab-switch fade), the KPI cards
@@ -294,6 +299,73 @@ small, scoped animations — deliberately NOT on the shared
 across the app. A `translateY` "pop" on the active dashboard tab was tried
 and reverted: it shifts the tab's rendered box 1px above its row-mates,
 which `tools/verify/test_rev042.py` correctly read as a third row.
+
+#### rev0.5.0, second pass — a release-readiness sweep
+
+Six more, after actually using the first pass surfaced rough edges and a
+deliberate honest-review-then-build round covered the rest of the Dashboard:
+
+- **The matrix's ⚑ flag badge is now a door, like every KPI card already
+  is.** A non-zero count is a `<button data-action="matrix-flag"
+  data-region="...">`, wired by `_wireMatrixFlag()` (a listener SEPARATE from
+  `_wireMatrixInfo()`, so neither can break the other). It calls
+  `openDashDrill("perhatian", { lokasi: code })` — `openDashDrill(mode,
+  opts)` gained an optional second parameter, read only when `mode ===
+  "perhatian"`, that narrows `_buildPerhatianTreeHtml()`'s region list to
+  just the one requested and pre-expands its three reason groups. It does
+  **not** narrow `_agg`/`_hir` or the header/footer counts — those stay the
+  same fleet-wide rollup the KPI card itself reads, because scoping those
+  too would need a second, differently-filtered fetch for a modal that
+  already has everything it needs to draw one region.
+- **The matrix table gained a sort control** (`_dashFilters.matrix.sortRegion`,
+  a `.toolbar-select` matching the drill-down's own region sort) — Wilayah
+  A-Z/Z-A, Total Tertinggi, Ada% Tertinggi, ⚑ Terbanyak. Per-region facts
+  (`total`, `avail`, `flagN`) are computed ONCE into a `factsByRegion` lookup
+  before sorting, read by both the sort comparator and the row markup, so
+  sorting can never make a row's number disagree with the order it sits in.
+- **Grafik Ketersediaan, Ketersediaan per Lokasi and Tren Perbaikan had no
+  loading state.** Each builds its Chart.js canvas synchronously once its
+  rollup is in hand, so a cache miss showed an empty/stale canvas for the
+  whole fetch window. `_showChartSkeleton(tabId)` / `_hideChartSkeleton(tabId)`
+  bracket that: shown before the `await` in `_renderDashActivePanel()`,
+  cleared by whichever `_render*Panel()` actually draws — the skeleton and
+  the canvas can never both be visible, and the skeleton can never get stuck,
+  because clearing it is the render function's own first line, not a
+  separate timer.
+- **The same three panels' tooltips were not touch-friendly.** All three
+  Chart.js configs were missing `interaction`, defaulting to
+  `nearest`+`intersect:true` — pixel-precise, the same failure class the
+  matrix's info strip exists to fix elsewhere. Added `interaction: { mode:
+  "index", intersect: false }` to all three, so a tap anywhere near a bar or
+  point triggers its tooltip.
+- **The banner's org line was a hardcoded "UPT MEKANIK JALAN REL DAN
+  JEMBATAN"** — the SAME text on screen for every user regardless of who was
+  actually signed in, promoted from one report's letterhead to sit above all
+  six tabs. `_resolveDashBannerOrg()` replaces it, resolved ENTIRELY
+  CLIENT-SIDE from `getJwtPayload(authToken)?.id_lokasi` (no new request —
+  `tools/verify/test_boot.py` asserts the dashboard still opens at 0
+  requests): an exact `lokasiData` match for a DAOP/DIVRE/PUSAT/BALAIYASA-
+  scoped user, resolved up via `getParentLokasiCode()` for a UPT-scoped one,
+  falling back to the role name itself (formatted exactly like
+  `#topbar-role`) for SUPER_ADMIN/TEKNISI, who are deliberately unscoped.
+  Cached after first resolution — it cannot change without a fresh login.
+- **Laporan Perbaikan and Kurva MCF were visibly a different generation of
+  UI** next to the freshly rebuilt matrix and drill-down — the two oldest,
+  richest panels, untouched by the redesign. Brought up to the same
+  language without touching their data contract: `#rd-workshop-badge` now
+  goes through `.badge .badge-warn` instead of a hand-rolled pill (the only
+  hand-rolled status pill either panel had); two `title=`-only explanatory
+  notes (the "Sedang Perbaikan" qualifier, the Biaya Sparepart scope note)
+  became always-visible caption lines, since `title` never fires on touch;
+  the sparepart-rail and pie-legend labels dropped `truncate`+`title` for
+  `break-words`, for the same reason. `#rd-kpi-card`/`#rd-mcf-card` are
+  PERSISTENT nodes (`render()`/`renderMcf()` overwrite their `textContent`
+  in place rather than re-inserting them), so the "animate on mount" trick
+  the rest of the dashboard uses does not replay on a Muat Ulang click —
+  `_replayFade()` removes/reflows/re-adds a class to force it every call.
+  The workshop rail rows, sparepart ranking rows and legend rows ARE freshly
+  inserted each render, so `.rd-row-reveal`'s keyframe auto-plays with no JS
+  timing needed, same idiom as `.dash-drill-region-body`.
 
 ### Reliability, calibration due dates and stock opname (rev0.4.6)
 

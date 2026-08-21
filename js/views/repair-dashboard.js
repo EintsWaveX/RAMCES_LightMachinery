@@ -141,8 +141,24 @@
     });
   });
 
+  // Both buttons trigger the SAME load() (MCF always rides the year the
+  // repair report resolves to — see its own comment below), but unlike the
+  // four computed panels' reload button, which _renderDashFilterRow()
+  // regenerates from scratch on every render, these two persist across a
+  // refresh. So the spin has to be started and stopped explicitly around the
+  // same await rather than relying on a fresh unspun node replacing it.
   ["rd-refresh", "rd-mcf-refresh"].forEach((id) =>
-    el(id)?.addEventListener("click", () => load()));
+    el(id)?.addEventListener("click", async function () {
+      const icon = this.querySelector("i");
+      this.disabled = true;
+      icon?.classList.add("fa-spin");
+      try {
+        await load();
+      } finally {
+        icon?.classList.remove("fa-spin");
+        this.disabled = false;
+      }
+    }));
 
   // ── Chart handles ─────────────────────────────────────────────────
   let _chartResort = null;
@@ -228,9 +244,26 @@
       );
   }
 
+  // Replays a small reveal fade on an element whose DOM node is persistent —
+  // its textContent is overwritten in place by render()/renderMcf() rather
+  // than being freshly inserted, so a plain "animate on mount" CSS keyframe
+  // (the kind .dash-panel-fade / .dash-drill-region-body rely on) would only
+  // ever play once. Removing the class, forcing a reflow and re-adding it
+  // replays it on every call — including a Muat Ulang click, when the panel
+  // is already visible and the shared tab-switch fade does not run again.
+  // Scoped to #rd-kpi-card / #rd-mcf-card only; see the CSS for why.
+  function _replayFade(id) {
+    const node = el(id);
+    if (!node) return;
+    node.classList.remove("rd-panel-refresh");
+    void node.offsetWidth; // force reflow so the animation restarts
+    node.classList.add("rd-panel-refresh");
+  }
+
   function render(d) {
     const t = KAI_VIZ.theme();
     const esc = window.spekEscape;
+    _replayFade("rd-kpi-card");
 
     // ── Header ──
     syncTahunOptions(d.tahun, d.available_years, d.all_years);
@@ -324,7 +357,7 @@
           '<tr><td colspan="3" class="empty-state">Tidak ada alat sedang diperbaiki</td></tr>';
       } else {
         wBody.innerHTML = d.workshop_list.map((r, i) => `
-          <tr class="border-b border-gray-50 dark:border-gray-700/50 hover:bg-amber-50 dark:hover:bg-amber-900/10 transition">
+          <tr class="rd-row-reveal border-b border-gray-50 dark:border-gray-700/50 hover:bg-amber-50 dark:hover:bg-amber-900/10 transition">
             <td class="px-2 py-1.5 text-gray-400 font-mono align-top">${i + 1}</td>
             <td class="px-2 py-1.5">
               <p class="font-semibold text-gray-700 dark:text-gray-200 leading-tight">${esc(r.nama_alat)}</p>
@@ -522,10 +555,13 @@
         // Direct labels satisfy the relief rule for the lighter categorical
         // steps, which sit under 3:1 contrast on a white surface.
         if (legEl) {
+          // Full label wraps instead of truncating behind a title tooltip —
+          // same reasoning as the sparepart rail above: title never fires on
+          // touch, and an alat name can run well past what a single line fits.
           legEl.innerHTML = slices.map(([k, v], i) => `
-            <div class="flex items-center gap-2">
+            <div class="flex items-center gap-2 rd-row-reveal">
               <span class="w-2.5 h-2.5 rounded-sm shrink-0" style="background:${t.categorical[i]}"></span>
-              <span class="truncate" title="${esc(k)}">${esc(k)}</span>
+              <span class="break-words min-w-0 flex-1">${esc(k)}</span>
               <span class="ml-auto shrink-0 tabular-nums font-bold text-gray-700 dark:text-gray-200">${((v / total) * 100).toFixed(1)}%</span>
             </div>`).join("");
         }
@@ -550,12 +586,15 @@
     mount.innerHTML = rows
       .map(
         (r) => `
-        <div class="relative rounded-md overflow-hidden">
+        <div class="relative rounded-md overflow-hidden rd-row-reveal">
           <div class="absolute inset-y-0 left-0 bg-emerald-100/70 dark:bg-emerald-900/25"
                style="width:${Math.max(4, ((r.nilai || 0) / max) * 100)}%"></div>
           <div class="relative flex items-center justify-between gap-2 px-2 py-1.5">
-            <span class="text-[10px] font-semibold text-gray-700 dark:text-gray-200 truncate"
-                  title="${esc(r.nama_part)}">${esc(r.nama_part)}</span>
+            <!-- Full name is now always visible (wraps) instead of hidden behind
+                 a truncate+title ellipsis — title never fires on touch, and this
+                 rail is exactly the kind of screen a technician reads on a
+                 phone. -->
+            <span class="text-[10px] font-semibold text-gray-700 dark:text-gray-200 break-words min-w-0 flex-1">${esc(r.nama_part)}</span>
             <span class="text-[10px] font-bold text-emerald-700 dark:text-emerald-300 shrink-0 tabular-nums">
               ${r.jumlah}× · ${KAI_VIZ.rupiah(r.nilai)}
             </span>
@@ -573,6 +612,7 @@
     const t = KAI_VIZ.theme();
     const canvas = el("rd-chart-mcf");
     if (!canvas) return;
+    _replayFade("rd-mcf-card");
 
     if (el("rd-mcf-risk")) el("rd-mcf-risk").textContent = (d.aset_berisiko ?? 0).toLocaleString("id-ID");
     // (MTBF/MTTR are filled by _renderReliability from the perbaikan payload —
