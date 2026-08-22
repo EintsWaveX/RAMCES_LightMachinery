@@ -800,7 +800,7 @@ document
       );
 
       const dateStr = new Date().toISOString().slice(0, 10);
-      XLSX.writeFile(wb, `SIMAKAI_Laporan_${dateStr}.xlsx`);
+      XLSX.writeFile(wb, `RAMCES_Laporan_${dateStr}.xlsx`);
       showToast("File Excel berhasil diunduh.", "success");
     } catch (e) {
       console.error(e);
@@ -995,7 +995,7 @@ document
       });
 
       const fileDate = new Date().toISOString().slice(0, 10);
-      doc.save(`SIMAKAI_Laporan_${fileDate}.pdf`);
+      doc.save(`RAMCES_Laporan_${fileDate}.pdf`);
       showToast("File PDF berhasil diunduh.", "success");
     } catch (e) {
       console.error(e);

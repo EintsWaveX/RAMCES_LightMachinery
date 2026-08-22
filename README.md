@@ -1,4 +1,4 @@
-# RAMCES / SIMA-KAI
+# RAMCES
 
 **Light machinery asset monitoring for PT Kereta Api Indonesia (Persero) — Track & Bridge Division**
 
