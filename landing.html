@@ -1,1182 +1,2064 @@
 <!doctype html>
 <html lang="id">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>SIMA-KAI | Kartu Aset</title>
-    <link rel="icon" href="data:," />
-    <!-- Mencegah error favicon.ico 404 -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-      (function () {
-        const saved = localStorage.getItem("theme");
-        const prefersDark = window.matchMedia(
-          "(prefers-color-scheme: dark)",
-        ).matches;
-        if (saved === "dark" || (!saved && prefersDark)) {
-          document.documentElement.classList.add("dark");
-        }
-      })();
-      tailwind.config = {
-        darkMode: "class",
-        theme: {
-          extend: { fontFamily: { mono: ["Consolas", "Monaco", "monospace"] } },
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="icon" href="/assets/favicon.ico" />
+  <title>RAMCES | Kartu Aset</title>
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Shared design tokens + component layer. This page used to define its own
+       card, badge and status colours inline and skipped the light-mode contrast
+       rules entirely, which is why it read visibly flatter than the app. -->
+  <link rel="stylesheet" href="/assets/style.css" />
+  <script>
+    // ── Theme bootstrap (before paint) ──
+    // Same precedence as js/core.js: a stored choice wins, otherwise follow the
+    // operating system. Kept identical on purpose — this page and the SPA share
+    // sessionStorage and a technician moves between them mid-task, so a theme
+    // that flipped on the way across would look like a bug.
+    (function () {
+      const saved = localStorage.getItem("theme");
+      const prefersDark =
+        window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+      if (saved ? saved === "dark" : prefersDark)
+        document.documentElement.classList.add("dark");
+    })();
+
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ["Inter", "sans-serif"],
+            mono: ["Consolas", "Monaco", "monospace"],
+          },
+          colors: {
+            kai: { blue: "#164C81", orange: "#F3861B", bg: "#F0F4F8" },
+          },
         },
-      };
-    </script>
-    <link
-      rel="stylesheet"
-      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
-    />
-    <style>
-      body {
-        font-family: "Segoe UI", system-ui, sans-serif;
-      }
+      },
+    };
+  </script>
 
-      /* Status badge */
-      .badge-so {
-        background: #dcfce7;
-        color: #15803d;
-        border: 1px solid #86efac;
-      }
-      .badge-tso {
-        background: #fee2e2;
-        color: #b91c1c;
-        border: 1px solid #fca5a5;
-      }
-      .badge-baru {
-        background: #dbeafe;
-        color: #1d4ed8;
-        border: 1px solid #93c5fd;
-      }
+  <style>
+    /* ── Animations ───────────────────────────────────────────── */
+    @keyframes shimmer {
+      0%   { background-position: -800px 0; }
+      100% { background-position:  800px 0; }
+    }
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(18px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to   { opacity: 1; }
+    }
+    @keyframes scaleIn {
+      from { opacity: 0; transform: scale(.94); }
+      to   { opacity: 1; transform: scale(1); }
+    }
+    @keyframes slideUp {
+      from { opacity: 0; transform: translateY(40px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes pulseDot {
+      0%   { transform: scale(.8); opacity: .8; }
+      100% { transform: scale(1.6); opacity: 0; }
+    }
+    @keyframes badgePop {
+      0%   { opacity: 0; transform: scale(.75); }
+      70%  { transform: scale(1.07); }
+      100% { opacity: 1; transform: scale(1); }
+    }
 
-      /* Smooth skeleton shimmer */
-      @keyframes shimmer {
-        0% {
-          background-position: -800px 0;
-        }
-        100% {
-          background-position: 800px 0;
-        }
-      }
-      .skeleton {
-        background: linear-gradient(
-          90deg,
-          #e5e7eb 25%,
-          #f3f4f6 50%,
-          #e5e7eb 75%
-        );
-        background-size: 1000px 100%;
-        animation: shimmer 2s infinite;
-        border-radius: 6px;
-      }
-      .dark .skeleton {
-        background: linear-gradient(
-          90deg,
-          #374151 25%,
-          #4b5563 50%,
-          #374151 75%
-        );
-        background-size: 1000px 100%;
-      }
+    .anim-fade-up   { animation: fadeUp .45s cubic-bezier(.22,1,.36,1) both; }
+    .anim-fade-in   { animation: fadeIn .35s ease both; }
+    .anim-scale-in  { animation: scaleIn .3s cubic-bezier(.22,1,.36,1) both; }
+    .anim-slide-up  { animation: slideUp .38s cubic-bezier(.22,1,.36,1) both; }
+    .anim-badge-pop { animation: badgePop .4s cubic-bezier(.22,1,.36,1) both; }
+    .delay-1 { animation-delay: .07s; }
+    .delay-2 { animation-delay: .14s; }
+    .delay-3 { animation-delay: .21s; }
+    .delay-4 { animation-delay: .28s; }
 
-      /* Pulse dot for live status */
-      @keyframes pulse-ring {
-        0% {
-          transform: scale(0.8);
-          opacity: 0.8;
-        }
-        100% {
-          transform: scale(1.5);
-          opacity: 0;
-        }
-      }
-      .pulse-dot::before {
-        content: "";
-        display: block;
-        position: absolute;
-        width: 100%;
-        height: 100%;
-        border-radius: 50%;
-        background: currentColor;
-        animation: pulse-ring 1.4s ease-out infinite;
-      }
-      .pulse-dot {
-        position: relative;
-      }
+    /* tab slide transition */
+    .tab-panel { transition: opacity .22s ease, transform .22s ease; }
+    .tab-panel.hidden { display: none; }
 
-      /* Dark-mode support for additional widgets */
-      .dark input,
-      .dark textarea,
-      .dark select {
-        background-color: #1f2937;
-        border-color: #374151;
-        color: #e5e7eb;
-      }
-      .dark input::placeholder,
-      .dark textarea::placeholder {
-        color: #9ca3af;
-      }
-    </style>
-  </head>
+    /* skeleton shimmer */
+    .skeleton {
+      background: linear-gradient(90deg,#e5e7eb 25%,#f3f4f6 50%,#e5e7eb 75%);
+      background-size: 1000px 100%;
+      animation: shimmer 1.8s infinite;
+      border-radius: 8px;
+    }
+    .dark .skeleton {
+      background: linear-gradient(90deg,#374151 25%,#4b5563 50%,#374151 75%);
+      background-size: 1000px 100%;
+    }
 
-  <body class="bg-gray-50 dark:bg-gray-900 min-h-screen flex flex-col pb-12">
-    <!-- ── HEADER (Lebar penuh) ──────────────────────────────── -->
-    <header
-      class="w-full bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 shadow-sm sticky top-0 z-20"
-    >
-      <div class="max-w-7xl mx-auto px-4 py-3 flex items-center gap-3">
-        <i class="fas fa-train text-blue-600 text-xl"></i>
-        <div>
-          <p
-            class="text-[10px] uppercase font-bold tracking-wider text-gray-400 leading-none"
-          >
-            PT Kereta Api Indonesia
-          </p>
-          <h1
-            class="text-sm font-bold text-gray-800 dark:text-gray-100 leading-tight"
-          >
-            SIMA-KAI &mdash; Kartu Aset
-          </h1>
-        </div>
-        <a
-          href="index.html"
-          class="ml-auto text-xs text-blue-600 font-semibold flex items-center gap-1.5 hover:bg-blue-50 dark:hover:bg-blue-900/30 px-3 py-1.5 rounded-lg transition"
-        >
-          <i class="fas fa-sign-in-alt"></i>
-          <span class="hidden sm:inline">Akses ke SIMA-KAI</span>
-        </a>
-      </div>
-    </header>
+    /* pulse dot */
+    .pulse-dot { position: relative; }
+    .pulse-dot::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      border-radius: 50%;
+      background: currentColor;
+      animation: pulseDot 1.4s ease-out infinite;
+    }
 
-    <!-- ── MAIN CONTAINER (Lebar responsif, up to 7xl) ───────── -->
-    <main
-      class="w-full max-w-7xl mx-auto px-4 mt-6 space-y-6"
-      id="main-content"
-    >
-      <!-- Loading Skeleton (Lebar penuh) -->
-      <div
-        id="skeleton"
-        class="w-full bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 p-6 space-y-6"
-      >
-        <div
-          class="space-y-3 border-b border-gray-100 dark:border-gray-700 pb-6"
-        >
-          <div class="skeleton h-4 w-32"></div>
-          <div class="skeleton h-8 w-64"></div>
-          <div class="skeleton h-4 w-48"></div>
-        </div>
-        <div class="grid grid-cols-2 md:grid-cols-4 gap-6">
-          <div class="skeleton h-12 w-full"></div>
-          <div class="skeleton h-12 w-full"></div>
-          <div class="skeleton h-12 w-full"></div>
-          <div class="skeleton h-12 w-full"></div>
-        </div>
-      </div>
+    /* inputs / selects dark mode */
+    .dark input, .dark textarea, .dark select {
+      background-color: #1f2937;
+      border-color: #374151;
+      color: #e5e7eb;
+    }
+    .dark input::placeholder, .dark textarea::placeholder { color: #6b7280; }
 
-      <!-- Error State -->
-      <div
-        id="asset-error"
-        class="hidden bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 p-12 text-center space-y-3"
-      >
-        <i
-          class="fas fa-exclamation-triangle text-5xl text-yellow-400 mb-2 block"
-        ></i>
-        <p class="text-xl font-bold text-gray-700 dark:text-gray-200">
-          Aset tidak ditemukan
+    /* logo-nav shared with index.html.
+       These used to point at /assets/logo.png and /assets/logo-dark.png, which
+       do not exist — assets/ only holds logo_nav.svg and logo_login.svg — so
+       the header rendered an empty box. style.css already defines .logo-nav
+       with the correct SVG; only the sizing is overridden here, since the
+       landing header is smaller than the sidebar's. */
+    .logo-nav {
+      height: 2rem;
+      width: 8rem;
+    }
+
+    /* scrollbar thin */
+    .thin-scroll::-webkit-scrollbar { width: 4px; height: 4px; }
+    .thin-scroll::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 4px; }
+    .dark .thin-scroll::-webkit-scrollbar-thumb { background: #4b5563; }
+  </style>
+</head>
+
+<body class="bg-kai-bg dark:bg-gray-900 text-gray-800 dark:text-gray-200 font-sans min-h-screen flex flex-col">
+
+  <!-- ══════════════════════════════════════════════════
+       HEADER
+  ══════════════════════════════════════════════════ -->
+  <header class="w-full bg-kai-blue dark:bg-gray-800 shadow-md sticky top-0 z-30">
+    <div class="max-w-4xl mx-auto px-4 py-2.5 flex items-center gap-3">
+      <!-- Logo (matches index.html sidebar logo pattern) -->
+      <div class="logo-nav h-8 w-32 bg-contain bg-no-repeat bg-left shrink-0"></div>
+
+      <div class="flex-1 min-w-0">
+        <p class="text-[9px] uppercase tracking-widest text-blue-200/70 leading-none font-semibold">
+          PT Kereta Api Indonesia
         </p>
-        <p class="text-sm text-gray-500 dark:text-gray-400" id="error-message">
-          UID tidak valid atau aset sudah di-afkir.
-        </p>
+        <!-- The full lockup wrapped to three lines at 390px and pushed the
+             actions off the row. Short form on phones, full name from sm: up. -->
+        <h1 class="text-xs font-bold text-white leading-tight tracking-wide truncate">
+          <span class="sm:hidden">Kartu Aset</span>
+          <span class="hidden sm:inline">RAMCES Light Machinery &mdash; Kartu Aset</span>
+        </h1>
       </div>
 
-      <!-- ── KONTEN ASET (Unified Panel & Table) ────────────────── -->
-      <div id="asset-view" class="hidden flex-col gap-6">
-        <!-- 1. PANEL INFORMASI TERPADU (Header + Detail) -->
-        <div
-          class="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden relative"
-        >
-          <!-- Color Strip -->
-          <div class="h-1.5 w-full bg-gray-300" id="status-strip"></div>
+      <!-- Live-connection / presence indicator.
+           Only meaningful once signed in: an anonymous QR scan deliberately
+           does not register presence. When it is lit, this person shows up as
+           online in Pusat Data ▸ Pengguna with "Kartu Aset (QR)" as their
+           current screen, so the office can see who is out in the field. -->
+      <div id="ws-presence"
+        class="hidden shrink-0 items-center gap-1.5 px-2 py-1 rounded-lg bg-white/10 text-[10px] font-semibold text-blue-100"
+        title="Status sambungan langsung">
+        <span id="ws-dot" class="w-1.5 h-1.5 rounded-full bg-gray-400"></span>
+        <span id="ws-label" class="hidden sm:inline">Menghubungkan…</span>
+      </div>
 
-          <!-- Bagian Atas: Identitas Aset -->
-          <div
-            class="p-5 md:p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-gray-100 dark:border-gray-700"
-          >
+      <!-- Dark-mode toggle -->
+      <button id="btn-theme" title="Ganti tema"
+        class="shrink-0 w-8 h-8 rounded-lg flex items-center justify-center text-blue-200 hover:text-white hover:bg-white/10 transition">
+        <i class="fas fa-moon text-sm dark:hidden"></i>
+        <i class="fas fa-sun  text-sm hidden dark:inline"></i>
+      </button>
+
+      <!-- Akses ke RAMCES (token passthrough via sessionStorage same-tab nav) -->
+      <button id="btn-akses"
+        class="shrink-0 flex items-center gap-1.5 bg-kai-orange hover:bg-orange-500 active:bg-orange-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg transition shadow-sm">
+        <i class="fas fa-sign-in-alt text-xs"></i>
+        <span class="hidden sm:inline">Akses RAMCES</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- ══════════════════════════════════════════════════
+       MAIN
+  ══════════════════════════════════════════════════ -->
+  <main class="flex-1 w-full max-w-4xl mx-auto px-4 py-6 space-y-5" id="main-content">
+
+    <!-- ── SKELETON ─────────────────────────────────── -->
+    <div id="skeleton" class="space-y-4">
+      <div class="bg-white dark:bg-gray-800 rounded-2xl p-5 space-y-4 border border-gray-200 dark:border-gray-700 shadow-sm">
+        <div class="skeleton h-3 w-24 rounded"></div>
+        <div class="skeleton h-7 w-56 rounded"></div>
+        <div class="skeleton h-4 w-40 rounded"></div>
+        <div class="grid grid-cols-3 gap-3 pt-2">
+          <div class="skeleton h-8 rounded-full"></div>
+          <div class="skeleton h-8 rounded-full"></div>
+          <div class="skeleton h-8 rounded-full"></div>
+        </div>
+      </div>
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div class="skeleton h-16 rounded-xl"></div>
+        <div class="skeleton h-16 rounded-xl"></div>
+        <div class="skeleton h-16 rounded-xl"></div>
+        <div class="skeleton h-16 rounded-xl"></div>
+      </div>
+      <div class="bg-white dark:bg-gray-800 rounded-2xl p-5 border border-gray-200 dark:border-gray-700 shadow-sm space-y-3">
+        <div class="skeleton h-4 w-32 rounded"></div>
+        <div class="skeleton h-28 w-full rounded-xl"></div>
+      </div>
+    </div>
+
+    <!-- ── ERROR STATE ───────────────────────────────── -->
+    <div id="asset-error" class="hidden bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 p-12 text-center space-y-3 anim-fade-up">
+      <i class="fas fa-exclamation-triangle text-5xl text-yellow-400 block mb-2"></i>
+      <p class="text-xl font-bold text-gray-700 dark:text-gray-200">Aset Tidak Ditemukan</p>
+      <p class="text-sm text-gray-500 dark:text-gray-400" id="error-message">
+        UID tidak valid atau aset sudah di-afkir.
+      </p>
+    </div>
+
+    <!-- ══════════════════════════════════════════════
+         ASSET VIEW (shown after load)
+    ══════════════════════════════════════════════ -->
+    <div id="asset-view" class="hidden space-y-4">
+
+      <!-- ── 1. IDENTITY CARD ──────────────────────── -->
+      <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden anim-fade-up">
+        <!-- status color strip -->
+        <div id="status-strip" class="h-1.5 w-full bg-gray-300 transition-colors duration-500"></div>
+
+        <div class="p-5">
+          <!-- Top row: ID + badges -->
+          <div class="flex justify-between items-start gap-3">
             <div class="min-w-0">
-              <p
-                class="hidden text-xs text-gray-400 font-mono mb-1 tracking-wider"
-                id="info-uid"
-              >
-                —
-              </p>
-              <h2
-                class="text-2xl md:text-3xl font-black font-mono text-gray-800 dark:text-gray-100 break-all leading-tight"
-                id="info-kode-id"
-              >
-                —
-              </h2>
-              <p
-                class="text-sm md:text-base text-gray-600 dark:text-gray-400 mt-1 uppercase tracking-wide font-semibold"
-                id="info-alat"
-              >
-                —
-              </p>
+              <p class="text-[10px] uppercase tracking-widest text-gray-400 font-semibold">ID Aset</p>
+              <h2 id="info-id" class="text-xl sm:text-2xl font-black font-mono text-kai-blue dark:text-blue-400 break-all leading-tight mt-0.5">—</h2>
+              <p id="info-alat" class="text-sm font-semibold text-gray-700 dark:text-gray-300 mt-1 uppercase tracking-wide">—</p>
             </div>
-            <span
-              id="info-status-badge"
-              class="shrink-0 px-4 py-1.5 rounded-full text-sm font-bold flex items-center gap-2"
-            >
-              <span
-                class="pulse-dot w-2.5 h-2.5 rounded-full inline-block"
-              ></span>
-              <span id="info-status-text">—</span>
-            </span>
-          </div>
-
-          <!-- Bagian Bawah: Grid Detail dari Riwayat -->
-          <div class="p-5 md:p-6 bg-gray-50 dark:bg-gray-800/50">
-            <dl class="grid grid-cols-2 lg:grid-cols-4 gap-y-6 gap-x-6 text-sm">
-              <div>
-                <dt
-                  class="text-[10px] text-gray-400 uppercase tracking-wider font-bold mb-1"
-                >
-                  Lokasi / DAOP
-                </dt>
-                <dd
-                  class="font-semibold text-gray-800 dark:text-gray-100 text-base md:text-lg truncate"
-                  id="hist-info-daop"
-                >
-                  —
-                </dd>
-              </div>
-              <div>
-                <dt
-                  class="text-[10px] text-gray-400 uppercase tracking-wider font-bold mb-1"
-                >
-                  UPT Terkini
-                </dt>
-                <dd
-                  class="font-semibold text-gray-800 dark:text-gray-100 text-base md:text-lg truncate"
-                  id="hist-info-upt"
-                >
-                  —
-                </dd>
-              </div>
-              <div>
-                <dt
-                  class="text-[10px] text-gray-400 uppercase tracking-wider font-bold mb-1"
-                >
-                  Peruntukan
-                </dt>
-                <dd
-                  class="font-semibold text-gray-800 dark:text-gray-100 text-base md:text-lg capitalize truncate"
-                  id="hist-info-peruntukan"
-                >
-                  —
-                </dd>
-              </div>
-              <div>
-                <dt
-                  class="text-[10px] text-gray-400 uppercase tracking-wider font-bold mb-1"
-                >
-                  Terakhir Diupdate
-                </dt>
-                <dd
-                  class="font-semibold text-gray-800 dark:text-gray-100 text-base md:text-lg"
-                  id="hist-info-lastupdate"
-                >
-                  —
-                </dd>
-              </div>
-            </dl>
-
-            <!-- Tombol Form Perbaikan dipindah ke sini -->
-            <div
-              class="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700"
-            >
-              <button
-                id="btn-form-perbaikan"
-                class="w-full sm:w-auto inline-flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white rounded-xl px-6 py-3 shadow transition-all font-bold text-sm"
-              >
-                <i class="fas fa-tools text-lg"></i> Form Perbaikan
-              </button>
+            <div id="badges-col" class="flex flex-col items-end gap-1 shrink-0 mt-1">
+              <span id="badge-kondisi" class="anim-badge-pop inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-gray-100 text-gray-400">
+                <i class="fas fa-circle text-[6px]"></i> —
+              </span>
+              <span id="badge-kalib" class="anim-badge-pop delay-1 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-gray-100 text-gray-400">
+                <i class="fas fa-circle text-[6px]"></i> BLM KALIBRASI
+              </span>
+              <span id="badge-mutasi" class="anim-badge-pop delay-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-gray-100 text-gray-400">
+                <i class="fas fa-circle text-[6px]"></i> TIDAK TERMUTASI
+              </span>
             </div>
           </div>
-        </div>
 
-        <!-- 2. INLINE REPAIR FORM (Hidden by default) -->
-        <div
-          id="section-form"
-          class="hidden bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden"
-        >
-          <div
-            class="flex items-center justify-between px-5 md:px-6 py-4 border-b border-gray-100 dark:border-gray-700 bg-blue-50/50 dark:bg-blue-900/10"
-          >
-            <h3
-              class="font-bold text-gray-800 dark:text-gray-100 flex items-center gap-2"
-            >
-              <i class="fas fa-tools text-blue-500"></i> Catat Perbaikan Baru
-            </h3>
-            <button
-              id="close-form"
-              class="text-gray-400 hover:text-red-500 text-lg transition"
-            >
-              <i class="fas fa-times"></i>
-            </button>
-          </div>
-
-          <div id="form-auth-gate" class="p-8 text-center space-y-4">
-            <i
-              class="fas fa-lock text-4xl text-gray-300 dark:text-gray-600"
-            ></i>
-            <p
-              class="text-sm text-gray-600 dark:text-gray-400 max-w-sm mx-auto"
-            >
-              Untuk mencatat perbaikan, Anda harus masuk ke sistem terlebih
-              dahulu.
-            </p>
-            <button
-              onclick="window.location.reload()"
-              class="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold px-6 py-2.5 rounded-xl transition text-sm"
-            >
-              <i class="fas fa-sign-in-alt"></i> Login Sekarang
-            </button>
-          </div>
-
-          <form id="repair-form" class="hidden p-5 md:p-6 space-y-5" novalidate>
-            <input type="hidden" id="form-uid" />
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
-              <div>
-                <label
-                  class="block text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1"
-                  >Tanggal Perbaikan</label
-                >
-                <input
-                  type="date"
-                  id="form-tanggal"
-                  required
-                  class="w-full border dark:border-gray-600 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-blue-400 focus:outline-none"
-                />
-              </div>
-              <div>
-                <label
-                  class="block text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1"
-                  >Nama Teknisi</label
-                >
-                <input
-                  type="text"
-                  id="form-teknisi"
-                  required
-                  placeholder="Nama lengkap petugas"
-                  class="w-full border dark:border-gray-600 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-blue-400 focus:outline-none"
-                />
-              </div>
-              <div>
-                <label
-                  class="block text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1"
-                  >Lokasi Perbaikan (DAOP/Induk)</label
-                >
-                <select
-                  id="form-lokasi"
-                  required
-                  class="w-full border dark:border-gray-600 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-blue-400 focus:outline-none"
-                >
-                  <option value="">Pilih Lokasi Perbaikan...</option>
-                </select>
-              </div>
-              <div>
-                <label
-                  class="block text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1"
-                  >UPT Pengirim</label
-                >
-                <select
-                  id="form-upt"
-                  required
-                  class="w-full border dark:border-gray-600 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-blue-400 focus:outline-none"
-                >
-                  <option value="">Pilih Lokasi Perbaikan Dahulu...</option>
-                </select>
-              </div>
-            </div>
-
-            <div>
-              <label
-                class="block text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2"
-                >Kondisi Alat Kerja Pasca Perbaikan</label
-              >
-              <div class="flex gap-3 max-w-md">
-                <button
-                  type="button"
-                  data-status="SO"
-                  class="landing-status-btn flex-1 py-3 rounded-xl font-bold text-sm border-2 border-green-400 text-green-600 hover:bg-green-50 dark:hover:bg-green-900/20 transition"
-                >
-                  ✅ SO (Siap Operasi)
-                </button>
-                <button
-                  type="button"
-                  data-status="TSO"
-                  class="landing-status-btn flex-1 py-3 rounded-xl font-bold text-sm border-2 border-red-400 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 transition"
-                >
-                  ❌ TSO (Tidak Siap)
-                </button>
-              </div>
-              <input type="hidden" id="form-kondisi" />
-            </div>
-
-            <div>
-              <label
-                class="block text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1"
-                >Keterangan / Uraian Pekerjaan</label
-              >
-              <textarea
-                id="form-keterangan"
-                rows="3"
-                placeholder="Jelaskan secara singkat komponen apa yang diganti atau diperbaiki..."
-                class="w-full border dark:border-gray-600 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-blue-400 focus:outline-none resize-none"
-              ></textarea>
-            </div>
+          <!-- Informasi Alat Kerja — the SINGLE place each of these values is
+               printed. There used to be an "ID segment decoder pills" row here
+               as well, which repeated Pengadaan, Tahun, Peruntukan and Lokasi
+               from the grid below it; status was on screen four times over.
+               One datum, one place. -->
+          <dl id="detail-grid" class="mt-4 pt-4 border-t border-gray-100 dark:border-gray-700 grid grid-cols-2 sm:grid-cols-3 gap-y-3 gap-x-4 text-xs">
           </dl>
+        </div>
+      </div>
 
-            <button
-              type="submit"
-              id="btn-submit-repair"
-              class="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-8 rounded-xl transition flex items-center justify-center gap-2"
-            >
-              <i class="fas fa-save"></i> Simpan Laporan
-            </button>
-          </form>
+      <!-- ── 1b. SPESIFIKASI ALAT KERJA ───────────────
+           Photo, Merk, Model/Type and the five specification rows from the
+           client's Rekap Spek template. Contents are written entirely by
+           `renderSpekCard()` in js/views/spektek.js, which index.html shares —
+           this element is only the shell, so do not add inner markup here.
+           Hidden when the asset has no Model/Type rather than rendering a card
+           full of em-dashes. -->
+      <div id="spec-card"
+        class="hidden bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden anim-fade-up delay-1">
+      </div>
+
+      <!-- ── 2. MINI SUMMARY STATS ─────────────────── -->
+      <div id="stats-row" class="grid grid-cols-2 sm:grid-cols-4 gap-3 anim-fade-up delay-1">
+        <!-- filled by JS -->
+      </div>
+
+      <!-- ── 3. TAB PANEL ──────────────────────────── -->
+      <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden anim-fade-up delay-2">
+        <!-- Tab buttons -->
+        <div class="flex border-b border-gray-100 dark:border-gray-700 bg-gray-50/60 dark:bg-gray-800">
+          <button data-tab="repair"
+            class="tab-btn flex-1 py-3 text-xs font-semibold flex items-center justify-center gap-1.5 transition border-b-2">
+            <i class="fas fa-tools text-xs"></i> Pemeliharaan
+          </button>
+          <button data-tab="kalibrasi"
+            class="tab-btn flex-1 py-3 text-xs font-semibold flex items-center justify-center gap-1.5 transition border-b-2">
+            <i class="fas fa-ruler-combined text-xs"></i> Kalibrasi
+          </button>
+          <button data-tab="mutasi"
+            class="tab-btn flex-1 py-3 text-xs font-semibold flex items-center justify-center gap-1.5 transition border-b-2">
+            <i class="fas fa-exchange-alt text-xs"></i> Mutasi
+          </button>
         </div>
 
-        <!-- 3. TABEL RIWAYAT (Always Open in desktop/mobile) -->
-        <div
-          id="section-history"
-          class="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden"
-        >
-          <div
-            class="flex items-center px-5 md:px-6 py-4 border-b border-gray-100 dark:border-gray-700"
-          >
-            <h3
-              class="font-bold text-gray-800 dark:text-gray-100 flex items-center gap-2"
-            >
-              <i class="fas fa-list-alt text-purple-500"></i> Log Riwayat
-              Kondisi
-            </h3>
-          </div>
-          <div class="overflow-x-auto w-full">
-            <table
-              class="w-full text-left text-sm whitespace-nowrap min-w-[800px]"
-            >
-              <thead
-                class="bg-gray-50 dark:bg-gray-700/50 text-gray-500 dark:text-gray-400 text-[11px] uppercase tracking-wider"
-              >
+        <!-- Tab panels -->
+        <div class="overflow-x-auto thin-scroll">
+
+          <!-- PANEL: Pemeliharaan -->
+          <div id="panel-repair" class="tab-panel">
+            <table class="w-full text-left text-xs whitespace-nowrap min-w-[640px]">
+              <thead class="bg-gray-50 dark:bg-gray-700/50 text-gray-400 uppercase tracking-wider text-[10px]">
                 <tr>
-                  <th class="p-4 font-bold w-12 text-center">No</th>
-                  <th class="p-4 font-bold">Waktu Pemeriksaan</th>
-                  <th class="p-4 font-bold">DAOP Induk</th>
-                  <th class="p-4 font-bold">UPT Pelapor</th>
-                  <th class="p-4 font-bold">Petugas</th>
-                  <th class="p-4 font-bold text-center">Kondisi</th>
-                  <th class="p-4 font-bold">Keterangan Pekerjaan</th>
+                  <th class="p-3 font-bold w-8 text-center">No</th>
+                  <th class="p-3 font-bold">Waktu</th>
+                  <th class="p-3 font-bold">Lokasi</th>
+                  <th class="p-3 font-bold">UPT</th>
+                  <th class="p-3 font-bold">Peruntukan</th>
+                  <th class="p-3 font-bold">Petugas</th>
+                  <th class="p-3 font-bold text-center">Kondisi</th>
+                  <th class="p-3 font-bold">Keterangan</th>
                 </tr>
               </thead>
-              <tbody
-                id="history-body"
-                class="divide-y divide-gray-100 dark:divide-gray-700/50"
-              >
-                <tr>
-                  <td colspan="7" class="p-8 text-center text-gray-400 text-sm">
-                    <i class="fas fa-spinner fa-spin mr-2"></i> Menyiapkan tabel
-                    riwayat...
-                  </td>
-                </tr>
+              <tbody id="tbody-repair" class="divide-y divide-gray-100 dark:divide-gray-700/50">
+                <tr><td colspan="8" class="p-8 text-center text-gray-400">
+                  <i class="fas fa-lock mr-2"></i>Login untuk melihat riwayat pemeliharaan.
+                </td></tr>
               </tbody>
             </table>
           </div>
+
+          <!-- PANEL: Kalibrasi -->
+          <div id="panel-kalibrasi" class="tab-panel hidden">
+            <table class="w-full text-left text-xs whitespace-nowrap min-w-[700px]">
+              <thead class="bg-gray-50 dark:bg-gray-700/50 text-gray-400 uppercase tracking-wider text-[10px]">
+                <tr>
+                  <th class="p-3 font-bold w-8 text-center">No</th>
+                  <th class="p-3 font-bold">Waktu Input</th>
+                  <th class="p-3 font-bold">Tgl Kalibrasi</th>
+                  <th class="p-3 font-bold">Berlaku</th>
+                  <th class="p-3 font-bold text-center">Status</th>
+                  <th class="p-3 font-bold">Pelaksana</th>
+                  <th class="p-3 font-bold">No. Sertifikat</th>
+                  <th class="p-3 font-bold text-center">Berkas</th>
+                  <th class="p-3 font-bold">Keterangan</th>
+                </tr>
+              </thead>
+              <tbody id="tbody-kalibrasi" class="divide-y divide-gray-100 dark:divide-gray-700/50">
+                <tr><td colspan="9" class="p-8 text-center text-gray-400">
+                  <i class="fas fa-lock mr-2"></i>Login untuk melihat riwayat kalibrasi.
+                </td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- PANEL: Mutasi -->
+          <div id="panel-mutasi" class="tab-panel hidden p-4 space-y-3">
+            <!-- Origin/current bar -->
+            <div id="mutasi-origin-bar" class="flex flex-wrap gap-4 bg-gray-50 dark:bg-gray-700/40 rounded-xl p-4 text-sm border border-gray-100 dark:border-gray-700">
+              <div class="text-center text-gray-400 text-xs w-full">
+                <i class="fas fa-lock mr-1"></i>Login untuk melihat riwayat mutasi.
+              </div>
+            </div>
+            <!-- Timeline -->
+            <div id="mutasi-timeline" class="space-y-2"></div>
+          </div>
+
+        </div>
+
+        <!-- ── Action button (below tabs, full-width) ── -->
+        <div class="px-4 pb-4 pt-2 border-t border-gray-100 dark:border-gray-700">
+          <button id="btn-action"
+            class="w-full py-3 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition shadow-sm active:scale-95 bg-kai-blue hover:bg-blue-800 text-white">
+            <i id="btn-action-icon" class="fas fa-tools"></i>
+            <span id="btn-action-label">Form Pemeliharaan</span>
+          </button>
         </div>
       </div>
-    </main>
 
-    <!-- ── TOAST ──────────────────────────────────────────── -->
-    <div
-      id="toast"
-      class="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 hidden"
-    >
-      <div
-        id="toast-inner"
-        class="px-5 py-3 rounded-xl shadow-xl text-white font-semibold text-sm flex items-center gap-2 transition-all"
-      ></div>
+    </div><!-- /asset-view -->
+  </main>
+
+  <!-- ══════════════════════════════════════════════════
+       MODAL: Form Pemeliharaan
+  ══════════════════════════════════════════════════ -->
+  <div id="modal-repair" class="hidden fixed inset-0 z-[100] bg-gray-900/50 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4">
+    <div class="bg-white dark:bg-gray-800 w-full sm:max-w-md sm:rounded-2xl rounded-t-2xl shadow-2xl border border-gray-100 dark:border-gray-700 overflow-hidden anim-slide-up sm:anim-scale-in max-h-[92vh] flex flex-col">
+      <div class="flex items-center justify-between px-5 py-4 border-b border-gray-100 dark:border-gray-700 bg-kai-blue/5 dark:bg-kai-blue/10 shrink-0">
+        <div>
+          <h3 class="font-bold text-gray-800 dark:text-gray-100 flex items-center gap-2 text-sm">
+            <i class="fas fa-tools text-kai-blue"></i> Form Pemeliharaan
+          </h3>
+          <p class="text-[11px] font-mono text-kai-blue dark:text-blue-400 mt-0.5" id="repair-subtitle">—</p>
+        </div>
+        <button data-close="modal-repair" class="text-gray-400 hover:text-red-500 w-7 h-7 flex items-center justify-center rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+      <div class="overflow-y-auto thin-scroll flex-1">
+        <!-- Auth gate -->
+        <div id="repair-gate" class="p-8 text-center space-y-4">
+          <i class="fas fa-lock text-4xl text-gray-300 dark:text-gray-600"></i>
+          <p class="text-sm text-gray-500 dark:text-gray-400">Anda harus login terlebih dahulu.</p>
+          <button onclick="showLoginGate()" class="bg-kai-blue hover:bg-blue-800 text-white font-bold px-6 py-2.5 rounded-xl text-sm transition">
+            <i class="fas fa-sign-in-alt mr-1"></i> Login
+          </button>
+        </div>
+        <form id="form-repair" class="hidden p-5 space-y-4" novalidate>
+          <input type="hidden" id="repair-uid" />
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label class="block text-xs font-semibold text-gray-500 mb-1">Tanggal Pemeriksaan</label>
+              <input type="date" id="repair-tanggal" required
+                class="w-full border dark:border-gray-600 rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-kai-blue focus:outline-none transition" />
+            </div>
+            <div>
+              <label class="block text-xs font-semibold text-gray-500 mb-1">Nama Petugas</label>
+              <input type="text" id="repair-petugas" placeholder="Nama lengkap petugas"
+                class="w-full border dark:border-gray-600 rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-kai-blue focus:outline-none transition" />
+            </div>
+            <div>
+              <label class="block text-xs font-semibold text-gray-500 mb-1">Lokasi (DAOP/Induk)</label>
+              <select id="repair-lokasi" required
+                class="w-full border dark:border-gray-600 rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-kai-blue focus:outline-none transition">
+                <option value="">Pilih Lokasi...</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-xs font-semibold text-gray-500 mb-1">UPT Pelapor</label>
+              <select id="repair-upt" required
+                class="w-full border dark:border-gray-600 rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-kai-blue focus:outline-none transition">
+                <option value="">Pilih Lokasi dahulu...</option>
+              </select>
+            </div>
+          </div>
+          <!-- Kondisi toggle -->
+          <div>
+            <label class="block text-xs font-semibold text-gray-500 mb-2">Kondisi Alat Pasca Pemeliharaan</label>
+            <div class="flex gap-3">
+              <button type="button" data-kondisi="SO"
+                class="kondisi-btn flex-1 py-3 rounded-xl font-bold text-sm border-2 border-green-400 text-green-600 hover:bg-green-50 dark:hover:bg-green-900/20 transition">
+                ✅ SO (Siap Operasi)
+              </button>
+              <button type="button" data-kondisi="TSO"
+                class="kondisi-btn flex-1 py-3 rounded-xl font-bold text-sm border-2 border-red-400 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 transition">
+                ❌ TSO (Tidak Siap)
+              </button>
+            </div>
+            <input type="hidden" id="repair-kondisi" />
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-gray-500 mb-1">Keterangan / Uraian Pekerjaan</label>
+            <textarea id="repair-keterangan" rows="3" placeholder="Jelaskan komponen yang diperiksa/diperbaiki..."
+              class="w-full border dark:border-gray-600 rounded-xl px-3 py-3 text-sm focus:ring-2 focus:ring-kai-blue focus:outline-none resize-none transition"></textarea>
+          </div>
+
+          <!-- ── Sparepart yang dipakai ──
+               The field half of the inventory loop: a technician standing at
+               the machine records the parts fitted, and the warehouse ledger
+               moves in the same transaction as the condition report. Rides on
+               the same POST /api/perbaikan body as the SPA form. -->
+          <div class="border-t border-gray-100 dark:border-gray-700 pt-4">
+            <div class="flex items-center justify-between gap-2 mb-2 flex-wrap">
+              <label class="block text-xs font-semibold text-gray-500">
+                <i class="fas fa-gears text-kai-orange mr-1"></i> Sparepart yang Dipakai
+                <span class="font-normal text-gray-400">(opsional)</span>
+              </label>
+              <select id="repair-gudang" aria-label="Gudang asal sparepart"
+                class="border dark:border-gray-600 rounded-lg px-2 py-1.5 text-[11px] focus:ring-2 focus:ring-kai-blue focus:outline-none transition"></select>
+            </div>
+            <div id="repair-pakai-rows" class="space-y-2"></div>
+            <div class="flex items-center justify-between gap-2 mt-2 flex-wrap">
+              <button type="button" id="repair-pakai-add"
+                class="text-xs font-semibold text-kai-blue dark:text-blue-400 hover:underline">
+                <i class="fas fa-plus"></i> Tambah sparepart
+              </button>
+              <span class="text-[11px] text-gray-500">Total:
+                <b id="repair-pakai-total" class="text-gray-800 dark:text-gray-100">Rp 0</b></span>
+            </div>
+          </div>
+
+          <button type="submit" id="btn-submit-repair"
+            class="w-full bg-kai-blue hover:bg-blue-800 active:bg-blue-900 text-white font-bold py-3 rounded-xl transition flex items-center justify-center gap-2 text-sm shadow-sm">
+            <i class="fas fa-save"></i> Simpan Laporan Pemeliharaan
+          </button>
+        </form>
+      </div>
     </div>
+  </div>
 
-    <script>
-      // ──────────────────────────────────────────────────────────────
-      // CONFIG & GLOBAL STATE
-      // ──────────────────────────────────────────────────────────────
-      const API_BASE = window.location.origin + "/api";
-      const UNIT_LABELS = {
-        A: "Jalan Rel",
-        B: "Jembatan",
-        C: "Mekanik",
-        D: "Balaiyasa",
-      };
+  <!-- ══════════════════════════════════════════════════
+       MODAL: Form Kalibrasi
+  ══════════════════════════════════════════════════ -->
+  <div id="modal-kalibrasi" class="hidden fixed inset-0 z-[100] bg-gray-900/50 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4">
+    <div class="bg-white dark:bg-gray-800 w-full sm:max-w-md sm:rounded-2xl rounded-t-2xl shadow-2xl border border-gray-100 dark:border-gray-700 overflow-hidden anim-slide-up sm:anim-scale-in max-h-[92vh] flex flex-col">
+      <div class="flex items-center justify-between px-5 py-4 border-b border-gray-100 dark:border-gray-700 bg-cyan-500/5 dark:bg-cyan-500/10 shrink-0">
+        <div>
+          <h3 class="font-bold text-gray-800 dark:text-gray-100 flex items-center gap-2 text-sm">
+            <i class="fas fa-ruler-combined text-cyan-600"></i> Form Kalibrasi
+          </h3>
+          <p class="text-[11px] font-mono text-cyan-600 dark:text-cyan-400 mt-0.5" id="kalib-subtitle">—</p>
+        </div>
+        <button data-close="modal-kalibrasi" class="text-gray-400 hover:text-red-500 w-7 h-7 flex items-center justify-center rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+      <div class="overflow-y-auto thin-scroll flex-1">
+        <div id="kalib-gate" class="p-8 text-center space-y-4">
+          <i class="fas fa-lock text-4xl text-gray-300 dark:text-gray-600"></i>
+          <p class="text-sm text-gray-500 dark:text-gray-400">Anda harus login terlebih dahulu.</p>
+          <button onclick="showLoginGate()" class="bg-kai-blue hover:bg-blue-800 text-white font-bold px-6 py-2.5 rounded-xl text-sm transition">
+            <i class="fas fa-sign-in-alt mr-1"></i> Login
+          </button>
+        </div>
+        <form id="form-kalib" class="hidden p-5 space-y-4" novalidate>
+          <input type="hidden" id="kalib-uid" />
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label class="block text-xs font-semibold text-gray-500 mb-1">Tanggal Kalibrasi</label>
+              <input type="date" id="kalib-tanggal" required
+                class="w-full border dark:border-gray-600 rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-cyan-400 focus:outline-none transition" />
+            </div>
+            <div>
+              <label class="block text-xs font-semibold text-gray-500 mb-1">
+                Berlaku Sampai <span class="font-normal text-gray-400">(opsional)</span>
+              </label>
+              <input type="date" id="kalib-berlaku"
+                class="w-full border dark:border-gray-600 rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-cyan-400 focus:outline-none transition" />
+            </div>
+            <div>
+              <label class="block text-xs font-semibold text-gray-500 mb-1">Status Kalibrasi</label>
+              <select id="kalib-status" required
+                class="w-full border dark:border-gray-600 rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-cyan-400 focus:outline-none transition">
+                <option value="LULUS">LULUS</option>
+                <option value="BERSYARAT">BERSYARAT</option>
+                <option value="GAGAL">GAGAL</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-xs font-semibold text-gray-500 mb-1">Pelaksana Kalibrasi</label>
+              <input type="text" id="kalib-pelaksana" required placeholder="Lembaga / Teknisi pelaksana"
+                class="w-full border dark:border-gray-600 rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-cyan-400 focus:outline-none transition" />
+            </div>
+            <div class="sm:col-span-2">
+              <label class="block text-xs font-semibold text-gray-500 mb-1">
+                Nomor Sertifikat <span class="font-normal text-gray-400">(opsional)</span>
+              </label>
+              <input type="text" id="kalib-nomor" placeholder="Contoh: KAL/2025/001"
+                class="w-full border dark:border-gray-600 rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-cyan-400 focus:outline-none transition" />
+            </div>
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-gray-500 mb-1">
+              Catatan / Hasil Kalibrasi <span class="font-normal text-gray-400">(opsional)</span>
+            </label>
+            <textarea id="kalib-keterangan" rows="3" placeholder="Temuan, hasil pengukuran, catatan..."
+              class="w-full border dark:border-gray-600 rounded-xl px-3 py-3 text-sm focus:ring-2 focus:ring-cyan-400 focus:outline-none resize-none transition"></textarea>
+          </div>
+          <!-- Certificate upload. The backend has accepted these since
+               _save_certificate() was written, but no UI ever called it —
+               the record is created first, then the file is attached to the
+               id_kalibrasi that comes back. -->
+          <div>
+            <label for="kalib-file" class="block text-xs font-semibold text-gray-500 mb-1">
+              Berkas Sertifikat <span class="font-normal text-gray-400">(opsional)</span>
+            </label>
+            <div class="file-drop">
+              <i class="fas fa-file-arrow-up text-cyan-600 dark:text-cyan-400"></i>
+              <input type="file" id="kalib-file" title="Berkas sertifikat kalibrasi"
+                accept=".pdf,.png,.jpg,.jpeg,.webp" />
+            </div>
+            <p class="file-hint">PDF / JPG / PNG / WEBP, maksimal 10 MB.</p>
+          </div>
+          <button type="submit" id="btn-submit-kalib"
+            class="w-full bg-cyan-600 hover:bg-cyan-700 active:bg-cyan-800 text-white font-bold py-3 rounded-xl transition flex items-center justify-center gap-2 text-sm shadow-sm">
+            <i class="fas fa-ruler-combined"></i> Simpan Laporan Kalibrasi
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
 
-      let lokasiData = [];
-      let uptDatabase = [];
-      let currentAssetData = null; // Menyimpan data aset aktif
+  <!-- ══════════════════════════════════════════════════
+       MODAL: Form Mutasi (ADMIN ONLY)
+  ══════════════════════════════════════════════════ -->
+  <div id="modal-mutasi" class="hidden fixed inset-0 z-[100] bg-gray-900/50 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4">
+    <div class="bg-white dark:bg-gray-800 w-full sm:max-w-md sm:rounded-2xl rounded-t-2xl shadow-2xl border border-gray-100 dark:border-gray-700 overflow-hidden anim-slide-up sm:anim-scale-in max-h-[92vh] flex flex-col">
+      <div class="flex items-center justify-between px-5 py-4 border-b border-gray-100 dark:border-gray-700 bg-kai-orange/5 dark:bg-kai-orange/10 shrink-0">
+        <div>
+          <h3 class="font-bold text-gray-800 dark:text-gray-100 flex items-center gap-2 text-sm">
+            <i class="fas fa-exchange-alt text-kai-orange"></i> Proses Mutasi Aset
+          </h3>
+          <p class="text-[11px] font-mono text-kai-orange dark:text-orange-400 mt-0.5" id="mutasi-subtitle">—</p>
+        </div>
+        <button data-close="modal-mutasi" class="text-gray-400 hover:text-red-500 w-7 h-7 flex items-center justify-center rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+      <div class="overflow-y-auto thin-scroll flex-1 p-5 space-y-4">
+        <!-- Lokasi asal/kini info -->
+        <div class="bg-gray-50 dark:bg-gray-700/50 rounded-xl p-4 border border-gray-100 dark:border-gray-600 text-sm space-y-3">
+          <div>
+            <p class="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-0.5">Lokasi Asal (sebelum mutasi)</p>
+            <p id="mutasi-lokasi-asal" class="font-semibold text-gray-800 dark:text-gray-200">—</p>
+          </div>
+          <div>
+            <p class="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-0.5">Lokasi Kini</p>
+            <p id="mutasi-lokasi-kini" class="font-semibold text-gray-800 dark:text-gray-200">—</p>
+          </div>
+        </div>
+        <input type="hidden" id="mutasi-uid" />
+        <div>
+          <label class="block text-xs font-semibold text-gray-500 mb-1.5">Nama Petugas</label>
+          <input type="text" id="mutasi-petugas" placeholder="Nama petugas yang bertugas"
+            class="w-full border dark:border-gray-600 rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-kai-orange focus:outline-none transition" />
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-gray-500 mb-1.5">Tujuan Mutasi</label>
+          <select id="mutasi-lokasi-tuju"
+            class="w-full border dark:border-gray-600 rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-kai-orange focus:outline-none transition">
+            <option value="">Pilih Lokasi Tujuan...</option>
+          </select>
+        </div>
+        <div>
+          <label id="mutasi-upt-label" class="block text-xs font-semibold text-gray-500 mb-1.5">
+            UPT Tujuan <span class="font-normal text-gray-400">(opsional)</span>
+          </label>
+          <select id="mutasi-upt-tuju" disabled
+            class="w-full border dark:border-gray-600 rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-kai-orange focus:outline-none transition disabled:opacity-50 disabled:cursor-not-allowed">
+            <option value="">Pilih Lokasi Tujuan dahulu...</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-gray-500 mb-1.5">Keterangan / BKO</label>
+          <textarea id="mutasi-alasan" rows="2" placeholder="Alasan mutasi atau nomor BKO..."
+            class="w-full border dark:border-gray-600 rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-kai-orange focus:outline-none resize-none transition"></textarea>
+        </div>
+        <button id="btn-submit-mutasi"
+          class="w-full bg-kai-orange hover:bg-orange-600 active:bg-orange-700 text-white font-bold py-3 rounded-xl transition flex items-center justify-center gap-2 text-sm shadow-sm">
+          <i class="fas fa-exchange-alt"></i> Konfirmasi Mutasi
+        </button>
+      </div>
+    </div>
+  </div>
 
-      function qs(sel, root = document) {
-        return root.querySelector(sel);
+  <!-- ══════════════════════════════════════════════════
+       TOAST
+  ══════════════════════════════════════════════════ -->
+  <div id="toast" class="fixed bottom-6 left-1/2 -translate-x-1/2 z-[200] hidden pointer-events-none">
+    <div id="toast-inner" class="px-5 py-3 rounded-xl shadow-2xl text-white font-semibold text-sm flex items-center gap-2 anim-slide-up"></div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════
+       SCRIPT
+  ══════════════════════════════════════════════════ -->
+  <!-- The Model/Type spec card, shared verbatim with index.html. This page
+       loads no other js/ file, but the spec block is exactly the thing that
+       must not drift between the QR card and the SPA, so it is the one import.
+       It uses `authToken` and `showToast`, both declared below — every call
+       happens at render time, long after this file has evaluated. -->
+  <script src="/js/views/spektek.js"></script>
+  <!-- The captcha widget. A self-contained IIFE exporting one global
+       (window.RamcesCaptcha) — the js/a11y-modal.js pattern, and the ONLY shape
+       this page can load, because the block below declares its own `lokasiData`,
+       `authToken`, `showToast` and `getParentLokasiCode` at top level and
+       classic scripts share one lexical scope. Loading js/core.js here to reuse
+       those would be a fatal SyntaxError that blanks the whole QR page, and
+       neither checker reads this file: check_js.py scans js/, check_html.py
+       reads index.html. -->
+  <script src="/js/captcha.js"></script>
+  <script>
+  // ── CONFIG ──────────────────────────────────────────────────────────────
+  const API = window.location.origin + "/api";
+  const params  = new URLSearchParams(window.location.search);
+  const UID     = params.get("uid") || "";
+
+  // ── STATE ───────────────────────────────────────────────────────────────
+  let lokasiData  = [];   // [{ code, name, tipe }]
+  let uptDatabase = [];   // [{ upt (code), nama, lokasi (parent code) }]
+  let currentAsset = null;
+  let summarySelf  = null; // history/summary entry for this asset
+  let activeTab    = "repair";
+  // True when this asset's tool type is never calibrated (KATALOG SFM flag).
+  // Read by renderBadges(), which rewrites the badge's className and would
+  // otherwise resurrect a "BLM KALIBRASI" pill on a machine that is serviced
+  // rather than calibrated.
+  let kalibrasiGated = false;
+  let authToken    = sessionStorage.getItem("authToken") || "";
+  let activeUser   = sessionStorage.getItem("activeUser") || "";
+  let userRole     = "";  // decoded from JWT
+
+  const PERUNTUKAN_MAP = { A:"JALAN REL", B:"JEMBATAN", C:"MEKANIK", D:"BALAIYASA" };
+  const PENGADAAN_MAP  = { "1":"PUSAT", "2":"DAOP / DIVRE" };
+
+  // Abbreviations are spelled out wherever there is room. The card used to
+  // print a bare "SO" and a bare "D1"; neither means anything to a technician
+  // scanning a QR code for the first time.
+  const STATUS_MAP = {
+    SO:    "Siap Operasi",
+    TSO:   "Tidak Siap Operasi",
+    AFKIR: "Afkir",
+  };
+
+  /** "SO" → "Siap Operasi (SO)". Falls back to the raw code if unmapped. */
+  function statusLabel(code, withCode = true) {
+    const c = (code || "").toUpperCase();
+    const full = STATUS_MAP[c];
+    if (!full) return code || "—";
+    return withCode ? `${full} (${c})` : full;
+  }
+
+  // ── UTILS ────────────────────────────────────────────────────────────────
+  function qs(sel, root = document) { return root.querySelector(sel); }
+
+  function getJwtPayload(token) {
+    try {
+      const b = token.split(".")[1].replace(/-/g,"+").replace(/_/g,"/");
+      return JSON.parse(decodeURIComponent(atob(b).split("").map(c=>"%"+("00"+c.charCodeAt(0).toString(16)).slice(-2)).join("")));
+    } catch { return null; }
+  }
+
+  function formatUtcToLocal(s) {
+    if (!s) return "—";
+    const d = new Date(s.replace(" ","T") + (s.includes("T") ? "" : "Z"));
+    if (isNaN(d)) return s;
+    const BULAN = ["Jan","Feb","Mar","Apr","Mei","Jun","Jul","Ags","Sep","Okt","Nov","Des"];
+    return `${d.getDate()} ${BULAN[d.getMonth()]} ${d.getFullYear()} ${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;
+  }
+
+  function formatDateOnly(s) {
+    if (!s) return "—";
+    const [y,m,day] = s.split("-");
+    const BULAN = ["Jan","Feb","Mar","Apr","Mei","Jun","Jul","Ags","Sep","Okt","Nov","Des"];
+    return `${parseInt(day)} ${BULAN[parseInt(m)-1]} ${y}`;
+  }
+
+  // The parent-derivation rule, FOURTH copy. The other three are
+  // api/deps.py::get_parent_lokasi_code, seeds/katalog.py::get_parent_lokasi_code
+  // and js/core.js::getParentLokasiCode. All four must stay in step.
+  //
+  // This copy had silently fallen behind: it was still `^JR` with a MANDATORY
+  // dot, so it never received the J[RB] fix the other three got in rev0.5.0.
+  // Two live consequences on this page, both fixed here:
+  //   * every JB asset's card printed its own resort code where the DAOP name
+  //     belongs, because resolveLokasi() falls back to this;
+  //   * `parentCur` below was never equal to the target parent for a JB asset,
+  //     so UPT Tujuan was permanently `wajib` in the Mutasi form.
+  //
+  // No checker reads this file — check_js.py scans js/ and check_html.py reads
+  // index.html — which is exactly how it drifted. Compare by hand when changing
+  // any of the four.
+  function getParentLokasiCode(id) {
+    if (!id) return null;
+    const ROMAN = {I:"VI",II:"VII",III:"VIII",IV:"VIV",V:"VV",VI:"VVI",VII:"VVII",VIII:"VVIII",IX:"VIX"};
+    // `J[RB]`, not `JR`: the resort tree has two branches, jalan rel and jembatan.
+    const arab = id.match(/^J[RB]\s*(\d+)\./i);
+    if (arab) return `D${arab[1]}`;
+    // Dot optional: the katalog's "JBII" (JB II Padang) has no sub-number.
+    const rom = id.match(/^J[RB]\s*(IV|IX|VIII|VII|VI|V|I{1,3})(?:\.|$)/i);
+    if (rom) return ROMAN[rom[1].toUpperCase()] ?? null;
+    // MEKANIK — the third branch. The `$` anchor is load-bearing: alternation
+    // is leftmost-first, so without it "MEIV" matches `I` and returns VI.
+    const mekA = id.match(/^ME\s*(\d+)(?:\.\d+)?$/i);
+    if (mekA) return `D${mekA[1]}`;
+    const mekR = id.match(/^ME\s*(IV|IX|VIII|VII|VI|V|I{1,3})$/i);
+    if (mekR) return ROMAN[mekR[1].toUpperCase()] ?? null;
+    // "BY1A" → "BY1". This branch was missing here, so a Balaiyasa child
+    // resolved to null and the card showed the raw code instead of the name.
+    const by = id.match(/^(BY\d+)[A-Z]+$/i);
+    if (by) return by[1].toUpperCase();
+    return null;
+  }
+
+  // Mirrors resolveLokasi in js/search.js
+  function resolveLokasi(val) {
+    if (!val || val === "—") return { parentName:"—", uptName:"—", uptCode:"" };
+    const up = uptDatabase.find(u => u.upt === val);
+    if (up) {
+      const pCode = getParentLokasiCode(up.upt) || up.lokasi;
+      const pe = lokasiData.find(l => l.code === pCode);
+      return { parentName: pe ? pe.name : pCode, uptName: up.nama || up.upt, uptCode: up.upt };
+    }
+    const pe = lokasiData.find(l => l.code === val);
+    if (pe) return { parentName: pe.name, uptName:"—", uptCode:"" };
+    return { parentName: val, uptName:"—", uptCode:"" };
+  }
+
+  // Mirrors applyUptSelect in js/core.js
+  function applyUptSelect(locCode, selEl) {
+    if (!selEl) return;
+    const loc = lokasiData.find(l => l.code === locCode);
+    if (loc?.tipe?.toUpperCase() === "BALAIYASA") {
+      selEl.innerHTML = `<option value="">Tidak ada UPT untuk Balaiyasa</option>`;
+      selEl.disabled = true; return;
+    }
+    selEl.disabled = false;
+    const matches = uptDatabase.filter(u => u.lokasi === locCode);
+    selEl.innerHTML = matches.length
+      ? '<option value="">Pilih UPT...</option>' + matches.map(m=>`<option value="${m.upt}">${m.nama||m.upt}</option>`).join("")
+      : `<option value="">Tidak ada UPT untuk lokasi ini</option>`;
+    if (!matches.length) selEl.disabled = true;
+    selEl.value = "";
+  }
+
+  // Decode id_aset segments
+  function decodeAsetId(id) {
+    if (!id) return {};
+    if (id.includes(".")) {
+      const p = id.split(".");
+      if (p.length >= 6)
+        return { nomor:p[0], kodeAlat:p[1], pengadaan:p[2], tahun:p[3], peruntukan:p[4], lokasiCode:p.slice(5).join(".") };
+    }
+    const p = id.split("-");
+    if (p.length >= 4) return { kodeAlat:p[0], tahun:p[1], peruntukan:p[2], lokasiCode:p.slice(3).join("-") };
+    return {};
+  }
+
+  let _toastTimer;
+  function showToast(msg, type = "info") {
+    const colors = { success:"bg-green-600", error:"bg-red-600", info:"bg-kai-blue", warning:"bg-yellow-500" };
+    const icons  = { success:"fa-check-circle", error:"fa-exclamation-circle", info:"fa-info-circle", warning:"fa-exclamation-triangle" };
+    const t = qs("#toast"), ti = qs("#toast-inner");
+    ti.className = `px-5 py-3 rounded-xl shadow-2xl text-white font-semibold text-sm flex items-center gap-2 ${colors[type]}`;
+    ti.innerHTML = `<i class="fas ${icons[type]}"></i> ${msg}`;
+    t.classList.remove("hidden");
+    clearTimeout(_toastTimer);
+    _toastTimer = setTimeout(() => t.classList.add("hidden"), 3500);
+  }
+
+  // ── MASTER DATA ─────────────────────────────────────────────────────────
+  async function fetchMasterData() {
+    try {
+      const [lr, ur] = await Promise.all([
+        fetch(`${API}/master/lokasi`),
+        fetch(`${API}/master/lokasi?tipe=UPT`),
+      ]);
+      if (lr.ok) {
+        const raw = await lr.json();
+        lokasiData = raw.map(l => ({ code:l.id_lokasi, name:l.nama_lokasi, tipe:l.tipe }));
       }
-
-      let _toastTimer;
-      function showToast(msg, type = "info") {
-        const t = qs("#toast");
-        const ti = qs("#toast-inner");
-        const colors = {
-          success: "bg-green-600",
-          error: "bg-red-600",
-          info: "bg-blue-600",
-          warning: "bg-yellow-500",
-        };
-        const icons = {
-          success: "fa-check-circle",
-          error: "fa-exclamation-circle",
-          info: "fa-info-circle",
-          warning: "fa-exclamation-triangle",
-        };
-        ti.className = `px-5 py-3 rounded-xl shadow-xl text-white font-semibold text-sm flex items-center gap-2 ${colors[type]}`;
-        ti.innerHTML = `<i class="fas ${icons[type]}"></i> ${msg}`;
-        t.classList.remove("hidden");
-        clearTimeout(_toastTimer);
-        _toastTimer = setTimeout(() => t.classList.add("hidden"), 3500);
+      if (ur.ok) {
+        const raw = await ur.json();
+        uptDatabase = raw.map(u => ({ upt:u.id_lokasi, nama:u.nama_lokasi, lokasi: getParentLokasiCode(u.id_lokasi) || u.id_lokasi }));
       }
+      populateLokasiDropdowns();
+    } catch (e) { console.warn("Gagal memuat master data:", e); }
+  }
 
-      function formatUtcToLocal(utcStr) {
-        if (!utcStr) return "—";
-        const date = new Date(utcStr.replace(" ", "T") + "Z");
-        if (isNaN(date)) return utcStr;
+  function populateLokasiDropdowns() {
+    // Only parent lokasi (non-UPT) for the lokasi pickers
+    const parents = lokasiData.filter(l => l.tipe?.toUpperCase() !== "UPT");
+    const opts = '<option value="">Pilih Lokasi...</option>' + parents.map(l=>`<option value="${l.code}">${l.name}</option>`).join("");
+    qs("#repair-lokasi").innerHTML = opts;
+    // mutasi tujuan: all non-UPT
+    qs("#mutasi-lokasi-tuju").innerHTML = '<option value="">Pilih Lokasi Tujuan...</option>' + parents.map(l=>`<option value="${l.code}">${l.name}</option>`).join("");
+  }
 
-        const bulan = [
-          "Januari",
-          "Februari",
-          "Maret",
-          "April",
-          "Mei",
-          "Juni",
-          "Juli",
-          "Agustus",
-          "September",
-          "Oktober",
-          "November",
-          "Desember",
-        ];
-        const d = date.getDate();
-        const m = bulan[date.getMonth()];
-        const y = date.getFullYear();
-        const hh = String(date.getHours()).padStart(2, "0");
-        const mm = String(date.getMinutes()).padStart(2, "0");
-        return `${d} ${m} ${y} - ${hh}:${mm}`;
+  // ── AUTH ─────────────────────────────────────────────────────────────────
+  function isLoggedIn() { return !!authToken && !!activeUser; }
+
+  function isAdmin() {
+    const p = getJwtPayload(authToken);
+    return p && (p.role === "SUPER_ADMIN" || p.role === "ADMIN_WILAYAH");
+  }
+
+  async function apiAuth(endpoint, opts = {}) {
+    const headers = {
+      "Authorization": `Bearer ${authToken}`,
+      "ngrok-skip-browser-warning": "true",
+      ...(opts.headers || {}),
+    };
+    // FormData must set its OWN Content-Type, because only the browser knows
+    // the multipart boundary. Hard-coding application/json here (as this used
+    // to) makes every certificate upload fail with a 422 the moment it is
+    // wired up. Mirrors apiFetch() in js/api.js.
+    if (
+      opts.body !== undefined &&
+      opts.body !== null &&
+      !(opts.body instanceof FormData) &&
+      !(opts.body instanceof URLSearchParams)
+    ) {
+      headers["Content-Type"] = "application/json";
+    }
+    return fetch(API + endpoint, { ...opts, headers });
+  }
+
+  /**
+   * Download an authenticated file.
+   *
+   * The certificate endpoint requires a Bearer token, so a plain <a href> 401s.
+   * Fetch it as a blob and hand the browser an object URL instead.
+   */
+  async function downloadSertifikat(namaFile) {
+    try {
+      const res = await apiAuth(`/kalibrasi/sertifikat/${encodeURIComponent(namaFile)}`);
+      if (!res.ok) throw new Error("Berkas tidak ditemukan.");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = namaFile;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      // Revoked on the next tick: revoking synchronously can cancel the
+      // download in some browsers before it starts.
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (err) {
+      showToast(err.message || "Gagal mengunduh sertifikat.", "error");
+    }
+  }
+  window.downloadSertifikat = downloadSertifikat;
+
+  // ── THEME TOGGLE ────────────────────────────────────────────────────────
+  qs("#btn-theme").addEventListener("click", () => {
+    const isDark = document.documentElement.classList.toggle("dark");
+    localStorage.setItem("theme", isDark ? "dark" : "light");
+  });
+
+  // ── AKSES BUTTON (token passthrough) ───────────────────────────────────
+  // sessionStorage persists on same-tab navigation, so index.html will read
+  // the token that's already stored and auto-login seamlessly.
+  qs("#btn-akses").addEventListener("click", () => {
+    window.location.href = "/";
+  });
+
+  // ── MODAL CLOSE HELPERS ─────────────────────────────────────────────────
+  document.querySelectorAll("[data-close]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      qs("#" + btn.dataset.close)?.classList.add("hidden");
+    });
+  });
+  ["modal-repair","modal-kalibrasi","modal-mutasi"].forEach(id => {
+    qs("#" + id)?.addEventListener("click", e => {
+      if (e.target === qs("#" + id)) qs("#" + id).classList.add("hidden");
+    });
+  });
+
+  // ── TAB SWITCHING ───────────────────────────────────────────────────────
+  const TAB_CFG = {
+    repair:   { panel:"panel-repair",   icon:"fa-tools",          label:"Form Pemeliharaan", btnCls:"bg-kai-blue hover:bg-blue-800 text-white",   activeCls:"border-kai-blue text-kai-blue dark:text-blue-400" },
+    kalibrasi:{ panel:"panel-kalibrasi",icon:"fa-ruler-combined", label:"Form Kalibrasi",    btnCls:"bg-cyan-600 hover:bg-cyan-700 text-white",     activeCls:"border-cyan-500 text-cyan-600 dark:text-cyan-400" },
+    mutasi:   { panel:"panel-mutasi",   icon:"fa-exchange-alt",   label:"Form Mutasi",       btnCls:"bg-kai-orange hover:bg-orange-600 text-white", activeCls:"border-kai-orange text-kai-orange dark:text-orange-400" },
+  };
+  const INACTIVE_TAB_CLS = "border-transparent text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300";
+
+  function switchTab(tab) {
+    activeTab = tab;
+    document.querySelectorAll(".tab-btn").forEach(btn => {
+      const t = btn.dataset.tab;
+      const cfg = TAB_CFG[t];
+      // `data-gated`, not a `hidden` class: this line REPLACES className
+      // wholesale, so a class added by applyKalibrasiGate() would be wiped on
+      // the first tab switch. The dataset flag survives and is re-applied here.
+      const gated = btn.dataset.gated === "1" ? " hidden" : "";
+      btn.className = `tab-btn flex-1 py-3 text-xs font-semibold flex items-center justify-center gap-1.5 transition border-b-2 ${t === tab ? cfg.activeCls : INACTIVE_TAB_CLS}${gated}`;
+    });
+    Object.keys(TAB_CFG).forEach(t => {
+      const p = qs("#" + TAB_CFG[t].panel);
+      if (p) { p.classList.toggle("hidden", t !== tab); }
+    });
+
+    // Action button
+    const cfg = TAB_CFG[tab];
+    const btn = qs("#btn-action");
+    btn.className = `w-full py-3 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition shadow-sm active:scale-95 ${cfg.btnCls}`;
+    qs("#btn-action-icon").className = `fas ${cfg.icon}`;
+    qs("#btn-action-label").textContent = cfg.label;
+
+    // Show/hide mutasi button for non-admin
+    if (tab === "mutasi" && isLoggedIn() && !isAdmin()) {
+      btn.disabled = true;
+      btn.classList.add("opacity-50", "cursor-not-allowed");
+      qs("#btn-action-label").textContent = "Form Mutasi (Admin Only)";
+    } else {
+      btn.disabled = false;
+      btn.classList.remove("opacity-50", "cursor-not-allowed");
+    }
+
+    // Load tab data on first switch
+    if (isLoggedIn()) loadTabData(tab);
+  }
+
+  document.querySelectorAll(".tab-btn").forEach(btn => {
+    btn.addEventListener("click", () => switchTab(btn.dataset.tab));
+  });
+
+  // ── ACTION BUTTON ───────────────────────────────────────────────────────
+  qs("#btn-action").addEventListener("click", () => {
+    if (!isLoggedIn()) { showLoginGate(); return; }
+    if (activeTab === "repair") openRepairModal();
+    else if (activeTab === "kalibrasi") openKalibModal();
+    else if (activeTab === "mutasi") {
+      if (!isAdmin()) { showToast("Hanya Admin yang dapat memproses mutasi.", "warning"); return; }
+      openMutasiModal();
+    }
+  });
+
+  // ── LOAD ASSET ──────────────────────────────────────────────────────────
+  async function loadAsset(uid) {
+    try {
+      const res = await fetch(`${API}/public/aset/${uid}`, {
+        headers: { "ngrok-skip-browser-warning":"true" }
+      });
+      if (!res.ok) throw new Error((await res.json().catch(()=>({}))).detail || `HTTP ${res.status}`);
+      const data = await res.json();
+      currentAsset = data;
+      renderAsset(data);
+
+      // If logged in, also fetch enriched summary for badges and pre-fill
+      if (isLoggedIn()) {
+        await fetchMasterData();
+        await fetchSummaryForAsset(uid);
+        unlockForms();
+        loadTabData(activeTab);
       }
+    } catch (e) {
+      qs("#skeleton").classList.add("hidden");
+      qs("#asset-error").classList.remove("hidden");
+      qs("#error-message").textContent = e.message;
+    }
+  }
 
-      // ── FETCH MASTER DATA FOR DROPDOWNS ───────────────────────────
-      async function fetchMasterData() {
-        try {
-          const [lokasiRes, uptRes] = await Promise.all([
-            fetch(`${API_BASE}/master/lokasi`),
-            fetch(`${API_BASE}/master/upt`),
-          ]);
+  async function fetchSummaryForAsset(uid) {
+    try {
+      // Scoped to this one asset. This used to request the whole fleet summary
+      // and .find() a single row out of it — 98.6 KB at 200 assets, and it runs
+      // on page load plus after every repair, kalibrasi and mutasi save.
+      const res = await apiAuth(`/history/summary?id_aset=${encodeURIComponent(uid)}`);
+      if (!res.ok) return;
+      const body = await res.json();
+      // {total, limit, offset, items} envelope; the array form is tolerated so
+      // a stale cached copy of this page cannot blank the badges.
+      const all = Array.isArray(body) ? body : (body.items || []);
+      summarySelf = all.find(x => x.id_aset === uid) || null;
+      if (summarySelf) renderBadges(summarySelf);
+    } catch(e) { /* silent */ }
+  }
 
-          if (lokasiRes.ok) {
-            const data = await lokasiRes.json();
-            lokasiData = data.map((l) => ({
-              name: l.nama_lokasi,
-              code: l.id_lokasi,
-            }));
-            populateLokasiDropdown();
-          }
-          if (uptRes.ok) {
-            const data = await uptRes.json();
-            uptDatabase = data.map((u) => ({
-              upt: u.nama_lokasi,
-              lokasi: u.id_lokasi,
-            }));
-          }
-        } catch (e) {
-          console.warn("Gagal memuat data master untuk dropdown:", e);
-        }
-      }
+  // ── RENDER ASSET ────────────────────────────────────────────────────────
+  function renderAsset(data) {
+    qs("#skeleton").classList.add("hidden");
+    qs("#asset-view").classList.remove("hidden");
+    document.title = `${data.id_aset} | RAMCES`;
 
-      function populateLokasiDropdown() {
-        const sel = document.getElementById("form-lokasi");
-        if (!sel) return;
-        sel.innerHTML =
-          '<option value="">Pilih Lokasi Perbaikan...</option>' +
-          lokasiData
-            .map((l) => `<option value="${l.code}">${l.name}</option>`)
-            .join("");
-      }
+    // Status strip
+    const strip = qs("#status-strip");
+    strip.className = "h-1.5 w-full transition-colors duration-500 " +
+      (data.status_terakhir === "SO" ? "bg-green-400" :
+       data.status_terakhir === "TSO" ? "bg-red-500" : "bg-blue-400");
 
-      function updateUptDropdown(lokasiCode) {
-        const uptSelect = document.getElementById("form-upt");
-        if (!uptSelect) return;
-        if (!lokasiCode) {
-          uptSelect.innerHTML =
-            '<option value="">Pilih Lokasi Perbaikan Dahulu...</option>';
-          return;
-        }
-        const matches = uptDatabase.filter((u) => u.lokasi === lokasiCode);
-        if (matches.length > 0) {
-          uptSelect.innerHTML =
-            '<option value="">Pilih UPT...</option>' +
-            matches
-              .map((m) => `<option value="${m.upt}">${m.upt}</option>`)
-              .join("");
-        } else {
-          uptSelect.innerHTML =
-            '<option value="Lainnya">Lainnya / Tidak ada data UPT</option>';
-        }
-      }
+    // ID + alat name
+    qs("#info-id").textContent   = data.id_aset;
+    qs("#info-alat").textContent = data.nama_alat || data.kode_alat || "—";
 
-      // ── INIT & AUTH GATE ──────────────────────────────────────────
-      const params = new URLSearchParams(window.location.search);
-      const uid = params.get("uid");
-      const _token = sessionStorage.getItem("authToken");
-      const _username = sessionStorage.getItem("activeUser");
+    // Badge: kondisi. This is the ONE place status is rendered as a value —
+    // the strip above carries it as colour, and the detail grid no longer
+    // repeats it. Spelled out, with the code in parentheses.
+    const st = (data.status_terakhir || "").toUpperCase();
+    const bk = qs("#badge-kondisi");
+    const bkBase = "anim-badge-pop badge ";
+    if (st === "SO") {
+      bk.className = bkBase + "badge-so";
+      bk.innerHTML = `<i class="fas fa-circle text-[6px] pulse-dot"></i> ${statusLabel(st)}`;
+    } else if (st === "TSO") {
+      bk.className = bkBase + "badge-tso";
+      bk.innerHTML = `<i class="fas fa-circle text-[6px]"></i> ${statusLabel(st)}`;
+    } else {
+      bk.className = bkBase + "badge-info";
+      bk.innerHTML = `<i class="fas fa-circle text-[6px]"></i> ${statusLabel(st)}`;
+    }
 
-      if (!_token || !_username) {
-        // Render Login Gate Centered and Restricted Width
-        document.getElementById("main-content").innerHTML = `
-                <div class="max-w-md mx-auto mt-12 bg-white dark:bg-gray-800 rounded-3xl shadow-lg border border-gray-100 dark:border-gray-700 p-8 space-y-6">
-                    <div class="text-center space-y-3">
-                        <div class="inline-flex items-center justify-center w-16 h-16 rounded-full bg-blue-50 dark:bg-blue-900/30 text-blue-500 mb-2">
-                            <i class="fas fa-lock text-2xl"></i>
-                        </div>
-                        <h2 class="text-xl font-bold text-gray-800 dark:text-gray-100">Otorisasi Diperlukan</h2>
-                        <p class="text-sm text-gray-500 dark:text-gray-400">Masuk terlebih dahulu untuk melihat informasi detail dan riwayat aset ini.</p>
-                    </div>
-                    <div class="space-y-4 pt-2">
-                        <input type="text" id="gate-username" placeholder="Masukkan Username Anda"
-                            class="w-full border dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-blue-400 focus:outline-none">
+    const dec = decodeAsetId(data.id_aset);
+    const tahunFull = dec.tahun
+      ? (dec.tahun.length === 2 ? (parseInt(dec.tahun) <= 30 ? `20${dec.tahun}` : `19${dec.tahun}`) : dec.tahun)
+      : "—";
 
-                        <div id="gate-extra-fields" class="hidden space-y-4 bg-gray-50 dark:bg-gray-900/50 p-4 rounded-xl border border-gray-100 dark:border-gray-700">
-                            <p class="text-xs font-semibold text-gray-500 dark:text-gray-400">Lengkapi Profil Sesi Ini</p>
-                            <select id="gate-role"
-                                class="w-full border dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-blue-400 focus:outline-none">
-                                <option value="TEKNISI">👨‍🔧 TEKNISI (Laporan Lapangan)</option>
-                                <option value="ADMIN_DAOP">🏢 ADMIN DAOP (Manajemen Wilayah)</option>
-                                <option value="SUPER_ADMIN">👑 SUPER ADMIN</option>
-                            </select>
-                            <select id="gate-region"
-                                class="w-full border dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-blue-400 focus:outline-none">
-                                <option value="">Memuat region...</option>
-                            </select>
-                        </div>
+    // Detail grid — "Informasi Alat Kerja". Each field appears here and
+    // nowhere else on the page.
+    const r = (label, val) =>
+      `<div><dt class="text-[9px] uppercase font-bold text-gray-400 tracking-wider mb-0.5">${label}</dt>
+       <dd class="font-semibold text-gray-800 dark:text-gray-100 text-sm">${val}</dd></div>`;
 
-                        <button id="gate-login-btn"
-                            class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3.5 rounded-xl transition shadow-md flex items-center justify-center gap-2">
-                            <i class="fas fa-sign-in-alt"></i> Masuk Sekarang
-                        </button>
-                        <p id="gate-error" class="text-xs font-semibold text-red-500 text-center hidden"></p>
-                    </div>
-                </div>
-            `;
+    // The endpoint now sends codes and names as separate keys. It used to send
+    // nama_lokasi under the key `id_lokasi`, which meant resolveLokasi() was
+    // handed a name, matched nothing, and left the UPT row permanently "—".
+    const lokasiInduk =
+      data.parent_nama || resolveLokasi(data.id_lokasi_code || data.id_lokasi).parentName;
+    const uptNama =
+      data.upt_nama || resolveLokasi(data.id_lokasi_code || data.id_lokasi).uptName || "—";
 
-        fetch(`${API_BASE}/master/lokasi`)
-          .then((r) => (r.ok ? r.json() : []))
-          .then((data) => {
-            const sel = document.getElementById("gate-region");
-            if (sel && data.length) {
-              sel.innerHTML = data
-                .map(
-                  (l) =>
-                    `<option value="${l.id_lokasi}">${l.nama_lokasi}</option>`,
-                )
-                .join("");
-            }
-          })
-          .catch(() => {});
+    const tglBeli = data.tanggal_pembelian
+      ? new Date(data.tanggal_pembelian).toLocaleDateString("id-ID",{day:"2-digit",month:"long",year:"numeric"})
+      : tahunFull;
 
-        document
-          .getElementById("gate-username")
-          .addEventListener("blur", () => {
-            const username = document
-              .getElementById("gate-username")
-              .value.trim();
-            const extra = document.getElementById("gate-extra-fields");
-            if (username) extra.classList.remove("hidden");
-            else extra.classList.add("hidden");
-          });
+    qs("#detail-grid").innerHTML = [
+      r("Jenis Alat",   data.nama_alat || dec.kodeAlat || "—"),
+      r("Nomor Seri",   data.nomor_seri || "—"),
+      r("Pengadaan",    data.sumber_pengadaan || PENGADAAN_MAP[dec.pengadaan] || "—"),
+      r("Tanggal Beli", tglBeli),
+      r("Lokasi",       lokasiInduk || "—"),
+      r("UPT",          uptNama),
+      r("Peruntukan",   data.peruntukan || PERUNTUKAN_MAP[dec.peruntukan] || "—"),
+      r("No. Urut",     dec.nomor || "—"),
+    ].join("");
 
-        document
-          .getElementById("gate-role")
-          ?.addEventListener("change", (e) => {
-            const regionSel = document.getElementById("gate-region");
-            if (!regionSel) return;
-            if (e.target.value === "SUPER_ADMIN") {
-              regionSel.disabled = true;
-              regionSel.innerHTML = '<option value="">Semua Region</option>';
-            } else {
-              regionSel.disabled = false;
-              fetch(`${API_BASE}/master/lokasi`)
-                .then((r) => (r.ok ? r.json() : []))
-                .then((data) => {
-                  regionSel.innerHTML = data
-                    .map(
-                      (l) =>
-                        `<option value="${l.id_lokasi}">${l.nama_lokasi}</option>`,
-                    )
-                    .join("");
-                })
-                .catch(() => {});
-            }
-          });
+    renderSpesifikasi(data.spesifikasi, data.dokumen);
+    applyKalibrasiGate(data.perlu_kalibrasi);
 
-        async function gateLogin() {
-          const username = document
-            .getElementById("gate-username")
-            .value.trim();
-          const role = document.getElementById("gate-role")?.value || "TEKNISI";
-          const region = document.getElementById("gate-region")?.value || "";
-          const regionText =
-            document.getElementById("gate-region")?.selectedOptions[0]?.text ||
-            region;
-          const roleText =
-            document.getElementById("gate-role")?.selectedOptions[0]?.text ||
-            role;
-          const errEl = document.getElementById("gate-error");
+    // Mini stats (will be enriched when summary loads)
+    renderStats(null);
 
-          if (!username) {
-            errEl.textContent = "Isi username terlebih dahulu.";
-            errEl.classList.remove("hidden");
-            return;
-          }
+    // Initial tab state
+    switchTab("repair");
+  }
 
-          // Konfirmasi Dialog Virtual
-          const confirmBox = document.createElement("div");
-          confirmBox.className =
-            "fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 transition-opacity";
-          confirmBox.innerHTML = `
-                    <div class="bg-white dark:bg-gray-800 rounded-3xl shadow-2xl p-6 md:p-8 w-full max-w-sm space-y-6">
-                        <h3 class="font-bold text-gray-800 dark:text-gray-100 flex items-center gap-3 text-lg">
-                            <div class="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-full text-blue-600"><i class="fas fa-user-check"></i></div> 
-                            Konfirmasi Login
-                        </h3>
-                        <div class="text-sm text-gray-600 dark:text-gray-400 space-y-2 bg-gray-50 dark:bg-gray-900/50 border border-gray-100 dark:border-gray-700 rounded-2xl p-4">
-                            <div class="flex justify-between"><span class="font-medium">User:</span> <span class="font-bold text-gray-800 dark:text-gray-200">${username}</span></div>
-                            <div class="flex justify-between"><span class="font-medium">Role:</span> <span class="font-bold text-gray-800 dark:text-gray-200">${roleText.split(" ")[1]}</span></div>
-                            <div class="flex justify-between"><span class="font-medium">Wilayah:</span> <span class="font-bold text-gray-800 dark:text-gray-200">${regionText || "—"}</span></div>
-                        </div>
-                        <div class="flex gap-3 pt-2">
-                            <button id="gate-confirm-cancel" class="flex-1 py-3 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-xl font-bold text-sm hover:bg-gray-200 dark:hover:bg-gray-600 transition">Batal</button>
-                            <button id="gate-confirm-ok" class="flex-1 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-sm shadow-md transition">Masuk</button>
-                        </div>
-                    </div>
-                `;
-          document.body.appendChild(confirmBox);
+  // ── KALIBRASI GATE ──────────────────────────────────────────────────────
+  // `perlu_kalibrasi` comes from the KATALOG SFM flag on the tool type. A
+  // genset or an impact wrench is SERVICED, not calibrated, so offering the
+  // tab for one only invites records that cannot mean anything. The badge goes
+  // with it — "BLM KALIBRASI" on a machine that is never calibrated reads as
+  // an outstanding task rather than a non-applicable field.
+  function applyKalibrasiGate(perlu) {
+    kalibrasiGated = perlu === false;
+    document
+      .querySelectorAll('.tab-btn[data-tab="kalibrasi"]')
+      .forEach((b) => {
+        b.dataset.gated = kalibrasiGated ? "1" : "0";
+        b.classList.toggle("hidden", kalibrasiGated);
+      });
+    // `renderBadges()` runs later, when the summary arrives, and REPLACES this
+    // badge's className wholesale — so it re-applies the gate from
+    // `kalibrasiGated` rather than relying on the class surviving.
+    qs("#badge-kalib")?.classList.toggle("hidden", kalibrasiGated);
+    if (kalibrasiGated && activeTab === "kalibrasi") switchTab("repair");
+  }
 
-          const proceed = await new Promise((resolve) => {
-            document.getElementById("gate-confirm-ok").onclick = () => {
-              document.body.removeChild(confirmBox);
-              resolve(true);
-            };
-            document.getElementById("gate-confirm-cancel").onclick = () => {
-              document.body.removeChild(confirmBox);
-              resolve(false);
-            };
-          });
-          if (!proceed) return;
+  // ── SPESIFIKASI ALAT KERJA ──────────────────────────────────────────────
+  // Delegated to the shared renderer in js/views/spektek.js, which index.html
+  // uses for the same block. This used to be a local copy over a fixed
+  // Merk/Tipe/Kapasitas/Daya/Dimensi/Berat field list — a shape that fitted a
+  // genset and nothing else, and that the client's Rekap Spek template
+  // replaced with five free-form label/value rows plus a photo.
+  //
+  // The spec TABLE still hides when the asset has no Model/Type: a table of
+  // nothing but dashes tells the reader less than no table at all. The tool
+  // type's own documents are passed separately and still render, because an
+  // asset with no model is the commonest case on this page and its spektek is
+  // the only documentation a technician standing at the machine can reach.
+  function renderSpesifikasi(spec, dokumen) {
+    window.renderSpekCard("spec-card", spec, { dokumen });
+  }
 
-          const btn = document.getElementById("gate-login-btn");
-          btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Memproses...';
-          btn.disabled = true;
-          errEl.classList.add("hidden");
+  // ── BADGES from summary ─────────────────────────────────────────────────
+  function renderBadges(s) {
+    // Kalibrasi badge
+    const ks = s.kalibrasi?.latest_status;
+    const bkal = qs("#badge-kalib");
+    // Every branch below assigns className wholesale, which would wipe the
+    // `hidden` applied by applyKalibrasiGate(). Leave the badge alone entirely
+    // for a tool type that is serviced but never calibrated.
+    if (kalibrasiGated) {
+      bkal?.classList.add("hidden");
+    } else if (ks === "LULUS") {
+      bkal.className = "anim-badge-pop delay-1 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400";
+      bkal.innerHTML = `<i class="fas fa-circle text-[6px]"></i> LULUS KALIBRASI`;
+    } else if (ks === "BERSYARAT") {
+      bkal.className = "anim-badge-pop delay-1 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400";
+      bkal.innerHTML = `<i class="fas fa-circle text-[6px]"></i> BERSYARAT`;
+    } else if (ks === "GAGAL") {
+      bkal.className = "anim-badge-pop delay-1 badge badge-tso";
+      bkal.innerHTML = `<i class="fas fa-circle text-[6px]"></i> GAGAL KALIBRASI`;
+    } else {
+      bkal.className = "anim-badge-pop delay-1 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-gray-100 text-gray-400 dark:bg-gray-700 dark:text-gray-500";
+      bkal.innerHTML = `<i class="fas fa-circle text-[6px]"></i> BLM KALIBRASI`;
+    }
 
-          try {
-            const res = await fetch(`${API_BASE}/login`, {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-                "ngrok-skip-browser-warning": "true",
-              },
-              body: JSON.stringify({
-                username: username,
-                role: role,
-                id_lokasi: region || null,
-              }),
-            });
-            if (!res.ok)
-              throw new Error(
-                (await res.json().catch(() => ({}))).detail || "Login gagal.",
-              );
-
-            const data = await res.json();
-            sessionStorage.setItem("authToken", data.access_token);
-            sessionStorage.setItem("activeUser", username);
-            showToast(
-              data.already_existed
-                ? `Berhasil login sebagai ${username}!`
-                : `Akun "${username}" berhasil dibuat & login!`,
-              "success",
-            );
-            setTimeout(() => window.location.reload(), 800);
-          } catch (e) {
-            errEl.textContent = e.message;
-            errEl.classList.remove("hidden");
-            btn.innerHTML = '<i class="fas fa-sign-in-alt"></i> Masuk Sekarang';
-            btn.disabled = false;
-          }
-        }
-
-        document
-          .getElementById("gate-login-btn")
-          .addEventListener("click", gateLogin);
-        document
-          .getElementById("gate-username")
-          .addEventListener("keypress", (e) => {
-            if (e.key === "Enter") gateLogin();
-          });
-      } else if (!uid) {
-        qs("#skeleton").classList.add("hidden");
-        qs("#asset-error").classList.remove("hidden");
-        qs("#error-message").textContent =
-          "Parameter UID tidak ada di URL. Pastikan QR Code dipindai dari sistem SIMA-KAI.";
+    // Mutasi badge
+    const mi = s.mutasi;
+    const bmu = qs("#badge-mutasi");
+    if (mi && mi.count > 0) {
+      if (mi.sudah_kembali) {
+        bmu.className = "anim-badge-pop delay-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400";
+        bmu.innerHTML = `<i class="fas fa-circle text-[6px]"></i> DI LOKASI ASAL`;
       } else {
-        loadAsset(uid);
+        bmu.className = "anim-badge-pop delay-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400";
+        bmu.innerHTML = `<i class="fas fa-circle text-[6px]"></i> SEDANG TERMUTASI`;
+      }
+    } else {
+      bmu.className = "anim-badge-pop delay-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-gray-100 text-gray-400 dark:bg-gray-700 dark:text-gray-500";
+      bmu.innerHTML = `<i class="fas fa-circle text-[6px]"></i> TIDAK TERMUTASI`;
+    }
+
+    renderStats(s);
+  }
+
+  // ── MINI STATS ──────────────────────────────────────────────────────────
+  function renderStats(s) {
+    const stat = (icon, label, val, cls="text-kai-blue dark:text-blue-400") =>
+      `<div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-3 flex flex-col gap-1 shadow-sm anim-fade-up">
+         <i class="fas ${icon} ${cls} text-base"></i>
+         <p class="text-[10px] uppercase text-gray-400 font-bold tracking-wider leading-tight">${label}</p>
+         <p class="font-bold text-sm text-gray-800 dark:text-gray-100">${val}</p>
+       </div>`;
+
+    const lastRepair = s?.repair?.latest_date ? formatUtcToLocal(s.repair.latest_date) : "Belum ada";
+    const kalibDate = s?.kalibrasi?.latest_berlaku ? formatDateOnly(s.kalibrasi.latest_berlaku) : "Belum ada";
+    const mutasiCount = s?.mutasi?.count ?? 0;
+    const repairCount = s?.repair?.count ?? 0;
+
+    // Age of the asset, in place of the old "Status Terakhir" tile. Status is
+    // already on screen twice above (the colour strip and the badge); a third
+    // copy was the single worst offender in the repetition the client flagged.
+    let umur = "—";
+    if (currentAsset?.tanggal_pembelian) {
+      const beli = new Date(currentAsset.tanggal_pembelian);
+      if (!isNaN(beli)) {
+        const bulan =
+          (new Date().getFullYear() - beli.getFullYear()) * 12 +
+          (new Date().getMonth() - beli.getMonth());
+        const th = Math.floor(Math.max(0, bulan) / 12);
+        const bl = Math.max(0, bulan) % 12;
+        umur = th ? `${th} th${bl ? ` ${bl} bln` : ""}` : `${bl} bln`;
+      }
+    }
+
+    qs("#stats-row").innerHTML = [
+      stat("fa-hourglass-half","Umur Aset", umur, "text-violet-600 dark:text-violet-400"),
+      stat("fa-clock","Pemeliharaan Terakhir", lastRepair, "text-kai-blue dark:text-blue-400"),
+      stat("fa-certificate","Kalibrasi Berlaku", kalibDate, "text-cyan-600 dark:text-cyan-400"),
+      stat("fa-exchange-alt","Mutasi / Perbaikan", `${mutasiCount}× / ${repairCount}×`, "text-kai-orange dark:text-orange-400"),
+    ].join("");
+  }
+
+  // ── UNLOCK FORMS after login ─────────────────────────────────────────────
+  function unlockForms() {
+    qs("#repair-gate").classList.add("hidden");
+    qs("#form-repair").classList.remove("hidden");
+    qs("#kalib-gate").classList.add("hidden");
+    qs("#form-kalib").classList.remove("hidden");
+
+    qs("#repair-tanggal").valueAsDate = new Date();
+    qs("#repair-petugas").value = activeUser;
+    qs("#kalib-pelaksana").value = activeUser;
+    qs("#kalib-tanggal").valueAsDate = new Date();
+
+    // Wire repair lokasi → UPT cascade
+    qs("#repair-lokasi").addEventListener("change", e => applyUptSelect(e.target.value, qs("#repair-upt")));
+
+    // Wire mutasi lokasi tuju → UPT cascade (mirrors openMutasiModal logic)
+    qs("#mutasi-lokasi-tuju").addEventListener("change", () => {
+      const tuju = qs("#mutasi-lokasi-tuju").value;
+      const uptEl = qs("#mutasi-upt-tuju");
+      const lbl   = qs("#mutasi-upt-label");
+      if (!tuju) {
+        uptEl.innerHTML = '<option value="">Pilih Lokasi Tujuan dahulu...</option>';
+        uptEl.disabled = true;
+        lbl.innerHTML = 'UPT Tujuan <span class="font-normal text-gray-400">(opsional)</span>';
+        return;
+      }
+      applyUptSelect(tuju, uptEl);
+      const curLok = currentAsset?.id_lokasi || "";
+      const parentCur = getParentLokasiCode(curLok) || curLok;
+      const isSame = tuju === parentCur;
+      if (isSame) {
+        uptEl.required = false;
+        if (uptEl.options[0]) uptEl.options[0].text = "Pilih Target UPT (opsional)";
+        lbl.innerHTML = 'UPT Tujuan <span class="font-normal text-gray-400">(opsional)</span>';
+      } else {
+        uptEl.required = true;
+        if (uptEl.options[0]) uptEl.options[0].text = "Pilih Target UPT...";
+        lbl.innerHTML = 'UPT Tujuan <span class="font-normal text-red-400">(wajib)</span>';
+      }
+    });
+
+    // Pre-fill repair lokasi from asset's current location
+    const lokRes = resolveLokasi(currentAsset?.id_lokasi);
+    if (lokRes.parentName !== "—") {
+      // find parent code from lokasiData by name
+      const par = lokasiData.find(l => l.name === lokRes.parentName);
+      if (par) {
+        qs("#repair-lokasi").value = par.code;
+        applyUptSelect(par.code, qs("#repair-upt"));
+        // Try to pre-select the exact UPT
+        setTimeout(() => {
+          if (currentAsset?.id_lokasi) qs("#repair-upt").value = currentAsset.id_lokasi;
+        }, 50);
+      }
+    }
+  }
+
+  // ── PRE-FILL from latest kalibrasi ──────────────────────────────────────
+  function prefillKalibrasi(s) {
+    const k = s?.kalibrasi;
+    if (!k) return;
+    if (k.latest_tanggal_kalibrasi) qs("#kalib-tanggal").value = k.latest_tanggal_kalibrasi;
+    if (k.latest_berlaku)           qs("#kalib-berlaku").value  = k.latest_berlaku;
+    if (k.latest_status)            qs("#kalib-status").value   = k.latest_status;
+    if (k.latest_pelaksana)         qs("#kalib-pelaksana").value = k.latest_pelaksana;
+    if (k.latest_nomor_sertifikat)  qs("#kalib-nomor").value    = k.latest_nomor_sertifikat;
+    if (k.latest_keterangan)        qs("#kalib-keterangan").value = k.latest_keterangan;
+  }
+
+  // ── TAB DATA LOADERS ────────────────────────────────────────────────────
+  const _loaded = { repair: false, kalibrasi: false, mutasi: false };
+
+  async function loadTabData(tab) {
+    if (!isLoggedIn() || !UID) return;
+    if (tab === "repair"   ) await loadRepair();
+    if (tab === "kalibrasi") await loadKalibrasi();
+    if (tab === "mutasi"   ) await loadMutasi();
+  }
+
+  async function loadRepair() {
+    const tbody = qs("#tbody-repair");
+    tbody.innerHTML = `<tr><td colspan="8" class="p-6 text-center text-gray-400"><i class="fas fa-spinner fa-spin mr-2"></i>Mengambil data...</td></tr>`;
+    try {
+      const res = await apiAuth(`/riwayat-kondisi/${UID}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const rows = (await res.json()).filter(h => h.kondisi !== "KALIBRASI");
+
+      if (!rows.length) {
+        tbody.innerHTML = `<tr><td colspan="8" class="p-6 text-center text-gray-400 italic">Belum ada riwayat pemeliharaan.</td></tr>`;
+        return;
+      }
+      tbody.innerHTML = rows.map((h, i) => {
+        const lok = resolveLokasi(h.id_lokasi || currentAsset?.id_lokasi || "");
+        let uptVal = lok.uptName;
+        let ket = h.keterangan || "—";
+        const m = ket.match(/\[UPT:\s*([^\]]+)\]/i);
+        if (m) { uptVal = m[1].trim(); ket = ket.replace(m[0],"").trim() || "—"; }
+        const kondisiCls = h.kondisi === "SO" ? "badge badge-so" : "badge badge-tso";
+        return `<tr class="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
+          <td class="p-3 text-center text-gray-400">${i+1}</td>
+          <td class="p-3 font-mono text-[11px]">${formatUtcToLocal(h.waktu_lapor)}</td>
+          <td class="p-3">${lok.parentName}</td>
+          <td class="p-3">${uptVal}</td>
+          <td class="p-3 capitalize text-gray-500">${h.peruntukan || currentAsset?.peruntukan || "—"}</td>
+          <td class="p-3">${h.id_pengguna || "—"}</td>
+          <td class="p-3 text-center"><span class="${kondisiCls}" title="${statusLabel(h.kondisi, false)}">${statusLabel(h.kondisi)}</span></td>
+          <td class="p-3 text-gray-500 max-w-[160px] truncate" title="${ket}">${ket}</td>
+        </tr>`;
+      }).join("");
+    } catch(e) {
+      tbody.innerHTML = `<tr><td colspan="8" class="p-6 text-center text-red-500">${e.message}</td></tr>`;
+    }
+  }
+
+  async function loadKalibrasi() {
+    const tbody = qs("#tbody-kalibrasi");
+    tbody.innerHTML = `<tr><td colspan="9" class="p-6 text-center text-gray-400"><i class="fas fa-spinner fa-spin mr-2"></i>Mengambil data...</td></tr>`;
+    try {
+      const res = await apiAuth(`/kalibrasi/${UID}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const rows = await res.json();
+      if (!rows.length) {
+        tbody.innerHTML = `<tr><td colspan="9" class="p-6 text-center text-gray-400 italic">Belum ada riwayat kalibrasi.</td></tr>`;
+        return;
+      }
+      tbody.innerHTML = rows.map(h => {
+        const cls = h.status === "LULUS" ? "badge badge-so"
+          : h.status === "GAGAL"          ? "badge badge-tso"
+          :                                 "badge badge-warn";
+        // file_sertifikat has always been in this payload and was never read.
+        const berkas = h.file_sertifikat
+          ? `<button type="button" onclick="downloadSertifikat('${h.file_sertifikat}')"
+               title="Unduh ${h.file_sertifikat}"
+               class="text-cyan-600 dark:text-cyan-400 hover:underline text-[11px] font-semibold">
+               <i class="fas fa-file-arrow-down mr-1"></i>Unduh</button>`
+          : `<span class="text-gray-300 dark:text-gray-600 text-[11px]">—</span>`;
+        return `<tr class="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
+          <td class="p-3 text-center text-gray-400">${h.no}</td>
+          <td class="p-3 font-mono text-[11px]">${formatUtcToLocal(h.waktu_input)}</td>
+          <td class="p-3 font-mono text-[11px]">${h.tanggal_kalibrasi ? formatDateOnly(h.tanggal_kalibrasi) : "—"}</td>
+          <td class="p-3 font-mono text-[11px]">${h.tanggal_berlaku ? formatDateOnly(h.tanggal_berlaku) : "—"}</td>
+          <td class="p-3 text-center"><span class="${cls}">${h.status||"—"}</span></td>
+          <td class="p-3">${h.pelaksana_kalibrasi||"—"}</td>
+          <td class="p-3 font-mono text-[11px]">${h.nomor_sertifikat||"—"}</td>
+          <td class="p-3 text-center">${berkas}</td>
+          <td class="p-3 text-gray-500">${h.keterangan||"—"}</td>
+        </tr>`;
+      }).join("");
+    } catch(e) {
+      tbody.innerHTML = `<tr><td colspan="9" class="p-6 text-center text-red-500">${e.message}</td></tr>`;
+    }
+  }
+
+  async function loadMutasi() {
+    const timeline = qs("#mutasi-timeline");
+    const originBar = qs("#mutasi-origin-bar");
+    timeline.innerHTML = "";
+    originBar.innerHTML = `<div class="text-gray-400 text-xs w-full text-center"><i class="fas fa-spinner fa-spin mr-1"></i>Mengambil data...</div>`;
+    try {
+      const res = await apiAuth(`/mutasi/${UID}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+
+      const asal = resolveLokasi(data.original_lokasi);
+      const kini = resolveLokasi(data.lokasi_sekarang);
+      const returnedBadge = data.sudah_kembali
+        ? `<span class="bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 px-3 py-1 rounded-full text-[11px] font-bold">✓ Sudah Kembali ke Lokasi Awal</span>`
+        : `<span class="bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 px-3 py-1 rounded-full text-[11px] font-bold">⟳ Belum Kembali ke Asal</span>`;
+
+      originBar.innerHTML = `
+        <div class="flex-1 min-w-0">
+          <p class="text-[10px] font-bold text-gray-400 uppercase">Lokasi Asal</p>
+          <p class="font-bold text-gray-700 dark:text-gray-200 text-sm">${asal.parentName}</p>
+          <p class="text-xs text-gray-500">${asal.uptName !== "—" ? asal.uptName : "—"}</p>
+        </div>
+        <div class="flex-1 min-w-0">
+          <p class="text-[10px] font-bold text-gray-400 uppercase">Lokasi Sekarang</p>
+          <p class="font-bold text-gray-700 dark:text-gray-200 text-sm">${kini.parentName}</p>
+          <p class="text-xs text-gray-500">${kini.uptName !== "—" ? kini.uptName : "—"}</p>
+        </div>
+        <div>${returnedBadge}</div>`;
+
+      if (!data.mutasi?.length) {
+        timeline.innerHTML = `<div class="text-center text-gray-400 text-xs py-4">Belum ada riwayat mutasi.</div>`;
+        return;
       }
 
-      // ── MAIN LOGIC: LOAD ASSET & HISTORY ──────────────────────────
-      async function loadAsset(uid) {
-        try {
-          const res = await fetch(`${API_BASE}/public/aset/${uid}`);
-          if (!res.ok)
-            throw new Error(
-              (await res.json().catch(() => ({}))).detail ||
-                `HTTP ${res.status}`,
-            );
-          const data = await res.json();
-          currentAssetData = data; // Simpan ke memory global untuk diekstrak oleh fungsi tabel
-          renderAsset(data);
-        } catch (e) {
-          qs("#skeleton").classList.add("hidden");
-          qs("#asset-error").classList.remove("hidden");
-          qs("#error-message").textContent = e.message;
+      timeline.innerHTML = data.mutasi.map((m, i) => {
+        const isLast = i === data.mutasi.length - 1;
+        const mAsal = resolveLokasi(m.id_lokasi_asal);
+        const mTuju = resolveLokasi(m.id_lokasi_tujuan);
+        let durasi = "";
+        if (!isLast) {
+          const tCurr = new Date(m.waktu_mutasi.replace(" ","T")).getTime();
+          const tNext = new Date(data.mutasi[i+1].waktu_mutasi.replace(" ","T")).getTime();
+          const days = Math.floor((tNext - tCurr) / 86400000);
+          durasi = days === 0 ? "< 1 hari" : `${days} hari`;
         }
-      }
+        return `<div class="flex gap-3 items-start anim-fade-up" style="animation-delay:${i*0.06}s">
+          <div class="flex flex-col items-center">
+            <div class="w-7 h-7 rounded-full bg-orange-100 dark:bg-orange-900/30 text-kai-orange dark:text-orange-400 flex items-center justify-center text-[11px] font-bold shrink-0">${i+1}</div>
+            ${!isLast ? '<div class="w-0.5 flex-1 bg-gray-200 dark:bg-gray-700 mt-1 mb-1"></div>' : ""}
+          </div>
+          <div class="bg-gray-50 dark:bg-gray-700/40 rounded-xl p-3 flex-1 mb-1 space-y-1 text-xs">
+            <p class="font-bold text-kai-orange dark:text-orange-400">
+              ${mAsal.parentName}${mAsal.uptName !== "—" ? ` (${mAsal.uptName})` : ""} 
+              <i class="fas fa-arrow-right mx-1"></i> 
+              ${mTuju.parentName}${mTuju.uptName !== "—" ? ` (${mTuju.uptName})` : ""}
+            </p>
+            <p class="text-gray-500">Waktu: <span class="font-semibold text-gray-700 dark:text-gray-300">${formatUtcToLocal(m.waktu_mutasi)}</span></p>
+            ${durasi ? `<p class="text-gray-500">Durasi: <span class="font-semibold">${durasi}</span></p>` : `<p class="text-gray-400 italic">Masih dalam proses...</p>`}
+            <p class="text-gray-500">Petugas: <span class="font-semibold">${m.nama_petugas||"—"}</span></p>
+            <p class="text-gray-500">Alasan: <span class="font-semibold">${m.alasan_mutasi||"—"}</span></p>
+          </div>
+        </div>`;
+      }).join("");
+    } catch(e) {
+      originBar.innerHTML = `<p class="text-red-500 text-xs w-full">${e.message}</p>`;
+    }
+  }
 
-      function renderAsset(data) {
-        qs("#skeleton").classList.add("hidden");
-        qs("#asset-view").classList.remove("hidden"); // Menampilkan Wrapper Utama
+  // ── OPEN MODALS ─────────────────────────────────────────────────────────
+  function openRepairModal() {
+    qs("#repair-subtitle").textContent = currentAsset?.id_aset || UID;
+    qs("#repair-uid").value = UID;
+    // Reset kondisi selection
+    document.querySelectorAll(".kondisi-btn").forEach(b => {
+      b.classList.remove("bg-green-100","bg-red-100","ring-2","ring-green-400","ring-red-400","opacity-50");
+    });
+    qs("#repair-kondisi").value = "";
+    initRepairPakai();
+    qs("#modal-repair").classList.remove("hidden");
+  }
 
-        // 1. Pewarnaan Strip Indikator Status
-        const strip = qs("#status-strip");
-        strip.className =
-          "h-1.5 w-full " +
-          (data.status_terakhir === "SO"
-            ? "bg-green-400"
-            : data.status_terakhir === "TSO"
-              ? "bg-red-500"
-              : "bg-blue-500");
+  // ── SPAREPART PICKER (field form) ───────────────────────────────────────
+  // Mirrors the picker on the SPA's Form Pemeliharaan; both post the array
+  // inside the /api/perbaikan body so the report and the stock movements
+  // commit together. Parts are filtered to this asset's alat kerja AND its
+  // Model/Type — a GX390 carburettor fits nothing else.
+  let repairParts = new Map();
 
-        // 2. Data Header Identitas
-        qs("#info-uid").textContent = data.id_aset;
-        qs("#info-kode-id").textContent = data.id_aset;
-        qs("#info-alat").textContent = data.kode_alat;
+  async function initRepairPakai() {
+    const rows = qs("#repair-pakai-rows");
+    const gud  = qs("#repair-gudang");
+    if (!rows || !gud) return;
+    rows.innerHTML = "";
+    renderRepairPakaiTotal();
+    if (!isLoggedIn()) return;
 
-        // 3. Status Badge
-        const badge = qs("#info-status-badge");
-        const dot = qs(".pulse-dot", badge);
-        qs("#info-status-text").textContent = data.status_terakhir;
-
-        if (data.status_terakhir === "SO") {
-          badge.className =
-            "shrink-0 px-4 py-1.5 rounded-full text-sm font-bold flex items-center gap-2 badge-so shadow-sm";
-          dot.style.color = "#16a34a";
-        } else if (data.status_terakhir === "TSO") {
-          badge.className =
-            "shrink-0 px-4 py-1.5 rounded-full text-sm font-bold flex items-center gap-2 badge-tso shadow-sm";
-          dot.style.color = "#dc2626";
-        } else {
-          badge.className =
-            "shrink-0 px-4 py-1.5 rounded-full text-sm font-bold flex items-center gap-2 badge-baru shadow-sm";
-          dot.style.color = "#2563eb";
-        }
-
-        document.title = `${data.id_aset} | SIMA-KAI`;
-
-        // Cek otorisasi untuk Form & Riwayat
-        const token = sessionStorage.getItem("authToken");
-        if (token) {
-          qs("#form-auth-gate").classList.add("hidden");
-          qs("#repair-form").classList.remove("hidden");
-          qs("#form-tanggal").valueAsDate = new Date();
-
-          const savedUser = sessionStorage.getItem("activeUser");
-          if (savedUser) qs("#form-teknisi").value = savedUser;
-
-          fetchMasterData();
-          const lokasiSelect = document.getElementById("form-lokasi");
-          if (lokasiSelect) {
-            lokasiSelect.addEventListener("change", (e) =>
-              updateUptDropdown(e.target.value),
-            );
-          }
-
-          // Eksekusi Riwayat Secara Otomatis
-          loadHistory(uid);
-        }
-      }
-
-      async function loadHistory(uid) {
-        const body = qs("#history-body");
-        body.innerHTML = `<tr><td colspan="7" class="p-8 text-center text-gray-500"><i class="fas fa-spinner fa-spin mr-2"></i> Mengambil data riwayat server...</td></tr>`;
-
-        const token = sessionStorage.getItem("authToken");
-        try {
-          const res = await fetch(`${API_BASE}/riwayat-kondisi/${uid}`, {
-            headers: { Authorization: `Bearer ${token}` },
-          });
-          if (!res.ok) throw new Error(`HTTP ${res.status}`);
-          const history = await res.json();
-
-          // Resolver Lokasi
-          const resolveLokasi = (kode) => {
-            if (!kode || kode === "—") return { parentName: "—", uptName: "—" };
-            const uptEntry = uptDatabase.find(
-              (u) => u.upt === kode || u.lokasi === kode,
-            );
-            if (uptEntry) {
-              const parentEntry = lokasiData.find(
-                (l) => l.code === uptEntry.lokasi,
-              );
-              return {
-                parentName: parentEntry ? parentEntry.name : uptEntry.lokasi,
-                uptName: uptEntry.upt,
-              };
-            }
-            const parentEntry = lokasiData.find((l) => l.code === kode);
-            if (parentEntry)
-              return { parentName: parentEntry.name, uptName: "—" };
-            return { parentName: kode, uptName: "—" };
-          };
-
-          // Mengisi Nilai Grid Detail Panel Berdasarkan Global Data + History
-          if (currentAssetData) {
-            let peruntukanTebakan =
-              currentAssetData.peruntukan ||
-              currentAssetData.id_aset.split(".")[4];
-            let peruntukanLabel =
-              UNIT_LABELS[peruntukanTebakan] || peruntukanTebakan || "—";
-            qs("#hist-info-peruntukan").textContent = peruntukanLabel;
-
-            const asetLokasiResolved = resolveLokasi(
-              currentAssetData.id_lokasi,
-            );
-            qs("#hist-info-daop").textContent =
-              asetLokasiResolved.parentName !== "—"
-                ? asetLokasiResolved.parentName
-                : currentAssetData.id_lokasi;
-            qs("#hist-info-upt").textContent = asetLokasiResolved.uptName;
-          }
-
-          if (history.length === 0) {
-            body.innerHTML = `<tr><td colspan="7" class="p-8 text-center text-gray-400 italic">Belum ada log perbaikan/perawatan untuk aset ini.</td></tr>`;
-            qs("#hist-info-lastupdate").textContent = "Belum pernah diperiksa";
-            return;
-          }
-
-          // Waktu update terbaru
-          qs("#hist-info-lastupdate").textContent = formatUtcToLocal(
-            history[history.length - 1].waktu_lapor,
-          );
-
-          // Render Tabel (Diurutkan terbalik agar yang terbaru di atas jika mau, atau biarkan urut dari array)
-          // Menggunakan reverse() agar log terbaru ada di baris teratas tabel
-          body.innerHTML = history
-            .slice()
-            .reverse()
-            .map((h, index) => {
-              const rawLokasiCode = h.id_lokasi || "—";
-              const lokasi = resolveLokasi(rawLokasiCode);
-
-              let uptVal = lokasi.uptName;
-              let cleanKeterangan = h.keterangan || "—";
-
-              // Regex ekstraksi tag [UPT: ...] dari backend
-              const uptMatch = cleanKeterangan.match(/\[UPT:\s*([^\]]+)\]/i);
-              if (uptMatch) {
-                uptVal = uptMatch[1].trim();
-                cleanKeterangan = cleanKeterangan
-                  .replace(uptMatch[0], "")
-                  .trim();
-                if (!cleanKeterangan) cleanKeterangan = "—";
-              }
-
-              const badgeClass =
-                h.kondisi === "SO"
-                  ? "bg-green-100 text-green-700 border border-green-200 dark:bg-green-900/40 dark:text-green-400 dark:border-green-800"
-                  : "bg-red-100 text-red-700 border border-red-200 dark:bg-red-900/40 dark:text-red-400 dark:border-red-800";
-
-              return `
-                        <tr class="hover:bg-gray-50/80 dark:hover:bg-gray-700/40 transition-colors group">
-                            <td class="p-4 text-center text-gray-400 font-mono text-xs">${history.length - index}</td>
-                            <td class="p-4 font-mono text-xs text-gray-600 dark:text-gray-300">${formatUtcToLocal(h.waktu_lapor)}</td>
-                            <td class="p-4 text-sm font-semibold text-gray-700 dark:text-gray-200">${lokasi.parentName}</td>
-                            <td class="p-4 text-sm text-gray-600 dark:text-gray-300">${uptVal}</td>
-                            <td class="p-4 text-sm font-medium text-gray-700 dark:text-gray-200">${h.id_pengguna}</td>
-                            <td class="p-4 text-center">
-                                <span class="text-[11px] font-bold px-2.5 py-1 rounded-md shadow-sm ${badgeClass}">${h.kondisi}</span>
-                            </td>
-                            <td class="p-4 text-sm text-gray-600 dark:text-gray-400 whitespace-pre-wrap max-w-[280px] truncate group-hover:whitespace-normal group-hover:break-words transition-all" title="Detail Keterangan">${cleanKeterangan}</td>
-                        </tr>`;
-            })
+    try {
+      if (!gud.options.length) {
+        const gres = await apiAuth("/inventaris/gudang");
+        if (gres.ok) {
+          const gd = await gres.json();
+          const list = Array.isArray(gd) ? gd : (gd.items || []);
+          gud.innerHTML = list
+            .map(g => `<option value="${g.id_gudang}">${window.spekEscape(g.nama)}</option>`)
             .join("");
-        } catch (e) {
-          body.innerHTML = `<tr><td colspan="7" class="p-8 text-center text-red-500 bg-red-50 dark:bg-red-900/10">Gagal memuat log riwayat: ${e.message}</td></tr>`;
+        }
+      }
+      await reloadRepairParts();
+    } catch (_) { /* the picker is optional — never block the report */ }
+  }
+
+  async function reloadRepairParts() {
+    const gud = qs("#repair-gudang");
+    const p = new URLSearchParams();
+    if (currentAsset?.kode_alat_code) p.set("kode_alat", currentAsset.kode_alat_code);
+    if (currentAsset?.spesifikasi?.id_varian)
+      p.set("id_varian", currentAsset.spesifikasi.id_varian);
+    if (gud?.value) p.set("id_gudang", gud.value);
+
+    const res = await apiAuth(`/inventaris/parts?${p}`);
+    if (!res.ok) return;
+    repairParts = new Map((await res.json()).map(x => [String(x.id_part), x]));
+    document.querySelectorAll("#repair-pakai-rows [data-pakai-row]").forEach(row => {
+      const sel = row.querySelector("[data-pakai-part]");
+      fillRepairPartOptions(sel, sel.value);
+      updateRepairRowHint(row);
+    });
+    renderRepairPakaiTotal();
+  }
+
+  function fillRepairPartOptions(select, selected) {
+    const opts = [...repairParts.values()].map(x =>
+      `<option value="${x.id_part}"${String(x.id_part) === String(selected) ? " selected" : ""}>` +
+      `${window.spekEscape(x.nama_part)} — stok ${x.stok_sekarang}</option>`).join("");
+    select.innerHTML = `<option value="">— Pilih sparepart —</option>` +
+      (opts || `<option value="" disabled>Tidak ada sparepart yang cocok</option>`);
+  }
+
+  function addRepairPakaiRow() {
+    const wrap = qs("#repair-pakai-rows");
+    if (!wrap) return;
+    const row = document.createElement("div");
+    row.dataset.pakaiRow = "1";
+    row.className = "flex items-end gap-2";
+    row.innerHTML = `
+      <div class="flex-1 min-w-0">
+        <select data-pakai-part aria-label="Pilih sparepart"
+          class="w-full border dark:border-gray-600 rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-kai-blue focus:outline-none transition"></select>
+      </div>
+      <input type="number" min="1" step="1" value="1" data-pakai-qty aria-label="Jumlah"
+        class="w-16 border dark:border-gray-600 rounded-xl px-2 py-2 text-xs focus:ring-2 focus:ring-kai-blue focus:outline-none transition" />
+      <button type="button" data-pakai-remove aria-label="Hapus baris"
+        class="w-8 h-8 shrink-0 rounded-lg text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition">
+        <i class="fas fa-trash-alt text-xs"></i></button>`;
+    wrap.appendChild(row);
+    fillRepairPartOptions(row.querySelector("[data-pakai-part]"), "");
+    const hint = document.createElement("p");
+    hint.dataset.pakaiHint = "1";
+    hint.className = "text-[10px] text-gray-400 -mt-1";
+    wrap.appendChild(hint);
+    row.dataset.hintId = "1";
+  }
+
+  function updateRepairRowHint(row) {
+    const part = repairParts.get(String(row.querySelector("[data-pakai-part]").value));
+    const hint = row.nextElementSibling?.dataset?.pakaiHint ? row.nextElementSibling : null;
+    if (!hint) return;
+    if (!part) { hint.textContent = ""; return; }
+    const n = parseInt(row.querySelector("[data-pakai-qty]").value, 10) || 0;
+    const sisa = part.stok_sekarang - n;
+    hint.className = sisa < 0
+      ? "text-[10px] text-red-500 font-semibold -mt-1"
+      : "text-[10px] text-gray-400 -mt-1";
+    hint.textContent = sisa < 0
+      ? `Stok kurang ${Math.abs(sisa)}`
+      : `Sisa ${sisa} · Rp ${((part.harga_satuan || 0) * n).toLocaleString("id-ID")}`;
+  }
+
+  function renderRepairPakaiTotal() {
+    const el = qs("#repair-pakai-total");
+    if (!el) return;
+    let total = 0;
+    document.querySelectorAll("#repair-pakai-rows [data-pakai-row]").forEach(row => {
+      const part = repairParts.get(String(row.querySelector("[data-pakai-part]").value));
+      const n = parseInt(row.querySelector("[data-pakai-qty]").value, 10) || 0;
+      if (part) total += (part.harga_satuan || 0) * n;
+    });
+    el.textContent = `Rp ${total.toLocaleString("id-ID")}`;
+  }
+
+  function collectRepairPakai() {
+    const gudang = qs("#repair-gudang")?.value;
+    const out = [];
+    document.querySelectorAll("#repair-pakai-rows [data-pakai-row]").forEach(row => {
+      const idPart = parseInt(row.querySelector("[data-pakai-part]").value, 10);
+      const jumlah = parseInt(row.querySelector("[data-pakai-qty]").value, 10);
+      if (!idPart || !jumlah || jumlah <= 0) return;
+      out.push({ id_part: idPart, jumlah, id_gudang: gudang ? parseInt(gudang, 10) : null });
+    });
+    return out;
+  }
+
+  qs("#repair-pakai-add")?.addEventListener("click", addRepairPakaiRow);
+  qs("#repair-gudang")?.addEventListener("change", reloadRepairParts);
+  ["input", "change"].forEach(evt =>
+    qs("#repair-pakai-rows")?.addEventListener(evt, e => {
+      const row = e.target.closest("[data-pakai-row]");
+      if (!row) return;
+      updateRepairRowHint(row);
+      renderRepairPakaiTotal();
+    }));
+  qs("#repair-pakai-rows")?.addEventListener("click", e => {
+    if (!e.target.closest("[data-pakai-remove]")) return;
+    const row = e.target.closest("[data-pakai-row]");
+    const hint = row?.nextElementSibling?.dataset?.pakaiHint ? row.nextElementSibling : null;
+    hint?.remove();
+    row?.remove();
+    renderRepairPakaiTotal();
+  });
+
+  function openKalibModal() {
+    qs("#kalib-subtitle").textContent = currentAsset?.id_aset || UID;
+    qs("#kalib-uid").value = UID;
+    // Pre-fill from latest record if available
+    if (summarySelf) prefillKalibrasi(summarySelf);
+    qs("#modal-kalibrasi").classList.remove("hidden");
+  }
+
+  function openMutasiModal() {
+    qs("#mutasi-subtitle").textContent = currentAsset?.id_aset || UID;
+    qs("#mutasi-uid").value = UID;
+    qs("#mutasi-petugas").value = activeUser;
+    qs("#mutasi-alasan").value = "";
+
+    // Display lokasi asal and kini
+    const summ = summarySelf?.mutasi;
+    function fmtLok(code) {
+      if (!code) return "—";
+      const r = resolveLokasi(code);
+      return r.uptName !== "—" ? `${r.parentName} (${r.uptName})` : r.parentName;
+    }
+    const origCode = summ?.original_lokasi_code || currentAsset?.id_lokasi || "";
+    const kiniCode = currentAsset?.id_lokasi || "";
+    qs("#mutasi-lokasi-asal").textContent = fmtLok(origCode);
+    qs("#mutasi-lokasi-kini").textContent = fmtLok(kiniCode);
+
+    // Pre-select user's default lokasi from JWT
+    const jwt = getJwtPayload(authToken);
+    const userLokasi = jwt?.id_lokasi || "";
+    const userParent = getParentLokasiCode(userLokasi) || userLokasi;
+    if (userParent) {
+      qs("#mutasi-lokasi-tuju").value = userParent;
+      qs("#mutasi-lokasi-tuju").dispatchEvent(new Event("change"));
+    }
+
+    qs("#modal-mutasi").classList.remove("hidden");
+  }
+
+  // ── KONDISI BUTTON TOGGLE ───────────────────────────────────────────────
+  document.querySelectorAll(".kondisi-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const k = btn.dataset.kondisi;
+      qs("#repair-kondisi").value = k;
+      document.querySelectorAll(".kondisi-btn").forEach(b => {
+        const same = b.dataset.kondisi === k;
+        b.classList.toggle("bg-green-100", same && k==="SO");
+        b.classList.toggle("bg-red-100",   same && k==="TSO");
+        b.classList.toggle("ring-2", same);
+        b.classList.toggle("ring-green-400", same && k==="SO");
+        b.classList.toggle("ring-red-400",   same && k==="TSO");
+        b.classList.toggle("opacity-50", !same);
+      });
+    });
+  });
+
+  // ── FORM SUBMIT: Pemeliharaan ────────────────────────────────────────────
+  qs("#form-repair").addEventListener("submit", async e => {
+    e.preventDefault();
+    const kondisi = qs("#repair-kondisi").value;
+    const lokasi  = qs("#repair-lokasi").value;
+    const upt     = qs("#repair-upt").value;
+    const ket     = qs("#repair-keterangan").value.trim() || "—";
+    if (!kondisi) { showToast("Pilih kondisi alat (SO / TSO).", "warning"); return; }
+    if (!lokasi)  { showToast("Pilih lokasi perbaikan.", "warning"); return; }
+
+    const btn = qs("#btn-submit-repair");
+    const orig = btn.innerHTML;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Memproses...';
+    btn.disabled = true;
+
+    try {
+      const pemakaian = collectRepairPakai();
+      const res = await apiAuth("/perbaikan", {
+        method: "POST",
+        body: JSON.stringify({
+          id_aset: UID,
+          kondisi,
+          keterangan: upt ? `[UPT: ${upt}] ${ket}` : ket,
+          ...(pemakaian.length ? { pemakaian } : {}),
+        }),
+      });
+      // The server's `detail` carries the actionable message here — e.g.
+      // "Stok BUSI tidak mencukupi. Tersedia 2 Piece, diminta 5".
+      if (!res.ok) throw new Error((await res.json().catch(()=>({}))).detail || "Gagal menyimpan.");
+      const body = await res.json().catch(() => ({}));
+      const dipakai = (body.pemakaian || []).length;
+      showToast(
+        dipakai
+          ? `Laporan disimpan — ${dipakai} sparepart tercatat keluar.`
+          : "Laporan pemeliharaan berhasil disimpan!",
+        "success",
+      );
+      qs("#modal-repair").classList.add("hidden");
+      await loadRepair();
+      await fetchSummaryForAsset(UID);
+    } catch(err) {
+      showToast(err.message, "error");
+    } finally {
+      btn.innerHTML = orig;
+      btn.disabled = false;
+    }
+  });
+
+  // ── FORM SUBMIT: Kalibrasi ───────────────────────────────────────────────
+  qs("#form-kalib").addEventListener("submit", async e => {
+    e.preventDefault();
+    const tgl = qs("#kalib-tanggal").value;
+    if (!tgl) { showToast("Isi tanggal kalibrasi.", "warning"); return; }
+    const btn = qs("#btn-submit-kalib");
+    const orig = btn.innerHTML;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Memproses...';
+    btn.disabled = true;
+
+    try {
+      const res = await apiAuth("/kalibrasi", {
+        method: "POST",
+        body: JSON.stringify({
+          id_aset: UID,
+          tanggal_kalibrasi: tgl,
+          tanggal_berlaku: qs("#kalib-berlaku").value || tgl,
+          status: qs("#kalib-status").value || "LULUS",
+          pelaksana_kalibrasi: qs("#kalib-pelaksana").value.trim() || null,
+          nomor_sertifikat: qs("#kalib-nomor").value.trim() || null,
+          keterangan: qs("#kalib-keterangan").value.trim() || null,
+        }),
+      });
+      if (!res.ok) throw new Error((await res.json().catch(()=>({}))).detail || "Gagal menyimpan.");
+
+      // Two-step by design: the record is created first, then the file is
+      // attached to the id_kalibrasi it returns. The response used to be
+      // discarded, throwing away the one value the upload needs.
+      const created = await res.json().catch(() => ({}));
+      const file = qs("#kalib-file")?.files?.[0];
+      if (file && created.id_kalibrasi) {
+        const fd = new FormData();
+        fd.append("file", file);
+        // No Content-Type header — the browser must set the multipart boundary.
+        const up = await apiAuth(`/kalibrasi/${created.id_kalibrasi}/sertifikat`, {
+          method: "POST",
+          body: fd,
+        });
+        if (!up.ok) {
+          const detail = (await up.json().catch(()=>({}))).detail || "Berkas gagal diunggah.";
+          // The record itself saved, so this is a partial success, not a failure.
+          showToast(`Kalibrasi tersimpan, tetapi ${detail}`, "warning");
         }
       }
 
-      // ── UI INTERACTIONS & FORM SUBMISSION ─────────────────────────
-      qs("#btn-form-perbaikan").addEventListener("click", () => {
-        qs("#section-form").classList.remove("hidden");
-        qs("#section-form").scrollIntoView({
-          behavior: "smooth",
-          block: "center",
-        });
-        qs("#form-tanggal").focus();
+      showToast("Laporan kalibrasi berhasil disimpan!", "success");
+      qs("#modal-kalibrasi").classList.add("hidden");
+      if (qs("#kalib-file")) qs("#kalib-file").value = "";
+      await loadKalibrasi();
+      await fetchSummaryForAsset(UID);
+    } catch(err) {
+      showToast(err.message, "error");
+    } finally {
+      btn.innerHTML = orig;
+      btn.disabled = false;
+    }
+  });
+
+  // ── FORM SUBMIT: Mutasi ──────────────────────────────────────────────────
+  qs("#btn-submit-mutasi").addEventListener("click", async () => {
+    const lokasiTuju = qs("#mutasi-lokasi-tuju").value;
+    const uptTuju    = qs("#mutasi-upt-tuju").value;
+    const alasan     = qs("#mutasi-alasan").value.trim();
+    const petugas    = qs("#mutasi-petugas").value.trim() || activeUser;
+    if (!lokasiTuju) { showToast("Pilih lokasi tujuan.", "warning"); return; }
+
+    const idLokasiTujuan = uptTuju || lokasiTuju;
+    const btn = qs("#btn-submit-mutasi");
+    const orig = btn.innerHTML;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Memproses...';
+    btn.disabled = true;
+
+    try {
+      const res = await apiAuth("/mutasi", {
+        method: "POST",
+        body: JSON.stringify({ id_aset: UID, id_lokasi_tujuan: idLokasiTujuan, alasan_mutasi: alasan || null, nama_petugas: petugas }),
       });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "Gagal memproses mutasi.");
+      showToast(data.message || "Mutasi berhasil!", "success");
+      qs("#modal-mutasi").classList.add("hidden");
+      await loadMutasi();
+      await fetchSummaryForAsset(UID);
+    } catch(e) {
+      showToast(e.message, "error");
+    } finally {
+      btn.innerHTML = orig;
+      btn.disabled = false;
+    }
+  });
 
-      qs("#close-form").addEventListener("click", () =>
-        qs("#section-form").classList.add("hidden"),
-      );
+  // ── LOGIN GATE ───────────────────────────────────────────────────────────
+  //
+  // ⚠️ THIS FORM WAS BROKEN AND IT WAS ALSO A PRIVILEGE ESCALATION.
+  //
+  // It posted `{username, role, id_lokasi}` with NO PASSWORD. `LoginForm.password`
+  // is required, so every sign-in from a scanned QR code answered 422 — the page
+  // has been unusable for anyone not already holding a session. And it offered
+  // #gate-role / #gate-region dropdowns letting the user DECLARE their own role
+  // and region: exactly the "pick your own privileges" login that was removed
+  // from index.html in rev0.5.0 as the escalation it is. It survived here only
+  // because landing.html is a separate document that neither checker reads.
+  //
+  // Replaced by the same one-step form index.html uses: username + password,
+  // with a captcha appearing only when the server asks for one. Role and region
+  // are properties of the account, read from the stored row and returned in the
+  // token — never asked for.
+  //
+  // The captcha widget comes from js/captcha.js, a self-contained IIFE. Do NOT
+  // load js/core.js here to get `showToast` or `getParentLokasiCode`: this file
+  // declares its own, classic scripts share one global scope, and the duplicate
+  // top-level declaration is a fatal SyntaxError that blanks the whole page.
+  function showLoginGate() {
+    const existing = document.getElementById("login-gate-overlay");
+    if (existing) { existing.classList.remove("hidden"); return; }
 
-      document.querySelectorAll(".landing-status-btn").forEach((btn) => {
-        btn.addEventListener("click", () => {
-          const status = btn.dataset.status;
-          qs("#form-kondisi").value = status;
-          document.querySelectorAll(".landing-status-btn").forEach((b) => {
-            if (b.dataset.status === status) {
-              b.classList.add(
-                status === "SO" ? "bg-green-100" : "bg-red-100",
-                "ring-2",
-                status === "SO" ? "ring-green-400" : "ring-red-400",
-              );
-              b.classList.remove(
-                "opacity-50",
-                "dark:hover:bg-green-900/20",
-                "dark:hover:bg-red-900/20",
-              );
-            } else {
-              b.classList.remove(
-                "bg-green-100",
-                "bg-red-100",
-                "ring-2",
-                "ring-green-400",
-                "ring-red-400",
-              );
-              b.classList.add("opacity-50");
-            }
-          });
+    const overlay = document.createElement("div");
+    overlay.id = "login-gate-overlay";
+    overlay.className = "fixed inset-0 z-[150] bg-gray-900/60 backdrop-blur-sm flex items-center justify-center p-4 anim-fade-in overflow-y-auto";
+    overlay.innerHTML = `
+      <div class="bg-white dark:bg-gray-800 rounded-3xl shadow-2xl border border-gray-100 dark:border-gray-700 w-full max-w-sm p-7 space-y-5 anim-scale-in my-auto">
+        <div class="text-center space-y-2">
+          <div class="inline-flex items-center justify-center w-14 h-14 rounded-full bg-kai-blue/10 dark:bg-kai-blue/20 text-kai-blue mb-1">
+            <i class="fas fa-lock text-2xl"></i>
+          </div>
+          <h2 class="text-lg font-bold text-gray-800 dark:text-gray-100">Otorisasi Diperlukan</h2>
+          <p class="text-xs text-gray-500 dark:text-gray-400">Masuk untuk mengakses riwayat dan formulir aset ini.</p>
+        </div>
+        <form id="gate-form" class="space-y-3" autocomplete="on">
+          <div>
+            <label for="gate-user" class="block text-[11px] font-medium mb-1 text-gray-500 dark:text-gray-400">Username</label>
+            <input type="text" id="gate-user" name="username" autocomplete="username" required
+              class="w-full border dark:border-gray-600 dark:bg-gray-700 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-kai-blue focus:outline-none transition" />
+          </div>
+          <div>
+            <label for="gate-pass" class="block text-[11px] font-medium mb-1 text-gray-500 dark:text-gray-400">Password</label>
+            <div class="relative">
+              <input type="password" id="gate-pass" name="password" autocomplete="current-password" required
+                class="w-full border dark:border-gray-600 dark:bg-gray-700 rounded-xl px-4 py-2.5 pr-11 text-sm focus:ring-2 focus:ring-kai-blue focus:outline-none transition" />
+              <!-- A field a technician in gloves cannot proof-read is how wrong
+                   passwords get retyped four times at a resort. -->
+              <button type="button" id="gate-pass-toggle" aria-label="Tampilkan password"
+                class="absolute right-2 top-1/2 -translate-y-1/2 px-2 py-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition">
+                <i class="fas fa-eye text-xs"></i>
+              </button>
+            </div>
+          </div>
+
+          <!-- Hidden until the server answers X-Captcha-Required: 1. -->
+          <div id="gate-captcha-wrap" class="hidden bg-gray-50 dark:bg-gray-700/50 p-3 rounded-xl border border-gray-100 dark:border-gray-600">
+            <p class="text-[10px] font-bold text-gray-400 uppercase mb-2">Verifikasi keamanan</p>
+            <div id="gate-captcha"></div>
+          </div>
+
+          <button type="submit" id="gate-btn"
+            class="w-full bg-kai-blue hover:bg-blue-800 text-white font-bold py-3 rounded-xl transition flex items-center justify-center gap-2 text-sm shadow-md">
+            <i class="fas fa-sign-in-alt"></i> Masuk Sekarang
+          </button>
+          <p id="gate-err" class="text-xs text-red-500 text-center hidden" role="alert"></p>
+          <button type="button" id="gate-cancel"
+            class="w-full py-2 text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition">Batal</button>
+        </form>
+      </div>`;
+    document.body.appendChild(overlay);
+
+    document.getElementById("gate-cancel").addEventListener("click", () => {
+      overlay.classList.add("hidden");
+    });
+
+    document.getElementById("gate-pass-toggle").addEventListener("click", () => {
+      const f = document.getElementById("gate-pass");
+      const shown = f.type === "text";
+      f.type = shown ? "password" : "text";
+      document.getElementById("gate-pass-toggle").innerHTML =
+        `<i class="fas fa-eye${shown ? "" : "-slash"} text-xs"></i>`;
+      f.focus();
+    });
+
+    // `API` already ends in /api; the captcha widget wants the ORIGIN prefix,
+    // because it appends /api/captcha itself.
+    const CAPTCHA_BASE = API.replace(/\/api\/?$/, "");
+
+    document.getElementById("gate-form").addEventListener("submit", async (ev) => {
+      ev.preventDefault();
+      const username = document.getElementById("gate-user").value.trim();
+      const password = document.getElementById("gate-pass").value;
+      const errEl    = document.getElementById("gate-err");
+      const btn      = document.getElementById("gate-btn");
+
+      if (!username || !password) {
+        errEl.textContent = "Isi username dan password.";
+        errEl.classList.remove("hidden");
+        return;
+      }
+
+      btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Memproses...';
+      btn.disabled = true;
+      errEl.classList.add("hidden");
+
+      try {
+        const res = await fetch(`${API}/login`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "ngrok-skip-browser-warning": "true" },
+          body: JSON.stringify({
+            username,
+            password,
+            ...(window.RamcesCaptcha?.values("gate-captcha") || {}),
+          }),
         });
-      });
 
-      qs("#repair-form").addEventListener("submit", async (e) => {
-        e.preventDefault();
-
-        const kondisi = qs("#form-kondisi").value;
-        const lokasi = qs("#form-lokasi").value;
-        const upt = qs("#form-upt").value;
-        const teknisi = qs("#form-teknisi").value.trim();
-
-        if (!kondisi) {
-          showToast("Pilih kondisi final alat (SO / TSO).", "warning");
-          return;
-        }
-        if (!lokasi || !upt) {
-          showToast("Lengkapi data Lokasi dan UPT Pelapor.", "warning");
-          return;
-        }
-        if (!teknisi) {
-          showToast("Isi nama teknisi lapangan.", "warning");
-          return;
-        }
-
-        const token = sessionStorage.getItem("authToken");
-        if (!token) {
-          showToast(
-            "Sesi habis. Silakan refresh halaman dan login ulang.",
-            "error",
-          );
-          return;
-        }
-
-        const descInput = qs("#form-keterangan").value.trim() || "—";
-        const payload = {
-          id_aset: qs("#form-uid").value,
-          kondisi: kondisi,
-          id_lokasi: lokasi,
-          keterangan: `[UPT: ${upt}] ${descInput}`,
-        };
-
-        const btn = qs("#btn-submit-repair");
-        const originalBtnHtml = btn.innerHTML;
-        btn.innerHTML =
-          '<i class="fas fa-spinner fa-spin"></i> Memproses Laporan...';
-        btn.disabled = true;
-
-        try {
-          const res = await fetch(`${API_BASE}/perbaikan`, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${token}`,
-            },
-            body: JSON.stringify(payload),
-          });
-
-          if (!res.ok) {
-            if (res.status === 401) {
-              showToast("Sesi kedaluwarsa. Silakan login kembali.", "error");
-              return;
-            }
-            throw new Error(
-              (await res.json().catch(() => ({}))).detail ||
-                "Gagal menyimpan laporan ke server.",
+        if (!res.ok) {
+          // The server decides when a captcha is needed — it is progressive, so
+          // it appears only once a rate-limit bucket has tripped rather than on
+          // every sign-in from a resort.
+          if (res.headers.get("X-Captcha-Required") === "1") {
+            window.RamcesCaptcha?.toggle(
+              "gate-captcha-wrap", "gate-captcha", true, CAPTCHA_BASE,
             );
+            window.RamcesCaptcha?.refresh("gate-captcha", CAPTCHA_BASE);
           }
-
-          showToast("Log pemeliharaan berhasil direkam!", "success");
-
-          // Reset Form state
-          qs("#repair-form").reset();
-          qs("#form-kondisi").value = "";
-          const lokasiSelect = document.getElementById("form-lokasi");
-          if (lokasiSelect) lokasiSelect.value = "";
-          const uptSelect = document.getElementById("form-upt");
-          if (uptSelect)
-            uptSelect.innerHTML =
-              '<option value="">Pilih Lokasi Perbaikan Dahulu...</option>';
-
-          document.querySelectorAll(".landing-status-btn").forEach((b) => {
-            b.classList.remove(
-              "bg-green-100",
-              "bg-red-100",
-              "ring-2",
-              "ring-green-400",
-              "ring-red-400",
-              "opacity-50",
-            );
-          });
-          qs("#section-form").classList.add("hidden");
-
-          // Refresh Data Seamlessly
-          await loadAsset(uid);
-        } catch (err) {
-          showToast(err.message, "error");
-        } finally {
-          btn.innerHTML = originalBtnHtml;
-          btn.disabled = false;
+          throw new Error((await res.json().catch(() => ({}))).detail || "Login gagal.");
         }
-      });
-    </script>
-  </body>
+
+        const data = await res.json();
+        authToken  = data.access_token;
+        activeUser = username;
+        sessionStorage.setItem("authToken", authToken);
+        sessionStorage.setItem("activeUser", activeUser);
+        const p = getJwtPayload(authToken);
+        // From the TOKEN, which the server minted from the stored row — not
+        // from a dropdown the person signing in filled out themselves.
+        userRole = p?.role || "";
+        overlay.remove();
+        showToast(`Berhasil masuk sebagai ${username}!`, "success");
+        // Register presence now that there is an identity to register.
+        setupLandingSocket();
+        await fetchMasterData();
+        await fetchSummaryForAsset(UID);
+        unlockForms();
+        loadTabData(activeTab);
+      } catch (e) {
+        errEl.textContent = e.message;
+        errEl.classList.remove("hidden");
+        btn.innerHTML = '<i class="fas fa-sign-in-alt"></i> Masuk Sekarang';
+        btn.disabled = false;
+      }
+    });
+
+    document.getElementById("gate-user").focus();
+  }
+
+  // ── LIVE CONNECTION / PRESENCE ───────────────────────────────────────────
+  //
+  // This page is reached by scanning the QR sticker on a machine, so the person
+  // using it is the one actually standing in front of the alat kerja. Without
+  // this they were invisible to the office: presence is keyed off the WebSocket
+  // in ConnectionManager, and this page never opened one, so a technician
+  // filing a report from the field showed as offline the whole time.
+  //
+  // Anonymous scans stay anonymous — the socket is only opened once signed in.
+  let _ws = null, _wsBeat = null, _wsRetry = 0, _wsTimer = null;
+
+  function setWsDot(state) {
+    const wrap = document.getElementById("ws-presence");
+    const dot = document.getElementById("ws-dot");
+    const label = document.getElementById("ws-label");
+    if (!wrap || !dot || !label) return;
+    wrap.classList.toggle("hidden", !isLoggedIn());
+    wrap.classList.toggle("flex", isLoggedIn());
+    const map = {
+      open: ["bg-green-400", "Terhubung"],
+      connecting: ["bg-amber-300", "Menghubungkan…"],
+      closed: ["bg-red-400", "Terputus"],
+    };
+    const [cls, text] = map[state] || map.closed;
+    dot.className = "w-1.5 h-1.5 rounded-full " + cls;
+    label.textContent = text;
+  }
+
+  function setupLandingSocket() {
+    if (!isLoggedIn()) { setWsDot("closed"); return; }
+    if (_ws && (_ws.readyState === WebSocket.OPEN || _ws.readyState === WebSocket.CONNECTING)) return;
+    clearInterval(_wsBeat);
+    clearTimeout(_wsTimer);
+    setWsDot("connecting");
+
+    // Scheme from the PAGE, never from tunnel config: behind a TLS-terminating
+    // tunnel the page is https and a ws:// socket is blocked as mixed content.
+    const proto = window.location.protocol === "https:" ? "wss" : "ws";
+    try {
+      _ws = new WebSocket(
+        `${proto}://${window.location.host}/ws/updates?token=${encodeURIComponent(authToken)}`,
+      );
+    } catch (_) { setWsDot("closed"); return; }
+
+    _ws.onopen = () => {
+      _wsRetry = 0;
+      setWsDot("open");
+      // Tell the office which screen this is; the server keeps it per-user and
+      // Pusat Data ▸ Pengguna renders it beside the online dot.
+      try { _ws.send("view:Kartu Aset (QR)"); } catch (_) {}
+      _wsBeat = setInterval(() => {
+        if (_ws && _ws.readyState === WebSocket.OPEN) _ws.send("ping");
+      }, 30000);
+    };
+
+    _ws.onmessage = (ev) => {
+      if (ev.data === "pong") return;
+      // Someone else changed this asset while it is on screen — re-read it so a
+      // technician is never looking at a stale condition.
+      if (ev.data === "REFRESH_ASSET_LIST" && UID) {
+        fetchSummaryForAsset(UID);
+        if (isLoggedIn()) loadTabData(activeTab);
+      }
+    };
+
+    _ws.onclose = () => {
+      clearInterval(_wsBeat);
+      setWsDot("closed");
+      if (!isLoggedIn()) return;
+      // Exponential backoff with jitter, capped — field signal drops a lot.
+      const wait = Math.min(30000, 1000 * Math.pow(2, _wsRetry++)) + Math.random() * 800;
+      _wsTimer = setTimeout(setupLandingSocket, wait);
+    };
+
+    _ws.onerror = () => { try { _ws.close(); } catch (_) {} };
+  }
+
+  // A backgrounded phone suspends timers; re-check the socket on return.
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") setupLandingSocket();
+  });
+  window.addEventListener("pagehide", () => { try { _ws?.close(); } catch (_) {} });
+
+  // ── INIT ─────────────────────────────────────────────────────────────────
+  if (authToken) {
+    const p = getJwtPayload(authToken);
+    userRole = p?.role || "";
+  }
+  setupLandingSocket();
+
+  if (!UID) {
+    qs("#skeleton").classList.add("hidden");
+    qs("#asset-error").classList.remove("hidden");
+    qs("#error-message").textContent = "Parameter UID tidak ditemukan. Pastikan QR Code dipindai dari sistem RAMCES.";
+  } else {
+    loadAsset(UID);
+  }
+  </script>
+</body>
 </html>
