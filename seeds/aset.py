@@ -2,7 +2,7 @@
 Import the real fleet from `modules/Template_Import_Aset_RAMCES.xlsx`.
 
 1,121 rows across four sheets that were maintained separately and disagree about
-almost everything — see `seed_aset_real.py`, which still owns the reading and
+almost everything, see `seed_aset_real.py`, which still owns the reading and
 cleaning. This module owns the WRITING.
 
 ── The idempotency bug this module was written to fix ──
@@ -12,7 +12,7 @@ collision re-issued it from `max(urutan) + 1`. That is correct for two sheets
 that number independently. It is catastrophic on a SECOND RUN: every row already
 imported collides with itself, gets a fresh number, and is inserted again under
 a new id. Running `seed.py` twice therefore DOUBLED the entire real fleet
-silently — the database this was written against held 2,242 assets for a
+silently, the database this was written against held 2,242 assets for a
 1,121-row workbook, and nothing anywhere reported it.
 
 The fix is to key on IDENTITY rather than on sequence. A workbook row is
@@ -27,7 +27,7 @@ collision handling apply.
 
 This is imperfect in one direction and deliberately so: a workbook that lists
 two physically distinct but otherwise identical machines at the same resort
-imports as one on a re-run. That is the right trade — a missed duplicate is
+imports as one on a re-run. That is the right trade, a missed duplicate is
 visible and correctable, whereas a silently doubled fleet corrupts every count,
 every dashboard and every availability percentage with no signal at all.
 
@@ -48,7 +48,7 @@ def _identity(row) -> tuple:
     What makes a workbook row the same row on a later import.
 
     The Model column is deliberately NOT part of this. It looks like it should
-    be — it is the most specific field on the row — but it is the one field that
+    be, it is the most specific field on the row, but it is the one field that
     does not survive a round trip: `resolve_model()` matches loosely (three
     passes, then containment) because the sheets' model strings are free text
     typed by four different people, so "HONDA GX 160" in the workbook can
@@ -60,7 +60,7 @@ def _identity(row) -> tuple:
     buckets with the model included and 400 without, and not one bucket contains
     two rows that differ only by model. If a future workbook does list two
     different models of the same tool, same year, same resort, same unit, they
-    will import as one on a re-run — a missed duplicate, which is visible and
+    will import as one on a re-run, a missed duplicate, which is visible and
     correctable, rather than a doubled fleet, which is not.
     """
     return (
@@ -122,7 +122,7 @@ def run(db, path: str = WORKBOOK):
 
     # `aset.id_lokasi` is a foreign key, so an unknown code aborts the whole
     # insert batch rather than skipping one row. Validate against the real table
-    # and fall back to the asset's parent region, which always exists — a resort
+    # and fall back to the asset's parent region, which always exists, a resort
     # we cannot place is still better recorded at its DAOP than lost.
     known_lokasi = {r[0] for r in db.query(models.Lokasi.id_lokasi).all()}
     unplaced = {}
@@ -206,7 +206,7 @@ def run(db, path: str = WORKBOOK):
                 # CURRENT_TIMESTAMP default.
                 #
                 # The registration record belongs at the purchase, not at the
-                # moment somebody ran a script — and while this was the only row
+                # moment somebody ran a script, and while this was the only row
                 # an asset had, nothing revealed that it was dated "today".
                 # `seeds/simulasi.py` exposed it immediately: history generated
                 # from the purchase date forward sorted BEFORE the registration,
@@ -224,7 +224,7 @@ def run(db, path: str = WORKBOOK):
     #
     # Idempotent, and it corrects rows THIS module wrote wrong. Every opening
     # record used to fall to `waktu_lapor`'s CURRENT_TIMESTAMP default, so on an
-    # existing database they all carry the date the seed last ran — which sorts
+    # existing database they all carry the date the seed last ran, which sorts
     # after any simulated history and makes `_scoped_repair_events()`'s LAG read
     # the registration as the newest event. Costs one indexed UPDATE on a clean
     # database, which touches nothing.

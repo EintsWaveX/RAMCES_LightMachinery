@@ -3,7 +3,7 @@ Live updates and presence.
 
 `ConnectionManager` is both the broadcast fan-out and the presence registry, and
 it is reached from roughly forty call sites spread across auth, master, aset,
-riwayat and inventaris — every endpoint that mutates data must
+riwayat and inventaris, every endpoint that mutates data must
 `await manager.broadcast(...)` after commit, because that is the only way
 connected clients learn about the change.
 
@@ -13,7 +13,7 @@ include_router, so a router importing main.py back would be a hard cycle. The
 `@app.websocket("/ws/updates")` route itself stays in main.py; only the registry
 it fans out through is importable.
 
-Dependencies are deliberately minimal — asyncio, datetime, typing and
+Dependencies are deliberately minimal, asyncio, datetime, typing and
 fastapi.WebSocket. Nothing here touches the database or the app object.
 """
 
@@ -30,7 +30,7 @@ class ConnectionManager:
 
     Sockets are keyed by username so "who is online" is answerable without a
     database round trip. A user may hold several sockets at once (two tabs), so
-    each username maps to a SET — they go offline only when the last one drops.
+    each username maps to a SET, they go offline only when the last one drops.
     """
 
     def __init__(self):
@@ -85,7 +85,7 @@ class ConnectionManager:
         Fan a message out to every connected socket, in parallel and bounded.
 
         This used to send SEQUENTIALLY with no timeout, and it is awaited inside
-        every mutating endpoint — so one client on a stalled mobile connection
+        every mutating endpoint, so one client on a stalled mobile connection
         with a full TCP send buffer blocked the POST response for the user who
         made the change, and delayed every other client behind it.
 

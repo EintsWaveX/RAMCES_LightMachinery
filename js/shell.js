@@ -11,7 +11,7 @@
 /**
  * Show or hide every role-gated control, in BOTH directions.
  *
- * Driven by `NAV_ACCESS` / `VIEW_ACCESS` / `WRITE_ACCESS` in js/core.js — see
+ * Driven by `NAV_ACCESS` / `VIEW_ACCESS` / `WRITE_ACCESS` in js/core.js, see
  * the note there on why this is convenience rather than control.
  *
  * Two rules this must keep:
@@ -19,11 +19,11 @@
  *   * `classList.toggle("hidden", …)`, never `remove("hidden")` alone. The old
  *     code only ever UN-hid things for SUPER_ADMIN and nothing put them back,
  *     so a role change with no document reload left the higher role's menu on
- *     screen. `forceLogout(false)` — the 401 path inside apiFetch — is exactly
+ *     screen. `forceLogout(false)`, the 401 path inside apiFetch, is exactly
  *     that: a super admin's token expiring, then a technician signing in at the
  *     same workstation, with both admin screens still listed.
  *   * Never REMOVE the node. `tools/check_html.py` asserts every `.view-section`
- *     is reachable from a `data-view` button, and a removed button fails it —
+ *     is reachable from a `data-view` button, and a removed button fails it,
  *     correctly, because the view would then be unreachable for everyone after
  *     the next role change.
  */
@@ -38,7 +38,7 @@ function applyRoleGating(role) {
   setEl("admin-helper", role === "SUPER_ADMIN");
 
   // Any nav button carrying `data-view`, including the ones with no id and the
-  // five slots in #mobile-bottom-nav, which were never gated at all — on a
+  // five slots in #mobile-bottom-nav, which were never gated at all, on a
   // phone every role got the full bar.
   document
     .querySelectorAll("#mobile-bottom-nav [data-view], .nav-btn[data-view]")
@@ -52,7 +52,7 @@ function applyRoleGating(role) {
     const allowed = canWrite(el.dataset.write, role);
     el.classList.toggle("hidden", !allowed);
 
-    // A gated FORM CONTROL needs disabling, not just hiding — hiding a checked
+    // A gated FORM CONTROL needs disabling, not just hiding, hiding a checked
     // radio would submit its value invisibly, and a hidden `required` one is an
     // unfocusable invalid control the browser cannot report ("An invalid form
     // control is not focusable"). Disabled inputs are excluded from both the
@@ -99,7 +99,7 @@ async function checkAuth() {
     // directions. This used only to REMOVE `hidden` for SUPER_ADMIN and never
     // put it back, so a role change that did not reload the document left the
     // previous (higher) role's menu on screen: SUPER_ADMIN, then a 401 inside
-    // apiFetch calling forceLogout(false) — which does not reload — then a
+    // apiFetch calling forceLogout(false), which does not reload, then a
     // TEKNISI logging in at the same workstation, and Pusat Data plus Pulihkan
     // Aset Afkir were still there. The server answered 403 behind them, so it
     // was never an escalation, but the menu contradicted the permissions.
@@ -199,7 +199,7 @@ async function handleLogin() {
     });
 
     if (!response.ok) {
-      // The SERVER decides when a captcha is required — after a rate-limit
+      // The SERVER decides when a captcha is required, after a rate-limit
       // bucket trips, never on the first attempt and never as a lockout.
       if (response.headers.get("X-Captcha-Required") === "1") {
         window.RamcesCaptcha?.toggle("login-captcha-wrap", "login-captcha", true);
@@ -209,7 +209,7 @@ async function handleLogin() {
       try {
         detail = (await response.json()).detail || detail;
       } catch (_) {
-        /* non-JSON error body (proxy page, 502) — keep the generic message */
+        /* non-JSON error body (proxy page, 502), keep the generic message */
       }
       throw new Error(detail);
     }
@@ -239,7 +239,7 @@ async function handleLogin() {
 // ── Registration ────────────────────────────────────────────────────────
 //
 // A separate panel rather than a mode of the login form, so the two cannot
-// share a field by accident. It asks for username, password and a name — and
+// share a field by accident. It asks for username, password and a name, and
 // deliberately NOT for a role or a region: choosing your own was the privilege
 // escalation the login wizard was rebuilt to remove, and an unauthenticated
 // form offering it would be the same hole with a friendlier label.
@@ -299,7 +299,7 @@ async function handleRegister() {
         ...(window.RamcesCaptcha?.values("reg-captcha") || {}),
       }),
     });
-    // A spent challenge cannot be reused, so ANY outcome needs a fresh one —
+    // A spent challenge cannot be reused, so ANY outcome needs a fresh one,
     // including success, in case the user registers a second account.
     window.RamcesCaptcha?.refresh("reg-captcha");
 
@@ -430,7 +430,7 @@ function populateSelects(preserveValues = false) {
       preserveValues,
     );
 
-  // UPT: locked until lokasi chosen — only reset if not preserving or no valid value
+  // UPT: locked until lokasi chosen, only reset if not preserving or no valid value
   if (inUpt) {
     const currentUpt = inUpt.value;
     const currentLokasi = inLokasi?.value;
@@ -441,7 +441,7 @@ function populateSelects(preserveValues = false) {
       inUpt.disabled = true;
     } else {
       // Re-apply UPT options for current lokasi, narrowed by the peruntukan
-      // radio — this is the Tambah Aset form, where the resort prefix and the
+      // radio, this is the Tambah Aset form, where the resort prefix and the
       // peruntukan segment of the generated id must agree.
       applyUptSelect(
         currentLokasi,
@@ -537,8 +537,8 @@ function switchView(viewId) {
   });
 
   // Driven from here rather than from the bottom-nav click handler, so
-  // arriving at a screen any other way — a card link, the breadcrumb, a
-  // post-save redirect — still lights the right slot.
+  // arriving at a screen any other way, a card link, the breadcrumb, a
+  // post-save redirect, still lights the right slot.
   syncBottomNav?.(viewId);
 
   const pageMeta = {
@@ -607,7 +607,7 @@ function switchView(viewId) {
   }
   if (viewId === "input") {
     // KDAK used to render ONLY from inside fetchAsetFromServer(), and only when
-    // this view already happened to be visible — so arriving here from any other
+    // this view already happened to be visible, so arriving here from any other
     // view showed an empty table until some unrelated refresh fired.
     updateKdakStats();
     renderKdakTable();
@@ -640,7 +640,7 @@ function setupEventListeners() {
     btn.addEventListener("click", () => switchView(btn.dataset.view));
   });
 
-  // Auth — one step. A real <form> so Enter submits from either field and
+  // Auth, one step. A real <form> so Enter submits from either field and
   // password managers recognise the pair; the three-step wizard that used to
   // live here asked the user to choose their own role, which the server now
   // ignores entirely.
@@ -745,7 +745,7 @@ function setupEventListeners() {
 
   // Search & Filter.
   // Every one of these changes the SIZE of the result set, so the current page
-  // number stops meaning anything — reset to page 1 before re-rendering, or a
+  // number stops meaning anything, reset to page 1 before re-rendering, or a
   // search from page 7 lands the user on an empty page.
   //
   // Debounced: each keystroke re-filters, re-sorts and re-renders the whole
@@ -777,7 +777,7 @@ function setupEventListeners() {
   document
     .getElementById("btn-db-download-xlsx")
     ?.addEventListener("click", async () => {
-      // An export writes one line per asset, so it genuinely needs every row —
+      // An export writes one line per asset, so it genuinely needs every row,
       // no amount of server paging changes that. What changed in rev0.4.5 is
       // WHEN: the fleet is fetched here, when the button is pressed, instead of
       // at login for every user whether or not they ever export.
@@ -895,7 +895,7 @@ function setupEventListeners() {
     document.getElementById(`${prefix}-bulk-confirm`)?.addEventListener("click", async () => {
       const action = actionSel?.value;
       if (!action) { showToast("Pilih tindakan terlebih dahulu.", "warning"); return; }
-      // Single gate for all six master-data sample/import paths — SheetJS is
+      // Single gate for all six master-data sample/import paths, SheetJS is
       // loaded on demand rather than in <head>, so this is the one place it has
       // to be awaited before any XLSX.* call downstream.
       if (!(await ensureXLSX())) return;
@@ -1215,7 +1215,7 @@ function setupEventListeners() {
 
   // Tambah Aset: filtered by the peruntukan radio, so the list cannot offer a
   // jembatan resort for a jalan rel asset. `kdakSyncUpt` reads both inputs and
-  // is also wired to the radio itself — see js/views/kdak.js.
+  // is also wired to the radio itself, see js/views/kdak.js.
   document.getElementById("in-lokasi")?.addEventListener("change", () => {
     window.kdakSyncUpt?.("tambah");
   });
@@ -1283,9 +1283,9 @@ function setupEventListeners() {
         showToast("Pilih Lokasi/Wilayah terlebih dahulu.", "warning");
         return;
       }
-      // UPT is optional — aset can be assigned to a parent lokasi without a specific UPT
+      // UPT is optional, aset can be assigned to a parent lokasi without a specific UPT
 
-      // Step 1b. Optional — an alat kerja with no Model/Type rows yet must
+      // Step 1b. Optional, an alat kerja with no Model/Type rows yet must
       // still be registrable, or adding the first asset of a new tool becomes
       // impossible until someone visits Pusat Data.
       const modelRaw = document.getElementById("in-model")?.value || "";
@@ -1353,7 +1353,7 @@ function setupEventListeners() {
       const uptVal     = document.getElementById("edit-upt")?.value || "";
       const lokasiVal  = document.getElementById("edit-lokasi")?.value || "";
 
-      // Radio values are A/B/C/D — map to full name before sending
+      // Radio values are A/B/C/D, map to full name before sending
       const _PERUNTUKAN_SUBMIT = { A: "JALAN REL", B: "JEMBATAN", C: "MEKANIK", D: "BALAIYASA" };
       const unitRaw    = document.querySelector('input[name="edit-unit"]:checked')?.value || "";
       const peruntukan = _PERUNTUKAN_SUBMIT[unitRaw] || unitRaw || "";
@@ -1364,7 +1364,7 @@ function setupEventListeners() {
         return showToast("Pilih Unit Peruntukan terlebih dahulu!", "warning");
 
       // Spareparts consumed, if any. They ride on this same request so the
-      // condition report and the stock movements commit together — see
+      // condition report and the stock movements commit together, see
       // catat_perbaikan() in main.py.
       const pemakaian = window.collectPemakaian ? window.collectPemakaian() : [];
 
@@ -1382,7 +1382,7 @@ function setupEventListeners() {
           method: "POST",
           body: JSON.stringify(payload),
         });
-        // The server's `detail` is the whole message here — "Stok <part> tidak
+        // The server's `detail` is the whole message here, "Stok <part> tidak
         // mencukupi. Tersedia 3 Piece, diminta 5" tells the technician exactly
         // what to change. The old fixed string threw all of that away.
         if (!response.ok) {
@@ -1455,7 +1455,7 @@ function setupEventListeners() {
             const detail =
               (await up.json().catch(() => ({}))).detail ||
               "berkas sertifikat gagal diunggah.";
-            // The record saved — this is a partial success, not a failure.
+            // The record saved, this is a partial success, not a failure.
             showToast(`Kalibrasi tersimpan, tetapi ${detail}`, "warning");
           }
         }
@@ -1527,7 +1527,7 @@ function setupEventListeners() {
     renderMutasiCards();
   });
 
-  // Narrowing is a filter change, so it goes back to page 1 — otherwise a user
+  // Narrowing is a filter change, so it goes back to page 1, otherwise a user
   // on page 4 of 60 assets sees an empty page 4 of the 6 that are actually due.
   document.getElementById("hist-jatuh-tempo")?.addEventListener("change", () => {
     resetPage("history-kalibrasi");
@@ -1553,7 +1553,7 @@ function setupEventListeners() {
 
     // The "jatuh tempo" narrowing belongs to Kalibrasi alone. `flex` rather
     // than removing `hidden` only, because the label lays its parts out in a
-    // row — toggling `hidden` on a element whose display is `flex` needs both
+    // row, toggling `hidden` on a element whose display is `flex` needs both
     // classes managed or the checkbox and its caption stack.
     const jt = document.getElementById("hist-jatuh-tempo-wrap");
     if (jt) {
@@ -1604,7 +1604,7 @@ function setupEventListeners() {
       if (!lokasiTuju)
         return showToast("Pilih lokasi tujuan terlebih dahulu.", "warning");
 
-      // UPT is optional — use UPT when chosen, otherwise use the parent lokasi code
+      // UPT is optional, use UPT when chosen, otherwise use the parent lokasi code
       const idLokasiTujuan = uptTuju || lokasiTuju;
 
       const btn  = document.getElementById("btn-submit-mutasi");
@@ -1664,7 +1664,7 @@ function setupWebSocket() {
     _wsRetryCount = 0;
     _wsNgrokFailed = false; // Reset on successful connection
     updateWsDot(true);
-    stopPollingFallback(); // Socket is live — no need to poll
+    stopPollingFallback(); // Socket is live, no need to poll
     // Re-announce the current screen: on a reconnect the server has forgotten it.
     reportCurrentView();
     window._wsHeartbeat = setInterval(() => {
@@ -1682,7 +1682,7 @@ function setupWebSocket() {
       fetchAsetFromServer();
       if (typeof window.refreshAfkirIfVisible === "function")
         window.refreshAfkirIfVisible();
-      // Model/Type rows are cached client-side twice — the spec-card payload
+      // Model/Type rows are cached client-side twice, the spec-card payload
       // cache in aset.js and the per-alat index the KDAK selects read. Every
       // mutation to a model broadcasts this, so refresh both rather than serve
       // a stale photo, spec row or dropdown until the next reload.
@@ -1705,7 +1705,7 @@ function setupWebSocket() {
 
     if (!authToken) return; // Don't reconnect if logged out
 
-    // Socket is down — keep the UI fresh by polling until it comes back.
+    // Socket is down, keep the UI fresh by polling until it comes back.
     startPollingFallback();
 
     if (_wsRetryCount >= WS_MAX_RETRIES) {
@@ -1752,7 +1752,7 @@ function reportCurrentView(viewId) {
     try {
       sock.send(`view:${_currentViewId}`);
     } catch (_) {
-      /* socket closed mid-send — the next reconnect re-announces */
+      /* socket closed mid-send, the next reconnect re-announces */
     }
   }
 }
@@ -1816,7 +1816,7 @@ window.addEventListener("resize", () => {
 //
 // The bell in the topbar carried a hardcoded red dot and no click handler: it
 // permanently claimed unread news that did not exist and could not be
-// dismissed. Rather than delete the affordance, it now shows something true —
+// dismissed. Rather than delete the affordance, it now shows something true,
 // the WebSocket broadcasts this session has received, which the app was
 // already reacting to invisibly.
 //
@@ -1850,7 +1850,7 @@ const ACTIVITY_META = {
 // ── The one standing item: calibration due ────────────────────────────────
 //
 // Everything else in this panel is an EVENT that happened during this session.
-// This is not — it is a CONDITION that is currently true, re-read from
+// This is not, it is a CONDITION that is currently true, re-read from
 // GET /api/kalibrasi/jatuh-tempo each time the app boots and each time an asset
 // changes. That distinction is why it needs no notifications table and no
 // read-state: a machine is out of certification or it is not, and it stops
@@ -1898,7 +1898,7 @@ function pushActivity(kind) {
   _activity.unshift({ kind, at: new Date() });
   if (_activity.length > ACTIVITY_MAX) _activity.length = ACTIVITY_MAX;
 
-  // Only count it as unread while the panel is closed — otherwise the badge
+  // Only count it as unread while the panel is closed, otherwise the badge
   // reappears over a list the user is looking at.
   const open = !document
     .getElementById("activity-panel")
@@ -1913,11 +1913,11 @@ function paintActivityDot() {
   const dot = document.getElementById("activity-dot");
   if (!dot) return;
   // A standing calibration backlog lights the bell even with no session
-  // activity — it is the one thing here worth interrupting someone for.
+  // activity, it is the one thing here worth interrupting someone for.
   //
   // It does NOT add to the unread count. The count means "things you have not
   // looked at yet", and a condition that stays true would keep re-arming it
-  // after every open — which is how the hardcoded red dot this panel replaced
+  // after every open, which is how the hardcoded red dot this panel replaced
   // used to behave.
   const due = _kalibrasiDue?.jumlah_perlu_tindakan || 0;
   dot.classList.toggle("hidden", _activityUnread === 0 && due === 0);
@@ -1999,7 +1999,7 @@ document.getElementById("activity-clear")?.addEventListener("click", () => {
   renderActivity();
 });
 
-// Click-away and Esc, matching the modal conventions in js/a11y-modal.js —
+// Click-away and Esc, matching the modal conventions in js/a11y-modal.js,
 // this panel is a popover, not a dialog, so it does not go through that file.
 document.addEventListener("click", (e) => {
   const panel = document.getElementById("activity-panel");

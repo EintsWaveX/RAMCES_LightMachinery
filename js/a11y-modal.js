@@ -1,11 +1,11 @@
 // ════════════════════════════════════════════════════════════════════
-// MODAL ACCESSIBILITY — role/aria, Esc, focus trap, focus return
+// MODAL ACCESSIBILITY, role/aria, Esc, focus trap, focus return
 // ════════════════════════════════════════════════════════════════════
 //
 // Every modal in this app is markup that already exists in index.html and is
 // shown by removing a `hidden` class. There are ~33 of them and none carried
 // `role="dialog"`, none trapped focus, Esc did nothing, and focus never left
-// the element that opened the panel — so a keyboard or screen-reader user
+// the element that opened the panel, so a keyboard or screen-reader user
 // could open a dialog and then tab straight out of it into the page behind.
 //
 // This file fixes all of that generically rather than by editing 33 markup
@@ -23,7 +23,7 @@
 
   // A modal root is the full-screen backdrop, not the white panel inside it.
   // Matching on the `-modal` id suffix keeps the loading overlay and the mobile
-  // sidebar scrim — which are also `fixed inset-0` — out of the dialog logic.
+  // sidebar scrim, which are also `fixed inset-0`, out of the dialog logic.
   function isModalRoot(el) {
     if (!el || el.nodeType !== 1 || el.tagName !== "DIV") return false;
     if (el.classList.contains("modal-backdrop")) return true;
@@ -64,7 +64,7 @@
   // ── Announce the dialog to assistive tech ────────────────────────────────
   // Label priority: an existing heading (the panel title the sighted user
   // reads), then any aria-label already authored, then the id turned into
-  // words — never nothing, because an unlabelled dialog is announced only as
+  // words, never nothing, because an unlabelled dialog is announced only as
   // "dialog" and gives no clue what just opened.
   function enhance(root) {
     if (root.dataset.a11yReady) return;
@@ -93,7 +93,7 @@
 
     // Icon-only close buttons announce as just "button" with no name. They all
     // follow one of two id conventions, so name them here rather than adding
-    // 28 aria-labels to the markup — and so any modal added later is covered.
+    // 28 aria-labels to the markup, and so any modal added later is covered.
     root.querySelectorAll('[id^="close-"], [id$="-close"], [data-modal-close]')
       .forEach(nameCloseButton);
 
@@ -160,8 +160,8 @@
     st.returnTo = null;
     state.set(root, st);
 
-    // Two cases. If a dialog is still open underneath — customConfirm stacked
-    // over a form is the common one — focus belongs back inside THAT dialog,
+    // Two cases. If a dialog is still open underneath, customConfirm stacked
+    // over a form is the common one, focus belongs back inside THAT dialog,
     // not on the opener behind everything. Hiding the panel that held focus
     // otherwise drops the user on <body>, which fires no focusin, so the trap
     // below never gets a chance to correct it.
@@ -197,7 +197,7 @@
   // Route through the dialog's OWN close control wherever one exists, never by
   // slapping `hidden` back on. customConfirm() resolves its promise from the
   // button handler, so hiding the panel directly would leave every awaiting
-  // caller hanging forever — the modal would vanish and the app would sit
+  // caller hanging forever, the modal would vanish and the app would sit
   // there waiting for an answer that can no longer arrive.
   function requestClose(root) {
     // Preferred close controls, most specific first. `close-<id>` is the
@@ -214,7 +214,7 @@
 
     if (explicit) {
       explicit.click();
-      // The control may be inert — customConfirm() nulls its own handlers once
+      // The control may be inert, customConfirm() nulls its own handlers once
       // resolved, and some close buttons only reset a form. Never leave the
       // user trapped in a dialog Esc appeared to dismiss: if the click did not
       // actually close it, hide it ourselves.
@@ -260,7 +260,7 @@
     true,
   );
 
-  // Focus can also enter the background without Tab — a stray .focus() call, or
+  // Focus can also enter the background without Tab, a stray .focus() call, or
   // a click on the page behind a backdrop that does not cover everything.
   document.addEventListener("focusin", (e) => {
     const top = stack[stack.length - 1];

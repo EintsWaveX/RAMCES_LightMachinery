@@ -12,7 +12,7 @@ append the matching statement here, or every already-populated database will
 silently lack it.
 
 The function is DEFINED here but still CALLED from main.py, at the same point in
-the module body it has always occupied — right after create_all() and before the
+the module body it has always occupied, right after create_all() and before the
 FastAPI app is constructed. Running the DDL as an import side effect of this
 module would make import order load-bearing and hide the trigger from the call
 site. It must keep running before anything queries: two of its statements
@@ -57,7 +57,7 @@ def _ensure_schema():
         "ALTER TABLE aset ADD COLUMN IF NOT EXISTS nomor_seri VARCHAR(100)",
         # Spec fields rendered on the public asset card. Adding a column here
         # WITHOUT the matching models.py change (or vice versa) is the failure
-        # mode this list exists to prevent — keep the two in step.
+        # mode this list exists to prevent, keep the two in step.
         "ALTER TABLE alat_varian ADD COLUMN IF NOT EXISTS merk VARCHAR(100)",
         "ALTER TABLE alat_varian ADD COLUMN IF NOT EXISTS tipe_model VARCHAR(100)",
         "ALTER TABLE alat_varian ADD COLUMN IF NOT EXISTS kapasitas VARCHAR(100)",
@@ -135,7 +135,7 @@ def _ensure_schema():
         # GUARDED, like the two statements further down, rather than written as
         # ten bare `DROP COLUMN IF EXISTS`. Every one of those takes an ACCESS
         # EXCLUSIVE lock on `sparepart` even when the column is already gone,
-        # and _ensure_schema() runs at IMPORT — so unguarded this would lock the
+        # and _ensure_schema() runs at IMPORT, so unguarded this would lock the
         # catalogue ten times on every restart, once per uvicorn worker, forever
         # after the migration had nothing left to do. Dropping `sku` takes its
         # unique index with it.
@@ -182,7 +182,7 @@ def _ensure_schema():
         # is NOT a no-op when the type already matches: PostgreSQL takes an
         # ACCESS EXCLUSIVE lock and rewrites the whole table plus every index on
         # it. This runs at import, so it happened on every restart and once per
-        # uvicorn worker — seconds of total lockout on a 100k-row ledger,
+        # uvicorn worker, seconds of total lockout on a 100k-row ledger,
         # minutes at 1M.
         """
         DO $$ BEGIN
@@ -196,7 +196,7 @@ def _ensure_schema():
           END IF;
         END $$
         """,
-        # The old CHECK only permitted IN|OUT — replace it with the wider set.
+        # The old CHECK only permitted IN|OUT, replace it with the wider set.
         # Also guarded: ADD CONSTRAINT … CHECK validates every existing row
         # under an ACCESS EXCLUSIVE lock, so re-running it each boot re-scanned
         # the entire ledger for nothing.
@@ -220,7 +220,7 @@ def _ensure_schema():
         # Every FK here was created with the default NO ACTION, which means the
         # database REFUSES the delete and SQLAlchemy surfaces an IntegrityError
         # as an HTTP 500. Concretely: deleting a user who had ever filed a
-        # condition report 500'd, and so did deleting an asset with any history —
+        # condition report 500'd, and so did deleting an asset with any history,
         # both ordinary administrative actions, both presenting as a server bug.
         #
         #   id_pengguna → SET NULL   the record of WHAT happened must survive the
@@ -232,7 +232,7 @@ def _ensure_schema():
         # every boot: ADD CONSTRAINT re-validates every row under an ACCESS
         # EXCLUSIVE lock, exactly like the CHECK constraint above.
         #
-        # Constraint names are looked up rather than hardcoded — PostgreSQL's
+        # Constraint names are looked up rather than hardcoded, PostgreSQL's
         # auto-generated `<table>_<column>_fkey` is the usual name, but a
         # database restored from an older dump may carry another.
         """
@@ -293,7 +293,7 @@ def _ensure_schema():
         # ── Indexes added after the performance audit ──
         #
         # riwayat_mutasi had NO index at all beyond its primary key, and is
-        # queried per-asset inside the export loops — so every one of those
+        # queried per-asset inside the export loops, so every one of those
         # lookups was a sequential scan of the whole table. The composite also
         # serves the `ORDER BY waktu_mutasi` those queries all carry.
         "CREATE INDEX IF NOT EXISTS ix_rm_aset_waktu "
@@ -342,7 +342,7 @@ def _ensure_schema():
         "WHERE status IS NOT NULL AND status <> UPPER(status)",
         # Guarded for the same reason as every other ADD CONSTRAINT here: it is
         # not IF NOT EXISTS-able, it takes an ACCESS EXCLUSIVE lock while it
-        # rescans, and _ensure_schema() runs at import — so unguarded it locks
+        # rescans, and _ensure_schema() runs at import, so unguarded it locks
         # `pengguna` on every restart, once per worker.
         """
         DO $$
@@ -362,7 +362,7 @@ def _ensure_schema():
         # ── dokumen_alat ──
         #
         # The TABLE itself is created by `Base.metadata.create_all()` from its
-        # declaration in models.py, not here — a raw-DDL-only table survives
+        # declaration in models.py, not here, a raw-DDL-only table survives
         # `manage.py reset`'s drop_all and then collides with the recreate. What
         # belongs here is what create_all cannot express: the CHECK, and the
         # partial unique index that makes "exactly one primary document per
@@ -370,7 +370,7 @@ def _ensure_schema():
         #
         # Both are existence-guarded. `ADD CONSTRAINT` is not `IF NOT EXISTS`-
         # able in PostgreSQL and takes an ACCESS EXCLUSIVE lock while it
-        # rescans, and _ensure_schema() runs at IMPORT — so unguarded this would
+        # rescans, and _ensure_schema() runs at IMPORT, so unguarded this would
         # lock the table on every restart, per worker.
         """
         DO $$
@@ -402,7 +402,7 @@ def _ensure_schema():
         # ONE OPEN COUNT PER WAREHOUSE, as a database fact rather than a
         # check-then-insert in the endpoint. Two counters opening a session for
         # the same gudang at the same moment would each snapshot the same
-        # balances and then each post an adjustment against them — double
+        # balances and then each post an adjustment against them, double
         # counting every variance. A partial unique index makes the second
         # INSERT fail instead.
         "CREATE UNIQUE INDEX IF NOT EXISTS ux_opname_draft_per_gudang "
@@ -414,7 +414,7 @@ def _ensure_schema():
         # ── Normalise status_terakhir ──
         #
         # Five queries wrapped this column in func.upper(), which makes both
-        # declared indexes on it unusable, while six others compared it raw —
+        # declared indexes on it unusable, while six others compared it raw,
         # so half the code was wrong whichever way the data actually looked.
         # Normalising once here lets every comparison be a plain indexed
         # equality. Idempotent: the WHERE means a clean database updates zero

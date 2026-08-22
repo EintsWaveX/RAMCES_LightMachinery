@@ -50,7 +50,7 @@ function setMasterSearchCount(shown, total) {
 // Tab switching.
 //
 // Extracted from the click handler and exported so other views can jump
-// straight to a panel — the KDAK forms' "+ Tambah Model/Type baru…" shortcut
+// straight to a panel, the KDAK forms' "+ Tambah Model/Type baru…" shortcut
 // needs to land on the Model/Type tab, not merely on Pusat Data.
 function switchMasterTab(target) {
   _masterTab = target;
@@ -288,7 +288,7 @@ async function loadMasterUsers() {
 // ── Approving a self-registration ───────────────────────────────────────
 //
 // The role and the region are chosen HERE, by the admin, at the moment
-// privilege is granted — never by the registrant, and never on the general
+// privilege is granted, never by the registrant, and never on the general
 // edit form. `/api/users/{id}/approve` is a dedicated endpoint for the same
 // reason: this is the act worth being able to find and audit on its own.
 
@@ -321,7 +321,7 @@ window.openApproveUser = async function (idPengguna, username) {
   const id_lokasi = document.getElementById("approve-region")?.value || null;
 
   // apiFetch only THROWS on 401, so a 400/403 arrives as an ordinary response
-  // and must be checked explicitly — otherwise a refused approval reports
+  // and must be checked explicitly, otherwise a refused approval reports
   // success and the row stays PENDING with nobody the wiser.
   const res = await apiFetch(`/users/${idPengguna}/approve`, {
     method: "POST",
@@ -372,7 +372,7 @@ const VIEW_LABEL = {
   afkir: "Pulihkan Aset Afkir",
 };
 
-// Presence is a dot PLUS a word — never colour alone, so the state is readable
+// Presence is a dot PLUS a word, never colour alone, so the state is readable
 // for a colour-blind user and in a printed export.
 function _presenceCell(u) {
   const view = u.last_view ? VIEW_LABEL[u.last_view] || u.last_view : null;
@@ -393,7 +393,7 @@ function _presenceCell(u) {
 }
 
 // Called by the WebSocket REFRESH_PRESENCE broadcast. Only refetches when the
-// Pengguna tab is actually on screen — presence churns constantly and every
+// Pengguna tab is actually on screen, presence churns constantly and every
 // connected client would otherwise poll it.
 window.refreshPresenceIfVisible = function refreshPresenceIfVisible() {
   const view = document.getElementById("view-masterdata");
@@ -416,7 +416,7 @@ async function loadAlatVarian() {
     rows.forEach((v) => {
       (_varianByAlat[v.kode_alat] ||= []).push(v);
     });
-  } catch (_) { /* the table degrades to "—" */ }
+  } catch (_) { /* the table degrades to ", " */ }
 }
 window.loadAlatVarian = loadAlatVarian;
 
@@ -531,7 +531,7 @@ async function loadMasterAlat() {
   if (!tbody) return;
   // The table has FOUR columns; this used to emit five <td> under three <th>
   // with colspan="4" empty states matching neither, so every row was misaligned.
-  // Skeleton rather than the blanking overlay — the table keeps its
+  // Skeleton rather than the blanking overlay, the table keeps its
   // shape and the page keeps its scroll position on a refresh.
   skeletonRows("table-alat", 4);
   try {
@@ -559,7 +559,7 @@ async function loadMasterAlat() {
 
     tbody.innerHTML = data
       .map((a) => {
-        // Model/Type rows — the models that are NOT
+        // Model/Type rows, the models that are NOT
         // interchangeable for sparepart purposes, e.g. GX270 vs GX390.
         const varian = _varianByAlat[a.kode_alat] || [];
         const varianCell = varian.length
@@ -593,7 +593,7 @@ async function loadMasterAlat() {
 async function loadMasterLokasi() {
   const tbody = document.getElementById("table-lokasi");
   if (!tbody) return;
-  // Skeleton rather than the blanking overlay — the table keeps its
+  // Skeleton rather than the blanking overlay, the table keeps its
   // shape and the page keeps its scroll position on a refresh.
   skeletonRows("table-lokasi", 4);
   try {
@@ -664,8 +664,8 @@ async function loadMasterLokasi() {
 // ══════════════════════════════════════════════════════════════════════════
 // PUSAT DATA ▸ MODEL/TYPE (alat_varian)
 //
-// The endpoints existed with no UI, so models — and the spec block the public
-// QR card renders — could only be created by running seed.py.
+// The endpoints existed with no UI, so models, and the spec block the public
+// QR card renders, could only be created by running seed.py.
 // ══════════════════════════════════════════════════════════════════════════
 
 let _masterVarianRows = [];
@@ -673,7 +673,7 @@ let _masterVarianRows = [];
 async function loadMasterVarian() {
   const tbody = document.getElementById("table-varian");
   if (!tbody) return;
-  // Skeleton rather than the blanking overlay — the table keeps its
+  // Skeleton rather than the blanking overlay, the table keeps its
   // shape and the page keeps its scroll position on a refresh.
   skeletonRows("table-varian", 6);
   const alatSel = document.getElementById("new-varian-alat");
@@ -732,7 +732,7 @@ function renderMasterVarian() {
     .map((v) => {
       // A thumbnail, or a neutral placeholder of the same footprint so the row
       // height does not jump between models that have a photo and models that
-      // do not — "IMAGE (required)" in the Rekap means the gaps are work to do.
+      // do not, "IMAGE (required)" in the Rekap means the gaps are work to do.
       const foto = v.foto
         ? `<img src="${esc(v.foto)}" alt="" loading="lazy"
              class="w-10 h-10 object-contain rounded border border-gray-200 dark:border-gray-600 bg-white" />`
@@ -863,7 +863,7 @@ function _resetVarianForm() {
 
 // The Rekap's own title rule: "[MERK] [MODEL/TYPE]", max 50 characters. Filled
 // in as the two fields are typed so the admin rarely has to touch it, but left
-// editable — and never overwritten once they do.
+// editable, and never overwritten once they do.
 function _autofillVarianNama() {
   const nama = document.getElementById("new-varian-nama");
   if (!nama || nama.dataset.touched === "1") return;
@@ -939,7 +939,7 @@ document.getElementById("form-add-varian")?.addEventListener("submit", async (e)
   const tipe = document.getElementById("new-varian-tipe")?.value.trim();
 
   if (!kodeAlat) return showToast("Alat kerja wajib dipilih.", "warning");
-  // Rows 1–2 of the Rekap template. Checked here as well as on the server so
+  // Rows 1, 2 of the Rekap template. Checked here as well as on the server so
   // the admin is told before the round trip.
   if (!merk) return showToast("Merk wajib diisi.", "warning");
   if (!tipe) return showToast("Model/Type wajib diisi.", "warning");
@@ -1001,7 +1001,7 @@ async function _uploadVarianFiles(idVarian) {
     if (!file) continue;
     const fd = new FormData();
     fd.append("file", file);
-    // apiFetch deliberately omits the JSON Content-Type for FormData — only
+    // apiFetch deliberately omits the JSON Content-Type for FormData, only
     // the browser knows the multipart boundary.
     const res = await apiFetch(endpoint, { method: "POST", body: fd });
     if (!res.ok) {
@@ -1027,7 +1027,7 @@ let _masterGudangRows = [];
 async function loadMasterGudang() {
   const tbody = document.getElementById("table-gudang");
   if (!tbody) return;
-  // Skeleton rather than the blanking overlay — the table keeps its
+  // Skeleton rather than the blanking overlay, the table keeps its
   // shape and the page keeps its scroll position on a refresh.
   skeletonRows("table-gudang", 5);
   try {
@@ -1154,7 +1154,7 @@ document.getElementById("form-add-gudang")?.addEventListener("submit", async (e)
 async function loadMasterUpt() {
   const tbody = document.getElementById("table-upt");
   if (!tbody) return;
-  // Skeleton rather than the blanking overlay — the table keeps its
+  // Skeleton rather than the blanking overlay, the table keeps its
   // shape and the page keeps its scroll position on a refresh.
   skeletonRows("table-upt", 4);
   const lokasiSel = document.getElementById("new-upt-lokasi");
@@ -1248,7 +1248,7 @@ function renderMasterUpt() {
 // NOTE: the real #btn-apply-sort handler lives further up (it builds
 // _sortFilters as well). A second listener used to be registered here; both
 // fired on every click, rendering twice and overwriting _sortField with the raw
-// select value — blanking it whenever no criterion was chosen.
+// select value, blanking it whenever no criterion was chosen.
 
 // ── ADD FORMS ─────────────────────────────────────────────────────
 
@@ -1295,7 +1295,7 @@ document
     }
   });
 
-// Twelve characters from an unambiguous alphabet — no O/0, no l/1/I, because
+// Twelve characters from an unambiguous alphabet, no O/0, no l/1/I, because
 // this string gets read aloud down a phone line to a resort.
 const _PASSWORD_ALPHABET = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789";
 
@@ -1480,7 +1480,7 @@ document
 
 // A Balaiyasa is a workshop and has no resorts under it, so picking one as the
 // parent must block the form. This ran inside the SUBMIT handler above, where
-// `e.target` is the <form> and `e.target.value` is undefined — so the guard
+// `e.target` is the <form> and `e.target.value` is undefined, so the guard
 // resolved nothing and always took the "enable" branch. It belongs on the
 // select's own change event.
 document
@@ -1558,7 +1558,7 @@ window.openMasterEdit = (type, id, val1, val2, val3) => {
             </div>
         `;
 
-    // Wire role change to disable region — mirrors login page behaviour
+    // Wire role change to disable region, mirrors login page behaviour
     const roleEl = document.getElementById("edit-field-role");
     const regionEl = document.getElementById("edit-field-region");
     function syncRegionState() {

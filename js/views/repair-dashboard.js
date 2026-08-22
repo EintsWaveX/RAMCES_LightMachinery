@@ -8,7 +8,7 @@
 // ═══════════════════════════════════════════════════════════════════════
 
 // ════════════════════════════════════════════════════════════════════
-// REPAIR DASHBOARD — Dashboard ▸ Laporan Perbaikan
+// REPAIR DASHBOARD, Dashboard ▸ Laporan Perbaikan
 // ════════════════════════════════════════════════════════════════════
 // Moved out of Kelola Inventaris: it reports on the ASSET fleet, not on parts
 // stock, so it belongs with the other fleet dashboards. Driven by
@@ -30,7 +30,7 @@
 
   // The user's home region comes from GET /api/me (which resolves a UPT code
   // like JR1.3 up to its DAOP), falling back to the JWT claim if that call
-  // fails. Preselected but never locked — every role can browse any region.
+  // fails. Preselected but never locked, every role can browse any region.
   async function resolveDefaultRegion() {
     try {
       const res = await apiFetch("/me");
@@ -68,7 +68,7 @@
         _lokasiFilter = preferred;
         eachSel(LOKASI_SELECTS, (e) => { e.value = preferred; });
       }
-    } catch (_) { /* silent — the report falls back to the global view */ }
+    } catch (_) { /* silent, the report falls back to the global view */ }
   }
 
   // Rebuilt on every response: `available_years` is scope-dependent, so the
@@ -77,7 +77,7 @@
   // Same rule as every client-side year picker (see fillYearSelect in
   // js/views/sort-modals.js): ONLY years with data, each labelled with its
   // count. This used to walk from the oldest year present to the current one
-  // and render every gap as a selectable "2019 (kosong)" — on a region with two
+  // and render every gap as a selectable "2019 (kosong)", on a region with two
   // active years that is a column of dead options, and picking one produced an
   // empty report with no explanation.
   //
@@ -142,7 +142,7 @@
   });
 
   // Both buttons trigger the SAME load() (MCF always rides the year the
-  // repair report resolves to — see its own comment below), but unlike the
+  // repair report resolves to, see its own comment below), but unlike the
   // four computed panels' reload button, which _renderDashFilterRow()
   // regenerates from scratch on every render, these two persist across a
   // refresh. So the spin has to be started and stopped explicitly around the
@@ -221,7 +221,7 @@
    * A bare number invites the opposite reading.
    *
    * `null` (no repairs closed yet, no failures yet) renders an em dash, never
-   * "0,0 hari" — a reliability metric that reads zero looks like an answer and
+   * "0,0 hari", a reliability metric that reads zero looks like an answer and
    * teaches the reader to ignore the panel.
    */
   function _renderReliability(d) {
@@ -244,12 +244,12 @@
       );
   }
 
-  // Replays a small reveal fade on an element whose DOM node is persistent —
+  // Replays a small reveal fade on an element whose DOM node is persistent,
   // its textContent is overwritten in place by render()/renderMcf() rather
   // than being freshly inserted, so a plain "animate on mount" CSS keyframe
   // (the kind .dash-panel-fade / .dash-drill-region-body rely on) would only
   // ever play once. Removing the class, forcing a reflow and re-adding it
-  // replays it on every call — including a Muat Ulang click, when the panel
+  // replays it on every call, including a Muat Ulang click, when the panel
   // is already visible and the shared tab-switch fade does not run again.
   // Scoped to #rd-kpi-card / #rd-mcf-card only; see the CSS for why.
   function _replayFade(id) {
@@ -272,7 +272,7 @@
     // The letterhead used to live inside this one tab's panel, so five of the
     // six dashboard tabs had no header at all. It now lives in a banner shared
     // above the whole tab strip, and this function only PUBLISHES into it
-    // rather than owning it — hence the optional chain: this tab can render
+    // rather than owning it, hence the optional chain: this tab can render
     // before the chrome that defines `setDashBanner` has landed, and a missing
     // banner must be a harmless no-op, never a thrown error that kills the
     // rest of render().
@@ -316,7 +316,7 @@
     // Rendered into the Kurva MCF panel, not this one: MCF, MTBF and MTTR are
     // one reliability story and the client's matrix names them together. They
     // ride on THIS payload because `_repair_facts()` computes them off the same
-    // single window scan the figures above come from — putting them on the MCF
+    // single window scan the figures above come from, putting them on the MCF
     // endpoint would have meant a second scan of `riwayat_kondisi` per page.
     _renderReliability(d);
 
@@ -326,7 +326,7 @@
     const gaugeCanvas = el("rd-chart-gauge");
     if (gaugeCanvas) {
       if (_chartGauge) _chartGauge.destroy();
-      // Clamped for the arc only — a carry-over repair closed this year can push
+      // Clamped for the arc only, a carry-over repair closed this year can push
       // the true ratio past 100%, and the ring must not wrap around itself.
       const arc = Math.max(0, Math.min(100, pct));
       _chartGauge = new Chart(gaugeCanvas, {
@@ -385,7 +385,7 @@
       });
     }
 
-    // ── Top 10 Alat (horizontal, single series — bar length carries the value,
+    // ── Top 10 Alat (horizontal, single series, bar length carries the value,
     //    so no legend and no categorical hue is spent on identity) ──
     const alatCanvas = el("rd-chart-alat");
     if (alatCanvas && d.top_alat) {
@@ -406,7 +406,7 @@
           indexAxis: "y",
           responsive: true,
           maintainAspectRatio: false,
-          plugins: { legend: { display: false } }, // single series — the title names it
+          plugins: { legend: { display: false } }, // single series, the title names it
           scales: {
             x: { ticks: { color: t.text, font: { size: 9 }, precision: 0 }, grid: { color: t.grid }, beginAtZero: true },
             y: {
@@ -515,7 +515,7 @@
       const all = Object.entries(d.by_alat).sort((a, b) => b[1] - a[1]);
       const total = all.reduce((s, [, v]) => s + v, 0);
       // Part-to-whole reads at a glance only up to ~6 wedges; the rest folds
-      // into "Lainnya". Nothing is lost — the per-alat bar chart above lists
+      // into "Lainnya". Nothing is lost, the per-alat bar chart above lists
       // every category individually.
       const top = all.slice(0, 6);
       const rest = all.slice(6).reduce((s, [, v]) => s + v, 0);
@@ -555,7 +555,7 @@
         // Direct labels satisfy the relief rule for the lighter categorical
         // steps, which sit under 3:1 contrast on a white surface.
         if (legEl) {
-          // Full label wraps instead of truncating behind a title tooltip —
+          // Full label wraps instead of truncating behind a title tooltip,
           // same reasoning as the sparepart rail above: title never fires on
           // touch, and an alat name can run well past what a single line fits.
           legEl.innerHTML = slices.map(([k, v], i) => `
@@ -615,7 +615,7 @@
     _replayFade("rd-mcf-card");
 
     if (el("rd-mcf-risk")) el("rd-mcf-risk").textContent = (d.aset_berisiko ?? 0).toLocaleString("id-ID");
-    // (MTBF/MTTR are filled by _renderReliability from the perbaikan payload —
+    // (MTBF/MTTR are filled by _renderReliability from the perbaikan payload,
     // this endpoint deliberately does not carry them.)
     if (el("rd-mcf-total")) el("rd-mcf-total").textContent = (d.total_perbaikan ?? 0).toLocaleString("id-ID");
     if (el("rd-mcf-akhir")) el("rd-mcf-akhir").textContent = Number(d.mcf_akhir || 0).toFixed(4);
@@ -652,7 +652,7 @@
         maintainAspectRatio: false,
         interaction: { mode: "index", intersect: false },
         plugins: {
-          legend: { display: false }, // single series — the card title names it
+          legend: { display: false }, // single series, the card title names it
           tooltip: {
             callbacks: {
               label: (c) => `MCF: ${Number(c.parsed.y).toFixed(4)}`,

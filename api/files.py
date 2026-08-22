@@ -8,7 +8,7 @@ Why this is a module of its own rather than staying in main.py:
   documents, Model/Type photos and documents) AND from the aset routes
   (calibration certificates), so they cannot live in either one.
 - `file_response_conditional` is used by main.py's static routes AND by
-  `serve_foto_varian` in api/master.py — the public, unauthenticated photo route.
+  `serve_foto_varian` in api/master.py, the public, unauthenticated photo route.
   Leaving it in main.py would make master.py import main.py, which is the cycle
   this package exists to avoid.
 
@@ -47,7 +47,7 @@ BASE_DIR = PROJECT_ROOT
 # FileResponse already emits ETag and Last-Modified, but without Cache-Control
 # the browser revalidates nothing and re-downloads on every navigation.
 #
-# Code and markup use `no-cache`, which does NOT mean "don't cache" — it means
+# Code and markup use `no-cache`, which does NOT mean "don't cache", it means
 # "cache, but revalidate": the browser sends If-None-Match and usually gets a
 # 304 with an empty body. That keeps deploys instant while still avoiding the
 # transfer. Images and fonts are content that only changes under a new filename,
@@ -94,7 +94,7 @@ ALLOWED_IMAGE_EXT = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
 # Reference documents (Spek Lengkap / Manual Instruction) accept Office formats
 # on top of the certificate set: the client's drop includes
 # "SOP PERAWATAN PORTABLE BALLAST TAMPER.docx", which the certificate allowlist
-# rejected with a 400 at download time — the file was ingested and linked, and
+# rejected with a 400 at download time, the file was ingested and linked, and
 # then refused to open.
 ALLOWED_DOK_EXT = ALLOWED_CERT_EXT | {".docx", ".doc", ".xlsx", ".xls"}
 MAX_CERT_BYTES = 10 * 1024 * 1024  # 10 MB
@@ -114,7 +114,7 @@ def _save_upload(
     """
     Persist an uploaded file and return the stored basename.
 
-    The client-supplied name is used ONLY to read the extension — the stored
+    The client-supplied name is used ONLY to read the extension, the stored
     name is generated from `stem` plus a random token, so a hostile filename
     can never influence the path written to disk. Every upload route in this
     application goes through here; do not open a second path to the filesystem.
@@ -171,7 +171,7 @@ def _drop_upload(dest_dir: str, stored: Optional[str]) -> None:
 # ── Conditional responses ─────────────────────────────────────────
 # Starlette's FileResponse emits ETag and Last-Modified but never *reads*
 # If-None-Match, so it always returns 200 with the whole body. Paired with the
-# `no-cache` above — which asks the browser to revalidate on every load — that
+# `no-cache` above, which asks the browser to revalidate on every load, that
 # meant index.html and all fourteen js/ files were re-sent in full every time,
 # even though the point of `no-cache` is to make revalidation cheap. Measured:
 # /assets/style.css (the StaticFiles mount, which does check) answered 304 while

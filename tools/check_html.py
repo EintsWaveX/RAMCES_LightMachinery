@@ -4,7 +4,7 @@ Structural checks for index.html.
     py -3.10 tools/check_html.py
 
 Sibling to check_js.py. CLAUDE.md states a number of invariants about
-index.html in prose, and nothing enforced any of them — so every one was a
+index.html in prose, and nothing enforced any of them, so every one was a
 convention that held only while somebody remembered it. Each check below is one
 of those sentences, made mechanical:
 
@@ -14,7 +14,7 @@ of those sentences, made mechanical:
      console.
   2. Every modal root has a close control. js/a11y-modal.js closes a dialog on
      Esc by CLICKING that control rather than by hiding the panel, because
-     `customConfirm()` resolves its promise from the button handler — a modal
+     `customConfirm()` resolves its promise from the button handler, a modal
      with no close control leaves every awaiting caller hanging forever.
   3. No duplicate `id`. The whole frontend is `getElementById`, so a duplicate
      silently routes half the code to the wrong element.
@@ -23,8 +23,8 @@ of those sentences, made mechanical:
      runtime; with no header row the table opts itself back out and the mobile
      card layout silently reverts to a horizontally scrolling table.
   5. The `js/` <script> tags match LOAD_ORDER in check_js.py, and none of them
-     carries defer/async. check_js.py's check 4 — eval-time calls into a later
-     file — is only correct if that list is in step with the markup, and
+     carries defer/async. check_js.py's check 4, eval-time calls into a later
+     file, is only correct if that list is in step with the markup, and
      nothing verified that. `defer` would break the ordering contract outright.
 
 Why HTMLParser and not tools/jslex.py: jslex is a JavaScript tokenizer and the
@@ -129,7 +129,7 @@ class Tree(HTMLParser):
 
 def is_modal_root(el):
     """
-    Mirror of isModalRoot() in js/a11y-modal.js — keep the two in step.
+    Mirror of isModalRoot() in js/a11y-modal.js, keep the two in step.
 
     A modal root is the full-screen BACKDROP, not the white panel inside it.
     Matching the `-modal` id suffix keeps the loading overlay and the mobile
@@ -234,7 +234,7 @@ def main():
         failures.extend(bad)
     else:
         print("   all have one")
-    # How many ids merely END in -modal but are not roots — the selector trap.
+    # How many ids merely END in -modal but are not roots, the selector trap.
     lookalikes = [
         i for i, _ in tree.ids
         if i.endswith("-modal") and i not in {r.attr("id") for r in roots}

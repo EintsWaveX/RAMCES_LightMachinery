@@ -1,5 +1,5 @@
 """
-RAMCES database management — the one command line over `seeds/`.
+RAMCES database management, the one command line over `seeds/`.
 
     py -3.10 manage.py seed                    # every default step, in order
     py -3.10 manage.py seed --only dokumen     # just re-attach the client's PDFs
@@ -10,7 +10,7 @@ RAMCES database management — the one command line over `seeds/`.
     py -3.10 manage.py status                  # row counts, no writes
 
 `seed.py` and `reset.py` used to be two loose root scripts holding nothing but
-argparse — 229 lines between them, with `reset.py` duplicating the seed's
+argparse, 229 lines between them, with `reset.py` duplicating the seed's
 console-encoding fix, its own `--aset` handling and its own summary printing.
 Merging them removes the duplication and, more usefully, puts the DESTRUCTIVE
 verb behind a subcommand instead of behind a filename one tab-completion away
@@ -19,7 +19,7 @@ from the safe one.
 Three things live at the repo root beside this file and stay there deliberately:
 `seed_katalog.py`, `seed_katalog_sfm.py` and `seed_aset_real.py`. They are the
 reviewable "what the client's spreadsheets actually say" layer and none of them
-writes to the database — a change in any of them should show up in review as a
+writes to the database, a change in any of them should show up in review as a
 data change, which it cannot do from inside a package of writers.
 
 Requires `.env` (DATABASE_URL, SECRET_KEY) and, for anything that seeds real
@@ -30,7 +30,7 @@ import argparse
 import sys
 
 # The Windows console defaults to cp1252, which cannot encode the ✓ / ✗ / ·
-# markers or the Indonesian ▸ used throughout the seed output — every run used
+# markers or the Indonesian ▸ used throughout the seed output, every run used
 # to end in a UnicodeEncodeError from `print`, not from anything to do with the
 # database. Force UTF-8 before importing anything that prints.
 for _stream in (sys.stdout, sys.stderr):
@@ -72,7 +72,7 @@ def _table_summary() -> str:
             try:
                 count = conn.execute(sa_text(f'SELECT COUNT(*) FROM "{name}"')).scalar()
                 lines.append(f"  {name:<24} {count:>8,} baris")
-            except Exception as exc:  # noqa: BLE001 — a summary must not raise
+            except Exception as exc:  # noqa: BLE001, a summary must not raise
                 lines.append(f"  {name:<24} (gagal dihitung: {exc})")
     return "\n".join(lines)
 
@@ -124,7 +124,7 @@ def cmd_seed(args) -> int:
     # `--aset` without `--with-history` used to be a silent no-op: reset.py
     # threaded the number all the way into run_steps(), which then skipped the
     # dummy step entirely because with_history was False. Nothing was written
-    # and nothing was said. Refuse the combination instead — a flag that is
+    # and nothing was said. Refuse the combination instead, a flag that is
     # quietly ignored is worse than one that is rejected.
     if args.aset != 100 and not (args.with_history or (only and "dummy" in only)):
         print(
@@ -147,7 +147,7 @@ def cmd_hapus_simulasi(_args) -> int:
 
     Not destructive the way `reset` is: it touches ONLY rows attributed to the
     SIMULASI account, and restores `status_terakhir` / `id_lokasi` from the
-    opening `RiwayatKondisi` the importer wrote — a row the simulation never
+    opening `RiwayatKondisi` the importer wrote, a row the simulation never
     touches. Real data, and anything a user actually filed, is out of reach by
     construction, which is why this needs no confirmation prompt.
     """
@@ -192,7 +192,7 @@ def cmd_status(_args) -> int:
             uid = conn.execute(
                 sa_text("SELECT id_pengguna FROM pengguna WHERE username = 'SIMULASI'")
             ).scalar()
-        except Exception:  # noqa: BLE001 — a status view must not raise
+        except Exception:  # noqa: BLE001, a status view must not raise
             uid = None
         if uid:
             print("\n  Data SIMULASI (bertanda, dapat dihapus):")
@@ -237,7 +237,7 @@ def cmd_reset(args) -> int:
     print("Menghapus seluruh tabel…")
     # drop_all only knows about tables declared in models.py. Anything created
     # outside it (a stray backup table, an old migration artefact) survives,
-    # which is deliberate — dropping unknown tables is not this command's job.
+    # which is deliberate, dropping unknown tables is not this command's job.
     # It is also why every new table must be DECLARED in models.py and not
     # created by raw DDL in _ensure_schema() alone: a raw-DDL-only table
     # survives the drop and then collides with the recreate.

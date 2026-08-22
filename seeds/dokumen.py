@@ -8,7 +8,7 @@ Ingest the client's spektek and manual documents from `modules/` into
 `Spesifikasi Lengkap Alat Kerja/` and 5 manual books under `Manual Instruction
 Alat Kerja/`. Until this module, NONE of them reached the database.
 `uploads/dokumen_alat/` was empty, and the only "Spek Lengkap" a technician
-could reach was a Google Drive link transcribed from `Rekap Spek RAMCES.docx` —
+could reach was a Google Drive link transcribed from `Rekap Spek RAMCES.docx`,
 which needs a Google account and an internet connection, neither of which a
 technician standing at a resort reliably has.
 
@@ -19,7 +19,7 @@ of them fit `alat_varian`:
 
   * One file covers FOUR tools: "Spektek Genset, Pompa Air, Shear Wrench dan
     Impact Wrench.pdf". Another covers three.
-  * Several cover tools with no Model/Type row at all — nothing in the fleet has
+  * Several cover tools with no Model/Type row at all, nothing in the fleet has
     ever named a model for ALAT UKUR MUTU BETON, so there was no row to hang a
     document on.
   * A technician scanning a QR code gets whatever the asset's model resolves to,
@@ -28,7 +28,7 @@ of them fit `alat_varian`:
 
 So the columns live on `kategori_alat` (added in `_ensure_schema()`), and
 `_varian_payload()` in main.py falls back to them when a model's own slot is
-empty — flagging the result `spek_from_katalog` so the UI can say the document
+empty, flagging the result `spek_from_katalog` so the UI can say the document
 is the general one for the tool type rather than this exact model's.
 
 ── Idempotency ──
@@ -124,7 +124,7 @@ def _copy(src_dir: str, filename: str, prefix: str, kode: str):
     """
     Copy one document into uploads/ under a deterministic name.
 
-    Returns the destination basename, or None when the source is missing —
+    Returns the destination basename, or None when the source is missing,
     `modules/` is gitignored, so a checkout without it must still seed.
     """
     src = os.path.join(src_dir, filename)
@@ -135,7 +135,7 @@ def _copy(src_dir: str, filename: str, prefix: str, kode: str):
     dest_name = f"{prefix}_{kode}_{_slug(stem)}{ext.lower()}"
     dest = os.path.join(DEST, dest_name)
 
-    # Size comparison rather than a hash: these are 0.1–8 MB binaries that never
+    # Size comparison rather than a hash: these are 0.1, 8 MB binaries that never
     # change in place, and re-hashing 40 MB on every boot buys nothing.
     if os.path.exists(dest) and os.path.getsize(dest) == os.path.getsize(src):
         return dest_name
@@ -149,8 +149,8 @@ def _judul(filename: str) -> str:
     """
     A printable title from the client's own filename.
 
-    The stored names are what the client sent — "Kertz-Gasoline Jack
-    Hammer[1].pdf", "SPESIFIKASI TEKNIK TRACK GAUGE.PDF" — so the extension,
+    The stored names are what the client sent, "Kertz-Gasoline Jack
+    Hammer[1].pdf", "SPESIFIKASI TEKNIK TRACK GAUGE.PDF", so the extension,
     the duplicate marker and the shouting all come off before it reaches a link
     label. Nothing else is invented: the words are the client's.
     """
@@ -178,7 +178,7 @@ def run(db):
         (d.kode_alat, d.jenis, d.nama_file): d
         for d in db.query(models.DokumenAlat).all()
     }
-    # The FIRST document listed for a (kode, jenis) is the primary one — the one
+    # The FIRST document listed for a (kode, jenis) is the primary one, the one
     # mirrored onto kategori_alat.file_spek / file_manual for
     # `_varian_payload()`'s tool-type fallback. Table order is the client's own
     # ordering, and for the three tools with two documents the first is the one
@@ -229,7 +229,7 @@ def run(db):
 
                 # The primary document is still duplicated onto the parent, so
                 # `_varian_payload()` and landing.html's spec card work exactly
-                # as before. Only the primary — writing every document here is
+                # as before. Only the primary, writing every document here is
                 # what caused the overwrite in the first place.
                 if is_utama and getattr(row, field) != dest_name:
                     setattr(row, field, dest_name)

@@ -104,7 +104,7 @@ def verify_all() -> bool:
         # so api/deps.py could lose a branch and every check here would still
         # pass. That is not theoretical: NO asset in the workbook lives at an
         # ME* code, so nothing at runtime would ever exercise the MEKANIK branch
-        # — this assertion is the only thing that can prove it works.
+        # this assertion is the only thing that can prove it works.
         try:
             from api.deps import get_parent_lokasi_code as server_get_parent
 
@@ -122,7 +122,7 @@ def verify_all() -> bool:
         # Counted SEPARATELY from the demo fleet, and that separation is the
         # point. This used to be a single `expected <= n_aset < expected * 2`
         # range over the total, chosen loose enough that 100 demo assets would
-        # fit — which at 1,121 workbook rows meant the non-idempotent dummy step
+        # fit, which at 1,121 workbook rows meant the non-idempotent dummy step
         # could run ELEVEN times, to 2,221 assets, with every run reporting
         # 11/11 PASS. Demo assets are distinguishable (`nomor_seri LIKE
         # 'DEMO-%'`, stamped at creation by seeds/dummy.py), so there is no
@@ -149,14 +149,14 @@ def verify_all() -> bool:
         # The demo step targets a population rather than adding a batch, so a
         # second run must leave this unchanged. 100 is its default; any run with
         # `--aset N` sets a different target, hence a ceiling rather than an
-        # equality — what is being asserted is that it did not ACCUMULATE.
+        # equality, what is being asserted is that it did not ACCUMULATE.
         if n_demo:
             r.note(
                 "aset demo (nomor_seri DEMO-…)",
                 f"{n_demo} baris — hapus dengan `manage.py reset` bila tidak diinginkan",
             )
 
-        # id_aset is the primary key, so a true duplicate is impossible — what
+        # id_aset is the primary key, so a true duplicate is impossible, what
         # the doubling produced was two rows for the same PHYSICAL machine under
         # different sequence numbers. Compare distinct identities instead.
         distinct_identity = db.query(
@@ -184,7 +184,7 @@ def verify_all() -> bool:
         # JB→JEMBATAN, ME→MEKANIK), verified 1:1 across all 254 rows of
         # KATALOG UPT, and the importer derives it that way. Nothing asserted it
         # afterwards, which is how the demo generator went on picking the letter
-        # at random — producing assets whose id_aset peruntukan segment
+        # at random, producing assets whose id_aset peruntukan segment
         # contradicted the resort named in the same id.
         #
         # ⚠️ It is a CREATION-TIME rule, not a permanent invariant, so this
@@ -193,7 +193,7 @@ def verify_all() -> bool:
         # jembatan resort is still a jalan rel tamper, and `mutasi` moves
         # `id_lokasi` without touching `peruntukan` or the composite id. Asking
         # for agreement there would assert something the application itself does
-        # not maintain — and would start failing the first time anyone uses the
+        # not maintain, and would start failing the first time anyone uses the
         # transfer form. An asset with no mutation history has never moved, so
         # its current resort IS the resort it was created at.
         moved = {row[0] for row in db.query(models.RiwayatMutasi.id_aset).distinct()}
@@ -219,7 +219,7 @@ def verify_all() -> bool:
         # ── Simulated history ──
         #
         # Only checked when there is any. A clean import has none, and that is
-        # the honest default — `manage.py seed --simulasi` is opt-in.
+        # the honest default, `manage.py seed --simulasi` is opt-in.
         sim_user = (
             db.query(models.Pengguna)
             .filter(models.Pengguna.username == SIMULASI_USERNAME)
@@ -241,14 +241,14 @@ def verify_all() -> bool:
             )
 
             # The distribution has to stay plausible. The first cut produced
-            # 21% written off and 37% currently broken — arithmetically fine and
+            # 21% written off and 37% currently broken, arithmetically fine and
             # completely unbelievable, which is worse than an empty demo because
             # it is quietly wrong. See the tuning note in seeds/simulasi.py.
             #
             # Measured over the SIMULATED assets only, not the whole fleet.
             # `--only dummy` simulates 100 machines and leaves 1,121 untouched
             # at SO, so a fleet-wide reading is 97% available and says nothing
-            # about whether the generator is behaving — it just reports how much
+            # about whether the generator is behaving, it just reports how much
             # of the fleet was left alone.
             sim_ids = (
                 db.query(models.RiwayatKondisi.id_aset)
@@ -281,7 +281,7 @@ def verify_all() -> bool:
         #
         # ⚠️ The check is about MISATTRIBUTION, not about location, and the
         # distinction is not academic: CLAUDE.md says an asset "is never based
-        # at" a Balaiyasa, and the client's own workbook has FOUR that are —
+        # at" a Balaiyasa, and the client's own workbook has FOUR that are,
         # `35.LMP.1.25.D.BY3` and three others, homed at BY3 with peruntukan
         # BALAIYASA, which the importer derives from the BY prefix. For those,
         # BY3 *is* the owning region and a condition row there is correct. What
@@ -344,7 +344,7 @@ def verify_all() -> bool:
         # has ONE column per document kind, and the seeder wrote both of a tool's
         # documents to it in table order, so the second overwrote the first.
         # 5.6 MB across three files (AMB, IMP, LMP) sat on disk referenced by
-        # nothing, and every existing check passed — the files were copied, the
+        # nothing, and every existing check passed, the files were copied, the
         # codes existed, the attachment count was met. Only asking the question
         # from the DISK side finds it.
         dok_dir = os.path.join(os.path.dirname(WORKBOOK), "..", "uploads", "dokumen_alat")

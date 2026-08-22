@@ -1,9 +1,9 @@
 # RAMCES
 
-**Light machinery asset monitoring for PT Kereta Api Indonesia (Persero) — Track & Bridge Division**
+**Light machinery asset monitoring for PT Kereta Api Indonesia (Persero), Track & Bridge Division**
 
-RAMCES tracks PT KAI's light work equipment — gensets, drills, rail grinding
-machines, track geometry trolleys, impact wrenches and similar — from
+RAMCES tracks PT KAI's light work equipment, gensets, drills, rail grinding
+machines, track geometry trolleys, impact wrenches and similar, from
 registration through to condition reporting, calibration, inter-region transfer,
 spare-part consumption, and eventual write-off.
 
@@ -21,7 +21,7 @@ The application runs end to end against seeded and staging data; the production
 rollout with live asset records is pending.
 
 Two developers. This repository contains no production data, no credentials, and
-no internal PT KAI network details — `.env` is git-ignored and only
+no internal PT KAI network details, `.env` is git-ignored and only
 `.env.example` is tracked.
 
 ---
@@ -48,7 +48,7 @@ database.py        engine + SessionLocal
 models.py          16 SQLAlchemy tables
 api/               the HTTP API, one module per domain
   deps.py            get_db, auth, require_role, region-scope helpers
-  schema.py          _ensure_schema() — idempotent, IF NOT EXISTS-guarded DDL
+  schema.py          _ensure_schema(), idempotent, IF NOT EXISTS-guarded DDL
   schemas.py         Pydantic request models
   realtime.py        ConnectionManager + the `manager` singleton
   files.py           uploads tree, cache headers, 304 support
@@ -90,13 +90,13 @@ Five roles, defined as a closed tuple in `api/deps.py`:
 
 | Role | Scope |
 |---|---|
-| `SUPER_ADMIN` | Everything, nationwide — master data, write-off/restore, users |
+| `SUPER_ADMIN` | Everything, nationwide, master data, write-off/restore, users |
 | `ADMIN_WILAYAH` | Everything inside its own region, except master data |
 | `PETUGAS_GUDANG` | The warehouse; the only non-admin who may move stock |
-| `TEKNISI` | Field work — report condition, record calibration, consume parts on a repair. Reads the rest |
+| `TEKNISI` | Field work, report condition, record calibration, consume parts on a repair. Reads the rest |
 | `PIMPINAN` | Read-only, plus report generation. Writes nothing |
 
-Region-scoped roles are an explicit allow-list, not a negative check — `id_lokasi
+Region-scoped roles are an explicit allow-list, not a negative check, `id_lokasi
 IS NULL` means nationwide. The same applies to user administration. Both are
 written as allow-lists deliberately: a negative check (`!= "TEKNISI"`) silently
 admits every role added after it was written, which is exactly how a permission
@@ -106,7 +106,7 @@ widening leaks.
 
 ## Engineering notes
 
-**Response compression.** Everything this app serves is text — `app.js` was
+**Response compression.** Everything this app serves is text, `app.js` was
 470 KB on the wire, `index.html` 383 KB, `/api/history/summary` 98.6 KB, all
 uncompressed. GZip middleware compresses that roughly **8:1**, making one line
 of middleware the single largest performance win available. `minimum_size`
@@ -151,8 +151,8 @@ Then open <http://localhost:8000>.
 
 Full documentation lives in `docs/`, written in Indonesian:
 
-- **`PANDUAN-RAMCES.md`** — end-user guide, written for field technicians with
+- **`PANDUAN-RAMCES.md`**, end-user guide, written for field technicians with
   no technical background. Every screenshot is taken from the running app.
-- **`MULAI-DARI-NOL.md`** — setup from scratch
-- **`RENCANA-PENGEMBANGAN.md`** — development roadmap
-- **`CAKUPAN-TIMELINE-MAGANG.md`** — internship scope and timeline
+- **`MULAI-DARI-NOL.md`**, setup from scratch
+- **`RENCANA-PENGEMBANGAN.md`**, development roadmap
+- **`CAKUPAN-TIMELINE-MAGANG.md`**, internship scope and timeline

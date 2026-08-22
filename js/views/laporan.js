@@ -73,7 +73,7 @@ async function fetchExportData() {
       const k = item.kalibrasi;
       kalibRows.push({
         id_aset:            item.id_aset,
-        // display name, not the code — /api/history/summary now returns both
+        // display name, not the code, /api/history/summary now returns both
         kode_alat:          item.kode_alat_name || item.kode_alat,
         id_lokasi:          item.id_lokasi,
         tanggal_kalibrasi:  k.latest_date || "—",
@@ -258,7 +258,7 @@ function applyExportFilters() {
 
   // Stats describe the FILTERED preview, not the whole fleet. They used to read
   // `db` directly, so every card sat frozen at the fleet total no matter what
-  // the user filtered — the numbers openly disagreed with the table below them.
+  // the user filtered, the numbers openly disagreed with the table below them.
   // One row per asset, since the pemeliharaan export repeats an asset per event.
   const statAssets = [];
   const seenAsset = new Set();

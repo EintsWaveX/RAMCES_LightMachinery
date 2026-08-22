@@ -4,8 +4,8 @@ Master reference data: alat kerja, lokasi and the UPT/resort tree.
 Everything here is transcribed from the client's `KATALOG SFM.xlsx` and lives in
 `seed_katalog.py`; this module only WRITES it. Rows are upserted rather than
 skipped, because the whole point of adopting the katalog was that four codes
-previously meant something else — `MPR` was MESIN POTONG/BABAT RUMPUT and is now
-MESIN POTONG REL — and skipping an existing row would leave the old meaning in
+previously meant something else, `MPR` was MESIN POTONG/BABAT RUMPUT and is now
+MESIN POTONG REL, and skipping an existing row would leave the old meaning in
 place.
 """
 
@@ -26,7 +26,7 @@ LOKASI_DATA = [
     (kode, nama, tipe) for kode, nama, tipe in _read_katalog().lokasi
 ]
 
-# UPT / resort rows, folded into `lokasi` — the table is FLAT and a child's
+# UPT / resort rows, folded into `lokasi`, the table is FLAT and a child's
 # parent is derived from its id string, never stored (see CLAUDE.md).
 #
 # 240 rows from the katalog, up from the 203 hand-kept before it was adopted.
@@ -68,7 +68,7 @@ def get_parent_lokasi_code(id_lokasi):
     """"JR1.3" → "D1" · "JRI.2" → "VI" · "BY1A" → "BY1" · "JR2" → None."""
     if not id_lokasi:
         return None
-    # `J[RB]`, not `JR`: the resort tree has two branches — JR (jalan rel) and
+    # `J[RB]`, not `JR`: the resort tree has two branches, JR (jalan rel) and
     # JB (jembatan).
     arab = re.match(r"^J[RB]\s*(\d+)\.", id_lokasi, re.IGNORECASE)
     if arab:
@@ -79,7 +79,7 @@ def get_parent_lokasi_code(id_lokasi):
     )
     if roman:
         return _ROMAN_MAP.get(roman.group(1).upper())
-    # MEKANIK — the third branch. 14 resorts (ME1.1, ME1.2, ME2..ME9,
+    # MEKANIK, the third branch. 14 resorts (ME1.1, ME1.2, ME2..ME9,
     # MEI..MEIV) that RAMCES had no rows for at all until rev0.5.2, exactly the
     # hole JB was in before it. The `$` anchor is load-bearing: without it
     # "MEIV" matches the `I{1,3}` alternative and returns VI, so MEKANIK

@@ -26,7 +26,7 @@ async function fetchMasterData() {
     if (lokasiRes.ok) {
       const allLokasi = await lokasiRes.json();
 
-      // Regions: DAOP, DIVRE, PUSAT, BALAIYASA — top-level parent locations
+      // Regions: DAOP, DIVRE, PUSAT, BALAIYASA, top-level parent locations
       lokasiData = allLokasi
         .filter((l) => {
           const t = (l.tipe || "").toUpperCase();
@@ -77,11 +77,11 @@ async function fetchMasterData() {
 // login screen. Both it and the selector are gone: a user's region is a property
 // of their account, read from the stored row by the server, not something chosen
 // at sign-in. Choosing it (alongside choosing a role) was the escalation hole.
-// The login screen now makes one unauthenticated call — none — and the region
+// The login screen now makes one unauthenticated call, none, and the region
 // list is fetched after login by fetchMasterData().
 
 // --- FETCH API WRAPPER ---
-// opts.background — skip the loading overlay (used by the polling fallback, so
+// opts.background, skip the loading overlay (used by the polling fallback, so
 // a periodic refresh doesn't blank the screen while the user is working).
 async function apiFetch(endpoint, options = {}) {
   if (!authToken) throw new Error("Token tidak tersedia");
@@ -122,7 +122,7 @@ async function apiFetch(endpoint, options = {}) {
 }
 
 // --- KOMUNIKASI DATABASE ---
-// opts.silent — suppress the failure toast (used by the background poller so a
+// opts.silent, suppress the failure toast (used by the background poller so a
 // transient network blip doesn't spam the user).
 // How many rows to pull per request. Matches DEFAULT_PAGE in main.py.
 const ASET_PAGE_SIZE = 1000;
@@ -151,7 +151,7 @@ function _decorateAset(a) {
 /**
  * Fetch every page of an endpoint that returns {total, limit, offset, items}.
  *
- * The alternative — one unbounded request — was ~4.5 MB for /api/aset and
+ * The alternative, one unbounded request, was ~4.5 MB for /api/aset and
  * ~16 MB for /api/history/summary at 10k assets, on every login AND after every
  * mutation, with nothing on screen until the last byte arrived.
  *
@@ -193,8 +193,8 @@ window.fetchAllPages = fetchAllPages;
  * ONE page of /api/aset, with the filters and sort applied by the SERVER.
  *
  * `params` is a URLSearchParams the caller has already filled from its own
- * filter state. The response envelope carries `ringkas` — SO/TSO over the whole
- * filtered set, not the page — because the KPI tiles above the cards answer
+ * filter state. The response envelope carries `ringkas`, SO/TSO over the whole
+ * filtered set, not the page, because the KPI tiles above the cards answer
  * "how much matches", which paging must not change.
  *
  * Every row is written into the by-id cache on the way past, so a modal opened
@@ -222,7 +222,7 @@ window.fetchAsetPage = fetchAsetPage;
 // export row back to its asset.
 //
 // The difference from rev0.4.4 is WHEN. This used to run at login, for every
-// user, whether or not they ever opened any of those — 1.06 MB and 460 ms
+// user, whether or not they ever opened any of those, 1.06 MB and 460 ms
 // before the dashboard appeared. Now it runs when one of them is actually
 // asked for, and the result is cached until a mutation invalidates it.
 let _fleetCache = null;
@@ -261,7 +261,7 @@ function invalidateFleet() {
 }
 
 /**
- * The fleet IF it has already been fetched, otherwise null — never a fetch.
+ * The fleet IF it has already been fetched, otherwise null, never a fetch.
  *
  * The KDAK id preview needs max(urutan) over every asset sharing a kode_alat,
  * and would rather print a placeholder than trigger a megabyte download while
@@ -276,7 +276,7 @@ window.ensureFleet = ensureFleet;
 window.invalidateFleet = invalidateFleet;
 
 /**
- * "The asset data changed — show the new state."
+ * "The asset data changed, show the new state."
  *
  * Called from every mutation handler and from the WebSocket refresh. It used to
  * re-download the fleet into `db`; it now invalidates the caches and re-renders

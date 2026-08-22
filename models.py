@@ -19,11 +19,11 @@ from database import Base
 
 class KategoriAlat(Base):
     """
-    A tool TYPE — the top of the two-level tool identity.
+    A tool TYPE, the top of the two-level tool identity.
 
     The authoritative master is the client's `KATALOG SFM.xlsx ▸ KATALOG ALAT
     KERJA` sheet (103 rows). A specific make and model of one of these is an
-    `AlatVarian` ("Model/Type"), NOT another row here — `HTT 220 V`,
+    `AlatVarian` ("Model/Type"), NOT another row here, `HTT 220 V`,
     `HTT 3 PHASE` and `GEISMAR HTT` are three models of the single alat kerja
     `HTT HAND TIE TAMPER`.
     """
@@ -38,7 +38,7 @@ class KategoriAlat(Base):
     # It replaced a hardcoded four-code set in seed.py.
     alat_ukur = Column(Boolean, nullable=False, server_default=text("false"))
     perlu_kalibrasi = Column(Boolean, nullable=False, server_default=text("false"))
-    # FASILITAS | JEMBATAN | None — the katalog's two spektek groupings, which
+    # FASILITAS | JEMBATAN | None, the katalog's two spektek groupings, which
     # mirror the two `Spesifikasi Lengkap Alat Kerja/` subfolders.
     kelompok = Column(String(20), nullable=True)
 
@@ -73,7 +73,7 @@ class KategoriAlat(Base):
 
 class DokumenAlat(Base):
     """
-    Every document that describes an alat kerja — not just the first one.
+    Every document that describes an alat kerja, not just the first one.
 
     `kategori_alat.file_spek` / `file_manual` are ONE column each, and the
     client's drop does not fit in one. Three tool types are covered by two
@@ -101,7 +101,7 @@ class DokumenAlat(Base):
     payload shape every screen shares.
 
     ⚠️ DECLARED HERE ON PURPOSE. `manage.py reset` drops via
-    `Base.metadata.drop_all`, which only knows about declared tables — a table
+    `Base.metadata.drop_all`, which only knows about declared tables, a table
     created by raw DDL in `_ensure_schema()` alone survives the drop and then
     collides with the recreate on the very next boot.
     """
@@ -114,16 +114,16 @@ class DokumenAlat(Base):
         nullable=False,
         index=True,
     )
-    # SPEK | MANUAL — the two folders the client files documents under, and the
+    # SPEK | MANUAL, the two folders the client files documents under, and the
     # two slots the spec card renders. Guarded by a CHECK in _ensure_schema().
     jenis = Column(String(10), nullable=False)
     # Basename inside uploads/dokumen_alat/. Bearer-authenticated on the way out,
-    # like calibration certificates — only photos are public.
+    # like calibration certificates, only photos are public.
     nama_file = Column(String(255), nullable=False)
     # What to print on the link. The stored filename is the client's own, which
     # includes things like "Kertz-Gasoline Jack Hammer[1].pdf".
     judul = Column(String(200), nullable=True)
-    # FASILITAS | JEMBATAN — copied from the katalog's own grouping so the card
+    # FASILITAS | JEMBATAN, copied from the katalog's own grouping so the card
     # can say which spektek folder a document came from without a join.
     kelompok = Column(String(20), nullable=True)
     # Exactly one per (kode_alat, jenis) should be true: the one mirrored onto
@@ -149,7 +149,7 @@ class Pengguna(Base):
     hashed_password = Column(String(255), nullable=True)  # Wajib untuk autentikasi
     role = Column(String(20), nullable=False)  # SUPER_ADMIN, ADMIN_WILAYAH, TEKNISI
     id_lokasi = Column(String(10), ForeignKey("lokasi.id_lokasi"), nullable=True)
-    # Presence — stamped on login and on every authenticated request. "Online" is
+    # Presence, stamped on login and on every authenticated request. "Online" is
     # derived from an active WebSocket, not from this column; last_seen is what
     # remains once the socket closes.
     last_seen = Column(DateTime, nullable=True)
@@ -159,7 +159,7 @@ class Pengguna(Base):
     #
     # AKTIF | PENDING | DITOLAK | NONAKTIF. Registration creates PENDING with an
     # inert role and no region; an admin assigns both when approving. The
-    # registrant NEVER picks a role — being able to was the privilege escalation
+    # registrant NEVER picks a role, being able to was the privilege escalation
     # removed in rev0.5.0, and re-introducing it on a different form would be
     # the same bug with a new name.
     #
@@ -169,7 +169,7 @@ class Pengguna(Base):
     status = Column(String(16), nullable=False, server_default="AKTIF")
     nama_lengkap = Column(String(120), nullable=True)
     # Deliberately NO server_default. `DEFAULT NOW()` on the migration stamps
-    # every pre-existing row with the moment the column was added — a value that
+    # every pre-existing row with the moment the column was added, a value that
     # reads as fact and is not. NULL says "we don't know", which is true.
     created_at = Column(DateTime, nullable=True)
     # Plain INTEGER, not a ForeignKey: it records WHO approved, and deleting
@@ -183,10 +183,10 @@ class Pengguna(Base):
 
 class AlatVarian(Base):
     """
-    A "Model/Type" — one specific make and model of an alat kerja.
+    A "Model/Type", one specific make and model of an alat kerja.
 
     One alat kerja has several field models that are NOT interchangeable for
-    sparepart purposes — a GENSET 3 PHASE HTT is either GX270 or GX390 and each
+    sparepart purposes, a GENSET 3 PHASE HTT is either GX270 or GX390 and each
     takes a different carburettor, and a brush cutter is 2T TASCO vs 4T PROQUIP
     vs 4T HONDA. The repair log records this per job, so it belongs on the asset.
 
@@ -195,7 +195,7 @@ class AlatVarian(Base):
     seven rows: Merk, Model/Type, and five FREE-FORM "Spesifikasi Utama" rows
     whose labels differ per tool ("Max. Torque" on an impact wrench, "Runtime"
     on a work light, "Cutting Wheel" on a rail saw). That is why the five slots
-    are label/value PAIRS rather than named columns — the previous fixed
+    are label/value PAIRS rather than named columns, the previous fixed
     kapasitas/daya/dimensi/berat quartet fitted a genset and nothing else.
 
     `kapasitas`/`daya`/`dimensi`/`berat` are retained ONLY so the one-off
@@ -212,11 +212,11 @@ class AlatVarian(Base):
     nama_varian = Column(String(100), nullable=False)  # GX270, 2T TASCO, GEISMAR…
     keterangan = Column(Text, nullable=True)
 
-    # ── Rows 1–2 of the template (required at the API layer) ──
+    # ── Rows 1, 2 of the template (required at the API layer) ──
     merk = Column(String(100), nullable=True)  # MILWAUKEE, HONDA, KERTZ…
     tipe_model = Column(String(100), nullable=True)  # M18 ONEFHIWF34, GX390…
 
-    # ── Rows 3–7: five free-form spec pairs ──
+    # ── Rows 3, 7: five free-form spec pairs ──
     spek1_label = Column(String(60), nullable=True)
     spek1_nilai = Column(String(200), nullable=True)
     spek2_label = Column(String(60), nullable=True)
@@ -233,8 +233,8 @@ class AlatVarian(Base):
     # and Google Drive) or a file uploaded into `uploads/`. `_varian_payload()`
     # resolves the pair to one URL, preferring the local file.
     #
-    # The PHOTO is served publicly — landing.html is reached by scanning a QR
-    # code with no session — while the two documents stay Bearer-authenticated
+    # The PHOTO is served publicly, landing.html is reached by scanning a QR
+    # code with no session, while the two documents stay Bearer-authenticated
     # like calibration certificates. See main.py.
     foto_url = Column(String(500), nullable=True)
     foto_file = Column(String(255), nullable=True)  # basename in uploads/foto_alat/
@@ -297,7 +297,7 @@ class Aset(Base):
         Integer, ForeignKey("alat_varian.id_varian"), nullable=True, index=True
     )
     # Serial number is per PHYSICAL UNIT, so it lives here and not on
-    # AlatVarian — two assets of the same variant have different serials.
+    # AlatVarian, two assets of the same variant have different serials.
     nomor_seri = Column(String(100), nullable=True)
 
     kategori = relationship("KategoriAlat", back_populates="asets")
@@ -368,7 +368,7 @@ class RiwayatKalibrasi(Base):
     nomor_sertifikat = Column(String(100))
     keterangan = Column(Text)
     # Stored filename of the uploaded certificate, relative to UPLOAD_DIR.
-    # Never a client-supplied path — see save_upload() in main.py.
+    # Never a client-supplied path, see save_upload() in main.py.
     file_sertifikat = Column(String(255), nullable=True)
     waktu_input = Column(DateTime, default=func.now())
 
@@ -381,7 +381,7 @@ class RiwayatKalibrasi(Base):
 
 
 # ══════════════════════════════════════════════════════════════════════
-# INVENTARIS — Sparepart Management
+# INVENTARIS, Sparepart Management
 # ══════════════════════════════════════════════════════════════════════
 
 class SparePartKategori(Base):
@@ -414,8 +414,8 @@ class SparePart(Base):
     `warranty_months`, `supplier`, `ref_part`, `deskripsi`. Do not reintroduce
     one without a screen that reads it.
 
-    Criticality is no longer stored. It is DERIVED from the ledger —
-    `stok <= stok_min` — which is the only definition the dashboard, the status
+    Criticality is no longer stored. It is DERIVED from the ledger,
+    `stok <= stok_min`, which is the only definition the dashboard, the status
     badges and the "Perlu segera dipesan" table ever actually used; the stored
     boolean was OR-ed into that expression and could never make a well-stocked
     part critical on its own.
@@ -427,7 +427,7 @@ class SparePart(Base):
     id_kategori  = Column(Integer, ForeignKey("sparepart_kategori.id_kategori"), nullable=True)
     kode_alat    = Column(String(10),  ForeignKey("kategori_alat.kode_alat"),    nullable=True)
     # Model-specific parts (a GX390 carburettor fits no other model). Null means
-    # the part fits EVERY model of `kode_alat`, which is the common case — the
+    # the part fits EVERY model of `kode_alat`, which is the common case, the
     # compatibility filter on the repair form reads it that way.
     id_varian    = Column(Integer, ForeignKey("alat_varian.id_varian"), nullable=True, index=True)
     unit         = Column(String(20),  nullable=False, server_default="Piece")
@@ -444,15 +444,15 @@ class SparePart(Base):
 
 class SparePartStok(Base):
     """
-    Stock ledger — one row per movement.
+    Stock ledger, one row per movement.
 
     `tipe_gerakan` vocabulary (matches the printed Items Master report):
-      IN           — goods received
-      OUT          — goods issued / consumed
-      RETUR_VENDOR — returned to supplier   (reduces stock)
-      RETUR_CUST   — returned from the field (increases stock)
-      ADJ_IN       — stock-take adjustment up
-      ADJ_OUT      — stock-take adjustment down
+      IN, goods received
+      OUT, goods issued / consumed
+      RETUR_VENDOR, returned to supplier   (reduces stock)
+      RETUR_CUST, returned from the field (increases stock)
+      ADJ_IN, stock-take adjustment up
+      ADJ_OUT, stock-take adjustment down
 
     Location model: `id_gudang` is the warehouse the stock physically sits in and
     is what the movement-entry form writes. `id_lokasi`/`site_from`/`site_to`
@@ -487,7 +487,7 @@ class SparePartStok(Base):
     pair_ref      = relationship("SparePartStok", remote_side=[id_stok],
                                  foreign_keys=[id_ref_transfer])
 
-    # Movements that ADD stock vs REMOVE it — the single source of truth for
+    # Movements that ADD stock vs REMOVE it, the single source of truth for
     # every net-stock and stock-value calculation.
     GERAKAN_MASUK = ("IN", "RETUR_CUST", "ADJ_IN")
     GERAKAN_KELUAR = ("OUT", "RETUR_VENDOR", "ADJ_OUT")
@@ -504,7 +504,7 @@ class SparePartStok(Base):
 
 class PemakaianSparepart(Base):
     """
-    One sparepart consumed by one repair — the link between the inventory
+    One sparepart consumed by one repair, the link between the inventory
     ledger and the maintenance log.
 
     Written only by `catat_perbaikan()` in main.py, inside the SAME transaction
@@ -514,7 +514,7 @@ class PemakaianSparepart(Base):
     `id_stok` points at the `OUT` movement this usage wrote. That is what keeps
     `sparepart_stok` the single source of truth for stock: this table never
     computes a balance, it references the movement that changed one. Never
-    subtract from stock here — go through the ledger.
+    subtract from stock here, go through the ledger.
 
     `id_aset` is denormalised off `riwayat_kondisi` because every report and
     rollup filters by asset first; joining through the history row for it would
@@ -526,7 +526,7 @@ class PemakaianSparepart(Base):
     id_pakai = Column(Integer, primary_key=True, index=True, autoincrement=True)
     # CASCADE, because `delete_aset()` deletes the asset's riwayat_kondisi rows
     # directly. Without it, deleting any asset whose repair consumed spare parts
-    # was rejected by PostgreSQL and surfaced as a 500 — the ondelete pass that
+    # was rejected by PostgreSQL and surfaced as a 500, the ondelete pass that
     # made every `id_aset` FK CASCADE reached this table through id_aset and
     # missed the link through id_riwayat.
     id_riwayat = Column(
@@ -561,20 +561,20 @@ class PemakaianSparepart(Base):
 
 
 # ══════════════════════════════════════════════════════════════════════
-# STOCK OPNAME — physical count → variance → adjustment
+# STOCK OPNAME, physical count → variance → adjustment
 # ══════════════════════════════════════════════════════════════════════
 #
 # The last client-matrix item that needed schema, and it is purely additive:
 # `ADJ_IN` / `ADJ_OUT` already existed in `SparePartStok` as the adjustment
 # mechanism, so an opname does not introduce a new way for stock to move. It
-# introduces a record of WHY a particular adjustment was made — which is the
+# introduces a record of WHY a particular adjustment was made, which is the
 # thing an auditor asks for and the ledger alone cannot answer.
 #
 # DECLARED HERE ON PURPOSE. `manage.py reset` drops via
 # `Base.metadata.drop_all`, which only knows about declared tables, so a table
 # created by raw DDL alone survives the drop and then collides with the
 # recreate on the very next boot. `_ensure_schema()` adds only what `create_all`
-# cannot express — see api/schema.py.
+# cannot express, see api/schema.py.
 
 
 class OpnameSesi(Base):
@@ -635,7 +635,7 @@ class OpnameBaris(Base):
     It is NOT what the adjustment is computed from. Counting a warehouse takes
     time, and a part issued to a repair while the count is in progress would
     otherwise be silently reversed by the posting. `POST .../selesai` re-reads
-    the current balance and posts the difference against THAT — see the
+    the current balance and posts the difference against THAT, see the
     endpoint, where this is the invariant most worth protecting.
 
     `selisih` is deliberately NOT a column: it is `stok_fisik - stok_sistem`,

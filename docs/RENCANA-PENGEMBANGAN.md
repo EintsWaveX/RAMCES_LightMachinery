@@ -1,8 +1,8 @@
-# RAMCES — Development Roadmap
+# RAMCES, Development Roadmap
 
 **Audience:** whoever maintains RAMCES next.
 **Scope:** what to *do* to the system. For how the system already *works*, read
-[CLAUDE.md](../CLAUDE.md) — this document deliberately does not repeat it.
+[CLAUDE.md](../CLAUDE.md), this document deliberately does not repeat it.
 
 - End-user manual: [PANDUAN-RAMCES.md](PANDUAN-RAMCES.md) (Indonesian)
 - Setting up from an empty database: [MULAI-DARI-NOL.md](MULAI-DARI-NOL.md)
@@ -12,12 +12,12 @@
 Every number here was measured against the local seeded database, not estimated.
 
 > **This document was rewritten at `rev0.4.3-alpha`.** The previous version was
-> written against `rev0.4.0-beta` and opened with *"§2 BLOCKER — there is no
+> written against `rev0.4.0-beta` and opened with *"§2 BLOCKER, there is no
 > authentication … nothing else in this document matters until this is done."*
 > That had been false for two releases, and it listed as pending several things
 > that had already shipped. A maintainer handed it would have started by
 > rebuilding a login system that already existed. If you find this file
-> disagreeing with the code again, fix the file — a stale roadmap is worse than
+> disagreeing with the code again, fix the file, a stale roadmap is worse than
 > no roadmap, because it is trusted.
 
 ---
@@ -37,11 +37,11 @@ Branch `rev0.4.6-alpha`. Version naming is `revX.Y.Z-alpha` / `-beta`; the older
 | **rev0.5.0/0.5.1** | Authentication; `main.py` 5,901 → 324 lines split into `api/`; per-view redesign |
 | **rev0.4.2** | Self-registration + approval + captcha + rate limiting; `manage.py`; `dokumen_alat`; declarative role gating |
 | **rev0.4.3** | Hierarki Part (BOM tree), Kartu Riwayat Part, Fast/Slow moving, the pengadaan scope rule |
-| **rev0.4.4** | `seeds/simulasi.py` — marked, reversible operational history for the real fleet |
+| **rev0.4.4** | `seeds/simulasi.py`, marked, reversible operational history for the real fleet |
 | **rev0.4.5** | Server-side paging, end to end: boot 1,062 KB → 19 KB. `api/query.py` (the server twin of the one matcher), `/ringkasan`, and one window scan instead of four |
-| **rev0.4.6** | MTBF/MTTR · calibration due-date reminder · stock opname — **the client matrix closes** |
+| **rev0.4.6** | MTBF/MTTR · calibration due-date reminder · stock opname, **the client matrix closes** |
 
-### Current baseline — keep these honest
+### Current baseline, keep these honest
 
 ```text
 routes            95        openapi paths     66
@@ -57,7 +57,7 @@ CLEAN IMPORT (manage.py seed, nothing optional):
   aset         1121 · riwayat      1121 · pengguna       2
   gudang          3 · sparepart     203 · sparepart_stok 973
   dokumen_alat   33 (30 primary, 0 orphaned files on disk)
-  every asset SO — five dashboard panels are empty, and that is honest
+  every asset SO, five dashboard panels are empty, and that is honest
 
 WITH `--simulasi` (opt-in, every row marked, fully reversible):
   riwayat_kondisi ~3200 · riwayat_mutasi ~1000 · riwayat_kalibrasi ~26
@@ -71,7 +71,7 @@ simulation adds about the same again.
 
 ---
 
-## 2. What is DONE — do not re-report
+## 2. What is DONE, do not re-report
 
 Each was reproduced live before the fix and verified live after.
 
@@ -87,19 +87,19 @@ Each was reproduced live before the fix and verified live after.
 | **FK `ondelete`** | deleting a user 500'd | `SET NULL` / `CASCADE` applied by a guarded `DO $$` block |
 | **`lokasi` re-read per request** | 4x per dashboard load | 60 s TTL cache of plain tuples, explicitly invalidated |
 | **Exports built in memory** | 223 KB and growing | `StreamingResponse` over a row-at-a-time generator |
-| **Pagination** | the whole fleet at every login — 1,062 KB, 460 ms, linear in fleet size | server-side filter + sort + page; boot is 19 KB and flat. `test_paging.py` proves the server's filters equal the client matcher's |
+| **Pagination** | the whole fleet at every login, 1,062 KB, 460 ms, linear in fleet size | server-side filter + sort + page; boot is 19 KB and flat. `test_paging.py` proves the server's filters equal the client matcher's |
 | **Seeding** | a second run DOUBLED the fleet; the dummy step was never idempotent | `manage.py`, identity gates, `DEMO-` serials, 16/16 asserted |
 | **Documents** | 3 PDFs (5.6 MB) reachable by nothing | `dokumen_alat`; verified from the DISK side |
 | **`landing.html` sign-in** | 422'd for every user, and let you pick your own role | username + password + progressive captcha |
 | **`uploads/` static leak** | a certificate saved as `.jpg` was readable with no token | the catch-all refuses the whole tree |
 | **Mobile** | designed at desktop width and allowed to shrink | `.table-stack`, bottom nav, 44px targets, `.scroll-hint` |
-| **An all-green demo** | every asset SO; five panels empty, nothing to show a client | `seeds/simulasi.py` — marked with a SIMULASI account, tagged `[SIMULASI]`, idempotent, and exactly reversible |
+| **An all-green demo** | every asset SO; five panels empty, nothing to show a client | `seeds/simulasi.py`, marked with a SIMULASI account, tagged `[SIMULASI]`, idempotent, and exactly reversible |
 
 ---
 
 ## 3. Known gaps, ranked by what breaks first
 
-### 3.1 ~~Server-side paging for the deep screens~~ — CLOSED
+### 3.1 ~~Server-side paging for the deep screens~~, CLOSED
 
 **The scaling wall is gone. The boot went from 1,062 KB to 19 KB**, measured in
 a real browser by `tools/verify/test_boot.py`, and it no longer grows with the
@@ -115,16 +115,16 @@ scaling                 linear     flat
 Three pieces, and the release is only correct because of the third:
 
 1. **`/api/aset` and `/api/history/summary` take the complete filter set** the
-   sort modals can produce — `q`, `alat`, `pengadaan`, `peruntukan`, `lokasi`,
-   `upt`, `status`, `tahun_from/to`, `id_from/to`, `milik_saya` / `punya` — plus
+   sort modals can produce, `q`, `alat`, `pengadaan`, `peruntukan`, `lokasi`,
+   `upt`, `status`, `tahun_from/to`, `id_from/to`, `milik_saya` / `punya`, plus
    `sort` and `dir`, and the answers are **exact**, not the superset gate they
    used to be. Both deep screens render straight from a page.
 2. **`GET /api/aset/dashboard/ringkasan`** supplies every fleet-wide number the
    four dashboard panels, both KPI strips, the KDAK tiles, every year dropdown
    and the KDAK id preview's sequence number. ~6 KB regardless of fleet size.
    `ensureFleet()` still fetches every row for the three things that genuinely
-   need one line per asset — the Excel/PDF export and the KDAK grouping
-   modals — but on demand, not at login.
+   need one line per asset, the Excel/PDF export and the KDAK grouping
+   modals, but on demand, not at login.
 3. **`api/query.py` is a line-by-line port of `js/search.js`**, and
    `tools/verify/test_paging.py` proves it by running the shipped client
    functions in real Chrome and the server filters over the same fleet and
@@ -136,11 +136,11 @@ holds the fleet any more*. The short version: `db` and `_historySummary` are
 ONE PAGE each, and scanning them for a fleet-wide answer fails silently with a
 plausible smaller number.
 
-### 3.2 ~~The repair-events window subquery runs four times per dashboard load~~ — CLOSED
+### 3.2 ~~The repair-events window subquery runs four times per dashboard load~~, CLOSED
 
 `_scoped_repair_events` returns a subquery EXPRESSION, so each of the four
-`db.execute()` calls re-ran it — including the deliberately unfiltered `LAG` over
-all of `riwayat_kondisi` — and re-planned the nested query four times.
+`db.execute()` calls re-ran it, including the deliberately unfiltered `LAG` over
+all of `riwayat_kondisi`, and re-planned the nested query four times.
 
 `_repair_facts()` now scans it **once**, grouped by `(bucket, lokasi, alat)`, and
 the headline totals, the trend series, the per-resort table and the per-alat
@@ -192,7 +192,7 @@ in the DOM at once" and `js/views/inventaris.js`'s eval-time DOM caching.
 
 ### 3.8 Smaller
 
-- No password expiry, and no PERSISTED audit log of failed sign-ins — the rate
+- No password expiry, and no PERSISTED audit log of failed sign-ins, the rate
   limiter counts them in memory only.
 - `sparepart_kategori` names are matched by **exact string** on bulk import;
   unknown categories are rejected rather than created.
@@ -200,14 +200,14 @@ in the DOM at once" and `js/views/inventaris.js`'s eval-time DOM caching.
   region-tree columns kept only so existing transfer history keeps rendering.
   Dead weight for new writes; plan a migration rather than adding more.
 - `SparePart` has no `stok_max`. `_stok_status()` keeps the branch documented as
-  reserved, and `STOK_STATUS_ORDER` deliberately omits it — see rev0.4.3.
+  reserved, and `STOK_STATUS_ORDER` deliberately omits it, see rev0.4.3.
 - Clicking a modal backdrop does not close it. Deliberately: several dialogs are
   long forms and a stray click would discard typed input. Revisit only with a
   dirty-state guard.
 - Tables were left on inline Tailwind. `.table-std td` (0,1,1) outranks the
   per-cell `.px-4` (0,1,0) that 22 tables rely on, so adopting it is a restyle
   per table, not a find-and-replace.
-- **`GET /api/aset/afkir` is the last unpaged list endpoint** — a bare `.all()`
+- **`GET /api/aset/afkir` is the last unpaged list endpoint**, a bare `.all()`
   over every scrapped asset, 44 rows today. After rev0.4.5 it is the only one
   left, and `js/views/afkir.js` is the only view that still holds a whole list
   client-side. Fine at this size; it is recorded here so the next person does
@@ -215,7 +215,7 @@ in the DOM at once" and `js/views/inventaris.js`'s eval-time DOM caching.
 
 ---
 
-## 4. Client-matrix features — CLOSED at rev0.4.6
+## 4. Client-matrix features, CLOSED at rev0.4.6
 
 From [CAKUPAN-TIMELINE-MAGANG.md](CAKUPAN-TIMELINE-MAGANG.md). Three of the
 original seven closed in rev0.4.3, and the last three buildable ones closed in
@@ -223,13 +223,13 @@ rev0.4.6.
 
 | Feature | Shipped in | How |
 |---|---|---|
-| **MTBF / MTTR** | rev0.4.6 | Two more columns on the window scan `_repair_facts()` already makes — `lag(waktu_lapor)` beside `lag(kondisi)`. Rendered as tiles on the Kurva MCF panel, because MCF/MTBF/MTTR are one reliability story. Verified by recomputing both in plain Python and comparing |
-| **Calibration reminder** | rev0.4.6 | `GET /api/kalibrasi/jatuh-tempo`, a STATE rather than a notification — so no notifications table, and nothing to mark read. Surfaced as a `JATUH TEMPO`/`SEGERA` card badge, a filter on the Kalibrasi tab, and one standing entry in the bell |
-| **Stock opname** | rev0.4.6 | `opname_sesi` / `opname_baris`, posting through the existing `ADJ_IN`/`ADJ_OUT` ledger in one transaction. The variance is measured against the CURRENT balance, not the opening snapshot — see CLAUDE.md |
-| **In-app QR scanner** | — | The ONLY line still open, and deliberately: the field flow already works through the phone's native camera, which is what technicians actually do. Needs browser camera permission for marginal gain |
+| **MTBF / MTTR** | rev0.4.6 | Two more columns on the window scan `_repair_facts()` already makes, `lag(waktu_lapor)` beside `lag(kondisi)`. Rendered as tiles on the Kurva MCF panel, because MCF/MTBF/MTTR are one reliability story. Verified by recomputing both in plain Python and comparing |
+| **Calibration reminder** | rev0.4.6 | `GET /api/kalibrasi/jatuh-tempo`, a STATE rather than a notification, so no notifications table, and nothing to mark read. Surfaced as a `JATUH TEMPO`/`SEGERA` card badge, a filter on the Kalibrasi tab, and one standing entry in the bell |
+| **Stock opname** | rev0.4.6 | `opname_sesi` / `opname_baris`, posting through the existing `ADJ_IN`/`ADJ_OUT` ledger in one transaction. The variance is measured against the CURRENT balance, not the opening snapshot, see CLAUDE.md |
+| **In-app QR scanner** | | The ONLY line still open, and deliberately: the field flow already works through the phone's native camera, which is what technicians actually do. Needs browser camera permission for marginal gain |
 
 **The whole matrix is now green except the QR button.** Two of these three used
-to be blocked on the system being *used* rather than built — shipping a
+to be blocked on the system being *used* rather than built, shipping a
 reliability metric that reads 0.0 teaches users to ignore that panel, and it is
 hard to win that attention back. rev0.4.4's marked, reversible simulation is
 what removed that block without pretending the data is real.
@@ -238,7 +238,7 @@ what removed that block without pretending the data is real.
 
 ## 5. Suggested order
 
-Renumbered at `rev0.4.6`. Everything the previous list ranked 1–4b is done; what
+Renumbered at `rev0.4.6`. Everything the previous list ranked 1, 4b is done; what
 is below it kept its relative order.
 
 | # | Work | Effort | Risk of leaving it |
@@ -248,15 +248,15 @@ is below it kept its relative order.
 | 3 | Persisted audit log of failed sign-ins (§3.8) | Small | The rate limiter counts them in memory only, so a restart forgets an attack |
 | 4 | In-app QR scan button | Small | The last client-matrix line, and the doc rates it low value: the field flow already works through the phone's native camera |
 | 6 | Batch the `resolve_home_lokasi()` N+1 in the export loops (§3.5) | Small | Rare in practice; only bites if workshop traffic grows |
-| 5 | Tailwind build step (§3.6) | Medium | Only if a build step becomes acceptable — decide explicitly rather than drift |
+| 5 | Tailwind build step (§3.6) | Medium | Only if a build step becomes acceptable, decide explicitly rather than drift |
 
 ### Done, most recent first
 
 | Round | Work |
 |---|---|
-| rev0.4.6 | MTBF/MTTR · calibration reminder · stock opname — the client matrix closes |
+| rev0.4.6 | MTBF/MTTR · calibration reminder · stock opname, the client matrix closes |
 | rev0.4.5 | Server-side paging (§3.1), boot 1,062 KB → 19 KB · repair-dashboard single window scan (§3.2), 2× |
-| rev0.4.4 | `seeds/simulasi.py` — marked, reversible operational history |
+| rev0.4.4 | `seeds/simulasi.py`, marked, reversible operational history |
 | rev0.4.3 | Hierarki Part · Kartu Riwayat Part · Fast/Slow moving · pengadaan scope |
 
 ---
@@ -265,7 +265,7 @@ is below it kept its relative order.
 
 Node is not installed, so `node --check` and every linter built on it are
 unavailable, and there is no pyflakes for `py -3.10`. **`tools/verify/` is what
-stands in for a test suite** — read its
+stands in for a test suite**, read its
 [README](../tools/verify/README.md) first.
 
 Three static checkers run in a second and need nothing:
@@ -282,7 +282,7 @@ A fourth needs Chrome and answers the one question the others cannot:
 py -3.10 tools/verify/syntax.py   # does js/ actually PARSE?
 ```
 
-`check_js.py` has no JavaScript engine — it tokenises and counts brackets. An
+`check_js.py` has no JavaScript engine, it tokenises and counts brackets. An
 `await` inside a listener that is not `async` is a SyntaxError that blanks the
 page, and it passes every other check. `syntax.py` compiles each file with
 `new Function(source)` in headless Chrome, which parses without executing.
@@ -302,7 +302,7 @@ the package invariants in one call.
   preconditions before trusting a result.
 - **`matchMedia('(pointer: coarse)')` is false under headless emulation** and
   cannot be forced. The `@media (pointer: coarse)` block is what supplies the
-  44px tap targets, and it applies on real hardware — so measuring rendered box
+  44px tap targets, and it applies on real hardware, so measuring rendered box
   sizes headless reports ~30 phantom failures. `audit.py` asserts the CSS rule
   from source instead.
 

@@ -16,7 +16,7 @@ const API_BASE_URL = "/api";
 // ── SERVER CONFIG ─────────────────────────────────────────────────────────
 // Optional externally-reachable base URL (Tailscale Funnel / ngrok / reverse
 // proxy). Only used to build QR/landing links when the page itself is being
-// viewed on localhost — otherwise window.location.origin is already public.
+// viewed on localhost, otherwise window.location.origin is already public.
 let PUBLIC_BASE_URL = "";
 
 // Data master disesuaikan dengan skema PostgreSQL
@@ -27,12 +27,12 @@ let uptDatabase = []; // Dipertahankan jika backend API masih membutuhkannya
 let _currentRole = ""; // one of ROLE_ORDER below
 
 // ══════════════════════════════════════════════════════════════════════
-// Role access — declarative, and the ONLY description of who sees what
+// Role access, declarative, and the ONLY description of who sees what
 // ══════════════════════════════════════════════════════════════════════
 //
 // `checkAuth()` used to gate FOUR elements by hand. That left two holes, and
-// they were holes in the UI rather than in security — the server answers 403
-// behind every one of them — but a menu that contradicts the permissions is its
+// they were holes in the UI rather than in security, the server answers 403
+// behind every one of them, but a menu that contradicts the permissions is its
 // own kind of broken:
 //
 //   * `switchView()` had no role check at all, and 34 `onclick=` handlers built
@@ -77,7 +77,7 @@ const VIEW_ACCESS = {
 };
 
 // Who may WRITE in each area. A role absent here gets the view without its
-// create/edit/delete controls — which must be hidden AND 403 behind, never one
+// create/edit/delete controls, which must be hidden AND 403 behind, never one
 // or the other.
 const WRITE_ACCESS = {
   aset:       ["SUPER_ADMIN", "ADMIN_WILAYAH"],
@@ -87,7 +87,7 @@ const WRITE_ACCESS = {
   // inheriting the permission. Enforced server-side by assert_pengadaan_scope().
   aset_pusat: ["SUPER_ADMIN"],
   inventaris: ["SUPER_ADMIN", "ADMIN_WILAYAH", "PETUGAS_GUDANG"],
-  // Condition reporting is deliberately UNSCOPED for TEKNISI — reporting a
+  // Condition reporting is deliberately UNSCOPED for TEKNISI, reporting a
   // machine as broken is the one thing a technician does standing next to it,
   // and a region check there would block the report rather than the mistake.
   kondisi:    ["SUPER_ADMIN", "ADMIN_WILAYAH", "TEKNISI"],
@@ -102,14 +102,14 @@ const NAV_ACCESS = {
   "nav-afkir": "afkir",
 };
 
-/** True when `role` may open `viewId`. Unknown views are allowed — a view with
+/** True when `role` may open `viewId`. Unknown views are allowed, a view with
  *  no entry is not yet gated, and silently hiding it would be worse. */
 function canView(viewId, role = _currentRole) {
   const allowed = VIEW_ACCESS[viewId];
   return !allowed || allowed.includes(role);
 }
 
-/** True when `role` may write in `area`. Unknown areas are DENIED — a typo here
+/** True when `role` may write in `area`. Unknown areas are DENIED, a typo here
  *  must not quietly grant a button. */
 function canWrite(area, role = _currentRole) {
   return (WRITE_ACCESS[area] || []).includes(role);
@@ -169,14 +169,14 @@ function peruntukanLetter(value) {
  *
  * `peruntukan` (a letter or a label, either is accepted) narrows the list to
  * the resorts that can actually hold such an asset. Omitting it keeps the old
- * unfiltered behaviour, which is what the Kalibrasi and Mutasi forms want —
+ * unfiltered behaviour, which is what the Kalibrasi and Mutasi forms want,
  * they pick where a machine IS, not what it is for.
  *
  * ── Why the filter exists ──
  *
  * With JALAN REL + DAOP 1 selected, this offered 31 options: 25 JR, 4 JB and
  * 2 ME. Choosing any of the six wrong ones produced an asset whose id_aset
- * peruntukan segment contradicted the resort named in the same id — and since
+ * peruntukan segment contradicted the resort named in the same id, and since
  * the importer started deriving peruntukan from the resort prefix, that is a
  * contradiction the system can no longer produce any other way.
  */
@@ -227,7 +227,7 @@ window.peruntukanLetter = peruntukanLetter;
 // Ganti Tema button) wins; with no stored choice, follow the operating system.
 // It previously defaulted to light regardless, so a user whose machine is in
 // dark mode got a full-brightness page on every first visit and had to toggle.
-// An explicit "light" is still honoured on a dark OS — that is the whole point
+// An explicit "light" is still honoured on a dark OS, that is the whole point
 // of storing it.
 (function () {
   const saved = localStorage.getItem("theme");
@@ -295,8 +295,8 @@ function getParentLokasiCode(idLokasi) {
   if (!idLokasi) return null;
   // "JR1.3" → "D1", "JB1.1" → "D1", "JR9.2" → "D9"
   //
-  // `J[RB]`, not `JR`: the resort tree has two branches — JR (jalan rel) and
-  // JB (jembatan) — and only JR was matched here, so every jembatan resort
+  // `J[RB]`, not `JR`: the resort tree has two branches, JR (jalan rel) and
+  // JB (jembatan), and only JR was matched here, so every jembatan resort
   // resolved to no parent and its assets fell outside every regional filter.
   // Byte-identical to _RE_UPT_ARAB in main.py and seed.py.
   const arabMatch = idLokasi.match(/^J[RB]\s*(\d+)\./i);
@@ -321,7 +321,7 @@ function getParentLokasiCode(idLokasi) {
   if (romanMatch) return romanMap[romanMatch[1].toUpperCase()] ?? null;
 
   // "ME1.1" → "D1", "ME2" → "D2", "MEIII" → "VIII". The THIRD branch of the
-  // resort tree — 14 MEKANIK resorts that RAMCES had no rows for at all until
+  // resort tree, 14 MEKANIK resorts that RAMCES had no rows for at all until
   // rev0.5.2, the same hole JB was in.
   //
   // THE `$` ANCHOR IS LOAD-BEARING. Alternation is leftmost-first, not
@@ -438,8 +438,8 @@ function startTopbarClock() {
 // scroll position is lost, and the user cannot see what is being replaced.
 //
 // These paint an in-place placeholder instead. The caller pairs them with
-// `apiFetch(..., { background: true })` — the escape hatch api.js already
-// documents — so the overlay stays for the things it is actually right for:
+// `apiFetch(..., { background: true })`, the escape hatch api.js already
+// documents, so the overlay stays for the things it is actually right for:
 // login, the paged fleet bootstrap, and destructive submits.
 //
 // `aria-busy` is the part that matters for assistive tech; a shimmer conveys
@@ -488,7 +488,7 @@ function skeletonCards(containerId, count = 6) {
     .join("");
 }
 
-// `skeletonDone(id)` lived here and had no callers — it was the manual version
+// `skeletonDone(id)` lived here and had no callers, it was the manual version
 // of what the observer below does automatically, and the comment explaining why
 // the observer exists was already sitting directly underneath it.
 //
@@ -497,7 +497,7 @@ function skeletonCards(containerId, count = 6) {
 // announced as loading. Watch instead: when an element marked busy no longer
 // contains a `.skeleton`, its real content has landed.
 //
-// Same approach as stampTableLabels() below, and for the same reason — the
+// Same approach as stampTableLabels() below, and for the same reason, the
 // rows are built from template strings in nine different files.
 (function watchSkeletons() {
   const observer = new MutationObserver((records) => {
@@ -517,7 +517,7 @@ function skeletonCards(containerId, count = 6) {
 // ══════════════════════════════════════════════════════════════════════════
 //
 // Three mode switches in this app were the same control drawn three different
-// ways. Two of them — Pantau Riwayat's and the asset detail's — each carried
+// ways. Two of them, Pantau Riwayat's and the asset detail's, each carried
 // six hand-maintained Tailwind class arrays and a ~30-line function to swap
 // them, in near-identical copies that had already drifted apart.
 //
@@ -655,7 +655,7 @@ function toggleSidebar() {
 // One implementation for every list in the app.
 //
 // Slicing is client-side because every payload already arrives fully cached in
-// `db` / `_historySummary` / the master arrays — paging is a view concern, not
+// `db` / `_historySummary` / the master arrays, paging is a view concern, not
 // a transport one. The single exception is the sparepart movement ledger, an
 // append-only table that can outgrow the client, which pages on the server.
 //
@@ -704,7 +704,7 @@ function paginateList(key, items, defaultSize) {
   };
 }
 
-/** Reset a list to page 1 — call whenever a filter or search term changes. */
+/** Reset a list to page 1, call whenever a filter or search term changes. */
 function resetPage(key) {
   const st = _pagerState.get(key);
   if (st) st.page = 1;
@@ -713,14 +713,14 @@ function resetPage(key) {
 // ── The same paginator, driven by the SERVER (rev0.4.5) ────────────────────
 //
 // Kelola Data Aset and Pantau Riwayat no longer hold the fleet, so they cannot
-// slice an array — they ask for a page and are told the total. These two are
+// slice an array, they ask for a page and are told the total. These two are
 // `paginateList()` split in half: the half that decides what to REQUEST, and
 // the half that builds the same metadata `renderPagerBar()` already renders.
 //
 // Everything else about paging is unchanged, including both of the rules above:
 // filtering and sorting now happen on the server, still BEFORE the slice.
 
-// "Semua" on a server-paged list. Matches MAX_PAGE in api/deps.py — asking for
+// "Semua" on a server-paged list. Matches MAX_PAGE in api/deps.py, asking for
 // more is a 422, and a silently clamped page would misreport its own range.
 const SERVER_PAGE_ALL = 5000;
 
@@ -736,7 +736,7 @@ function pagerRequest(key, defaultSize) {
  * actually returned.
  *
  * `stale` is true when the current page sits past the end of a list that has
- * just shrunk — a filter narrowing under a user who was on page 9. The client
+ * just shrunk, a filter narrowing under a user who was on page 9. The client
  * version clamps and slices in one pass; here the request has already gone out
  * against the old page, so the caller has to re-issue it. Rendering the empty
  * page instead is what makes a search look like it matched nothing.
@@ -767,7 +767,7 @@ function serverPage(key, total, items, defaultSize) {
 // `db.find(x => x.id_aset === uid)` appears in openEdit, deleteAset, the mutasi
 // modal and the history detail screen. `db` used to be every asset, so it
 // always hit; it is now ONE PAGE, so it would miss any asset reached from a
-// different screen — Pantau Riwayat opening a detail view, most obviously.
+// different screen, Pantau Riwayat opening a detail view, most obviously.
 //
 // Every row the client receives from anywhere is written here instead. The cache
 // grows with what the user has actually looked at, not with the fleet, and
@@ -798,7 +798,7 @@ window.asetById = asetById;
  * the wire are snake_case to match the endpoints; the names in the object are
  * the ones renderFilterChips() already prints.
  *
- * An empty value is OMITTED rather than sent blank — the server treats a
+ * An empty value is OMITTED rather than sent blank, the server treats a
  * present-but-empty `pengadaan` as "matches nothing", which is right for a real
  * term and wrong for an unset control.
  */
@@ -834,7 +834,7 @@ function renderPagerBar(mountId, meta, rerender) {
   const mount = document.getElementById(mountId);
   if (!mount) return;
 
-  // Nothing to page and nothing to configure — stay out of the way entirely.
+  // Nothing to page and nothing to configure, stay out of the way entirely.
   if (meta.total === 0) {
     mount.innerHTML = "";
     return;
@@ -911,7 +911,7 @@ function renderPagerBar(mountId, meta, rerender) {
   });
   mount.querySelector(".pager-size")?.addEventListener("change", function () {
     st.size = this.value === "all" ? "all" : parseInt(this.value, 10);
-    // Page size changed — the old page number points somewhere meaningless.
+    // Page size changed, the old page number points somewhere meaningless.
     st.page = 1;
     rerender();
   });
@@ -924,7 +924,7 @@ const _scriptLoadPromises = new Map();
  *
  * Previously this deleted its own cache entry in `onload`, so the second call
  * built a fresh promise, found the tag already in the DOM, and resolved
- * immediately — which happened to work but meant a call racing the first load
+ * immediately, which happened to work but meant a call racing the first load
  * could resolve before the library existed. The promise is now kept forever on
  * success (that is the whole point of the cache) and only evicted on failure,
  * so a transient network error can be retried.
@@ -956,7 +956,7 @@ function loadScript(src) {
 // most of the ~2 MB of blocking script the app shipped on login.
 //
 // Each helper resolves immediately once its library is present, so the many
-// synchronous XLSX.* call sites downstream need no change — only the entry
+// synchronous XLSX.* call sites downstream need no change, only the entry
 // points that reach them have to await.
 const _CDN = {
   xlsx: "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js",
@@ -1069,7 +1069,7 @@ function showToast(message, type = "info") {
  *     await customConfirm({ title, message, confirmText, danger, html })
  *
  * `html: true` renders `message` as markup instead of text, which lets a
- * caller put a couple of `<select>`s in the body — approving a registration
+ * caller put a couple of `<select>`s in the body, approving a registration
  * needs a role and a region chosen at the moment of approval, and a second
  * bespoke modal for one two-field question is how a codebase ends up with
  * five dialogs that behave differently. It is opt-in precisely because
@@ -1091,7 +1091,7 @@ function customConfirm(message) {
     const titleEl = document.getElementById("confirm-title");
     const bodyEl = document.getElementById("confirm-message");
 
-    // Remembered so the dialog is restored for the next caller — otherwise one
+    // Remembered so the dialog is restored for the next caller, otherwise one
     // `danger: true` call would leave every later confirmation red.
     const priorTitle = titleEl ? titleEl.textContent : null;
     const priorOk = okBtn.className;
@@ -1147,9 +1147,9 @@ const KALIBRASI_SEGERA_HARI = 30;
  * passed in 2024 and has been out of certification since 2025 still showed a
  * green LULUS. An expired pass is not a pass. Order of precedence:
  *
- *   no record at all           BLM KALIBRASI   (neutral — nothing has happened)
- *   tanggal_berlaku in the past  JATUH TEMPO   (red — act now)
- *   within KALIBRASI_SEGERA_HARI      SEGERA   (amber — plan it)
+ *   no record at all           BLM KALIBRASI   (neutral, nothing has happened)
+ *   tanggal_berlaku in the past  JATUH TEMPO   (red, act now)
+ *   within KALIBRASI_SEGERA_HARI      SEGERA   (amber, plan it)
  *   otherwise                  the verdict: LULUS / BERSYARAT / GAGAL
  *
  * GAGAL keeps its own red even when in date, because a failed calibration is
@@ -1157,7 +1157,7 @@ const KALIBRASI_SEGERA_HARI = 30;
  *
  * ONE definition, used by Kelola Data Aset and Kelola Data Alat Kerja alike.
  * Those two hand-rolled the same four-branch ladder before this existed, and
- * they had already begun to drift — which is exactly what the `.badge`
+ * they had already begun to drift, which is exactly what the `.badge`
  * component layer in assets/style.css was introduced to stop.
  */
 function kalibrasiBadgeState(item) {
@@ -1169,7 +1169,7 @@ function kalibrasiBadgeState(item) {
   if (berlaku) {
     // Compare as plain dates. `new Date("2026-08-12")` is UTC midnight while
     // Date.now() is local, so a same-day comparison can be off by the timezone
-    // offset — day-granularity arithmetic on the string avoids that entirely.
+    // offset, day-granularity arithmetic on the string avoids that entirely.
     const hariIni = new Date();
     const today = Date.UTC(hariIni.getFullYear(), hariIni.getMonth(), hariIni.getDate());
     const due = Date.parse(`${berlaku.slice(0, 10)}T00:00:00Z`);
@@ -1227,20 +1227,20 @@ function formatUtcToLocal(utcStr) {
 }
 
 // ════════════════════════════════════════════════════════════════════
-// CHART TOOLKIT — shared by the repair dashboard and the stock dashboard
+// CHART TOOLKIT, shared by the repair dashboard and the stock dashboard
 // ════════════════════════════════════════════════════════════════════
 // Both dashboards must read as one system, so the palette, the theme resolver
 // and the mark specs live here rather than being re-declared per module.
 //
 // Every palette below was checked with the data-viz validator against this
-// app's real surfaces (light #ffffff, dark #1f2937) — not against a generic
-// default — for the OKLCH lightness band, the chroma floor, protan/deutan
+// app's real surfaces (light #ffffff, dark #1f2937), not against a generic
+// default, for the OKLCH lightness band, the chroma floor, protan/deutan
 // separation and contrast. Re-run it before changing any hex.
 
 const KAI_VIZ = (() => {
   // Series colors: hue-preserving steps of the KAI brand blue and orange. Each
   // mode's pair clears the lightness band, the chroma floor, CVD separation
-  // (ΔE 25.8 protan light / 28.6 dark) and 3:1 contrast on its own surface —
+  // (ΔE 25.8 protan light / 28.6 dark) and 3:1 contrast on its own surface,
   // the raw brand hex values do not.
   const SERIES = {
     light: { in: "#0b73ca", out: "#cf7217" },
@@ -1255,7 +1255,7 @@ const KAI_VIZ = (() => {
     dark: ["#3987e5", "#d95926", "#199e70", "#c98500", "#d55181", "#008300", "#9085e9", "#e66767"],
   };
 
-  // Status scale — deliberately NOT part of the categorical theme, so a status
+  // Status scale, deliberately NOT part of the categorical theme, so a status
   // color can never impersonate a series. On the light surface `warning` (1.83:1)
   // and `serious` (2.64:1) sit below 3:1 by design; the icon + label pairing is
   // the mitigation, so every use of these MUST ship both. Never color alone.
@@ -1273,7 +1273,7 @@ const KAI_VIZ = (() => {
       series: isDark ? SERIES.dark : SERIES.light,
       categorical: isDark ? CATEGORICAL.dark : CATEGORICAL.light,
       status: STATUS,
-      // Off-axis neutral, e.g. "di atas max" — a state that is neither good nor
+      // Off-axis neutral, e.g. "di atas max", a state that is neither good nor
       // bad and must not borrow a status hue.
       neutral: isDark ? "#6b7280" : "#9ca3af",
       text: isDark ? "#9ca3af" : "#6b7280",
@@ -1301,7 +1301,7 @@ const KAI_VIZ = (() => {
         const meta = chart.getDatasetMeta(di);
         if (meta.hidden) return;
         for (const el of meta.data) {
-          if (!el || el.width < minBarWidth) return; // bars too thin — skip all
+          if (!el || el.width < minBarWidth) return; // bars too thin, skip all
         }
         meta.data.forEach((el, i) => {
           const v = ds.data[i];
@@ -1405,13 +1405,13 @@ const BULAN_PANJANG = [
 ];
 
 // ══════════════════════════════════════════════════════════════════════
-// RESPONSIVE TABLES — one observer, every table
+// RESPONSIVE TABLES, one observer, every table
 // ══════════════════════════════════════════════════════════════════════
 //
 // `.table-stack` in assets/style.css turns each <tr> into a card under 640px
 // and prints each <td>'s caption from its `data-label`. Writing that attribute
-// by hand would mean touching every renderer in js/views/*.js — 24 tables,
-// several hundred <td>s built inside template strings — and every future one
+// by hand would mean touching every renderer in js/views/*.js, 24 tables,
+// several hundred <td>s built inside template strings, and every future one
 // would have to remember.
 //
 // So it is done at RUNTIME instead: the caption is already in the table's own
@@ -1424,20 +1424,20 @@ const BULAN_PANJANG = [
 //     captions. There is no second copy to keep in step.
 //   * Tables are opted IN by `.table-stack` on the <table>, so a genuine grid
 //     (the dashboard matrix, where the columns ARE the data) keeps scrolling.
-//   * `colspan` cells — empty states, spinners — are skipped by the CSS.
+//   * `colspan` cells, empty states, spinners, are skipped by the CSS.
 
 // ── Horizontal scroll affordance ────────────────────────────────────────
 //
 // Marks a `.scroll-hint` strip with how much is left to scroll at each end, so
 // the stylesheet can fade only the end that actually has more content. Pure CSS
-// cannot do this — it has no access to scrollLeft.
+// cannot do this, it has no access to scrollLeft.
 //
 // The dashboard tab bar is the reason: at 390px it is 925px of tabs in 308px of
 // viewport with `scrollbar-none`, so three of six tabs existed with nothing on
 // screen hinting at them.
 function _syncScrollHint(el) {
   const max = el.scrollWidth - el.clientWidth;
-  // "0" means there IS more in that direction — the attribute names read as
+  // "0" means there IS more in that direction, the attribute names read as
   // "distance to the start/end is not zero", which is what the CSS keys on.
   el.setAttribute("data-scroll-start", el.scrollLeft > 4 ? "0" : "1");
   el.setAttribute("data-scroll-end", max - el.scrollLeft > 4 ? "0" : "1");
@@ -1448,8 +1448,8 @@ function wireScrollHints(root = document) {
     if (el.dataset.scrollWired) return;
     el.dataset.scrollWired = "1";
     el.addEventListener("scroll", () => _syncScrollHint(el), { passive: true });
-    // Content and viewport both change after this runs — tabs are re-rendered,
-    // the sidebar opens, the phone rotates — so observe rather than measure once.
+    // Content and viewport both change after this runs, tabs are re-rendered,
+    // the sidebar opens, the phone rotates, so observe rather than measure once.
     if (typeof ResizeObserver === "function") {
       new ResizeObserver(() => _syncScrollHint(el)).observe(el);
     }
@@ -1466,7 +1466,7 @@ function stampTableLabels(root = document) {
     );
     // No header row means no captions to copy down, and a stacked card whose
     // cells have no labels is LESS readable than the scrolling table it
-    // replaced — the reader loses the column positions and gains nothing. Such
+    // replaced, the reader loses the column positions and gains nothing. Such
     // a table opts itself back out rather than degrading.
     if (!heads.some(Boolean)) {
       table.classList.remove("table-stack");
@@ -1488,17 +1488,17 @@ function stampTableLabels(root = document) {
 window.stampTableLabels = stampTableLabels;
 
 // Re-stamp whenever a tbody's rows are replaced. Views render from template
-// strings into innerHTML, so there is no single hook to call — the observer is
+// strings into innerHTML, so there is no single hook to call, the observer is
 // what makes this work without editing 24 renderers.
 (function watchTables() {
   // A LOCAL throttle, not the shared `debounce()` from js/search.js.
   //
-  // This IIFE runs at core.js EVAL time, and search.js is loaded after it — so
+  // This IIFE runs at core.js EVAL time, and search.js is loaded after it, so
   // calling debounce() here threw "debounce is not defined" and killed the rest
   // of core.js, taking the whole page with it. That is precisely the ordering
   // rule CLAUDE.md states: function declarations hoist WITHIN a file, but one
   // file's top-level code cannot reach into a file that has not run yet.
-  // tools/check_js.py cannot catch it — the identifier does exist, just not yet.
+  // tools/check_js.py cannot catch it, the identifier does exist, just not yet.
   let timer = null;
   const restamp = () => {
     clearTimeout(timer);

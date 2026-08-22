@@ -1,7 +1,7 @@
 """
 The bootstrap SUPER_ADMIN account.
 
-`/api/login` no longer registers unknown usernames — it used to create any name
+`/api/login` no longer registers unknown usernames, it used to create any name
 the client sent, with whatever role the client claimed, which meant anyone
 reaching the app could type a name, send role="SUPER_ADMIN" and receive a
 full-privilege token. Closing that hole means a freshly seeded database has no
@@ -23,7 +23,7 @@ import secrets
 
 import models
 
-# Unambiguous alphabet — no O/0, no l/1/I — because this gets read aloud.
+# Unambiguous alphabet, no O/0, no l/1/I, because this gets read aloud.
 _ALPHABET = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789"
 
 
@@ -62,7 +62,7 @@ def run(db):
             print("  di .env untuk menentukan sendiri.")
             print("!" * 62 + "\n")
 
-    # Accounts that predate authentication cannot log in — hashed_password is
+    # Accounts that predate authentication cannot log in, hashed_password is
     # NULL and login() refuses them with a message pointing at Pusat Data. Say
     # so here too, so it is not discovered at a login prompt.
     stale = (
@@ -71,7 +71,7 @@ def run(db):
         .count()
     )
     # `SYSTEM` is excluded deliberately. It is the attribution author
-    # `seeds/aset.py` stamps on all 1,121 imported RiwayatKondisi rows — imported
+    # `seeds/aset.py` stamps on all 1,121 imported RiwayatKondisi rows, imported
     # history has no human author, and inventing one would be worse than saying
     # so. It must NEVER have a password, so counting it among the accounts an
     # admin ought to fix made a fresh, correct install open with a warning about

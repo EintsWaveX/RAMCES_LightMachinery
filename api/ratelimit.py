@@ -2,7 +2,7 @@
 In-process rate limiting for the unauthenticated endpoints.
 
 `/api/login` had none. Nothing anywhere counted a failed attempt, logged one, or
-slowed the next — a bcrypt verify is the only thing that stood between an
+slowed the next, a bcrypt verify is the only thing that stood between an
 attacker and an unlimited online guessing run against a known username, and the
 seeded fleet makes usernames easy to guess.
 
@@ -15,7 +15,7 @@ beside the login route that uses them.
 ── What this is NOT ──
 
 It is a single-process, in-memory counter. It does not survive a restart, and
-two uvicorn workers keep two independent sets of buckets — with `--workers 4` an
+two uvicorn workers keep two independent sets of buckets, with `--workers 4` an
 attacker effectively gets four times the budget. That is a real limitation and
 the honest fix is Redis or a reverse proxy. It is still worth having: the threat
 it actually addresses is an unattended script hammering one deployment, and it
@@ -30,7 +30,7 @@ get in; the script cannot proceed without solving one per attempt.
 
 `X-Forwarded-For` is honoured ONLY when `TRUSTED_PROXY=1`, because behind no
 proxy the header is attacker-controlled and every request could claim a fresh
-IP — which would make the IP buckets decorative. The deployment story for this
+IP, which would make the IP buckets decorative. The deployment story for this
 project is ngrok/Tailscale, so this will matter.
 """
 
@@ -48,7 +48,7 @@ LIMITS = {
     "login:ip": (20, 300),        # 20 attempts / 5 min from one address
     "login:user": (10, 900),      # 10 attempts / 15 min against one username
     "register:ip": (5, 3600),     # 5 sign-ups / hour from one address
-    "captcha:ip": (30, 300),      # 30 challenges / 5 min — one per attempt, plus reloads
+    "captcha:ip": (30, 300),      # 30 challenges / 5 min, one per attempt, plus reloads
 }
 
 # A ceiling on distinct keys, so the dict cannot itself become the attack: an
@@ -129,7 +129,7 @@ def client_ip(request) -> str:
     `X-Forwarded-For` is trusted ONLY when TRUSTED_PROXY=1. Off by default,
     because with no proxy in front the header is attacker-supplied: a script
     that sets a different one per request gets a fresh bucket every time and the
-    IP limits become decoration. Set it when — and only when — something you
+    IP limits become decoration. Set it when, and only when, something you
     control terminates the connection.
     """
     if os.getenv("TRUSTED_PROXY", "").strip() in ("1", "true", "TRUE", "yes"):

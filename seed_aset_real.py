@@ -2,18 +2,18 @@
 Import the real fleet from `modules/Template_Import_Aset_RAMCES.xlsx`.
 
 Replaces the randomly generated demo assets. 1,121 rows across four sheets,
-and every one of them needed cleaning — the four sheets were maintained
+and every one of them needed cleaning, the four sheets were maintained
 separately and disagree about almost everything:
 
   * Dates arrive as real `datetime`, as "21/4/26", as "24/11/2025", as
-    "2026-12-31", and — 160 times — as the literal string "PROSES".
+    "2026-12-31", and, 160 times, as the literal string "PROSES".
   * `ID Lokasi` is filled on two sheets and blank on the other two, which only
     carry `Parent Lokasi`.
   * `Parent Lokasi` uses DI/DII/DIII/DIV on one sheet where the schema wants
     VI/VII/VIII/VIV, and "KAC" for Balaiyasa Kiaracondong (BY3).
   * UPT codes carry stray whitespace: "JB1.3 ", "JB 1.4".
 
-Everything that cannot be resolved is SKIPPED AND COUNTED, never invented — the
+Everything that cannot be resolved is SKIPPED AND COUNTED, never invented, the
 one exception is documented at PROSES_FALLBACK below.
 """
 
@@ -34,7 +34,7 @@ WORKBOOK = os.path.join(
 SHEETS = ["Data Aset", "Data Aset 2026", "Data Aset 2025", "Data Aset JB"]
 
 # A sheet that is itself a register of one unit. `Data Aset JB` is the client's
-# jembatan list — 245 rows, every one of them a bridge asset — even though its
+# jembatan list, 245 rows, every one of them a bridge asset, even though its
 # `Unit Peruntukan` column says "A" on all of them.
 #
 # This is the tie-breaker for the five rows that are parked at BY3A for repair:
@@ -79,7 +79,7 @@ PERUNTUKAN_KE_KODE = {v: k for k, v in PERUNTUKAN_MAP.items()}
 # year is baked into the asset ID, so there is no way to represent "unknown".
 #
 # These are real, planned assets, so they are imported against 1 January of the
-# sheet's own year rather than dropped — and the opening RiwayatKondisi says so
+# sheet's own year rather than dropped, and the opening RiwayatKondisi says so
 # in plain Indonesian, so nobody later reads the date as a fact.
 PROSES_FALLBACK = date(2026, 1, 1)
 PROSES_NOTE = "Aset Baru — tanggal pembelian belum final (PROSES saat impor)."
@@ -118,7 +118,7 @@ def parse_tanggal(value):
     if not text or not any(ch.isdigit() for ch in text):
         return None  # "PROSES" and friends
 
-    # ISO first — it is unambiguous.
+    # ISO first, it is unambiguous.
     m = re.match(r"^(\d{4})-(\d{1,2})-(\d{1,2})", text)
     if m:
         y, mo, d = (int(g) for g in m.groups())
@@ -151,7 +151,7 @@ def read_rows(path: str = WORKBOOK):
     Yield one cleaned dict per data row, plus a dict of skip counters.
 
     Reading is separated from writing so the workbook can be validated without
-    a database — `python -m seed_aset_real` below does exactly that.
+    a database, `python -m seed_aset_real` below does exactly that.
     """
     import openpyxl
 
@@ -202,7 +202,7 @@ def read_rows(path: str = WORKBOOK):
             # every one of the 245 rows on `Data Aset JB` carries "A" even
             # though they are bridge assets sitting on JB resorts. Importing
             # that column verbatim mints 245 permanently wrong composite
-            # primary keys — peruntukan is a segment of id_aset, so it cannot
+            # primary keys, peruntukan is a segment of id_aset, so it cannot
             # be corrected later without rewriting every child row.
             #
             # Verified 1:1 against the katalog's own UNIT column on all 254
@@ -211,7 +211,7 @@ def read_rows(path: str = WORKBOOK):
             # BY* is NOT a unit. Balaiyasa is a workshop; an asset parked at
             # BY3A is visiting for repair and keeps the peruntukan it arrived
             # with. Deriving there would contradict the rule enforced in five
-            # other places that a Balaiyasa is never a reporting region — so
+            # other places that a Balaiyasa is never a reporting region, so
             # for BY*, and for a bare parent code, the sheet's column wins.
             unit = _clean_code(raw[COL_UNIT])[:1] or "A"
             if unit not in PERUNTUKAN_MAP:
@@ -260,7 +260,7 @@ def read_rows(path: str = WORKBOOK):
 # Model resolution
 # ---------------------------------------------------------------------------
 def _model_key(text: str) -> str:
-    """Loose comparison key — case, spaces and punctuation all vary in the sheet
+    """Loose comparison key, case, spaces and punctuation all vary in the sheet
     ('HONDA GX 160' vs 'HONDA GX160', 'Model INR - 10' vs 'INR-10')."""
     return re.sub(r"[^A-Z0-9]", "", (text or "").upper())
 
@@ -269,8 +269,8 @@ def resolve_model(db, kode_alat: str, model_text: str, cache: dict):
     """
     Find or create the `alat_varian` this row's Model column names.
 
-    Matching is loose and tried in three passes — exact-ish key on
-    `nama_varian`, then on `tipe_model`, then containment either way — because
+    Matching is loose and tried in three passes, exact-ish key on
+    `nama_varian`, then on `tipe_model`, then containment either way, because
     the workbook's model strings are free text typed by four different people.
 
     A miss CREATES a bare model row rather than leaving the asset unmodelled.
@@ -314,8 +314,8 @@ def resolve_model(db, kode_alat: str, model_text: str, cache: dict):
 
 # The writer that used to live here (`seed_aset_real`) was superseded by
 # seeds/aset.py::run(). It was dead for a whole release AND still carried the
-# renumber-on-collision bug that doubled the fleet — the exact failure the
-# seeds/ package was written to eliminate — plus a verbatim copy of 25 lines
+# renumber-on-collision bug that doubled the fleet, the exact failure the
+# seeds/ package was written to eliminate, plus a verbatim copy of 25 lines
 # of seeds/aset.py, so every fix had to be made twice. This module now does
 # what its docstring always claimed: it READS and CLEANS the workbook, and
 # writes nothing.

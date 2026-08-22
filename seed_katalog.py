@@ -5,19 +5,19 @@ Since rev0.5.2 the two big tables here are READ FROM THE WORKBOOK rather than
 transcribed. `seed_katalog_sfm.py` opens `modules/KATALOG SFM.xlsx` and this
 module reshapes what it returns:
 
-  KATALOG_ALAT     — the 103 ALAT KERJA (tool types) from
+  KATALOG_ALAT, the 103 ALAT KERJA (tool types) from
                      `KATALOG SFM.xlsx ▸ KATALOG ALAT KERJA`. The authoritative
                      master for `kategori_alat`.
-  KATALOG_UPT      — the 254 resorts from `▸ KATALOG UPT`.
+  KATALOG_UPT, the 254 resorts from `▸ KATALOG UPT`.
 
 What remains hand-kept is only what is genuinely NOT in the workbook:
 
-  KODE_TANPA_KODE  — codes minted for the three rows the client left blank.
-  KATALOG_TAMBAHAN — `BKC`, which the katalog itself marks "Tidak Ditemukan".
-  MODEL_DATA       — MODEL/TYPE rows (`alat_varian`) with the seven-row spec
+  KODE_TANPA_KODE, codes minted for the three rows the client left blank.
+  KATALOG_TAMBAHAN, `BKC`, which the katalog itself marks "Tidak Ditemukan".
+  MODEL_DATA, MODEL/TYPE rows (`alat_varian`) with the seven-row spec
                      block from `Spesifikasi Lengkap Alat Kerja/Rekap Spek
                      RAMCES.docx`, which is a .docx and not machine-read.
-  EXTRA_ALAT_REMAP — the repair of a modelling error. `seed.py` used to carry an
+  EXTRA_ALAT_REMAP, the repair of a modelling error. `seed.py` used to carry an
                      `EXTRA_ALAT_DATA` list of 26 codes invented to hang the
                      sparepart catalogue off; most of them are MODELS, not alat
                      kerja. `HTT 220 V`, `HTT 3 PHASE`, `GEISMAR HTT` and
@@ -49,7 +49,7 @@ def _sfm():
 
 
 # ══════════════════════════════════════════════════════════════════════
-# 1. ALAT KERJA — read straight from KATALOG SFM.xlsx
+# 1. ALAT KERJA, read straight from KATALOG SFM.xlsx
 # ══════════════════════════════════════════════════════════════════════
 #
 # Columns: (kode, nama, alat_ukur, perlu_kalibrasi, kelompok)
@@ -60,8 +60,8 @@ def _sfm():
 # compared the two, so nobody noticed for a release. The list is gone; the
 # workbook is the only path in.
 #
-# `perlu_kalibrasi` is what gates the Kalibrasi form — a wrong flag is a form
-# that silently never appears — which is why seeds/verify.py now compares both
+# `perlu_kalibrasi` is what gates the Kalibrasi form, a wrong flag is a form
+# that silently never appears, which is why seeds/verify.py now compares both
 # booleans row by row against the sheet.
 #
 # `kelompok` comes from the sheet's hidden H/I side table, which enumerates the
@@ -88,13 +88,13 @@ KATALOG_ALAT = [
 
 
 # ══════════════════════════════════════════════════════════════════════
-# 2. MODEL/TYPE — the seven-row spec block from Rekap Spek RAMCES.docx
+# 2. MODEL/TYPE, the seven-row spec block from Rekap Spek RAMCES.docx
 # ══════════════════════════════════════════════════════════════════════
 #
 # The Rekap fixes the template at seven rows: Merk, Model/Type, then five
-# FREE-FORM "Spesifikasi Utama" rows. The labels genuinely differ per tool —
+# FREE-FORM "Spesifikasi Utama" rows. The labels genuinely differ per tool,
 # "Max. Torque" on an impact wrench, "Runtime" on a work light, "Protection
-# Class" on both, "Cutting Wheel" on a rail saw — which is why `alat_varian`
+# Class" on both, "Cutting Wheel" on a rail saw, which is why `alat_varian`
 # stores label/value pairs and not a fixed quartet of named columns.
 #
 # Each entry: {kode_alat, merk, tipe_model, spek: [(label, nilai) x <=5],
@@ -310,20 +310,20 @@ def MODEL_TITLE(merk: str, tipe_model: str) -> str:
     The Rekap's own naming rule: "[MERK] [MODEL/TYPE]", maximum 50 characters.
 
     This is what becomes `alat_varian.nama_varian`, so it is also half of the
-    `(kode_alat, nama_varian)` uniqueness constraint — two models of one tool
+    `(kode_alat, nama_varian)` uniqueness constraint, two models of one tool
     whose names collide inside 50 characters would clash on insert.
     """
     return f"{(merk or '').strip()} {(tipe_model or '').strip()}".strip()[:50]
 
 
 # ══════════════════════════════════════════════════════════════════════
-# 3. EXTRA_ALAT_REMAP — repairing the alat-kerja/model confusion
+# 3. EXTRA_ALAT_REMAP, repairing the alat-kerja/model confusion
 # ══════════════════════════════════════════════════════════════════════
 #
 # Old `seed.py` code → (katalog kode_alat, model name under it).
 #
 # Read it as: "this thing is not an alat kerja; it is THIS model of THAT alat
-# kerja". It drives two migrations at once — the `alat_varian` rows created for
+# kerja". It drives two migrations at once, the `alat_varian` rows created for
 # the sparepart-bearing models, and the re-pointing of SPAREPART_CATALOG's keys
 # so every part still hangs off a code that exists.
 #
@@ -355,7 +355,7 @@ EXTRA_ALAT_REMAP = {
     "LOR2": ("LDD", "LORI DORONG 2 TON"),
     # ── cutting / grinding ──
     "CRL":  ("MPR", "CUTTING RAIL"),
-    "MPR":  ("MPT", "MESIN POTONG/BABAT RUMPUT"),   # collision — katalog wins
+    "MPR":  ("MPT", "MESIN POTONG/BABAT RUMPUT"),   # collision, katalog wins
     "CSW":  ("GGM", "MESIN CHAINSAW"),
     "JHM":  ("JCK", "JACK HAMMER"),
     "GRD":  ("RGM", "MESIN GERINDA MP 12"),
@@ -369,13 +369,13 @@ EXTRA_ALAT_REMAP = {
     "LMP":  ("LMP", "LAMPU PENERANGAN / STAND"),
     # ── track work ──
     "PNP":  ("PAN", "PANPULLER"),
-    "AUK":  ("AKR", "ALAT UKUR KEAUSAN REL"),       # collision — katalog wins
+    "AUK":  ("AKR", "ALAT UKUR KEAUSAN REL"),       # collision, katalog wins
     "MSA":  ("AUA", "MISTAR ANGKATAN / LESTRENG"),
     "DSM":  ("DSM", "DENSOMETER STANDAR"),
-    "STM":  ("HNS", "STAMPER"),                     # collision — katalog wins
+    "STM":  ("HNS", "STAMPER"),                     # collision, katalog wins
     # ── drilling ──
     "MBK":  ("MBK", "MESIN BOR KAYU STANDAR"),
-    "MBT":  ("MBT", "MESIN BOR BETON"),             # collision — katalog wins
+    "MBT":  ("MBT", "MESIN BOR BETON"),             # collision, katalog wins
 }
 
 
@@ -434,7 +434,7 @@ def spek_columns(pairs) -> dict:
     Slots beyond the supplied pairs are explicitly set to None so an UPDATE
     through this helper CLEARS a slot that used to hold something, rather than
     leaving a stale row from a previous spec behind. Anything past five pairs is
-    dropped — the template is fixed at five and silently growing it would put
+    dropped, the template is fixed at five and silently growing it would put
     values on screen that no form can edit.
     """
     out = {}
@@ -478,8 +478,8 @@ def iter_all_models():
             **spek_columns(pairs),
         }
 
-    # The remapped ex-alat-kerja. These carry no spec block — the Rekap has no
-    # entry for them — so they seed as name-only models, visibly incomplete in
+    # The remapped ex-alat-kerja. These carry no spec block, the Rekap has no
+    # entry for them, so they seed as name-only models, visibly incomplete in
     # Pusat Data ▸ Model/Type rather than silently absent.
     for old_kode, (kode, nama) in EXTRA_ALAT_REMAP.items():
         yield {
@@ -501,7 +501,7 @@ def iter_all_models():
 #
 # `BKC` appears 39 times in `Template_Import_Aset_RAMCES.xlsx ▸ Data Aset JB`
 # with the model "SSPC VIS 3", and the katalog's own side-column lists it as
-# "Tidak Ditemukan" — the client could not place it. Dropping it would silently
+# "Tidak Ditemukan", the client could not place it. Dropping it would silently
 # discard 39 real assets, so it is seeded here, OUTSIDE `KATALOG_ALAT`, with a
 # name inferred from the model and the matching `Spesifikasi SSPC VIS 3.pdf` in
 # `modules/`. Move it into KATALOG_ALAT once the client confirms the name.
@@ -514,11 +514,11 @@ ALL_KODE = {row[0] for row in ALL_ALAT}
 
 
 # ══════════════════════════════════════════════════════════════════════
-# 6. UPT / RESORT — KATALOG SFM.xlsx ▸ KATALOG UPT
+# 6. UPT / RESORT, KATALOG SFM.xlsx ▸ KATALOG UPT
 # ══════════════════════════════════════════════════════════════════════
 #
 # 254 rows. The hand-kept list this replaced had 240 and was missing the entire
-# MEKANIK branch — ME1.1, ME1.2, ME2..ME9, MEI..MEIV — which meant 14 real
+# MEKANIK branch, ME1.1, ME1.2, ME2..ME9, MEI..MEIV, which meant 14 real
 # resorts existed in the client's katalog and nowhere in RAMCES. That is the
 # same shape of hole the JB branch was in before rev0.5.0, found the same way:
 # by finally comparing the database against the file.
@@ -539,7 +539,7 @@ KATALOG_UPT = [
 
 # The sheet's own UNIT column, keyed by code. It maps 1:1 onto the code prefix
 # (JR / JB / ME), which is what makes deriving an asset's peruntukan from its
-# location a derivation rather than a guess — see peruntukan_dari_lokasi().
+# location a derivation rather than a guess, see peruntukan_dari_lokasi().
 KATALOG_UPT_UNIT = {
     kode: unit for kode, _n, _pk, _pn, unit in _sfm().upt
 }

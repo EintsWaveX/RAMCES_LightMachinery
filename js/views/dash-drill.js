@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════════════════
-// Dashboard KPI drill-down modal — js/views/dash-drill.js
+// Dashboard KPI drill-down modal, js/views/dash-drill.js
 //
 // Part of the RAMCES frontend. These files are plain classic scripts
 // loaded in a fixed order by index.html - no bundler, no modules. They
@@ -20,22 +20,22 @@
 // It never fetches the fleet. Level 1 of the tree (the region list) is
 // painted entirely from GET /api/aset/dashboard/ringkasan and .../hirarki,
 // both already fetched by the Dashboard's Matriks Kesiapan tab and cached by
-// window.getRingkasan() / window.getDashHirarki() (js/views/dashboard.js) —
+// window.getRingkasan() / window.getDashHirarki() (js/views/dashboard.js),
 // reading them here costs nothing extra unless the cache is cold, in which
 // case it is exactly the one request the strip itself would have made.
 // Level 2 (the assets inside one region) is fetched ONCE per region, on
-// first expand, through window.fetchAsetPage() — the same paged endpoint
+// first expand, through window.fetchAsetPage(), the same paged endpoint
 // Kelola Data Aset renders from. tools/verify/test_boot.py asserts none of
 // this runs until a card is actually clicked.
 //
 // `_rollUp()` below is a deliberate SECOND copy of `_rollUpLokasi()` in
-// dashboard.js — that function is not exported, and duplicating six lines
+// dashboard.js, that function is not exported, and duplicating six lines
 // beat asking S2/S3's file to export a helper for a modal it does not know
 // about. Keep the two in step if the rollup rule ever changes: sum a region's
 // own row plus its own row again under its parent code.
 //
 // Wrapped in one IIFE exporting only `window.openDashDrill` /
-// `window.closeDashDrill` — the same containment trick as
+// `window.closeDashDrill`, the same containment trick as
 // js/a11y-modal.js and js/views/repair-dashboard.js. Nothing else here is a
 // top-level declaration, so it cannot collide with another file sharing this
 // global scope.
@@ -45,7 +45,7 @@
 
   const el = (id) => document.getElementById(id);
   // window.spekEscape is declared in js/views/spektek.js, which loads AFTER
-  // this file — safe here because `esc` only ever CALLS it from inside a
+  // this file, safe here because `esc` only ever CALLS it from inside a
   // function invoked at runtime (a click, a render triggered by one), never
   // at this file's own eval time. See CLAUDE.md's load-order rule.
   const esc = (v) => window.spekEscape(v);
@@ -67,7 +67,7 @@
     perhatian: { title: "Perlu Perhatian", icon: "fa-triangle-exclamation", tab: "repair", onlyKondisi: null },
   };
 
-  // Three reason groups for `perhatian` — see the module docstring for why
+  // Three reason groups for `perhatian`, see the module docstring for why
   // "Belum Kembali" here means "currently sitting at a Balaiyasa" rather than
   // the (much larger) set of every asset that has ever moved: it mirrors the
   // server's `mut_di_balaiyasa`, which is what actually feeds the KPI number.
@@ -77,7 +77,7 @@
     { key: "balaiyasa", label: "Belum Kembali (di Balaiyasa)", icon: "fa-warehouse" },
   ];
 
-  // ── Module state — reset at the top of every openDashDrill() call ──────
+  // ── Module state, reset at the top of every openDashDrill() call ──────
   let _mode = "total";
   let _agg = null; // GET /api/aset/dashboard/ringkasan, for the current dashboard filter
   let _hir = null; // GET /api/aset/dashboard/hirarki, same filter
@@ -87,7 +87,7 @@
   let _onlyKondisi = null;
   // Set only for mode "perhatian" opened from the matrix's ⚑ flag button
   // (data-action="matrix-flag" in js/views/dashboard.js), never from the KPI
-  // card. When set, narrows the LEFT TREE to just this one region — see
+  // card. When set, narrows the LEFT TREE to just this one region, see
   // _buildPerhatianTreeHtml(). Does NOT narrow `_agg`/`_hir` (still the same
   // fleet-wide rollup the KPI card itself reads) or the header/footer counts,
   // which stay fleet-wide on purpose: scoping those too would need a second,
@@ -110,7 +110,7 @@
   // ── The current Dashboard filter, so the tree matches the number the user
   // clicked ──
   // The KPI strip renders from getRingkasan/getDashHirarki scoped to the
-  // Matriks Kesiapan tab's OWN filter (alat/pengadaan/tahun) — see
+  // Matriks Kesiapan tab's OWN filter (alat/pengadaan/tahun), see
   // _renderDashKpiStrip() in dashboard.js. Reading the same filter here, via
   // the (also un-exported, but top-level and therefore visible) _dashFilterFor(),
   // is what keeps "1,077 Total Aset" on the card and "1,077" in this modal
@@ -120,7 +120,7 @@
     return { alat: f?.alat || "", pengadaan: f?.pengadaan || "", tahun: f?.tahun || "" };
   }
 
-  /** Second copy of dashboard.js's _rollUpLokasi(), generalised to N fields — see the header note. */
+  /** Second copy of dashboard.js's _rollUpLokasi(), generalised to N fields, see the header note. */
   function _rollUp(perLokasi, fields) {
     const out = {};
     const add = (code, v) => {
@@ -144,7 +144,7 @@
   }
 
   // ══════════════════════════════════════════════════════════════════════
-  // LEVEL 2 — fetching and filtering one region's assets
+  // LEVEL 2, fetching and filtering one region's assets
   // ══════════════════════════════════════════════════════════════════════
 
   async function _ensureRegionLoaded(code) {
@@ -161,8 +161,8 @@
       if (f.pengadaan) p.set("pengadaan", f.pengadaan);
       if (f.tahun) p.set("tahun", f.tahun);
       // so/tso are pre-filtered SERVER-side, matching the KPI card exactly.
-      // kalibrasi/mutasi/perhatian are narrowed CLIENT-side after fetch — see
-      // _modeFilteredItems()/_groupFilteredItems() — because /api/aset has no
+      // kalibrasi/mutasi/perhatian are narrowed CLIENT-side after fetch, see
+      // _modeFilteredItems()/_groupFilteredItems(), because /api/aset has no
       // "perlu_kalibrasi" or "mutasi_count>0" filter of its own, and a region
       // is small enough that filtering its own page is cheap.
       if (_mode === "so") p.set("status", "SO");
@@ -230,7 +230,7 @@
     return arr;
   }
 
-  // `dir` drives the sort-direction icon (_updateSortIcon) — set explicitly
+  // `dir` drives the sort-direction icon (_updateSortIcon), set explicitly
   // per option rather than guessed from the label, because "Jatuh Tempo
   // Terdekat" is ascending (soonest due first) while "Kejadian Terbanyak" is
   // descending, and no naming convention short of stating it plainly covers
@@ -259,7 +259,7 @@
   }
 
   // Region visibility under the search box. A region whose NAME/code matches
-  // is shown regardless of whether it has been expanded yet — the tree cannot
+  // is shown regardless of whether it has been expanded yet, the tree cannot
   // know its unfetched contents. A region already loaded is ALSO shown (and
   // auto-expanded) when one of its cached rows matches, via the same matcher
   // every other search box in this app uses.
@@ -310,7 +310,7 @@
               : "text-red-600 dark:text-red-400";
       return `<span class="text-xs font-bold ${cls}">${pct === null ? "—" : `${pct}%`}</span>`;
     }
-    // total / perhatian (perhatian never reaches this — see _buildPerhatianTreeHtml)
+    // total / perhatian (perhatian never reaches this, see _buildPerhatianTreeHtml)
     return `<span class="badge badge-neutral">${aggRoll.so + aggRoll.tso}</span>`;
   }
 
@@ -443,7 +443,7 @@
     if (_mode === "perhatian") {
       // Deliberately BOTH numbers: `total` is the deduplicated KPI figure (one
       // asset counted once even if TSO and overdue at the same time), the sum
-      // of the three groups is not — an asset appearing in two groups is two
+      // of the three groups is not, an asset appearing in two groups is two
       // reasons. Printing only one of them reads as a bug; see CLAUDE.md.
       const sumReasons = (_hir.perhatian.tso || 0) + (_hir.perhatian.kalibrasi || 0) + (_hir.perhatian.mutasi || 0);
       mount.textContent = `${_kpiFmt(_hir.perhatian.total)} aset · ${_kpiFmt(sumReasons)} alasan`;
@@ -540,7 +540,7 @@
 
   // Every tab already renders _pilihAsetEmpty() when nothing is selected, so
   // disabling the other three tabs until a click landed on an asset row was
-  // never load-bearing — it only stopped a user from previewing "this is
+  // never load-bearing, it only stopped a user from previewing "this is
   // where Kalibrasi will show up" before picking anything.
   function _tabEnabled(_t) {
     return true;
@@ -578,7 +578,7 @@
   }
 
   /** Flip the leading icon on a `.toolbar-select` to match the active option's
-   *  direction — asc (A-Z / soonest / lowest first) vs desc (Z-A / newest /
+   *  direction, asc (A-Z / soonest / lowest first) vs desc (Z-A / newest /
    *  highest first). Falls back to "asc" so a freshly-populated select with no
    *  match yet still shows a sensible icon rather than none. */
   function _updateSortIcon(selectEl, opts, currentVal) {
@@ -962,7 +962,7 @@
   }
 
   // ══════════════════════════════════════════════════════════════════════
-  // WIRING — every listener guarded by a `dataset.wired` flag so re-opening
+  // WIRING, every listener guarded by a `dataset.wired` flag so re-opening
   // the modal (openDashDrill called again) cannot attach a second copy.
   // ══════════════════════════════════════════════════════════════════════
 
@@ -1099,18 +1099,18 @@
   }
 
   // ══════════════════════════════════════════════════════════════════════
-  // OPEN / CLOSE — the only two exports
+  // OPEN / CLOSE, the only two exports
   // ══════════════════════════════════════════════════════════════════════
 
   // Guards the fade+scale open/close pair below against a rapid close-then-
   // reopen: closeDashDrill() defers adding `hidden` until the CSS transition
   // has had time to play, and if openDashDrill() runs again before that timer
-  // fires, it must cancel the pending hide — otherwise the freshly reopened
+  // fires, it must cancel the pending hide, otherwise the freshly reopened
   // modal would vanish 180ms later.
   let _closeTimer = null;
 
-  // `opts.lokasi` — a region code (the same codes `lokasiData` carries, e.g.
-  // "D1", "VIII", "BY1") — scopes mode "perhatian"'s left tree to just that
+  // `opts.lokasi`, a region code (the same codes `lokasiData` carries, e.g.
+  // "D1", "VIII", "BY1"), scopes mode "perhatian"'s left tree to just that
   // region. Only the matrix's ⚑ button (js/views/dashboard.js) passes it;
   // every other caller (all seven KPI cards) calls with one argument, and
   // `opts = {}` there is exactly the fleet-wide behaviour this modal has
@@ -1141,7 +1141,7 @@
     modal.classList.remove("is-drilled");
     // Fade + scale in. `hidden` must come off (and the browser must paint a
     // frame with `.is-open` still absent) before adding it, or the opacity/
-    // transform change has nothing to transition FROM — a single
+    // transform change has nothing to transition FROM, a single
     // requestAnimationFrame is sometimes coalesced with the class removal
     // above by the browser, so this double-rAF is the standard guard against
     // that. See assets/style.css for the transition itself.
@@ -1163,7 +1163,7 @@
     const f = _currentDashFilter();
     const [agg, hir] = await Promise.all([window.getRingkasan(f), window.getDashHirarki(f)]);
     // The user may have already closed the modal (or opened a different card)
-    // by the time this resolves — painting into a hidden/retargeted modal
+    // by the time this resolves, painting into a hidden/retargeted modal
     // would silently overwrite whatever the newer call already rendered.
     if (el("dash-drill-modal")?.classList.contains("hidden")) return;
     if (_mode !== mode && _MODE_SPEC[mode]) return;
@@ -1212,7 +1212,7 @@
       return;
     }
     // Let the fade-out play before pulling the modal out of layout. Guarded
-    // against a reopen racing this timer — see the comment on _closeTimer.
+    // against a reopen racing this timer, see the comment on _closeTimer.
     if (_closeTimer) clearTimeout(_closeTimer);
     _closeTimer = setTimeout(() => {
       _closeTimer = null;

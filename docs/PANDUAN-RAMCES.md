@@ -1,6 +1,6 @@
 # Panduan Pengguna RAMCES
 
-**Sistem Pemantauan Aset Alat Kerja — PT Kereta Api Indonesia (Persero)**
+**Sistem Pemantauan Aset Alat Kerja, PT Kereta Api Indonesia (Persero)**
 
 Panduan ini ditujukan untuk semua pengguna RAMCES: teknisi di lapangan, admin
 wilayah, sampai pengelola pusat. Anda **tidak perlu latar belakang teknis** untuk
@@ -17,13 +17,13 @@ jadi apa yang Anda lihat di layar akan sama persis dengan yang tertulis di sini.
 1. [Apa itu RAMCES](#1-apa-itu-ramces)
 2. [Masuk ke RAMCES](#2-masuk-ke-ramces)
 3. [Mengenal Layar RAMCES](#3-mengenal-layar-ramces)
-4. [Dashboard — membaca kondisi armada](#4-dashboard--membaca-kondisi-armada)
-5. [Kelola Data Alat Kerja — mendaftarkan aset](#5-kelola-data-alat-kerja--mendaftarkan-aset)
-6. [Kelola Data Aset — mencari dan mencetak](#6-kelola-data-aset--mencari-dan-mencetak)
+4. [Dashboard, membaca kondisi armada](#4-dashboard--membaca-kondisi-armada)
+5. [Kelola Data Alat Kerja, mendaftarkan aset](#5-kelola-data-alat-kerja--mendaftarkan-aset)
+6. [Kelola Data Aset, mencari dan mencetak](#6-kelola-data-aset--mencari-dan-mencetak)
 7. [Memperbarui kondisi, kalibrasi, dan mutasi](#7-memperbarui-kondisi-kalibrasi-dan-mutasi)
 8. [Pantau Riwayat Aset](#8-pantau-riwayat-aset)
-9. [Kelola Inventaris — suku cadang dan gudang](#9-kelola-inventaris--suku-cadang-dan-gudang)
-10. [Proses Laporan — ekspor Excel dan PDF](#10-proses-laporan--ekspor-excel-dan-pdf)
+9. [Kelola Inventaris, suku cadang dan gudang](#9-kelola-inventaris--suku-cadang-dan-gudang)
+10. [Proses Laporan, ekspor Excel dan PDF](#10-proses-laporan--ekspor-excel-dan-pdf)
 11. [Pusat Data (khusus Super Admin)](#11-pusat-data-khusus-super-admin)
 12. [Pulihkan Aset Afkir](#12-pulihkan-aset-afkir)
 13. [Kartu Aset lewat QR (di lapangan)](#13-kartu-aset-lewat-qr-di-lapangan)
@@ -35,7 +35,7 @@ jadi apa yang Anda lihat di layar akan sama persis dengan yang tertulis di sini.
 ## 1. Apa itu RAMCES
 
 RAMCES adalah sistem untuk **mencatat dan memantau alat kerja ringan** milik PT
-Kereta Api Indonesia — genset, mesin bor, *rail grinding machine*, *track
+Kereta Api Indonesia, genset, mesin bor, *rail grinding machine*, *track
 geometry trolley*, *impact wrench*, dan sejenisnya.
 
 Sistem ini menjawab empat pertanyaan yang setiap hari ditanyakan orang:
@@ -71,13 +71,13 @@ RAMCES memakai istilah yang sama dengan yang dipakai di lapangan.
 > **Penting soal Balaiyasa.** Balaiyasa adalah tempat alat *diperbaiki*, bukan
 > tempat alat *bermarkas*. Kalau DAOP 1 mengirim genset rusaknya ke Balaiyasa
 > Cirebon, genset itu **tetap milik DAOP 1** dan tetap dihitung di laporan
-> DAOP 1. Yang berubah hanya posisi fisiknya. Ini disengaja — supaya angka
+> DAOP 1. Yang berubah hanya posisi fisiknya. Ini disengaja, supaya angka
 > perbaikan sebuah DAOP tidak "hilang" begitu alatnya dikirim ke bengkel.
 
-**Aset vs suku cadang** — dua hal yang berbeda dan dikelola terpisah:
+**Aset vs suku cadang**, dua hal yang berbeda dan dikelola terpisah:
 
-- **Aset / alat kerja** — mesinnya sendiri. Punya ID unik, punya riwayat.
-- **Suku cadang** — onderdil habis pakai (elektroda, gearcase, lampu LED).
+- **Aset / alat kerja**, mesinnya sendiri. Punya ID unik, punya riwayat.
+- **Suku cadang**, onderdil habis pakai (elektroda, gearcase, lampu LED).
   Dihitung per *gudang*, bukan per DAOP.
 
 ---
@@ -90,12 +90,12 @@ Masuk ke RAMCES sekarang **satu langkah**: nama pengguna dan password.
 
 1. Ketik **nama pengguna** Anda.
 2. Ketik **password**. Tekan ikon mata di ujung kolom untuk memastikan ketikan
-   Anda benar — berguna saat mengetik di layar ponsel di bawah sinar matahari.
+   Anda benar, berguna saat mengetik di layar ponsel di bawah sinar matahari.
 3. Tekan **Masuk**.
 
 > **Peran dan wilayah tidak lagi dipilih saat masuk.** Keduanya melekat pada akun
 > Anda dan dibaca sistem dari data pengguna. Sebelumnya Anda diminta memilih
-> sendiri peran dan wilayah di layar masuk — itulah lubang keamanan yang kini
+> sendiri peran dan wilayah di layar masuk, itulah lubang keamanan yang kini
 > sudah ditutup.
 
 ### Peran yang mungkin Anda miliki
@@ -103,14 +103,14 @@ Masuk ke RAMCES sekarang **satu langkah**: nama pengguna dan password.
 | Peran | Untuk siapa | Bisa apa saja |
 |---|---|---|
 | **TEKNISI** | Petugas lapangan | Melihat data dan melaporkan kondisi alat |
-| **ADMIN WILAYAH** | Admin DAOP/DIVRE | Semua di atas, **ditambah** menambah, mengubah, dan memutasi aset — **hanya di wilayahnya sendiri** |
+| **ADMIN WILAYAH** | Admin DAOP/DIVRE | Semua di atas, **ditambah** menambah, mengubah, dan memutasi aset, **hanya di wilayahnya sendiri** |
 | **SUPER ADMIN** | Pengelola pusat | Semua di atas, **ditambah** Pusat Data dan Pulihkan Aset Afkir, tanpa batasan wilayah |
 
 ### Belum punya akun?
 
 RAMCES **tidak lagi membuatkan akun secara otomatis**. Hubungi SUPER ADMIN (atau
 Admin Wilayah Anda, yang dapat membuat akun TEKNISI) untuk dibuatkan. Mereka akan
-memberi Anda password awal — catat dan segera ganti.
+memberi Anda password awal, catat dan segera ganti.
 
 ### Lupa password, atau akun lama tidak bisa masuk?
 
@@ -143,14 +143,14 @@ Layar RAMCES terbagi tiga bagian.
 
 **Menu samping (kiri).** Semua halaman diakses dari sini, dikelompokkan menjadi:
 
-- **MENU UTAMA** — Dashboard
-- **MANAJEMEN ASET** — Kelola Data Alat Kerja, Kelola Inventaris, Kelola Data
+- **MENU UTAMA**, Dashboard
+- **MANAJEMEN ASET**, Kelola Data Alat Kerja, Kelola Inventaris, Kelola Data
   Aset, Pantau Riwayat Aset, Proses Laporan
-- **ADMINISTRASI** — Pusat Data, Pulihkan Aset Afkir *(hanya muncul untuk Super Admin)*
+- **ADMINISTRASI**, Pusat Data, Pulihkan Aset Afkir *(hanya muncul untuk Super Admin)*
 
 Di bagian paling bawah ada **Ganti Tema** untuk berpindah antara tampilan terang
 dan gelap. Pilihan ini diingat sistem, jadi tidak perlu diatur ulang tiap masuk.
-Kalau Anda belum pernah menekannya, RAMCES **mengikuti pengaturan perangkat Anda** —
+Kalau Anda belum pernah menekannya, RAMCES **mengikuti pengaturan perangkat Anda**,
 ponsel atau komputer yang sudah disetel mode gelap akan langsung membuka RAMCES
 dalam mode gelap.
 
@@ -163,7 +163,7 @@ profil (termasuk tombol **Keluar**).
 
 **Titik hijau kecil** di sebelah jam adalah **indikator koneksi**. Selama titik
 itu hijau, RAMCES tersambung ke server dan layar Anda akan **memperbarui diri
-sendiri** ketika rekan kerja Anda menyimpan sesuatu — Anda tidak perlu menekan
+sendiri** ketika rekan kerja Anda menyimpan sesuatu, Anda tidak perlu menekan
 tombol muat ulang. Kalau titik berubah warna atau muncul tulisan
 "Menghubungkan...", sambungan sedang terganggu; sistem akan mencoba menyambung
 kembali dengan sendirinya.
@@ -171,7 +171,7 @@ kembali dengan sendirinya.
 ### Perbedaan tampilan menurut peran
 
 Menu yang muncul berbeda-beda tergantung peran Anda. Contoh di bawah adalah
-tampilan seorang **TEKNISI** — perhatikan menu *Kelola Data Alat Kerja* tidak ada,
+tampilan seorang **TEKNISI**, perhatikan menu *Kelola Data Alat Kerja* tidak ada,
 karena teknisi tidak mendaftarkan aset baru:
 
 ![Tampilan untuk peran TEKNISI](panduan/img/38-tampilan-teknisi.webp)
@@ -187,7 +187,7 @@ dijangkau ibu jari:
 |---|---|
 | **Dashboard** | Ringkasan kesiapan armada |
 | **Data Aset** | Daftar seluruh alat kerja |
-| **Lapor** (tombol oranye di tengah) | Daftar aset dengan kolom pencarian langsung aktif — cari alat yang ada di depan Anda, lalu buka untuk melaporkan kondisinya |
+| **Lapor** (tombol oranye di tengah) | Daftar aset dengan kolom pencarian langsung aktif, cari alat yang ada di depan Anda, lalu buka untuk melaporkan kondisinya |
 | **Riwayat** | Riwayat perbaikan, mutasi, dan kalibrasi |
 | **Menu** | Membuka menu samping untuk halaman lainnya |
 
@@ -197,14 +197,14 @@ tidak perlu menggeser layar ke samping untuk membaca kolom yang tersembunyi.
 
 ### Lonceng aktivitas
 
-Ikon lonceng di kanan atas menampilkan perubahan yang terjadi selama Anda masuk —
+Ikon lonceng di kanan atas menampilkan perubahan yang terjadi selama Anda masuk,
 misalnya ada rekan yang melaporkan kondisi alat atau mengubah stok sparepart.
 Angka merah menunjukkan berapa kejadian yang belum Anda lihat. Daftar ini hanya
 berlaku selama satu sesi; catatan lengkapnya ada di **Pantau Riwayat Aset**.
 
 ---
 
-## 4. Dashboard — membaca kondisi armada
+## 4. Dashboard, membaca kondisi armada
 
 Dashboard adalah halaman pertama setelah Anda masuk.
 
@@ -217,7 +217,7 @@ Dashboard adalah halaman pertama setelah Anda masuk.
 | **TOTAL ASET** | Jumlah aset aktif (yang sudah afkir tidak dihitung) |
 | **SIAP OPERASI** | Berapa yang berstatus SO |
 | **TIDAK SIAP** | Berapa yang berstatus TSO |
-| **KETERSEDIAAN** | Persentase SO dibagi total — makin tinggi makin baik |
+| **KETERSEDIAAN** | Persentase SO dibagi total, makin tinggi makin baik |
 | **BENCHMARK** | Target pembanding, beserta selisih Anda terhadap target |
 
 Di bawah kotak angka ada keterangan **"Menghitung: …"** yang menyebutkan
@@ -232,7 +232,7 @@ saringannya sendiri**, tepat di atas isi tab tersebut:
 | Tab | Saringan |
 |---|---|
 | Matriks Kesiapan, Grafik Ketersediaan, Ketersediaan per Lokasi | Alat Kerja · Pengadaan · Tahun |
-| Tren Perbaikan | Alat Kerja · Pengadaan · Tahun (satu tahun saja — grafiknya memang 12 bulan dalam satu tahun) |
+| Tren Perbaikan | Alat Kerja · Pengadaan · Tahun (satu tahun saja, grafiknya memang 12 bulan dalam satu tahun) |
 | Laporan Perbaikan, Kurva MCF | Lokasi · Tahun |
 
 **Saringan tiap tab berdiri sendiri.** Menyaring Grafik Ketersediaan ke satu
@@ -242,7 +242,7 @@ TSO, dan seterusnya) juga ikut pindah ke tab yang benar-benar memakainya.
 ### Pilihan Tahun hanya menampilkan tahun yang ada datanya
 
 Setiap kotak pilihan tahun di seluruh RAMCES kini hanya memuat tahun yang
-benar-benar berisi data, lengkap dengan jumlahnya dalam kurung — misalnya
+benar-benar berisi data, lengkap dengan jumlahnya dalam kurung, misalnya
 `2025 (729)`. Tahun kosong tidak lagi ditampilkan, jadi Anda tidak akan memilih
 tahun yang ternyata tidak berisi apa-apa. Angka dalam kurung selalu mengikuti
 menu tempat Anda berada: di Pantau Riwayat itu jumlah baris riwayat, di Pulihkan
@@ -256,7 +256,7 @@ Tabel ini adalah ringkasan paling padat di RAMCES: **satu baris per wilayah**,
 **satu kolom per UPT/resort**. Isi setiap kotak dibaca `SO/TSO`.
 
 Contoh: `0/1` berwarna merah berarti di resort itu ada 1 alat dan sedang rusak.
-`1/0` berwarna hijau berarti ada 1 alat dan sehat. Tanda `—` berarti tidak ada
+`1/0` berwarna hijau berarti ada 1 alat dan sehat. Tanda `, ` berarti tidak ada
 alat di resort tersebut. Kolom **Total**, **SO**, dan **TSO** di ujung kanan
 merangkum satu wilayah penuh.
 
@@ -283,10 +283,10 @@ Panel ini meniru laporan perbaikan cetak milik UPT. Tiga angka utamanya:
 
 > **Ini bagian yang paling sering disalahpahami.** *Masuk* dan *Selesai*
 > mengikuti tahun yang Anda pilih, tetapi **Sedang Perbaikan adalah hitungan
-> hari ini**, bukan angka tahun tersebut — karena itu kotaknya diberi keterangan
+> hari ini**, bukan angka tahun tersebut, karena itu kotaknya diberi keterangan
 > **(saat ini)**. Jadi wajar kalau Anda memilih tahun
 > 2022 dan *Sedang Perbaikan* tetap menampilkan angka yang sama dengan tahun
-> 2026 — angka itu memang selalu menggambarkan kondisi sekarang.
+> 2026, angka itu memang selalu menggambarkan kondisi sekarang.
 >
 > Kalau Anda memilih **Semua Tahun**, barulah ketiganya cocok:
 > `Masuk = Selesai + Diafkir + Sedang Perbaikan`.
@@ -298,7 +298,7 @@ Perbaikan**, dan **Tren Perbaikan Bulanan**.
 
 Kurva MCF punya **tabnya sendiri** di ujung kanan baris tab, lengkap dengan
 penyaring Lokasi dan Tahun. Penyaring di tab ini dan di tab Laporan Perbaikan
-selalu seiring — mengubah salah satu ikut mengubah yang lain, jadi Anda tidak
+selalu seiring, mengubah salah satu ikut mengubah yang lain, jadi Anda tidak
 perlu menyetel dua kali.
 
 ![Kurva MCF](panduan/img/08-dashboard-mcf.webp)
@@ -306,13 +306,13 @@ perlu menyetel dua kali.
 MCF menunjukkan **rata-rata jumlah perbaikan per unit alat** sejak awal tahun.
 Cara membacanya sederhana:
 
-- **Garis lurus** — laju kerusakan tetap.
-- **Melengkung naik** — kondisi armada memburuk, kerusakan makin sering.
-- **Melengkung turun** — pemeliharaan membaik.
+- **Garis lurus**, laju kerusakan tetap.
+- **Melengkung naik**, kondisi armada memburuk, kerusakan makin sering.
+- **Melengkung turun**, pemeliharaan membaik.
 
 ---
 
-## 5. Kelola Data Alat Kerja — mendaftarkan aset
+## 5. Kelola Data Alat Kerja, mendaftarkan aset
 
 Halaman ini untuk **mendaftarkan alat kerja baru** dan melihat daftar lengkapnya.
 Tersedia untuk Admin Wilayah dan Super Admin.
@@ -331,7 +331,7 @@ Isi kolom berurutan:
 |---|---|---|
 | 1 | **Alat Kerja** | Jenis alat, dipilih dari daftar |
 | 1b | **Model / Type** | Merk dan tipe alat tersebut. Daftarnya ikut berubah setiap kali kolom 1 diganti |
-| — | **Nomor Seri** | Nomor pada pelat nama alat (opsional) |
+| | **Nomor Seri** | Nomor pada pelat nama alat (opsional) |
 | 2 | **Sumber Pengadaan** | **PUSAT** atau **DAOP / DIVRE** |
 | 3 | **Tanggal Pembelian** | Tanggal alat dibeli |
 | 4 | **Unit Peruntukan** | JALAN REL, JEMBATAN, MEKANIK, atau BALAIYASA |
@@ -355,7 +355,7 @@ Lalu tekan **Simpan Aset**.
 ### Memahami ID Aset
 
 Setiap aset mendapat ID otomatis seperti **`6.RGM.1.24.A.D1`**. ID ini bukan
-nomor acak — tiap bagiannya punya arti:
+nomor acak, tiap bagiannya punya arti:
 
 | `6` | `RGM` | `1` | `24` | `A` | `D1` |
 |---|---|---|---|---|---|
@@ -373,7 +373,7 @@ hanya dari ID-nya.
 ![Impor Massal](panduan/img/12-kdak-impor-massal.webp)
 
 1. Tekan **Impor Massal**.
-2. Tekan **Unduh Contoh Excel** — Anda akan mendapat berkas dengan kolom yang
+2. Tekan **Unduh Contoh Excel**, Anda akan mendapat berkas dengan kolom yang
    sudah benar.
 3. Isi berkas tersebut di Excel.
 4. Tekan **Impor dari Excel**, pilih berkas Anda, lalu proses.
@@ -390,7 +390,7 @@ menghapus.
 
 ---
 
-## 6. Kelola Data Aset — mencari dan mencetak
+## 6. Kelola Data Aset, mencari dan mencetak
 
 Halaman ini menampilkan seluruh aset dalam bentuk **kartu**, satu kartu per alat.
 
@@ -416,7 +416,7 @@ Ketik apa saja di kotak pencarian: ID aset, nama alat, nomor seri, atau nama
 lokasi. Hasil menyesuaikan sambil Anda mengetik.
 
 > **Pencarian lokasi bersifat tepat.** Mengetik `DAOP 1` hanya menampilkan aset
-> DAOP 1 — **DAOP 10 tidak akan ikut muncul**. Begitu pula `D1` tidak akan
+> DAOP 1, **DAOP 10 tidak akan ikut muncul**. Begitu pula `D1` tidak akan
 > menarik `D10`. Ini disengaja, supaya hasil pencarian bisa dipercaya. Kalau
 > Anda memang ingin melihat DAOP 10, ketiklah `DAOP 10`.
 >
@@ -429,7 +429,7 @@ lokasi. Hasil menyesuaikan sambil Anda mengetik.
 
 Tekan **Urutkan** untuk membuka panel penyaring lengkap. Anda bisa mengurutkan
 berdasarkan Kode ID, Nama/Kode Alat, Pengadaan, Tahun Beli, Peruntukan, atau
-Nama/Kode Lokasi — masing-masing dengan penyaring tambahan (rentang tahun,
+Nama/Kode Lokasi, masing-masing dengan penyaring tambahan (rentang tahun,
 peruntukan tertentu, lokasi tertentu) dan arah urutan.
 
 Tekan **Terapkan** untuk memakai, atau **Reset** untuk mengembalikan ke semula.
@@ -437,7 +437,7 @@ Tekan **Terapkan** untuk memakai, atau **Reset** untuk mengembalikan ke semula.
 ### Mengunduh daftar
 
 Tombol **Excel** dan **PDF** di kanan atas mengunduh daftar yang **sedang
-tampil** — termasuk hasil pencarian dan penyaringan Anda. Jadi saring dulu, baru
+tampil**, termasuk hasil pencarian dan penyaringan Anda. Jadi saring dulu, baru
 unduh.
 
 ### Mencetak label QR
@@ -447,8 +447,8 @@ unduh.
 Tekan **Pindai/Cetak QR** pada kartu aset. Akan muncul label berisi kode QR, ID
 aset, kode alat, dan kode UPT.
 
-- **Unduh PNG** — untuk disimpan sebagai gambar.
-- **Cetak PDF** — untuk langsung dicetak dan ditempel di alat.
+- **Unduh PNG**, untuk disimpan sebagai gambar.
+- **Cetak PDF**, untuk langsung dicetak dan ditempel di alat.
 
 Label inilah yang nanti dipindai petugas di lapangan (lihat [bab 13](#13-kartu-aset-lewat-qr-di-lapangan)).
 
@@ -467,31 +467,31 @@ beli, lokasi, UPT, peruntukan) berdampingan dengan kartu **Spesifikasi Alat
 Kerja** berikut fotonya. Petugas yang berpindah dari ponsel ke layar ini melihat
 mesin yang sama, digambarkan dengan cara yang sama.
 
-Di bawahnya ada tab **Kondisi Pemeliharaan** dan — bila jenis alatnya memang
-dikalibrasi — **Pelaporan Kalibrasi**.
+Di bawahnya ada tab **Kondisi Pemeliharaan** dan, bila jenis alatnya memang
+dikalibrasi, **Pelaporan Kalibrasi**.
 
 ### Melaporkan kondisi (SO / TSO)
 
 Pada tab **Kondisi Pemeliharaan**, isi:
 
-1. **Tanggal Perbaikan** — kapan pemeriksaan/perbaikan dilakukan.
-2. **Teknisi Bertugas** — terisi otomatis dengan nama Anda.
-3. **UPT Pengirim** — resort yang melaporkan.
-4. **Unit Peruntukan** — sesuaikan bila perlu.
-5. **Status Kondisi Terkini** — pilih **SO — Siap Operasi** atau
-   **TSO — Tidak Siap**.
-6. **Catatan Teknisi (Perbaikan)** — tuliskan tindakan yang dilakukan.
-7. **Sparepart yang Dipakai** *(opsional)* — lihat di bawah.
+1. **Tanggal Perbaikan**, kapan pemeriksaan/perbaikan dilakukan.
+2. **Teknisi Bertugas**, terisi otomatis dengan nama Anda.
+3. **UPT Pengirim**, resort yang melaporkan.
+4. **Unit Peruntukan**, sesuaikan bila perlu.
+5. **Status Kondisi Terkini**, pilih **SO, Siap Operasi** atau
+   **TSO, Tidak Siap**.
+6. **Catatan Teknisi (Perbaikan)**, tuliskan tindakan yang dilakukan.
+7. **Sparepart yang Dipakai** *(opsional)*, lihat di bawah.
 
 Tekan **Simpan Pembaruan**.
 
-Setiap kali Anda menyimpan, RAMCES **menambahkan satu baris riwayat baru** —
+Setiap kali Anda menyimpan, RAMCES **menambahkan satu baris riwayat baru**,
 data lama tidak pernah ditimpa. Karena itu riwayat sebuah alat selalu utuh dan
 bisa ditelusuri dari awal.
 
 > Kalau alat sedang berada di Balaiyasa, laporan perbaikan Anda tetap tercatat
 > atas nama DAOP/DIVRE pemilik alat, bukan atas nama bengkel. Anda tidak perlu
-> melakukan apa pun — sistem mengurusnya sendiri.
+> melakukan apa pun, sistem mengurusnya sendiri.
 
 #### Mencatat sparepart yang dipakai
 
@@ -502,7 +502,7 @@ menghubungkan pemeliharaan dengan Kelola Inventaris: begitu laporan disimpan,
 1. Pilih **Gudang** asal barang.
 2. Tekan **+ Tambah Sparepart**, lalu pilih barangnya dan isi jumlahnya.
 3. Di sebelah kanan tiap baris muncul **sisa stok** dan **nilainya**. Kalau
-   jumlah yang Anda minta melebihi stok, tulisannya berubah merah — perbaiki
+   jumlah yang Anda minta melebihi stok, tulisannya berubah merah, perbaiki
    dulu sebelum menyimpan.
 4. **Total biaya** di kanan bawah menjumlahkan seluruh baris.
 
@@ -532,7 +532,7 @@ di lapangan bisa langsung mencatat dari ponsel.
 Pindah ke tab **Pelaporan Kalibrasi**, lalu isi:
 
 > **Tab ini tidak selalu ada.** RAMCES hanya menampilkannya untuk jenis alat
-> yang memang dikalibrasi menurut katalog — misalnya Track Gauge atau Rail Flaw
+> yang memang dikalibrasi menurut katalog, misalnya Track Gauge atau Rail Flaw
 > Detector. Genset atau impact wrench *dirawat*, bukan dikalibrasi, jadi tabnya
 > disembunyikan supaya tidak ada catatan kalibrasi yang sebenarnya tidak berarti.
 
@@ -557,19 +557,19 @@ kembali kapan saja dari tabel Riwayat Kalibrasi.
 
 ![Formulir Proses Mutasi Aset](panduan/img/20-detail-mutasi.webp)
 
-Mutasi dipakai saat alat **berpindah tempat** — misalnya dikirim ke Balaiyasa
+Mutasi dipakai saat alat **berpindah tempat**, misalnya dikirim ke Balaiyasa
 untuk perbaikan besar, atau dipinjamkan ke resort lain.
 
 1. **Lokasi Asal** dan **Lokasi Kini** terisi otomatis.
 2. Isi **Nama Petugas**.
 3. Pilih **Tujuan Mutasi** (DAOP/DIVRE/Balaiyasa tujuan).
 4. Pilih **UPT Tujuan** bila ada (opsional).
-5. Isi **Keterangan / BKO** — alasan perpindahan.
+5. Isi **Keterangan / BKO**, alasan perpindahan.
 6. Tekan **Konfirmasi Mutasi**.
 
 > Admin Wilayah hanya bisa memutasi aset **milik wilayahnya sendiri**. Kalau
 > muncul pesan *"Hanya bisa memindahkan aset dari wilayah sendiri"*, berarti alat
-> tersebut milik wilayah lain — mintalah admin wilayah pemiliknya yang melakukan.
+> tersebut milik wilayah lain, mintalah admin wilayah pemiliknya yang melakukan.
 
 ---
 
@@ -583,7 +583,7 @@ Tersedia tiga tab: **Perbaikan**, **Kalibrasi**, dan **Mutasi**.
 
 ![Riwayat kalibrasi](panduan/img/22-riwayat-kalibrasi.webp)
 
-Klik salah satu baris untuk membuka **Detail Riwayat Aset** — di sana riwayat
+Klik salah satu baris untuk membuka **Detail Riwayat Aset**, di sana riwayat
 satu aset ditampilkan lengkap: Riwayat Perbaikan, Riwayat Kalibrasi, dan Jalur
 Mutasi, termasuk tombol untuk mengunduh berkas sertifikat.
 
@@ -591,7 +591,7 @@ Kotak pencarian dan tombol urutkan bekerja sama seperti di Kelola Data Aset.
 
 ---
 
-## 9. Kelola Inventaris — suku cadang dan gudang
+## 9. Kelola Inventaris, suku cadang dan gudang
 
 Bagian ini mengelola **suku cadang**, bukan alat kerja.
 
@@ -605,7 +605,7 @@ mau menyimpan:
 ```
 
 > **Mulailah selalu dari Gudang.** Kalau belum ada satu pun gudang, formulir
-> Transaksi Barang akan menolak setiap penyimpanan — karena sistem tidak tahu
+> Transaksi Barang akan menolak setiap penyimpanan, karena sistem tidak tahu
 > stoknya mau dimasukkan ke mana.
 
 > **Gudang berdiri sendiri, terpisah dari struktur DAOP/UPT.** Stok disimpan di
@@ -633,7 +633,7 @@ Kotak **Status Barang** mengelompokkan seluruh katalog menjadi empat:
 | **Aman** | Stok di atas batas minimum |
 | **Perlu Perhatian** | Stok mendekati batas minimum |
 | **Bermasalah** | Stok habis atau di bawah batas minimum |
-| **Di Atas Maksimum** | Selalu 0 — batas maksimum belum dipakai di versi ini |
+| **Di Atas Maksimum** | Selalu 0, batas maksimum belum dipakai di versi ini |
 
 ![Grafik inventaris](panduan/img/24-inv-grafik.webp)
 
@@ -642,7 +642,7 @@ Subsistem, Pemakaian Suku Cadang 12 Bulan Terakhir, dan Nilai Persediaan
 Tertinggi.
 
 > Grafik **Pemakaian Suku Cadang 12 Bulan Terakhir** selalu menampilkan 12 bulan
-> terakhir — rentang tanggal di atas **tidak berlaku** untuk grafik yang satu ini.
+> terakhir, rentang tanggal di atas **tidak berlaku** untuk grafik yang satu ini.
 
 ### Tab Daftar Suku Cadang
 
@@ -667,7 +667,7 @@ berarti stok habis atau di bawah batas minimum yang Anda tetapkan saat
 mendaftarkan suku cadang. Kolom **AKSI** di kiri berisi tombol ubah dan hapus.
 
 Saat mendaftarkan suku cadang baru, Anda dapat langsung mengisi **stok awal**.
-Pastikan **gudangnya dipilih** — stok awal yang tidak punya gudang tidak akan
+Pastikan **gudangnya dipilih**, stok awal yang tidak punya gudang tidak akan
 terlihat di layar mana pun dan tidak bisa dikeluarkan.
 
 #### Mengelola gudang
@@ -675,7 +675,7 @@ terlihat di layar mana pun dan tidak bisa dikeluarkan.
 ![Kelola gudang](panduan/img/28-inv-gudang.webp)
 
 Gudang bisa dikelola dari dua tempat: dari sini (pintasan) dan dari **Pusat Data
-▸ Gudang**. Keduanya sama saja — pintasan ini ada supaya Anda tidak perlu keluar
+▸ Gudang**. Keduanya sama saja, pintasan ini ada supaya Anda tidak perlu keluar
 dari halaman Inventaris di tengah pekerjaan.
 
 ### Tab Transaksi Barang
@@ -723,15 +723,15 @@ Beberapa perilaku modul ini tidak terlihat dari layar, tetapi menentukan hasil:
 
 | Hal | Yang perlu diketahui |
 |---|---|
-| **Kode SKU** | Kosongkan saja saat menambah suku cadang — sistem membuatkannya otomatis (`SP00001`, `SP00002`, …). **SKU tidak bisa diubah setelah tersimpan.** |
+| **Kode SKU** | Kosongkan saja saat menambah suku cadang, sistem membuatkannya otomatis (`SP00001`, `SP00002`, …). **SKU tidak bisa diubah setelah tersimpan.** |
 | **Harga satuan** | Terisi otomatis dari katalog, tetapi boleh Anda timpa. Harga yang Anda pakai **dibekukan pada baris transaksi itu**, jadi memperbarui harga katalog tidak mengubah nilai transaksi lama. |
 | **Kolom Masuk / Keluar / Retur / Penyesuaian** di tabel | Itu **total sepanjang riwayat**, bukan angka periode yang sedang dipilih. |
-| **Nilai Persediaan** di Dashboard | Selalu posisi **saat ini** — tidak terpengaruh rentang tanggal. Hanya Nilai Barang Masuk dan Keluar yang mengikuti periode. |
+| **Nilai Persediaan** di Dashboard | Selalu posisi **saat ini**, tidak terpengaruh rentang tanggal. Hanya Nilai Barang Masuk dan Keluar yang mengikuti periode. |
 | **Filter Gudang di Dashboard** | Ikut membatasi tab Daftar Suku Cadang. Itulah satu-satunya tempat cakupan gudang dipilih. |
-| **Menghapus kategori** | Suku cadang di dalamnya **tidak ikut terhapus** — hanya lepas dari kategori dan kolom subsistemnya kosong. Untuk memperbaiki salah ketik, pakai tombol ubah, jangan hapus lalu buat ulang. |
+| **Menghapus kategori** | Suku cadang di dalamnya **tidak ikut terhapus**, hanya lepas dari kategori dan kolom subsistemnya kosong. Untuk memperbaiki salah ketik, pakai tombol ubah, jangan hapus lalu buat ulang. |
 | **Menghapus suku cadang** | Ditolak bila barang sudah punya riwayat pergerakan, supaya buku besar tidak menjadi yatim. |
 | **Menghapus gudang** | Gudang yang punya riwayat stok akan **dinonaktifkan**, bukan dihapus. |
-| **Mengubah suku cadang** | Kolom stok awal dan gudang dikunci saat mengubah — stok hanya berubah lewat Transaksi Barang. |
+| **Mengubah suku cadang** | Kolom stok awal dan gudang dikunci saat mengubah, stok hanya berubah lewat Transaksi Barang. |
 | **Impor massal** | Nama kategori harus sama persis dengan yang terdaftar; kategori tidak dibuat otomatis dari berkas. Stok awal tidak ikut diimpor. |
 
 ### Siapa boleh apa di modul ini
@@ -739,7 +739,7 @@ Beberapa perilaku modul ini tidak terlihat dari layar, tetapi menentukan hasil:
 | Peran | Kewenangan |
 |---|---|
 | **SUPER ADMIN** | Seluruh modul, termasuk menghapus gudang secara permanen |
-| **ADMIN WILAYAH** | Kelola katalog, kategori, gudang, dan seluruh pergerakan stok — tetapi tidak bisa menghapus gudang permanen |
+| **ADMIN WILAYAH** | Kelola katalog, kategori, gudang, dan seluruh pergerakan stok, tetapi tidak bisa menghapus gudang permanen |
 | **TEKNISI** | Mencatat pergerakan dan transfer stok (merekalah yang memakai barangnya). Tidak bisa mengubah katalog atau kategori |
 
 ### Kalau ada yang tidak beres di Inventaris
@@ -747,11 +747,11 @@ Beberapa perilaku modul ini tidak terlihat dari layar, tetapi menentukan hasil:
 | Gejala | Penyebab & solusi |
 |---|---|
 | Dropdown gudang kosong, tombol simpan tidak bekerja | Belum ada gudang sama sekali. Buat gudang lebih dulu. |
-| Baris bantuan menyebut ada stok, tapi pengeluaran ditolak | Stoknya ada **di gudang lain**. Periksa dropdown **GUDANG** pada formulir — angka bantuan mengikuti gudang yang sedang dipilih di situ. |
+| Baris bantuan menyebut ada stok, tapi pengeluaran ditolak | Stoknya ada **di gudang lain**. Periksa dropdown **GUDANG** pada formulir, angka bantuan mengikuti gudang yang sedang dipilih di situ. |
 | Stok awal tidak muncul setelah memfilter gudang | Data lama tersimpan tanpa gudang. Catat **Penyesuaian Masuk** ke gudang yang benar. |
 | Semua suku cadang berstatus kritis | Buku besar masih kosong; belum ada transaksi sama sekali. |
 | Banyak baris gagal saat impor Excel | Nama kategori tidak dikenal, atau SKU yang diisi manual sudah dipakai. |
-| Tombol hapus muncul tapi ditolak server | Peran Anda tidak berwenang — lihat tabel kewenangan di atas. |
+| Tombol hapus muncul tapi ditolak server | Peran Anda tidak berwenang, lihat tabel kewenangan di atas. |
 
 ### Tab Riwayat Transfer Suku Cadang
 
@@ -767,14 +767,14 @@ stok di gudang asal.
 
 ---
 
-## 10. Proses Laporan — ekspor Excel dan PDF
+## 10. Proses Laporan, ekspor Excel dan PDF
 
 Halaman ini untuk membuat laporan resmi yang bisa dicetak atau dikirim.
 
 ![Parameter filter ekspor](panduan/img/30-laporan-filter.webp)
 
-Pilih dulu jenis laporannya — **Pemeliharaan / Perbaikan**, **Kalibrasi**, atau
-**Mutasi** — lalu isi penyaringnya:
+Pilih dulu jenis laporannya, **Pemeliharaan / Perbaikan**, **Kalibrasi**, atau
+**Mutasi**, lalu isi penyaringnya:
 
 | Jenis laporan | Penyaring yang tersedia |
 |---|---|
@@ -794,10 +794,10 @@ server.
 
 ## 11. Pusat Data (khusus Super Admin)
 
-Pusat Data adalah tempat mengelola **data induk** — daftar acuan yang dipakai
+Pusat Data adalah tempat mengelola **data induk**, daftar acuan yang dipakai
 seluruh sistem. Menu ini hanya muncul untuk Super Admin.
 
-![Pusat Data — Pengguna](panduan/img/32-pusatdata-pengguna.webp)
+![Pusat Data, Pengguna](panduan/img/32-pusatdata-pengguna.webp)
 
 Ada enam tab:
 
@@ -817,7 +817,7 @@ dan **Wilayah**, lalu tekan **Tambah Pengguna**.
 
 ### Lokasi dan UPT
 
-![Pusat Data — Lokasi](panduan/img/33-pusatdata-lokasi.webp)
+![Pusat Data, Lokasi](panduan/img/33-pusatdata-lokasi.webp)
 
 Untuk **Lokasi** isi Kode, Nama Lokasi, dan Tipe (PUSAT/DAOP/DIVRE/BALAIYASA).
 Untuk **UPT** isi Kode UPT, Nama UPT, dan **Induk Lokasi**.
@@ -827,7 +827,7 @@ Untuk **UPT** isi Kode UPT, Nama UPT, dan **Induk Lokasi**.
 
 ### Model/Type
 
-![Pusat Data — Model/Type](panduan/img/35-pusatdata-spesifikasi.webp)
+![Pusat Data, Model/Type](panduan/img/35-pusatdata-spesifikasi.webp)
 
 Satu **Alat Kerja** (misalnya IMPACT WRENCH) bisa punya beberapa **Model/Type**
 (misalnya MILWAUKEE M18 ONEFHIWF34). Di sinilah Model/Type didaftarkan, dan
@@ -837,7 +837,7 @@ isinya persis mengikuti format **Rekap Spek**:
 |---|---|---|
 | 1 | **Merk** | Ya |
 | 2 | **Model/Type** | Ya |
-| 3–7 | **Spesifikasi Utama** — lima baris berpasangan *Parameter* dan *Nilai* | Dua baris pertama sebaiknya diisi |
+| 3, 7 | **Spesifikasi Utama**, lima baris berpasangan *Parameter* dan *Nilai* | Dua baris pertama sebaiknya diisi |
 
 Nama tampilan terisi otomatis dari Merk + Model/Type (maksimal 50 karakter);
 Anda tetap boleh menyuntingnya.
@@ -848,10 +848,10 @@ butuh *Cutting Wheel*.
 
 Selain itu ada tiga lampiran:
 
-- **Foto Alat Kerja** — unggah berkas gambar, atau tempel URL gambar. Foto ini
+- **Foto Alat Kerja**, unggah berkas gambar, atau tempel URL gambar. Foto ini
   tampil di kartu aset, di Form Pemeliharaan, dan di kartu QR yang bisa dibuka
   siapa saja tanpa login.
-- **Spek Lengkap** dan **Manual Instruction** — unggah PDF, atau tempel URL.
+- **Spek Lengkap** dan **Manual Instruction**, unggah PDF, atau tempel URL.
   Berbeda dengan foto, kedua dokumen ini **hanya bisa dibuka setelah login**.
 
 > Sebagian Model/Type hasil impor baru berisi nama saja dan belum punya Merk
@@ -861,7 +861,7 @@ Selain itu ada tiga lampiran:
 
 ### Gudang
 
-![Pusat Data — Gudang](panduan/img/34-pusatdata-gudang.webp)
+![Pusat Data, Gudang](panduan/img/34-pusatdata-gudang.webp)
 
 Isi Kode dan Nama Gudang. Ingat, gudang **tidak mengikuti struktur DAOP/UPT**.
 
@@ -873,7 +873,7 @@ Isi Kode dan Nama Gudang. Ingat, gudang **tidak mengikuti struktur DAOP/UPT**.
 ## 12. Pulihkan Aset Afkir
 
 **Afkir** berarti aset dihapus dari daftar aktif. Aset afkir tidak lagi masuk
-hitungan Total Aset dan tidak muncul di Kelola Data Aset — tetapi **datanya tidak
+hitungan Total Aset dan tidak muncul di Kelola Data Aset, tetapi **datanya tidak
 dihapus**, dan bisa dikembalikan.
 
 ![Pulihkan Aset Afkir](panduan/img/36-pulihkan-afkir.webp)
@@ -886,7 +886,7 @@ mengembalikan aset ke status aktif. Halaman ini hanya untuk Super Admin.
 ## 13. Kartu Aset lewat QR (di lapangan)
 
 Setiap alat kerja bisa ditempeli label QR (lihat [bab 6](#mencetak-label-qr)).
-Ketika dipindai dengan kamera ponsel, label itu membuka **Kartu Aset** —
+Ketika dipindai dengan kamera ponsel, label itu membuka **Kartu Aset**,
 halaman ringkas yang dirancang untuk layar ponsel.
 
 ![Kartu Aset di ponsel](panduan/img/39-kartu-qr-hp.webp)
@@ -897,7 +897,7 @@ Tanpa perlu masuk, siapa pun yang memindai langsung melihat:
   mutasi)
 - **Jenis Alat**, **Nomor Seri**, **Pengadaan**, **Tanggal Beli**
 - **Lokasi**, **UPT**, **Peruntukan**, **No. Urut**
-- **Spesifikasi Alat Kerja** — foto alat, Merk, Model/Type, dan lima baris
+- **Spesifikasi Alat Kerja**, foto alat, Merk, Model/Type, dan lima baris
   spesifikasi utama, ditambah tautan **Spek Lengkap** dan **Manual Instruction**
   bila tersedia
 - **Umur Aset** dan **Pemeliharaan Terakhir**
@@ -905,12 +905,12 @@ Tanpa perlu masuk, siapa pun yang memindai langsung melihat:
 ![Riwayat pada Kartu Aset](panduan/img/40-kartu-qr-riwayat.webp)
 
 Di bawahnya ada tab **Pemeliharaan**, **Kalibrasi**, dan **Mutasi**. Isi ketiga
-tab itu — dan semua formulir pelaporan — **baru terbuka setelah Anda masuk**.
+tab itu, dan semua formulir pelaporan, **baru terbuka setelah Anda masuk**.
 Sebelum masuk akan tertulis *"Login untuk melihat riwayat pemeliharaan."*
 
 Setelah Anda masuk, muncul **titik hijau bertuliskan "Terhubung"** di bilah
 atas. Selama titik itu menyala, kantor melihat Anda sebagai **sedang online**
-di *Pusat Data ▸ Pengguna*, dengan keterangan layar **"Kartu Aset (QR)"** —
+di *Pusat Data ▸ Pengguna*, dengan keterangan layar **"Kartu Aset (QR)"**,
 jadi rekan di kantor tahu Anda sedang berada di depan alatnya. Kalau sinyal
 lapangan putus, titiknya berubah merah dan sistem menyambung ulang sendiri.
 Pemindaian tanpa masuk tetap anonim dan tidak tercatat sebagai online.
@@ -918,11 +918,11 @@ Pemindaian tanpa masuk tetap anonim dan tidak tercatat sebagai online.
 Setelah masuk lewat tombol di pojok kanan atas, petugas dapat langsung mengisi
 dari ponsel:
 
-- **Form Pemeliharaan** — Tanggal Pemeriksaan, Nama Petugas, Lokasi (DAOP/Induk),
+- **Form Pemeliharaan**, Tanggal Pemeriksaan, Nama Petugas, Lokasi (DAOP/Induk),
   UPT Pelapor, Kondisi Alat Pasca Pemeliharaan (✅ SO / ❌ TSO), dan Keterangan /
   Uraian Pekerjaan.
-- **Form Kalibrasi** — sama seperti di layar besar, lengkap dengan unggah berkas.
-- **Proses Mutasi Aset** — Tujuan Mutasi, UPT Tujuan, Keterangan / BKO.
+- **Form Kalibrasi**, sama seperti di layar besar, lengkap dengan unggah berkas.
+- **Proses Mutasi Aset**, Tujuan Mutasi, UPT Tujuan, Keterangan / BKO.
 
 Inilah cara tercepat melaporkan dari lapangan: **pindai QR di alatnya, masuk,
 isi, simpan.** Tidak perlu mencari asetnya satu per satu di daftar.
@@ -946,7 +946,7 @@ Gudang**.
 
 **"Muncul pesan 'Stok tidak mencukupi'."**
 Anda mencoba mengeluarkan lebih banyak dari yang tersedia **di gudang tersebut**.
-Stok dihitung per gudang — bisa jadi barangnya ada, tapi di gudang lain. Gunakan
+Stok dihitung per gudang, bisa jadi barangnya ada, tapi di gudang lain. Gunakan
 **Transfer** untuk memindahkannya lebih dulu.
 
 **"Aset baru tidak bisa disimpan."**
@@ -969,17 +969,17 @@ Format yang diterima hanya **PDF, JPG, PNG, WEBP**, maksimal **10 MB**.
 
 **"Layar saya tidak memperbarui data terbaru."**
 Periksa indikator titik di sebelah jam. Kalau tidak hijau, sambungan sedang
-terganggu — sistem akan menyambung sendiri. Kalau perlu, muat ulang halaman.
+terganggu, sistem akan menyambung sendiri. Kalau perlu, muat ulang halaman.
 
 ### Kotak konfirmasi
 
-Setiap tindakan penting — menyimpan perubahan, menghapus, keluar — selalu
+Setiap tindakan penting, menyimpan perubahan, menghapus, keluar, selalu
 meminta konfirmasi lebih dulu:
 
 ![Kotak konfirmasi](panduan/img/37-dialog-konfirmasi.webp)
 
 Tekan **Lanjutkan** untuk meneruskan, atau **Batal** untuk membatalkan. Menekan
-tombol `Esc` sama artinya dengan menekan **Batal** — jadi tidak ada tindakan yang
+tombol `Esc` sama artinya dengan menekan **Batal**, jadi tidak ada tindakan yang
 terlanjur berjalan hanya karena Anda menutup jendelanya.
 
 ### Kebiasaan yang memudahkan
@@ -989,7 +989,7 @@ terlanjur berjalan hanya karena Anda menutup jendelanya.
   tampil di layar.
 - **Tulis keterangan yang jelas.** Kolom Catatan/Keterangan adalah satu-satunya
   tempat menjelaskan *kenapa*; angka saja tidak bercerita.
-- **Jangan menghapus aset yang salah ketik — perbaiki saja.** Menghapus akan
+- **Jangan menghapus aset yang salah ketik, perbaiki saja.** Menghapus akan
   menghilangkan seluruh riwayatnya.
 - **Gunakan Ganti Tema** kalau bekerja malam hari; pilihan Anda diingat sistem.
 
@@ -1003,14 +1003,14 @@ terlanjur berjalan hanya karena Anda menutup jendelanya.
 | **Aset / Alat Kerja** | Mesin yang dikelola RAMCES, punya ID dan riwayat sendiri |
 | **Balaiyasa** | Bengkel perbaikan; bukan wilayah operasi |
 | **Benchmark** | Angka target pembanding untuk ketersediaan |
-| **BKO** | Bawah Kendali Operasi — keterangan pada mutasi |
-| **DAOP** | Daerah Operasi (DAOP 1 – DAOP 9, wilayah Jawa) |
+| **BKO** | Bawah Kendali Operasi, keterangan pada mutasi |
+| **DAOP** | Daerah Operasi (DAOP 1, DAOP 9, wilayah Jawa) |
 | **DIVRE** | Divisi Regional (wilayah Sumatera) |
 | **Gudang** | Tempat penyimpanan suku cadang; berdiri sendiri, tidak mengikuti DAOP/UPT |
 | **ID Aset** | Kode unik aset, contoh `6.RGM.1.24.A.D1` |
 | **Kalibrasi** | Pemeriksaan ketepatan alat oleh lembaga berwenang |
 | **Ketersediaan** | Persentase aset berstatus SO terhadap total |
-| **MCF** | *Mean Cumulative Function* — rata-rata perbaikan kumulatif per unit |
+| **MCF** | *Mean Cumulative Function*, rata-rata perbaikan kumulatif per unit |
 | **Model/Type** | Merk dan tipe spesifik sebuah alat kerja, contoh `MILWAUKEE M18 ONEFHIWF34` di bawah `IMPACT WRENCH`. Dulu disebut *Varian* atau *Spesifikasi Teknis* |
 | **Mutasi** | Perpindahan aset dari satu lokasi ke lokasi lain |
 | **Pemeliharaan** | Pemeriksaan/perbaikan yang menghasilkan status SO atau TSO |
@@ -1018,11 +1018,11 @@ terlanjur berjalan hanya karena Anda menutup jendelanya.
 | **Peruntukan** | Unit pengguna alat: Jalan Rel, Jembatan, Mekanik, atau Balaiyasa |
 | **Pemakaian Sparepart** | Suku cadang yang tercatat dipakai pada satu perbaikan; stok gudang otomatis berkurang |
 | **SKU** | Kode katalog suku cadang |
-| **SO** | Siap Operasi — alat sehat dan boleh dipakai |
+| **SO** | Siap Operasi, alat sehat dan boleh dipakai |
 | **Stok minimum** | Batas bawah stok; di bawahnya muncul peringatan |
 | **Subsistem** | Pengelompokan suku cadang (Electric, Mechanic, …) |
 | **Suku Cadang** | Onderdil habis pakai; dihitung per gudang |
-| **TSO** | Tidak Siap Operasi — alat rusak atau sedang diperbaiki |
+| **TSO** | Tidak Siap Operasi, alat rusak atau sedang diperbaiki |
 | **UPT / Resort** | Unit kerja di bawah DAOP/DIVRE, contoh `JR 1.7 Rangkasbitung` |
 
 ---

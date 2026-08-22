@@ -2,7 +2,7 @@
 Synthetic demo assets and a simulated maintenance history.
 
 OFF BY DEFAULT, and that is the whole point. The fleet imported from
-`Template_Import_Aset_RAMCES.xlsx` is REAL — 1,121 machines that exist at named
+`Template_Import_Aset_RAMCES.xlsx` is REAL, 1,121 machines that exist at named
 resorts. Repair records invented against them would be indistinguishable from
 fact a year from now, so this module never runs unless explicitly asked:
 
@@ -32,7 +32,7 @@ from seeds.simulasi import SimContext, simulate_history
 # `seeds/inventaris.py`: seeding the global RNG reaches every other module in
 # the process, and this one is imported by a CLI that also generates a bootstrap
 # password. Fixing the stream makes `manage.py reset --with-history` reproducible
-# — two resets of the same database produce the same 100 machines with the same
+# two resets of the same database produce the same 100 machines with the same
 # history, which is what lets the verification harness hold a baseline at all.
 _DUMMY_RNG_SEED = 20260815
 _rng = random.Random(_DUMMY_RNG_SEED)
@@ -47,7 +47,7 @@ DUMMY_ALAT_SPREAD = [
     "GEN", "PBT", "BOR", "IMP", "RGM", "TGT", "USM", "RFD", "TRG",
 ]
 
-# Matches normalise_peruntukan() in main.py — a closed set, baked into the
+# Matches normalise_peruntukan() in main.py, a closed set, baked into the
 # asset's composite primary key.
 PERUNTUKAN_MAP = {
     "A": "JALAN REL",
@@ -56,7 +56,7 @@ PERUNTUKAN_MAP = {
     "D": "BALAIYASA",
 }
 # (`PERUNTUKAN_LETTERS` stood here. It existed only so the state machine could
-#  pick a letter at random — which is the bug the peruntukan rule fixed, since
+#  pick a letter at random, which is the bug the peruntukan rule fixed, since
 #  the letter is DERIVED from the resort prefix. Nothing reads it now.)
 
 SERI_PREFIX = {
@@ -71,7 +71,7 @@ SERI_PREFIX = {
 #
 #   * it is the IDENTITY GATE. This step used to have none at all, so
 #     `manage.py seed --only dummy --with-history` added 100 more assets every
-#     time it ran — 1121 → 1221 → 1321. That is precisely the fleet-doubling bug
+#     time it ran, 1121 → 1221 → 1321. That is precisely the fleet-doubling bug
 #     the whole `seeds/` package was written to eliminate, surviving in the one
 #     step that never got the treatment. `existing_demo_count()` is the fix.
 #   * it is honest. A nomor_seri is what a technician reads off a nameplate to
@@ -86,13 +86,13 @@ DEMO_SERI_PREFIX = "DEMO-"
 
 # ── The peruntukan rule ───────────────────────────────────────────────
 #
-# A UPT code's prefix IS its peruntukan — verified 1:1 across all 254 rows of
+# A UPT code's prefix IS its peruntukan, verified 1:1 across all 254 rows of
 # `KATALOG UPT`. This module used to pick a peruntukan letter at random,
 # independently of where it had just placed the asset, which minted demo assets
 # whose id_aset peruntukan segment contradicted their own resort: a `JALAN REL`
 # machine sitting at `JB1.1`. Real assets have not been able to do that since
 # the importer started deriving it, so the demo data was the only source of rows
-# that broke the rule — and it broke it for roughly three quarters of them.
+# that broke the rule, and it broke it for roughly three quarters of them.
 UPT_PREFIX_TO_LETTER = {"JR": "A", "JB": "B", "ME": "C", "BY": "D"}
 
 
@@ -101,7 +101,7 @@ def peruntukan_letter_for(id_lokasi: str) -> str:
     The peruntukan letter a resort code implies.
 
     Falls back to `A` (JALAN REL) for a DAOP/DIVRE parent code, which carries no
-    prefix — an asset homed directly at a parent rather than at one of its
+    prefix, an asset homed directly at a parent rather than at one of its
     resorts is unusual but legal, and jalan rel is the overwhelming majority.
     """
     return UPT_PREFIX_TO_LETTER.get(str(id_lokasi or "")[:2].upper(), "A")
@@ -116,7 +116,7 @@ def existing_demo_count(db) -> int:
     )
 
 # `kalibrasi_alat_codes()` and the calibration constants moved to
-# seeds/simulasi.py with the state machine that used them — only calibrated tool
+# seeds/simulasi.py with the state machine that used them, only calibrated tool
 # types get certificates, read from `kategori_alat.perlu_kalibrasi` rather than a
 # hardcoded set, because a genset is serviced and not calibrated.
 
@@ -188,7 +188,7 @@ def generate_dummy_assets(total_count: int = 100):
         #
         # Balaiyasa is a workshop, not an operating region: an asset may visit one
         # for repair but must never be based at one. The BY*A rows are typed
-        # "UPT", so they have to be excluded explicitly — get_parent_lokasi_code
+        # "UPT", so they have to be excluded explicitly, get_parent_lokasi_code
         # resolves them to a BY* parent, which is what identifies them.
         def _is_balaiyasa_side(id_lokasi: str) -> bool:
             if id_lokasi in balaiyasa_ids:
@@ -213,7 +213,7 @@ def generate_dummy_assets(total_count: int = 100):
             parent = get_parent_lokasi_code(id_lokasi)
             if parent:
                 return parent
-            # Already a parent (no dot-separated suffix) — use itself
+            # Already a parent (no dot-separated suffix), use itself
             return id_lokasi
 
         # ── 3. Default Pengguna ──────────────────────────────────────────
@@ -254,7 +254,7 @@ def generate_dummy_assets(total_count: int = 100):
 
         # ── 6. Seed assets ───────────────────────────────────────────────
         #
-        # The history generator's context is built ONCE — it loads the lokasi
+        # The history generator's context is built ONCE, it loads the lokasi
         # tree, the calibration flags and the whole stock balance map, none of
         # which vary per asset. It is given THIS module's RNG so a demo fleet
         # stays reproducible from the same seed.
@@ -266,7 +266,7 @@ def generate_dummy_assets(total_count: int = 100):
             # Pick a starting location (operational)
             start_lokasi = _rng.choice(operational_ids)
 
-            # Must match the value the UI writes (index.html) exactly — a spaced
+            # Must match the value the UI writes (index.html) exactly, a spaced
             # variant here silently breaks every Pengadaan filter in the app.
             sumber = _rng.choice(["PUSAT", "DAOP/DIVRE"])
             id_pengadaan = 1 if sumber == "PUSAT" else 2
@@ -321,7 +321,7 @@ def generate_dummy_assets(total_count: int = 100):
             )
             db.add(aset)
 
-            # Initial condition record — no id_lokasi column in RiwayatKondisi
+            # Initial condition record, no id_lokasi column in RiwayatKondisi
             db.add(models.RiwayatKondisi(
                 id_aset=id_aset,
                 id_pengguna=id_pengguna_default,
@@ -337,10 +337,10 @@ def generate_dummy_assets(total_count: int = 100):
             # EXTRACTED to seeds/simulasi.py, which the real fleet uses too.
             # This block used to live here, which is the only reason it ever ran
             # against the 100 demo assets and never against the 1,121 real ones.
-            # It carries four rules that took three rounds to get right — the
+            # It carries four rules that took three rounds to get right, the
             # Balaiyasa attribution rule, peruntukan-preserving redistribution,
             # calibration gated on the katalog flag, and the "never home an
-            # asset at a workshop" safety net — and a second copy would have had
+            # asset at a workshop" safety net, and a second copy would have had
             # to keep all four in step.
             #
             # A consequence worth having: this history is now MARKED. It is just
@@ -379,7 +379,7 @@ def backfill_varian_dan_seri(db):
         offers the wrong parts for the machine in front of them.
 
     The imported fleet gets its model from the workbook's own Model column, and
-    a visibly-incomplete row when that cannot be resolved — which is the honest
+    a visibly-incomplete row when that cannot be resolved, which is the honest
     outcome. This function therefore runs ONLY as part of the dummy step.
 
     Demo assets no longer pass through the serial half of it: they are stamped

@@ -13,7 +13,7 @@ reached the database through a hand transcription in `seed_katalog.py`, and that
 transcription had already drifted from the file it claimed to mirror:
 
   * 14 MEKANIK resorts (ME1.1, ME1.2, ME2..ME9, MEI..MEIV) were missing
-    entirely — the sheet has 254 UPTs, the database had 240 of them;
+    entirely, the sheet has 254 UPTs, the database had 240 of them;
   * DHL and DHS carry `Alat Ukur = TRUE` in the sheet and `False` in the code;
   * BY1 is "BALAIYASA CIREBON PRUJAKAN" in the sheet and
     "BALAIYASA CIREBONPRUNJAKAN" in the code.
@@ -82,7 +82,7 @@ KatalogSFM = namedtuple("KatalogSFM", "alat lokasi upt kelompok minted laporan")
 #
 # Two hazards in this particular file, both silent:
 #
-#   * `Induk Lokasi` reads "DAOP 1 JAKARTA\xa0(D1)" — the separator before the
+#   * `Induk Lokasi` reads "DAOP 1 JAKARTA\xa0(D1)", the separator before the
 #     bracket is U+00A0, a NON-BREAKING space. `.split(" ")` yields "DAOP".
 #     Python's `\s` DOES match U+00A0, so normalising with re is safe; splitting
 #     on a literal space is not.
@@ -112,7 +112,7 @@ def _as_bool(v):
     return s in {"TRUE", "YA", "Y", "1", "ADA", "V"}
 
 
-# `NAMA\xa0(KODE)` — anchored, because a name may itself contain brackets.
+# `NAMA\xa0(KODE)`, anchored, because a name may itself contain brackets.
 _RE_INDUK = re.compile(r"^(?P<nama>.+?)\s*\((?P<kode>[A-Z0-9]+)\)$", re.IGNORECASE)
 
 
@@ -148,7 +148,7 @@ def read_alat(ws, kode_tanpa_kode, kelompok):
 
     Three rows in the sheet have a name and no code (GAUGE CALIBRATOR, TRACKER,
     WATER STEAM). Their codes come from `kode_tanpa_kode` in seed_katalog.py and
-    a MISS IS A HARD ERROR — never invent one from the name, or a fourth blank
+    a MISS IS A HARD ERROR, never invent one from the name, or a fourth blank
     row in a future drop silently becomes "GAU" and starts collecting assets.
     """
     rows, minted, seen = [], {}, {}
@@ -291,8 +291,8 @@ def read_upt(ws):
 # BY* IS NOT A UNIT. Balaiyasa is a workshop; an asset parked at BY3A is
 # visiting for repair and keeps the peruntukan it came with. Reclassifying it
 # by location would contradict the rule enforced in five other places that a
-# Balaiyasa is never a reporting region. For BY* — and for a bare parent code
-# like D1 — this returns None and the caller keeps the workbook's own value.
+# Balaiyasa is never a reporting region. For BY*, and for a bare parent code
+# like D1, this returns None and the caller keeps the workbook's own value.
 
 _PREFIX_PERUNTUKAN = (
     ("JR", "JALAN REL"),
@@ -394,7 +394,7 @@ def read_katalog(path=WORKBOOK, kode_tanpa_kode=None, force=False):
 def verify_induk(katalog=None):
     """Every UPT's parsed `Induk Lokasi` must exist in KATALOG LOKASI, by code AND name.
 
-    Catches a rename applied to one sheet and not the other — which is exactly
+    Catches a rename applied to one sheet and not the other, which is exactly
     how the BY1 spelling drifted between the workbook and the transcription.
     """
     k = katalog or read_katalog()

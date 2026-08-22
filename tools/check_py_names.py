@@ -10,7 +10,7 @@ move actually causes:
     a function moves to a new module, but a helper it CALLS stays behind.
 
 Python resolves globals at CALL time, not at import. The result imports cleanly,
-produces an identical route table, produces a byte-identical openapi.json — and
+produces an identical route table, produces a byte-identical openapi.json, and
 then raises NameError the first time that single endpoint is requested. This
 happened during the main.py → api/ split: `get_public_aset` stayed in main.py
 while `_varian_payload` moved to api/master.py, and every static gate passed
@@ -18,9 +18,9 @@ until the QR card was actually fetched.
 
 What it does
 ------------
-Parse each file with `ast`, collect every name the file BINDS anywhere — module
+Parse each file with `ast`, collect every name the file BINDS anywhere, module
 imports, defs, classes, assignments, function parameters, for/with/except
-targets, comprehension variables, walrus targets, globals — and every name it
+targets, comprehension variables, walrus targets, globals, and every name it
 LOADS. Report loads that match no binding and are not builtins.
 
 What it deliberately does NOT do
@@ -28,8 +28,8 @@ What it deliberately does NOT do
 This is a FLAT analysis, not a scope-aware one: a name bound in any function
 counts as bound for the whole file. That makes it blind to "defined in the wrong
 function", but it means **zero false positives**, which is what makes it usable
-as a gate. The bug class it exists for — a name that exists in no scope at all
-because it was left behind in another module — is caught exactly.
+as a gate. The bug class it exists for, a name that exists in no scope at all
+because it was left behind in another module, is caught exactly.
 
 It is a name checker, not a type checker. It cannot see a missing attribute, a
 wrong argument count, or a helper that moved but happened to keep working.

@@ -34,7 +34,7 @@ function normalizeSearchText(value) {
 
 // ── Lookup indexes ─────────────────────────────────────────────────────────
 //
-// `assetLokasiIdentity` used to run three Array.find() scans per call —
+// `assetLokasiIdentity` used to run three Array.find() scans per call,
 // _historySummary (one row per asset), uptDatabase (~205 rows) and lokasiData.
 // It is called roughly twice per asset per render, and none of the six search
 // boxes was debounced, so typing one character into Kelola Data Aset cost
@@ -42,7 +42,7 @@ function normalizeSearchText(value) {
 // size: at 10,000 assets it is hundreds of millions per keystroke.
 //
 // These Maps make the same lookups O(1). They are rebuilt wherever their source
-// array is replaced — never mutated piecemeal — so they cannot drift out of
+// array is replaced, never mutated piecemeal, so they cannot drift out of
 // sync with it.
 let _uptByCode = new Map();
 let _lokasiByCode = new Map();
@@ -77,7 +77,7 @@ function debounce(fn, wait = 200) {
   };
 }
 
-// "DAOP 1", "DIVRE III", "BALAI YASA", "DAERAH OPERASI 5" — a region NAME with
+// "DAOP 1", "DIVRE III", "BALAI YASA", "DAERAH OPERASI 5", a region NAME with
 // its ordinal. Matched whole, so the ordinal can be compared as a token rather
 // than a substring.
 const _RE_REGION_TERM =
@@ -122,11 +122,11 @@ function resolveRegionTermToCodes(term) {
  * mutated to a Balaiyasa for repair still reports to its home resort, and the
  * cards have always rendered it that way. Search and filters now read the same
  * value, so a card labelled "DAOP 1 JAKARTA / JR 1.1 Gambir" is found by
- * searching either string and kept by a DAOP 1 filter — previously the card
+ * searching either string and kept by a DAOP 1 filter, previously the card
  * said one thing and both the search and the filter tested another.
  */
 function assetLokasiIdentity(item) {
-  // Three Map lookups where there used to be three full array scans — this is
+  // Three Map lookups where there used to be three full array scans, this is
   // the app's hottest function, called ~2x per asset per render.
   const summary = summaryFor(item?.id_aset);
 
@@ -209,7 +209,7 @@ function lokasiMatchesCode(identity, wantedCode) {
 /**
  * Generic text match across a list of non-location fields.
  *
- * Substring is right here — "GEN" should find "GENSET" — but the caller must
+ * Substring is right here, "GEN" should find "GENSET", but the caller must
  * NOT pass location fields through it; those go to lokasiMatchesTerm, which
  * knows about token boundaries.
  */
@@ -251,7 +251,7 @@ function assetMatchesSearch(item, term, extra = []) {
   );
 }
 
-// Natural ordering for resort labels: 1.1, 1.2, … 1.10, 1.25 — not
+// Natural ordering for resort labels: 1.1, 1.2, … 1.10, 1.25, not
 // lexicographic, which puts 1.10 before 1.2. Mirrors upt_sort_key() in main.py.
 function uptSortKey(label) {
   const m = normalizeSearchText(label).match(/(\d+)\.(\d+)/);
@@ -267,7 +267,7 @@ function compareNaturalLabel(a, b) {
   return String(ka[2]).localeCompare(String(kb[2]));
 }
 
-// Procurement source has been written several ways over the project's life —
+// Procurement source has been written several ways over the project's life,
 // "DAOP/DIVRE", "DAOP / DIVRE", "DAOP", "DIVRE", and the numeric ID segment
 // "1"/"2" that appears inside id_aset. Canonicalising to one of two values and
 // comparing EXACTLY beats the previous `includes()`, which matched a stored
@@ -299,8 +299,8 @@ let _historySummary = []; // cached from /api/history/summary
  *
  * This is the heaviest per-asset payload the app produces (~636 B against
  * ~366 B for /api/aset), and until rev0.4.5 the whole of it was downloaded at
- * login — 667 KB and 317 ms at 1,121 assets, on every sign-in and again after
- * every mutation — because the Kelola Data Aset cards needed three badges out
+ * login, 667 KB and 317 ms at 1,121 assets, on every sign-in and again after
+ * every mutation, because the Kelola Data Aset cards needed three badges out
  * of it. Those badges now ride on /api/aset itself, so this is fetched only by
  * the screen that actually displays it, one page at a time.
  *
@@ -314,7 +314,7 @@ async function loadHistoryPage(params, { background = true } = {}) {
   _historySummary = body.items || [];
   // Keep the id_aset index in step with the array it mirrors. Every read path
   // goes through summaryFor(), so forgetting this would silently return stale
-  // identities rather than crash — hence it lives on the same line as the
+  // identities rather than crash, hence it lives on the same line as the
   // assignment.
   rebuildSummaryIndex();
   if (typeof cacheAset === "function") cacheAset(_historySummary);

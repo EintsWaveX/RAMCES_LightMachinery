@@ -6,11 +6,11 @@ movement, never a running balance. `SparePartStok.GERAKAN_MASUK` /
 `GERAKAN_KELUAR` in models.py are the single source of truth for which movement
 types add versus remove stock, and net stock and stock value are computed by
 `_net_stok_expr()` / `_nilai_stok_expr()` below. Do not compute stock any other
-way — `_net_stok_map()` in particular is imported by api/riwayat.py so that
+way, `_net_stok_map()` in particular is imported by api/riwayat.py so that
 `_record_pemakaian` checks sufficiency against the same implementation the
 standalone movement endpoint uses, rather than a second one that can drift.
 
-**`id_gudang` is the pool every balance is scoped by** — the movement form, the
+**`id_gudang` is the pool every balance is scoped by**, the movement form, the
 opening balance on part creation and both halves of a transfer all write it.
 `id_lokasi`/`site_from`/`site_to` are older region-tree fields kept only so
 existing transfer history keeps rendering; an opening balance written against
@@ -18,7 +18,7 @@ existing transfer history keeps rendering; an opening balance written against
 to issue.
 
 `sparepart.id_varian` is the compatibility link, and **NULL means "fits every
-model of this tool"** — the common case. `/api/inventaris/parts` therefore
+model of this tool"**, the common case. `/api/inventaris/parts` therefore
 returns model-specific parts PLUS the universal ones.
 
 Two placements that are deliberate, and are about shared internals rather than
@@ -26,7 +26,7 @@ about the URL:
 
 - **`GET /api/inventaris/dashboard` lives here, not in api/dashboard.py.** It
   calls `_scope_stok`, `_net_stok_map`, `_nilai_stok_map`, `_stok_status`,
-  `STOK_STATUS_ORDER` and `GERAKAN_LABEL` — six internals of this module.
+  `STOK_STATUS_ORDER` and `GERAKAN_LABEL`, six internals of this module.
 - **`GET /api/aset/{id_aset}/pemakaian` lives here despite its /api/aset/ path**,
   because it shares `_pemakaian_row` and `_PEMAKAIAN_EAGER` with
   `/api/inventaris/pemakaian`. Module membership is not URL prefix; the path is
@@ -35,7 +35,7 @@ about the URL:
 `trigger_seed`'s `from seeds.inventaris import seed_spareparts` stays
 FUNCTION-LOCAL. The seeding pipeline is tracked now, but it imports
 `seed_katalog.py`, which RAISES on a checkout without the client's `modules/`
-drop — deliberately, because the alternative was importing cleanly and silently
+drop, deliberately, because the alternative was importing cleanly and silently
 producing an empty catalogue. A module-level import here would turn that into a
 boot failure for everyone rather than a 500 on the one endpoint that seeds.
 """
@@ -311,7 +311,7 @@ def _stok_status(stok: int, stok_min: int, stok_max: Optional[int]) -> str:
         return "DI BAWAH MIN"
     # RESERVED, and currently unreachable: `SparePart` has no `stok_max` column,
     # so every caller passes None. Kept rather than deleted because the branch is
-    # correct and costs nothing — but it is deliberately absent from
+    # correct and costs nothing, but it is deliberately absent from
     # STOK_STATUS_ORDER, so nothing renders a bucket that can only ever be zero.
     # Adding the column would be inventing a requirement: the client asked for a
     # minimum stock level, not a maximum.
@@ -327,8 +327,8 @@ def _movement_breakdown(db: Session, id_lokasi=None, id_gudang=None, sejak=None)
     One grouped query for the whole catalog; feeds the Items Master columns
     (Masuk, Keluar, Retur ke Vendor, Retur dari Customer, Penyesuaian ±).
 
-    `sejak` restricts to movements at or after that datetime. Defaults to None —
-    all time — so the Items Master columns, which are lifetime totals, are
+    `sejak` restricts to movements at or after that datetime. Defaults to None,
+    all time, so the Items Master columns, which are lifetime totals, are
     unaffected. The fast/slow classification passes a window, because a
     consumption rate with no period is not a rate.
     """
@@ -352,7 +352,7 @@ def _movement_breakdown(db: Session, id_lokasi=None, id_gudang=None, sejak=None)
 
 
 def _last_out_map(db: Session) -> dict:
-    """{id_part: last OUT timestamp} — drives 'Tanggal Terakhir Barang Keluar'."""
+    """{id_part: last OUT timestamp}, drives 'Tanggal Terakhir Barang Keluar'."""
     rows = (
         db.query(
             models.SparePartStok.id_part,
@@ -382,7 +382,7 @@ def get_inv_parts(
     `kode_alat` + `id_varian` together are the COMPATIBILITY filter the repair
     form uses to narrow the picker to the machine in front of the technician.
     Passing `id_varian` returns parts for that exact model PLUS the parts that
-    fit any model of the tool (`id_varian IS NULL`) — a generic air filter is
+    fit any model of the tool (`id_varian IS NULL`), a generic air filter is
     as valid for a GX390 as a GX390-specific carburettor, and excluding it
     would hide most of the catalogue from the form.
     """
@@ -428,7 +428,7 @@ def get_inv_parts(
         nilai_masuk = masuk * (p.harga_satuan or 0)
         nilai_keluar = keluar * (p.harga_satuan or 0)
         lo = last_out.get(p.id_part)
-        # "Barang Tidak Bergerak" — days since the last issue. Never issued is
+        # "Barang Tidak Bergerak", days since the last issue. Never issued is
         # reported as None rather than 0, so the UI can say "belum pernah keluar"
         # instead of implying it moved today.
         idle_days = (now - lo).days if lo else None
@@ -441,11 +441,11 @@ def get_inv_parts(
             "subsistem": kat.subsistem if kat else None,
             "kode_alat": p.kode_alat,
             "nama_alat": alat.nama_alat if alat else None,
-            # Null means "fits every model of this tool" — the picker labels it
+            # Null means "fits every model of this tool", the picker labels it
             # as universal rather than leaving the column blank.
             "id_varian": p.id_varian,
             # The model's NAME, not just its id. With `sku` gone, "nama_part +
-            # alat kerja + Model/Type" is what identifies a part on screen — and
+            # alat kerja + Model/Type" is what identifies a part on screen, and
             # it is exactly the triple the seed dedupes on, so it is unique by
             # construction. The transaction form's combobox keys on it.
             "nama_varian": p.varian_ref.nama_varian if p.varian_ref else None,
@@ -484,7 +484,7 @@ async def create_inv_part(
     current_user: models.Pengguna = Depends(get_current_user),
 ):
     # No SKU to mint or check for collisions. It used to be auto-generated here
-    # as `SP{count + 1:05d}` — a code derived from a row COUNT, which is the
+    # as `SP{count + 1:05d}`, a code derived from a row COUNT, which is the
     # same defect the asset `urutan` had: deleting any part made the next create
     # reuse a live number and fail the uniqueness check permanently, since every
     # retry recomputed the same count. A part is now identified by what it is
@@ -501,7 +501,7 @@ async def create_inv_part(
         # The opening balance MUST carry id_gudang. Every balance query scopes
         # by warehouse (_scope_stok), so a row with only id_lokasi set was
         # invisible the moment a gudang filter was applied and could never be
-        # issued — an OUT validates against the warehouse pool and saw 0.
+        # issued, an OUT validates against the warehouse pool and saw 0.
         if not data.id_gudang_awal:
             raise HTTPException(
                 status_code=400,
@@ -541,14 +541,14 @@ def get_inv_part_detail(
     The Kartu Riwayat card needs both. `/api/inventaris/parts` already carries
     the identity but only a single summed `stok_sekarang`, and the movement
     ledger at `/api/inventaris/stok?id_part=` carries the timeline but no
-    identity — so this fills the one gap rather than duplicating either.
+    identity, so this fills the one gap rather than duplicating either.
 
     ── Why per gudang, and per gudang only ──
 
     `id_gudang` is the pool every balance is scoped by: the movement form, the
     opening balance on part creation, and both halves of a transfer all write
     it. `id_lokasi` / `site_from` / `site_to` on `sparepart_stok` are older
-    region-tree columns kept only so existing transfer history keeps rendering —
+    region-tree columns kept only so existing transfer history keeps rendering,
     a balance grouped by those would not match what any issuing screen shows.
 
     Read-only and open to any authenticated role: a technician needs to know
@@ -608,7 +608,7 @@ def get_inv_part_detail(
         "subsistem": kat.subsistem if kat else None,
         "kode_alat": p.kode_alat,
         "nama_alat": p.kategori_alat_ref.nama_alat if p.kategori_alat_ref else None,
-        # NULL means "fits every model of this tool" — the common case.
+        # NULL means "fits every model of this tool", the common case.
         "id_varian": p.id_varian,
         "nama_varian": p.varian_ref.nama_varian if p.varian_ref else None,
         "universal": p.id_varian is None,
@@ -658,7 +658,7 @@ async def create_transfer(
     """
     Move stock between two warehouses as a linked OUT/IN pair.
 
-    Warehouse-to-warehouse is the real movement — stock lives in a gudang, and
+    Warehouse-to-warehouse is the real movement, stock lives in a gudang, and
     that is the pool every balance query scopes by. The id_lokasi_* form is
     still accepted for older callers and is recorded on both rows so existing
     transfer history keeps rendering, but when gudang ids are supplied they are
@@ -773,7 +773,7 @@ def get_transfer_history(
     # A transfer is the OUT half of a linked pair. Region-tree transfers are
     # identified by site_from; warehouse transfers leave site_from NULL, so they
     # are identified by the IN row that points back at them. Testing only
-    # site_from — as this did — hid every gudang-to-gudang move.
+    # site_from, as this did, hid every gudang-to-gudang move.
     paired = select(SS.id_ref_transfer).where(SS.id_ref_transfer.isnot(None))
     q = db.query(SS).filter(
         SS.tipe_gerakan == "OUT",
@@ -802,7 +802,7 @@ def get_transfer_history(
     rows = (
         # Eager-load everything the row loop touches. Without these the loop
         # below lazy-loaded part_ref, site_from_ref, site_to_ref and
-        # part_ref.kategori_alat_ref — four round trips per row, so 800 for a
+        # part_ref.kategori_alat_ref, four round trips per row, so 800 for a
         # single default page of 200.
         q.options(
             joinedload(SS.part_ref).joinedload(models.SparePart.kategori_alat_ref),
@@ -940,7 +940,7 @@ async def delete_gudang(id_gudang: int, db: Session = Depends(get_db)):
     row = db.query(models.Gudang).filter_by(id_gudang=id_gudang).first()
     if not row:
         raise HTTPException(status_code=404, detail="Gudang tidak ditemukan.")
-    # Never orphan ledger rows — deactivate instead of deleting if stock moved.
+    # Never orphan ledger rows, deactivate instead of deleting if stock moved.
     used = (
         db.query(models.SparePartStok)
         .filter(models.SparePartStok.id_gudang == id_gudang)
@@ -999,7 +999,7 @@ async def create_stok_movement(
         if not db.query(models.Gudang).filter_by(id_gudang=data.id_gudang).first():
             raise HTTPException(status_code=404, detail="Gudang tidak ditemukan.")
 
-    # Refuse to drive stock negative — a warehouse cannot issue what it lacks.
+    # Refuse to drive stock negative, a warehouse cannot issue what it lacks.
     if tipe in models.SparePartStok.GERAKAN_KELUAR:
         current = _net_stok_map(
             db, id_lokasi=data.id_lokasi, id_gudang=data.id_gudang
@@ -1065,8 +1065,8 @@ def get_stok_movements(
     rows = (
         q.options(
             # `.kategori_ref` is nested: the row loop reads
-            # p.kategori_ref.subsistem, which was one extra query per row —
-            # 100 per default page — despite part_ref itself being eager.
+            # p.kategori_ref.subsistem, which was one extra query per row,
+            # 100 per default page, despite part_ref itself being eager.
             joinedload(models.SparePartStok.part_ref).joinedload(
                 models.SparePart.kategori_ref
             ),
@@ -1180,7 +1180,7 @@ def get_pemakaian_list(
     current_user: models.Pengguna = Depends(get_current_user),
 ):
     """
-    Consumption ledger — which part went into which machine, and what it cost.
+    Consumption ledger, which part went into which machine, and what it cost.
 
     Same `{total, limit, offset, items}` envelope as `get_stok_movements` and
     `get_transfer_history`, so the frontend paginator needs no special case.
@@ -1238,7 +1238,7 @@ def get_pemakaian_list(
 # `SparePart` has no `stok_max` column, so `_stok_status()` is only ever called
 # with `stok_max=None` and can never return it. Listing it here made the
 # dashboard's status chart carry a permanent zero segment and print a legend
-# entry for a category that cannot exist — a tile that reads as real data and is
+# entry for a category that cannot exist, a tile that reads as real data and is
 # structurally incapable of being non-zero.
 #
 # The status itself stays in `_stok_status()`, documented as reserved. The
@@ -1269,7 +1269,7 @@ def get_hirarki_part(
     The BOM tree: alat kerja → subsistem → kategori → part.
 
     The client's matrix asks for this as *"Hierarki Part ▸ Tree ▸ Struktur BOM,
-    input Jenis alat, output Tree, klik part buka detail & history"* — the one
+    input Jenis alat, output Tree, klik part buka detail & history"*, the one
     line marked High that had no implementation at all.
 
     Two call shapes:
@@ -1282,7 +1282,7 @@ def get_hirarki_part(
 
     17 of the 104 katalog tool types have any sparepart registered. A selector
     offering all 104 would leave 87 choices rendering an empty tree, which reads
-    as a broken feature rather than as an answer — so the list is the 17, and
+    as a broken feature rather than as an answer, so the list is the 17, and
     `cakupan` carries both numbers so the UI can state the gap plainly. The
     missing 87 are data yet to be entered, and saying so is more useful than
     hiding it or pretending it is a fault.
@@ -1300,7 +1300,7 @@ def get_hirarki_part(
     The payload keeps `subsistem → kategori → part` because that is the true
     shape of the data. But in the catalogue as it stands, EVERY
     (kode_alat, subsistem) pair has exactly one kategori, and that kategori is
-    named "SUBSISTEM — TOOL NAME" — so drawing it would add a level that always
+    named "SUBSISTEM, TOOL NAME", so drawing it would add a level that always
     has one child and whose label restates its parent. That looks like structure
     while carrying no information.
 
@@ -1372,7 +1372,7 @@ def get_hirarki_part(
             "stok_sekarang": stok,
             "status_stok": _stok_status(stok, p.stok_min or 0, None),
             # NULL is the COMMON case and means "fits every model of this tool".
-            # The renderer must say so — leaving it blank reads as missing data
+            # The renderer must say so, leaving it blank reads as missing data
             # about a part when it is a positive fact about its compatibility.
             "id_varian": p.id_varian,
             "nama_varian": p.varian_ref.nama_varian if p.varian_ref else None,
@@ -1423,7 +1423,7 @@ def get_inv_dashboard(
     Aggregated stock stats for the Kelola Inventaris dashboard.
 
     Two different time semantics live here, deliberately:
-      - STOCK figures (value now, status counts) are point-in-time — the whole
+      - STOCK figures (value now, status counts) are point-in-time, the whole
         ledger up to today, never windowed, or the balance would be wrong.
       - MOVEMENT figures (nilai masuk/keluar, transaksi per periode) ARE
         windowed by dari/sampai, because that is what the printed report shows.
@@ -1434,7 +1434,7 @@ def get_inv_dashboard(
     ).all()
 
     # UPT ids do NOT start with their parent code ("JR1.1" belongs to "D1"), so a
-    # LIKE prefix match is wrong in both directions — see resolve_lokasi_scope().
+    # LIKE prefix match is wrong in both directions, see resolve_lokasi_scope().
     child_lokasi_ids, _parent_row, _child_rows = resolve_lokasi_scope(db, id_lokasi)
     scope_lokasi = (
         child_lokasi_ids if (mode == "per_lokasi" and child_lokasi_ids) else None
@@ -1543,7 +1543,7 @@ def get_inv_dashboard(
     twelve_ago = datetime.now() - timedelta(days=365)
     monthly_q = _scope_stok(
         db.query(
-            # to_char, not strftime — strftime is SQLite-only and raises on PostgreSQL.
+            # to_char, not strftime, strftime is SQLite-only and raises on PostgreSQL.
             func.to_char(models.SparePartStok.waktu, "YYYY-MM").label("bulan"),
             func.sum(models.SparePartStok.jumlah).label("jumlah"),
         ).filter(
@@ -1565,7 +1565,7 @@ def get_inv_dashboard(
     #
     # The window is fixed at 12 months rather than following the Dari/Sampai
     # filter above, because that filter drives the TRANSACTION figures and is
-    # routinely set to a single month — a classification computed over 30 days
+    # routinely set to a single month, a classification computed over 30 days
     # would reshuffle every time someone changed the date box, which is not what
     # "slow moving" means. `pergerakan.sejak` is returned so the panel can state
     # the period; a classification whose period is invisible is not
@@ -1577,7 +1577,7 @@ def get_inv_dashboard(
     konsumsi = []
     for p in all_parts:
         g = keluar_window.get(p.id_part, {})
-        # Outbound only, and returns to a vendor are NOT consumption — they are
+        # Outbound only, and returns to a vendor are NOT consumption, they are
         # stock leaving because it was wrong, not because it was used.
         qty = int(g.get("OUT", 0) or 0)
         konsumsi.append((p, qty))
@@ -1608,7 +1608,7 @@ def get_inv_dashboard(
         "sejak": sejak_fs.strftime("%Y-%m-%d"),
         "fast_count": len(bergerak[:cut]),
         "slow_count": len(bergerak[cut:]),
-        # Named for what it IS. "Dead stock" is a judgement — a spare for a
+        # Named for what it IS. "Dead stock" is a judgement, a spare for a
         # rarely-failing machine that has not been needed in a year is doing
         # exactly its job, and calling it dead invites someone to write it off.
         "diam_count": len(diam),
@@ -1656,7 +1656,7 @@ def get_inv_dashboard(
 def trigger_seed(db: Session = Depends(get_db)):
     """Triggers the sparepart catalog seed. Safe to call multiple times."""
     try:
-        # `seeds.inventaris`, not `seed` — the writer moved into the seeds/
+        # `seeds.inventaris`, not `seed`, the writer moved into the seeds/
         # package and this import kept naming the old module, so the endpoint
         # returned 500 unconditionally. seed.py is now only a CLI.
         from seeds.inventaris import seed_spareparts
@@ -1675,12 +1675,12 @@ def trigger_seed(db: Session = Depends(get_db)):
 
 
 # ══════════════════════════════════════════════════════════════════════
-# STOCK OPNAME — count → variance → adjustment
+# STOCK OPNAME, count → variance → adjustment
 # ══════════════════════════════════════════════════════════════════════
 #
 # The last client-matrix item, and the only one that needed a table. It is
 # additive: `ADJ_IN`/`ADJ_OUT` already existed as the way stock is corrected,
-# so this does not introduce a new way for stock to move — it introduces a
+# so this does not introduce a new way for stock to move, it introduces a
 # record of WHY one particular correction was made, which the ledger alone
 # cannot answer.
 #
@@ -1694,7 +1694,7 @@ def trigger_seed(db: Session = Depends(get_db)):
 #     `SparePartStok.GERAKAN_MASUK`/`GERAKAN_KELUAR` stay the single source of
 #     truth, exactly as they are for the movement form and for repairs.
 #
-#  3. THE VARIANCE IS RECOMPUTED AT POST, against the CURRENT balance — see
+#  3. THE VARIANCE IS RECOMPUTED AT POST, against the CURRENT balance, see
 #     `selesai_opname` below. This is the one most worth protecting and the
 #     easiest to get wrong.
 
@@ -1938,7 +1938,7 @@ async def selesai_opname(
     test. `stok_sistem` was captured when the sheet was opened, and counting a
     warehouse takes hours. If a part is issued to a repair while the count is
     running and the posting trusts the OPENING figure, the adjustment writes
-    stock back up by the amount that was legitimately issued — silently undoing
+    stock back up by the amount that was legitimately issued, silently undoing
     a real movement and leaving two records that disagree about the same units.
     So the balance is re-read here, and the adjustment closes the gap between
     the PHYSICAL count and what the ledger says right now.
@@ -1969,7 +1969,7 @@ async def selesai_opname(
             detail="Belum ada baris yang dihitung. Isi jumlah fisik dulu.",
         )
 
-    # THE re-read. See the docstring — this line is the invariant.
+    # THE re-read. See the docstring, this line is the invariant.
     stok_kini = _net_stok_map(db, id_gudang=sesi.id_gudang)
 
     naik = turun = 0
@@ -2035,7 +2035,7 @@ async def batal_opname(
 ):
     """
     Abandon a count. Writes nothing to the ledger, and KEEPS the session as
-    BATAL rather than deleting it — "we counted and then stopped" is itself
+    BATAL rather than deleting it, "we counted and then stopped" is itself
     worth being able to see, and deleting it would free the warehouse for a new
     sheet with no trace of why the old one ended.
     """

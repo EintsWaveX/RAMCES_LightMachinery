@@ -11,7 +11,7 @@
 // ═══════════════════════════════════════════════════════════════════════
 
 // ════════════════════════════════════════════════════════════════════
-// INVENTARIS — Kelola Inventaris (Dasbor, Parts, Transaksi, Transfer)
+// INVENTARIS, Kelola Inventaris (Dasbor, Parts, Transaksi, Transfer)
 // ════════════════════════════════════════════════════════════════════
 
 (function setupInventaris() {
@@ -20,7 +20,7 @@
   // Scope is a WAREHOUSE, not a DAOP/UPT region: stock physically sits in a
   // handful of named stores that don't map onto the operational region tree.
   let _gudangFilter = "";   // "" = pooled across every warehouse
-  let _dari = "";           // period start — movement figures only
+  let _dari = "";           // period start, movement figures only
   let _sampai = "";         // period end
   let _gudangList = [];
   let _partList = [];       // catalog cache; powers the entry form's datalist
@@ -80,7 +80,7 @@
     // ⚠️ Role gating has to survive this.
     //
     // These four ids also carry `data-write="inventaris"`, so applyRoleGating()
-    // hides them for a read-only role — and then the un-hide below would put
+    // hides them for a read-only role, and then the un-hide below would put
     // them straight back the moment that user opened the Parts tab. A tab
     // switcher must never be able to grant a control the role gate removed, so
     // both conditions are ANDed. The server refuses regardless, but a button
@@ -108,7 +108,7 @@
   ALL_TABS.forEach(({ btn, id }) => btn?.addEventListener("click", () => setInvTab(id)));
 
   // ══════════════════════════════════════════════════════════════════
-  // FLOW HEADER — the ordered prerequisite chain
+  // FLOW HEADER, the ordered prerequisite chain
   // ══════════════════════════════════════════════════════════════════
   //
   // gudang → kategori → sparepart → pergerakan → stok. The four tabs above
@@ -117,7 +117,7 @@
   // `id_gudang` to and refuses every submit without saying why.
   //
   // This marks the first incomplete step and links straight to the control that
-  // completes it. Once every step is satisfied the whole strip hides itself —
+  // completes it. Once every step is satisfied the whole strip hides itself,
   // it is scaffolding for an empty system, not permanent chrome.
   //
   // Nodes are looked up lazily, NOT cached at eval time like the tab elements
@@ -246,20 +246,20 @@
   window.renderInvFlow = renderInvFlow;
 
   // ══════════════════════════════════════════════════════════════════
-  // DASBOR INVENTARIS — stock dashboard
+  // DASBOR INVENTARIS, stock dashboard
   // ══════════════════════════════════════════════════════════════════
 
   // The five Items Master states, in severity order, rolled into three bands.
   //
   // Bands exist because the part-to-whole bar can carry a few segments legibly;
   // the exact per-status counts live in the counter tiles above it, so no detail
-  // is lost. Each tile inherits its band's tone and adds its own icon and label —
+  // is lost. Each tile inherits its band's tone and adds its own icon and label,
   // `warning` and `serious` sit below 3:1 on a white surface, so colour must
   // never carry the meaning on its own.
   //
   // ⚠️ There is no `atasmax` band, and that is deliberate. It used to sit here
   // as a fourth segment while the matching "DI ATAS MAX" tile had already been
-  // removed from STOK_STATUS_META below — so `bandTotals` summed an empty filter
+  // removed from STOK_STATUS_META below, so `bandTotals` summed an empty filter
   // and the chart carried a segment, and the legend an entry, that were 0 on
   // every single load. A category that is structurally incapable of being
   // non-zero reads as real data and is worse than no category at all.
@@ -284,7 +284,7 @@
       hint: "di atas stok minimum" },
     // "DI ATAS MAX" used to sit here as a sixth tile. `_stok_status()` in
     // api/inventaris.py is only ever called with stok_max=None (there is no
-    // stok_max column on SparePart), so the bucket could never be non-zero — a
+    // stok_max column on SparePart), so the bucket could never be non-zero, a
     // permanent 0 that read as a real category. Its BAND was removed at the same
     // time; removing only one of the two is what left the chart legend still
     // printing "Di Atas Maksimum 0" long after the tile had gone.
@@ -320,14 +320,14 @@
     if (dash) dash.innerHTML = '<option value="">— Semua Gudang —</option>' + opts;
     const ledger = el("tx-filter-gudang");
     if (ledger) ledger.innerHTML = '<option value="">Semua Gudang</option>' + opts;
-    // The entry form requires a warehouse — no blank option there.
+    // The entry form requires a warehouse, no blank option there.
     const entry = el("tx-gudang");
     if (entry) {
       entry.innerHTML = opts || '<option value="">— Belum ada gudang —</option>';
     }
     // Same rule for the opname sheet: a count is always OF one warehouse, so
     // there is no "all warehouses" option to offer. Filled here rather than in
-    // loadOpname() so every gudang select in this view is built in one place —
+    // loadOpname() so every gudang select in this view is built in one place,
     // the tab previously copied another select's innerHTML, which silently
     // produced an empty list whenever it happened to open first.
     const opname = el("inv-opname-gudang");
@@ -414,7 +414,7 @@
     const t = KAI_VIZ.theme();
     const periode = d.periode || {};
 
-    // Reflect back whatever window the server actually used — the inputs start
+    // Reflect back whatever window the server actually used, the inputs start
     // blank and the backend defaults to the current month, so without this the
     // date fields would silently disagree with the figures beside them.
     if (el("sd-filter-dari") && periode.dari) {
@@ -543,7 +543,7 @@
     const tx = d.transaksi_periode || [];
     const MASUK_TIPE = new Set(["IN", "RETUR_CUST", "ADJ_IN"]);
     // The server's labels are the printed report's full wording, which is too
-    // long for a rotated axis tick. Shorten for the axis only — the tooltip and
+    // long for a rotated axis tick. Shorten for the axis only, the tooltip and
     // the ledger keep the full names.
     const TX_TICK = {
       IN: "Masuk",
@@ -641,7 +641,7 @@
           responsive: true,
           maintainAspectRatio: false,
           plugins: {
-            legend: { display: false }, // single series — the title names it
+            legend: { display: false }, // single series, the title names it
             tooltip: { callbacks: { label: (c) => `${c.parsed.x} jenis suku cadang` } },
           },
           scales: {
@@ -681,7 +681,7 @@
           maintainAspectRatio: false,
           interaction: { mode: "index", intersect: false },
           plugins: {
-            legend: { display: false }, // single series — the title names it
+            legend: { display: false }, // single series, the title names it
             tooltip: { callbacks: { label: (c) => `${c.parsed.y} unit keluar` } },
           },
           scales: {
@@ -779,7 +779,7 @@
   }
 
   // ══════════════════════════════════════════════════════════════════
-  // TRANSAKSI BARANG — movement entry + running ledger
+  // TRANSAKSI BARANG, movement entry + running ledger
   // ══════════════════════════════════════════════════════════════════
 
   const TIPE_LABEL = {
@@ -793,12 +793,12 @@
   const TIPE_MASUK = new Set(["IN", "RETUR_CUST", "ADJ_IN"]);
 
   // The datalist option text doubles as the lookup key, so the two must be
-  // produced by the same function — a mismatch here silently breaks selection.
+  // produced by the same function, a mismatch here silently breaks selection.
   //
   // `sku` used to guarantee uniqueness for free. Without it the key has to be
   // built from what actually identifies a part: its name, the alat kerja it
   // belongs to, and its Model/Type. That is exactly the triple seed.py dedupes
-  // on, so it is unique across the seeded catalogue by construction — which
+  // on, so it is unique across the seeded catalogue by construction, which
   // matters, because "BUSI" legitimately recurs once per tool and several times
   // per tool across models, and two identical option labels would silently make
   // one of them unselectable (Map.set keeps only the last).
@@ -831,7 +831,7 @@
   async function loadPartCatalog() {
     // Scoped to the SELECTED warehouse. Fetching unscoped (as this used to)
     // returned the globally pooled `stok_sekarang`, which the hint below then
-    // printed as if it were the chosen warehouse's — so the form could read
+    // printed as if it were the chosen warehouse's, so the form could read
     // "Stok tercatat 120 Pcs" and the submit still fail with "Tersedia 0 Pcs",
     // because the server validates against the warehouse pool.
     const params = new URLSearchParams();
@@ -847,8 +847,8 @@
     // One pass builds both the lookup and the option list, so the datalist text
     // and the key can never disagree.
     //
-    // The value MUST be escaped. Part names carry inch marks — `MATA GERINDA 4"`
-    // and `MATA GERINDA 7"` are real catalogue rows — and an unescaped `"` closes
+    // The value MUST be escaped. Part names carry inch marks, `MATA GERINDA 4"`
+    // and `MATA GERINDA 7"` are real catalogue rows, and an unescaped `"` closes
     // the attribute early, so the browser reported the option value as
     // `MATA GERINDA 4` while the Map key was the full string. selectedPart()
     // then returned null and those two parts could not be issued at all: no
@@ -937,7 +937,7 @@
         }),
       });
       // apiFetch only throws on 401, so a 400 (insufficient stock, bad type)
-      // arrives here as a perfectly ordinary response and MUST be checked —
+      // arrives here as a perfectly ordinary response and MUST be checked,
       // otherwise a rejected movement reports success.
       const payload = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -1074,7 +1074,7 @@
       return;
     }
     // Re-entry keeps whichever tab the user left open and refreshes only that
-    // one — reloading the dashboard behind a visible Parts table would spend a
+    // one, reloading the dashboard behind a visible Parts table would spend a
     // request on a panel nobody is looking at.
     if (!panelDash?.classList.contains("hidden")) loadStockDashboard();
     else if (!panelParts?.classList.contains("hidden")) loadInvParts();
@@ -1102,12 +1102,12 @@
   }
 
   // Null when adding, the id_part when editing. PUT /inventaris/parts/{id} and
-  // the whole SparePartUpdate schema existed with no UI at all — the row's
+  // the whole SparePartUpdate schema existed with no UI at all, the row's
   // Aksi column only ever offered delete.
   let _editingPartId = null;
 
   function openAddModal(part = null) {
-    // Only one inventaris modal at a time — these used to be able to stack,
+    // Only one inventaris modal at a time, these used to be able to stack,
     // leaving two dialogs and two backdrops fighting over the same screen.
     closeCatModal();
     closeGudangModal();
@@ -1126,7 +1126,7 @@
 
     // Stock fields belong to the OPENING balance, which only makes sense when
     // creating. Editing a part must never silently re-post an opening receipt,
-    // so they are disabled rather than merely ignored — a filled-in but
+    // so they are disabled rather than merely ignored, a filled-in but
     // discarded field is worse than one that cannot be filled in.
     ["inv-field-quantity", "inv-field-gudang"].forEach((id) => {
       const node = el(id);
@@ -1188,7 +1188,7 @@
     // Every field the form still carries, and nothing else. The identification
     // and supplier blocks are gone from the markup AND from `sparepart`, so a
     // key here that the schema no longer declares would be silently dropped by
-    // Pydantic rather than rejected — which is how a form starts lying about
+    // Pydantic rather than rejected, which is how a form starts lying about
     // what it saved.
     const body = {
       nama_part: document.getElementById("inv-field-item-name")?.value.trim(),
@@ -1219,7 +1219,7 @@
           body: JSON.stringify(body),
         });
       } else {
-        // Opening stock must name a warehouse — it is written with id_gudang,
+        // Opening stock must name a warehouse, it is written with id_gudang,
         // the pool every balance query scopes by. Writing it against a region
         // instead (as this used to) made the stock invisible and un-issuable.
         if (jumlahAwal > 0 && !gudangAwal) {
@@ -1260,7 +1260,7 @@
   //
   // The endpoints have always existed but nothing could reach them. On a
   // database that had not been seeded there were no warehouses, the movement
-  // form's gudang select read "— Belum ada gudang —", and the client-side
+  // form's gudang select read ", Belum ada gudang, ", and the client-side
   // guard blocked every submit. The whole module was unusable from a cold
   // start.
   // ══════════════════════════════════════════════════════════════════
@@ -1460,15 +1460,15 @@
     }
   });
 
-  // Category names are seeded as "SUBSISTEM – ALAT" ("ENGINE – HTT 220 V"), and
+  // Category names are seeded as "SUBSISTEM, ALAT" ("ENGINE, HTT 220 V"), and
   // the dropdown used to prefix the subsistem a second time, rendering
-  // "[ENGINE] ENGINE – HTT 220 V". `nama` is UNIQUE in the database, so the
+  // "[ENGINE] ENGINE, HTT 220 V". `nama` is UNIQUE in the database, so the
   // safe place to fix it is here rather than by rewriting stored names.
   function _kategoriLabel(c) {
     const nama = (c.nama || "").trim();
     const sub = (c.subsistem || "").trim();
     if (!sub) return nama;
-    // Already carries its subsistem — show the stored name unchanged.
+    // Already carries its subsistem, show the stored name unchanged.
     if (nama.toUpperCase().startsWith(sub.toUpperCase())) return nama;
     return `[${sub}] ${nama}`;
   }
@@ -1502,7 +1502,7 @@
   const catList     = document.getElementById("inv-category-list");
 
   function openCatModal() {
-    // Never stack the two inventaris dialogs — see openAddModal().
+    // Never stack the two inventaris dialogs, see openAddModal().
     addModal?.classList.add("hidden");
     catModal?.classList.remove("hidden");
     fillCategoryAlatSelect();
@@ -1571,7 +1571,7 @@
         }),
       });
       const payload = await res.json().catch(() => ({}));
-      // A duplicate name is a 400, and apiFetch only throws on 401 — so this
+      // A duplicate name is a 400, and apiFetch only throws on 401, so this
       // used to show a green "Kategori ditambahkan" for a rejected insert.
       if (!res.ok) {
         showToast(payload.detail || "Gagal menambahkan kategori.", "error");
@@ -1591,7 +1591,7 @@
   // ── Load & render Parts table ──────────────────────────────────────
   // The last payload is cached so search can filter the DATA. The previous
   // implementation walked DOM rows setting `style.display`, which only ever saw
-  // the rows currently in the table — with paging that means only the current
+  // the rows currently in the table, with paging that means only the current
   // page, so a match on page 3 was invisible.
   let _partsRows = [];
 
@@ -1775,7 +1775,7 @@
       </tr>`;
     }).join("");
 
-    // Edit handlers — PUT /inventaris/parts/{id} was implemented server-side
+    // Edit handlers, PUT /inventaris/parts/{id} was implemented server-side
     // but had no way to be triggered from the UI.
     tbody.querySelectorAll(".inv-part-edit").forEach((btn) => {
       btn.addEventListener("click", () => {
@@ -1807,7 +1807,7 @@
   }
 
   // Load parts when switching to Parts tab
-  // Tab activation is handled centrally in setInvTab() — no per-tab listener
+  // Tab activation is handled centrally in setInvTab(), no per-tab listener
   // here, or switching to Parts would fire two identical fetches.
 
   // ── Unified search ────────────────────────────────────────────────
@@ -1831,14 +1831,14 @@
   let _transferRows = [];
 
   // ══════════════════════════════════════════════════════════════════
-  // Hierarki Suku Cadang — the BOM tree
+  // Hierarki Suku Cadang, the BOM tree
   // ══════════════════════════════════════════════════════════════════
   //
   // The client's "Hierarki Part ▸ Tree ▸ Struktur BOM": pick a tool type, see
   // its parts grouped by subsistem, click one to open its history card.
   //
   // Rendered as a real <ul>/<li> nesting rather than indented divs, because
-  // that is what a tree IS — a screen reader announces the levels and the item
+  // that is what a tree IS, a screen reader announces the levels and the item
   // counts for free, which no amount of padding-left can do.
 
   // Which subsistem gets which icon. Unknown ones fall back rather than being
@@ -1855,7 +1855,7 @@
   async function loadInvHirarki() {
     if (!hirarkiAlat || !hirarkiTree) return;
 
-    // The selector is fetched once per session — the catalogue of which tools
+    // The selector is fetched once per session, the catalogue of which tools
     // have parts changes only when parts are created.
     if (!_hirarkiLoaded) {
       try {
@@ -1923,7 +1923,7 @@
     }
 
     // Theme tokens are read per render, exactly as every other renderer here
-    // does — `t` is a local in each, not a shared binding, and the palette
+    // does, `t` is a local in each, not a shared binding, and the palette
     // changes when the user toggles dark mode mid-session.
     const t = KAI_VIZ.theme();
 
@@ -1931,7 +1931,7 @@
       const meta = STOK_STATUS_META.find((m) => m.key === p.status_stok);
       const color = bandTone(t, meta?.band);
       // `id_varian` NULL is the COMMON case and means "fits every model of this
-      // tool" — a positive fact. Rendering it as a blank would read as missing
+      // tool", a positive fact. Rendering it as a blank would read as missing
       // data about the part instead.
       const cocok = p.universal
         ? `<span class="badge badge-neutral">semua model</span>`
@@ -1964,9 +1964,9 @@
            </li>`;
 
     const subBlock = (s) => {
-      // Collapse a kategori level that has exactly one child — in this
+      // Collapse a kategori level that has exactly one child, in this
       // catalogue every (alat, subsistem) pair has one kategori named
-      // "SUBSISTEM — TOOL", so drawing it would add a level that always has one
+      // "SUBSISTEM, TOOL", so drawing it would add a level that always has one
       // child and whose label restates its parent. The rule is about SHAPE, not
       // about today's data: split the catalogue later and the level returns.
       const collapse = s.kategori.length === 1;
@@ -1999,12 +1999,12 @@
   hirarkiAlat?.addEventListener("change", () => loadInvHirarki());
 
   // ══════════════════════════════════════════════════════════════════
-  // Kartu Riwayat Suku Cadang — the per-part history card
+  // Kartu Riwayat Suku Cadang, the per-part history card
   // ══════════════════════════════════════════════════════════════════
   //
   // The client's "History Card Part ▸ Riwayat ▸ Timeline transaksi part". The
-  // data path already existed — `sparepart_stok` is append-only by design and
-  // `/api/inventaris/stok?id_part=` has always returned the per-part ledger —
+  // data path already existed, `sparepart_stok` is append-only by design and
+  // `/api/inventaris/stok?id_part=` has always returned the per-part ledger,
   // so this is the screen, not a new source of truth.
   //
   // Two requests, deliberately: identity + per-gudang balance from
@@ -2028,7 +2028,7 @@
 
     let detail, ledger;
     try {
-      // apiFetch only THROWS on 401, so both have to be checked explicitly —
+      // apiFetch only THROWS on 401, so both have to be checked explicitly,
       // otherwise a 404 would render as an empty card rather than as an error.
       const [rd, rl] = await Promise.all([
         apiFetch(`/inventaris/parts/${idPart}`, { background: true }),
@@ -2057,7 +2057,7 @@
     const meta = STOK_STATUS_META.find((m) => m.key === detail.status_stok);
     const color = bandTone(t, meta?.band);
 
-    // Per-gudang, because `id_gudang` is the pool every balance is scoped by —
+    // Per-gudang, because `id_gudang` is the pool every balance is scoped by,
     // "24 in total" is not actionable if a technician cannot tell which shelf.
     const gudangRows = (detail.per_gudang || []).length
       ? detail.per_gudang
@@ -2258,14 +2258,14 @@
 
       // Category is matched by name against the existing master rather than
       // created on the fly: silently inventing categories from typos is how
-      // a catalogue ends up with "ENGINE - GENSET" and "ENGINE – GENSET".
+      // a catalogue ends up with "ENGINE - GENSET" and "ENGINE, GENSET".
       if (!_categories.length) await loadInvKategoriOptions();
       const katByName = new Map(
         _categories.map((c) => [String(c.nama).trim().toUpperCase(), c.id_kategori]),
       );
 
       let success = 0, failed = 0;
-      // Positions must track the template's `headers` above — six columns now
+      // Positions must track the template's `headers` above, six columns now
       // that SKU, Nomor Part and Supplier are gone.
       for (const row of dataRows) {
         const namaKat = String(row[1] || "").trim().toUpperCase();
@@ -2332,7 +2332,7 @@
         </tr>`).join("");
   }
 
-  // WebSocket refresh — only the visible panel, so a stock movement logged by
+  // WebSocket refresh, only the visible panel, so a stock movement logged by
   // another user doesn't trigger four fetches on every connected client.
   window.addEventListener("ws-message", (e) => {
     if (e.detail !== "REFRESH_INVENTARIS") return;
@@ -2350,13 +2350,13 @@
 
 
   // ══════════════════════════════════════════════════════════════════
-  // STOCK OPNAME — count sheet, variance, posting
+  // STOCK OPNAME, count sheet, variance, posting
   // ══════════════════════════════════════════════════════════════════
   //
   // Nothing in this tab touches the ledger until "Selesaikan" is pressed. The
   // physical counts are saved as they are typed so a half-finished sheet
   // survives a reload, but they are just numbers on a form until the variance
-  // is posted as ADJ_IN/ADJ_OUT rows — see selesai_opname() in
+  // is posted as ADJ_IN/ADJ_OUT rows, see selesai_opname() in
   // api/inventaris.py, where the variance is deliberately recomputed against
   // the CURRENT balance rather than the one snapshotted when the sheet opened.
   //
