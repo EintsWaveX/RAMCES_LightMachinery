@@ -21,7 +21,7 @@ nothing.
 There is no canvas anywhere in this frontend, no image pipeline, and Pillow is
 not among the installed dependencies. An SVG is text: it goes in the same JSON
 as the token, needs no second request, no `<img src>` and no cache headers, and
-it scales on a phone. The distortion is deliberately mild — this defends against
+it scales on a phone. The distortion is deliberately mild, this defends against
 an unattended script, not against a paid solving service, and a captcha a
 technician in a hi-vis vest cannot read at a resort is worse than none.
 
@@ -33,7 +33,7 @@ therefore kept in a small in-process set until their token would have expired
 anyway. That set is the ONE piece of state here, it is bounded, and losing it on
 restart costs at most a replay inside a two-minute window.
 
-Alphabet excludes O/0/I/l/1 — the characters people misread and then blame the
+Alphabet excludes O/0/I/l/1, the characters people misread and then blame the
 form for.
 """
 
@@ -135,7 +135,7 @@ def verify(token: str, answer: str) -> tuple:
     Check an answer. Returns `(ok, reason)`; `reason` is user-facing Indonesian.
 
     Every failure is distinguishable to the CALLER, so the log and the handler
-    can tell an expired token from a wrong answer — but the handler is expected
+    can tell an expired token from a wrong answer, but the handler is expected
     to show the same generic wording either way, for the same reason
     `/api/login` does.
     """
@@ -166,7 +166,7 @@ def verify(token: str, answer: str) -> tuple:
     ):
         return False, "Captcha salah."
 
-    # LAST, so a wrong answer does not burn the challenge — otherwise one typo
+    # LAST, so a wrong answer does not burn the challenge, otherwise one typo
     # forces a reload, which is exactly the friction this is meant to avoid for
     # legitimate users.
     if not _consume(nonce):
@@ -187,7 +187,7 @@ def render_svg(text: str) -> str:
     the trade this project wants.
 
     `currentColor` is used throughout so it inherits the page's text colour and
-    is legible in BOTH themes without the caller passing a palette — this is
+    is legible in BOTH themes without the caller passing a palette, this is
     rendered into a light and a dark login screen and into landing.html, which
     follows the system theme independently.
     """

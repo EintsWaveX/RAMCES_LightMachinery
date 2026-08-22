@@ -8,12 +8,12 @@
 // ═══════════════════════════════════════════════════════════════════════
 
 // ── DASHBOARD STATE ────────────────────────────────────────────────────────
-// DEAD on the Dashboard as of rev0.4.7 — the Benchmark card and its Δ column
+// DEAD on the Dashboard as of rev0.4.7, the Benchmark card and its Δ column
 // are gone, replaced by Perlu Perhatian and a flag column (see
 // _DASH_KPI_CARDS and _renderMatrixPanel below). The declaration STAYS: it
 // is a top-level `let` still read by js/views/kdak.js (lines 24, 38, 41,
 // 1436) and js/views/laporan.js (lines 286-290), neither of which this pass
-// touches — deleting it now is a ReferenceError on both screens. Slated for
+// touches, deleting it now is a ReferenceError on both screens. Slated for
 // removal once those two screens' own Benchmark cards go too.
 let _benchmarkPct = (() => {
   const raw = localStorage.getItem("dashBenchmark");
@@ -26,7 +26,7 @@ let _dashChartAvail = null;
 let _dashChartTrend = null;
 // "perbaikan" is the printed repair report, moved here from Kelola Inventaris so
 // every fleet-level dashboard lives behind one menu entry. It owns its own
-// Lokasi + Tahun filters and boots lazily — see setupRepairDashboard().
+// Lokasi + Tahun filters and boots lazily, see setupRepairDashboard().
 // "mcf" is served by the same endpoint pair as "perbaikan", so activating
 // either tab boots the repair dashboard.
 const _DASH_TABS = ["matrix", "bar", "avail", "trend", "perbaikan", "mcf"];
@@ -41,7 +41,7 @@ const _DASH_TABS = ["matrix", "bar", "avail", "trend", "perbaikan", "mcf"];
 // Lokasi + Tahun row. A control that visibly applies to only half the screen is
 // worse than no control, because there is no way to tell which half.
 //
-// Each tab now carries its own row AND its own selection — switching to
+// Each tab now carries its own row AND its own selection, switching to
 // Grafik Ketersediaan and narrowing to one alat kerja leaves the Matriks
 // exactly as it was. That is what "individually per tabs" means: the rows are
 // independent, not merely duplicated.
@@ -51,21 +51,21 @@ const _DASH_TABS = ["matrix", "bar", "avail", "trend", "perbaikan", "mcf"];
 let _dashFilters = {
   // `uptTipe` is the matrix's alone: "" | JR | JB | ME. The other three panels
   // roll UPT into the parent region, so a branch filter would have nothing to
-  // narrow — the matrix is the only place the individual resorts are drawn.
-  // `sortRegion` is likewise matrix-only — the row order of a table with a
+  // narrow, the matrix is the only place the individual resorts are drawn.
+  // `sortRegion` is likewise matrix-only, the row order of a table with a
   // fixed set of tools has nothing to sort by; a table of REGIONS does. See
   // _renderMatrixPanel()'s sort block and the control built in
   // _renderDashFilterRow() below.
   matrix: { alat: "", pengadaan: "", tahun: "", uptTipe: "", sortRegion: "nama-asc" },
   bar: { alat: "", pengadaan: "", tahun: "" },
   avail: { alat: "", pengadaan: "", tahun: "" },
-  // Trend plots twelve months of ONE year, so its `tahun` is never "" —
+  // Trend plots twelve months of ONE year, so its `tahun` is never "",
   // _renderDashFilterRow seeds it with the newest year that holds data.
   trend: { alat: "", pengadaan: "", tahun: "" },
 };
 
 // Semua / JR / JB / ME. The three prefixes come from UPT_PREFIX_BY_PERUNTUKAN
-// in js/core.js rather than a second hardcoded copy — the UPT code prefix IS
+// in js/core.js rather than a second hardcoded copy, the UPT code prefix IS
 // the peruntukan, and that mapping is already stated in one place.
 const _UPT_TIPE_OPSI = [
   { val: "", label: "Semua" },
@@ -76,7 +76,7 @@ const _UPT_TIPE_OPSI = [
 
 // The matrix's row-order control. `dir` drives the leading icon on the
 // `.toolbar-select` the same way `_updateSortIcon()` does for the KPI
-// drill-down's own region sort (js/views/dash-drill.js) — asc for the two
+// drill-down's own region sort (js/views/dash-drill.js), asc for the two
 // alphabetical options, desc for the three "highest first" ones. Read by
 // _renderMatrixPanel() via `_dashFilterFor("matrix").sortRegion`.
 const _MATRIX_SORT_OPSI = [
@@ -93,7 +93,7 @@ const _MATRIX_SORT_OPSI = [
 const _DASH_FILTER_SPEC = {
   matrix: {
     fields: ["alat", "pengadaan", "tahun", "uptTipe", "sortRegion"],
-    // The third swatch carries `.matrix-cell-mixed` — the SAME class the cell
+    // The third swatch carries `.matrix-cell-mixed`, the SAME class the cell
     // itself uses, not a lookalike. It used to be a soft Tailwind
     // `from-green-300 to-red-300` diagonal blend while the real cell is a hard
     // 135° 50/50 split, so the key did not depict the thing it was keying.
@@ -102,9 +102,9 @@ const _DASH_FILTER_SPEC = {
     // The LABEL was wrong too: "Lebih dari 1 unit" describes any cell holding
     // two or more machines, but three units that are all SO render solid green.
     // What this swatch actually marks is a MIXED cell.
-    // The last two swatches replace a single "— Tidak ada alat" entry that
-    // showed an actual em dash. The matrix no longer prints one anywhere —
-    // an em dash reads as a fillable placeholder, not as "nothing here" — so
+    // The last two swatches replace a single ", Tidak ada alat" entry that
+    // showed an actual em dash. The matrix no longer prints one anywhere,
+    // an em dash reads as a fillable placeholder, not as "nothing here", so
     // the key now names the two backgrounds that took its place instead: one
     // for a real UPT that simply has no assets right now, one for a column
     // slot that does not apply to this region at all. See _matrixCell() /
@@ -145,13 +145,13 @@ function _dashFilterFor(tabId) {
 }
 
 // ══════════════════════════════════════════════════════════════════════
-// THE FLEET ROLLUP — /api/aset/dashboard/ringkasan
+// THE FLEET ROLLUP, /api/aset/dashboard/ringkasan
 // ══════════════════════════════════════════════════════════════════════
 //
 // Every panel here used to reduce `db`, a client-side copy of the whole fleet,
 // and that copy was the single reason the SPA downloaded 1.06 MB at login. All
 // four panels and the KPI strip turn out to want only SO/TSO counts keyed by
-// something, so the server groups them and sends 5.6 KB instead — and it stops
+// something, so the server groups them and sends 5.6 KB instead, and it stops
 // growing with the fleet.
 //
 // What did NOT change: the panels still key on the asset's CURRENT `id_lokasi`
@@ -195,7 +195,7 @@ async function getRingkasan(f = {}) {
     return body;
   } catch (e) {
     // A failed rollup must not blank a panel that was showing real numbers a
-    // second ago — an empty shape renders the same empty state a genuinely
+    // second ago, an empty shape renders the same empty state a genuinely
     // empty fleet does, and the toast in apiFetch already reported the failure.
     return RINGKASAN_EMPTY;
   }
@@ -203,7 +203,7 @@ async function getRingkasan(f = {}) {
 window.getRingkasan = getRingkasan;
 
 /**
- * The unfiltered rollup IF it is already cached, otherwise null — never a fetch.
+ * The unfiltered rollup IF it is already cached, otherwise null, never a fetch.
  *
  * The KDAK live id preview runs on every keystroke and must stay synchronous.
  * `updateDashboardStats()` populates this at login, so by the time any form is
@@ -216,22 +216,22 @@ function ringkasanIfLoaded() {
 window.ringkasanIfLoaded = ringkasanIfLoaded;
 
 // ══════════════════════════════════════════════════════════════════════
-// THE ATTENTION ROLLUP — /api/aset/dashboard/hirarki
+// THE ATTENTION ROLLUP, /api/aset/dashboard/hirarki
 // ══════════════════════════════════════════════════════════════════════
 //
 // `ringkasan` answers "how many, and where" and nothing else. Three of the
-// seven KPI cards — Kalibrasi, Mutasi and Perlu Perhatian — ask a different
+// seven KPI cards, Kalibrasi, Mutasi and Perlu Perhatian, ask a different
 // question: which machines need somebody to do something today. That needs the
 // latest calibration per asset and the first transfer per asset, neither of
 // which `ringkasan` carries and neither of which the client can derive without
 // the whole fleet.
 //
 // Same filter triple, same cache discipline, same per-RAW-lokasi keying as
-// `ringkasan.per_lokasi` — so `_rollUpLokasi()` works on `per_lokasi` here
+// `ringkasan.per_lokasi`, so `_rollUpLokasi()` works on `per_lokasi` here
 // unchanged, and the matrix's flag column lines up with its own SO/TSO row.
 //
 // LAZY BY CONSTRUCTION. This is fetched from `_renderDashActivePanel()` only
-// while the matrix tab is showing, never from `updateDashboardStats()` — that
+// while the matrix tab is showing, never from `updateDashboardStats()`, that
 // function runs at login (js/shell.js) and after every mutation (js/api.js),
 // and hanging a fetch off it would put this on the critical path of every
 // sign-in for a strip the user may never scroll to.
@@ -269,7 +269,7 @@ async function getDashHirarki(f = {}) {
 }
 window.getDashHirarki = getDashHirarki;
 
-/** The attention rollup IF already cached, otherwise null — never a fetch. */
+/** The attention rollup IF already cached, otherwise null, never a fetch. */
 function hirarkiIfLoaded(f = {}) {
   const p = new URLSearchParams();
   if (f.alat) p.set("alat", f.alat);
@@ -310,13 +310,13 @@ function _rollUpLokasi(perLokasi) {
 // ══════════════════════════════════════════════════════════════════════
 //
 // Seven cards, and every one of them is a door. Each card used to print a
-// number and stop there — "165 tidak siap" with no way on screen to ask WHICH
+// number and stop there, "165 tidak siap" with no way on screen to ask WHICH
 // 165, even though the answer was already in the database. They are `<button>`s
 // now, and each opens the shared drill-down modal scoped to what it counts.
 //
 // The strip lives INSIDE #dash-panel-matrix rather than above the tab bar. It
 // always followed the active tab's filter, which is why it used to need a
-// "Menghitung: …" caption underneath explaining which tab it was obeying — a
+// "Menghitung: …" caption underneath explaining which tab it was obeying, a
 // caption is what you add when the layout is lying. Putting it in the panel
 // whose filters drive it removes the question instead of answering it.
 //
@@ -351,8 +351,8 @@ const _DASH_KPI_CARDS = [
     mode: "kalibrasi", label: "Kalibrasi", ikon: "fa-ruler-combined", aksen: "cyan-400",
     warna: "text-cyan-600 dark:text-cyan-400",
     watermark: "text-cyan-100 dark:text-cyan-900/30",
-    // Overdue plus due-soon: what somebody has to act on. `belum` — never
-    // calibrated at all — is deliberately the sub-line and not the headline,
+    // Overdue plus due-soon: what somebody has to act on. `belum`, never
+    // calibrated at all, is deliberately the sub-line and not the headline,
     // for the same reason the server leaves it out of `perhatian`: on a fresh
     // install it is most of the fleet and would read as a sudden backlog.
     nilai: (_a, h) => _kpiNum(h.kalibrasi.lewat + h.kalibrasi.segera),
@@ -384,7 +384,7 @@ const _DASH_KPI_CARDS = [
   },
 ];
 
-/** `—` rather than `0` for a missing rollup, matching what the tiles always did. */
+/** `, ` rather than `0` for a missing rollup, matching what the tiles always did. */
 function _kpiNum(n) {
   return n === null || n === undefined ? "—" : Number(n).toLocaleString("id-ID");
 }
@@ -392,7 +392,7 @@ function _kpiNum(n) {
 /**
  * Paint the seven cards into #dash-kpi-strip.
  *
- * `hir` may be HIRARKI_EMPTY on the first paint — the strip renders at login
+ * `hir` may be HIRARKI_EMPTY on the first paint, the strip renders at login
  * from the cached ringkasan while the attention rollup is still in flight, and
  * `_renderDashActivePanel()` calls this again once it lands. That is why the
  * three hirarki-backed cards read `0` briefly rather than blocking the paint.
@@ -420,7 +420,7 @@ function _renderDashKpiStrip(agg, hir) {
   }).join("");
 
   // ONE delegated listener, guarded so re-rendering the strip cannot multiply
-  // it — the same discipline _renderDashFilterRow() uses on its own mount.
+  // it, the same discipline _renderDashFilterRow() uses on its own mount.
   if (!mount.dataset.wired) {
     mount.dataset.wired = "1";
     mount.addEventListener("click", (e) => {
@@ -437,7 +437,7 @@ function _renderDashKpiStrip(agg, hir) {
  * Build (or refresh) one tab's filter row.
  *
  * Called on every render rather than once, because the year counts change
- * whenever the asset list is refetched — a cached row would keep reporting
+ * whenever the asset list is refetched, a cached row would keep reporting
  * "2025 (623)" after a mutation made it 624.
  *
  * The <select> elements are recreated each time, so the change handlers are
@@ -452,7 +452,7 @@ async function _renderDashFilterRow(tabId) {
   const f = _dashFilterFor(tabId);
   // Counts are scoped to this tab's OTHER filters, so the year list answers
   // "how many of what I am currently looking at", not "how many in the fleet".
-  // `tahun_counts` is computed the same way server-side — narrowed by alat and
+  // `tahun_counts` is computed the same way server-side, narrowed by alat and
   // pengadaan but NOT by the year, or the list would collapse to the one year
   // already chosen and there would be no way back.
   //
@@ -473,10 +473,10 @@ async function _renderDashFilterRow(tabId) {
     // Only alat kerja that actually HOLD assets in this scope, each with its
     // count, alphabetical. The katalog has 104 tool types and the seeded fleet
     // uses 26 of them, so listing them all left 78 options that render an empty
-    // panel — a filter offering choices that cannot answer anything.
+    // panel, a filter offering choices that cannot answer anything.
     //
     // Counts come from a rollup narrowed by pengadaan and tahun but NOT by alat
-    // — exactly the rule `tahun_counts` follows. Scoping by the current alat
+    // exactly the rule `tahun_counts` follows. Scoping by the current alat
     // would collapse the list to the one option already chosen, with no way
     // back to any other.
     const alatCounts = (await getRingkasan({
@@ -494,7 +494,7 @@ async function _renderDashFilterRow(tabId) {
       .sort((a, b) => a.name.localeCompare(b.name, "id"));
 
     // Keep the current selection even when it has fallen to zero, rendered
-    // "(0)" — the same guarantee fillYearSelect() gives the year pickers, so a
+    // "(0)", the same guarantee fillYearSelect() gives the year pickers, so a
     // refetch can never silently drop a filter the user set.
     if (f.alat && !opsiAlat.some((o) => o.code === f.alat)) {
       opsiAlat.push({
@@ -557,7 +557,7 @@ async function _renderDashFilterRow(tabId) {
     // `.toolbar-select` shape from #dash-drill-sort (js/views/dash-drill.js)
     // rather than a bare <select>, so the direction is visible at a glance.
     // The generic `data-dash-field` delegated `change` listener below already
-    // handles this control — no separate wiring needed.
+    // handles this control, no separate wiring needed.
     const cur = _MATRIX_SORT_OPSI.some((o) => o.val === f.sortRegion) ? f.sortRegion : "nama-asc";
     const curOpt = _MATRIX_SORT_OPSI.find((o) => o.val === cur) || _MATRIX_SORT_OPSI[0];
     const iconCls = curOpt.dir === "desc" ? "fa-arrow-down-wide-short" : "fa-arrow-up-short-wide";
@@ -605,7 +605,7 @@ async function _renderDashFilterRow(tabId) {
       counts,
       spec.tahunAllLabel === null ? null : "Semua Tahun",
     );
-    // Trend has no all-years option, so it must land on a concrete year — and
+    // Trend has no all-years option, so it must land on a concrete year, and
     // that year has to be written back into the state or the chart and the box
     // would disagree on first paint.
     f.tahun = tahunSel.value;
@@ -623,7 +623,7 @@ async function _renderDashFilterRow(tabId) {
       updateDashboardStats();
     });
     // The segmented control and the reload button are both buttons, which
-    // fire `click`, not `change` — a second listener on the SAME mount behind
+    // fire `click`, not `change`, a second listener on the SAME mount behind
     // the same wired flag, so rebuilding the row still cannot multiply any of
     // them.
     mount.addEventListener("click", (e) => {
@@ -647,7 +647,7 @@ async function _renderDashFilterRow(tabId) {
 }
 
 /**
- * "Muat Ulang" for the four computed panels — Laporan Perbaikan and Kurva MCF
+ * "Muat Ulang" for the four computed panels, Laporan Perbaikan and Kurva MCF
  * have always had their own #rd-refresh/#rd-mcf-refresh; these had no way to
  * force a fresh read without switching tabs and back.
  *
@@ -678,7 +678,7 @@ function _wireDashChrome() {
     btn.addEventListener("click", () => _switchDashTab(btn.dataset.dashTab));
   });
 
-  // Replaces #dash-tab-prev / #dash-tab-next, which were `hidden sm:flex` —
+  // Replaces #dash-tab-prev / #dash-tab-next, which were `hidden sm:flex`,
   // visible only at the widths where the strip no longer scrolls at all. Arrow
   // keys are what a tab strip is supposed to answer to anyway.
   document.getElementById("dash-tab-bar")?.addEventListener("keydown", (e) => {
@@ -719,13 +719,13 @@ function _switchDashTab(tabId) {
 
 /**
  * The three Chart.js panels build their canvas synchronously once the rollup
- * is in hand — there is nothing to show while `await _dashAgg(tabId)` below
+ * is in hand, there is nothing to show while `await _dashAgg(tabId)` below
  * is in flight on a cache miss, so a tab switch shows an empty/stale canvas
  * for that whole window. Every other Dashboard surface (KPI strip, matrix,
  * drill-down) already has a skeleton for this exact moment; these two
  * functions are it for the chart panels. `_hideChartSkeleton()` is called
  * from inside each `_render*Panel()` once it actually has a canvas to draw
- * into, so the two never both show and the skeleton can never get stuck —
+ * into, so the two never both show and the skeleton can never get stuck,
  * whichever panel renders is the one that clears its own placeholder.
  */
 function _showChartSkeleton(tabId) {
@@ -741,7 +741,7 @@ function _hideChartSkeleton(tabId) {
 async function _renderDashActivePanel() {
   const tabId = _DASH_TABS[_dashTabIndex];
 
-  // Paint BEFORE the fetch below, not after — the whole point is covering the
+  // Paint BEFORE the fetch below, not after, the whole point is covering the
   // await window on a cache miss. Cleared by the render function itself once
   // it draws, whether that resolves fast (cache hit) or slow.
   if (tabId === "bar" || tabId === "avail" || tabId === "trend") _showChartSkeleton(tabId);
@@ -761,7 +761,7 @@ async function _renderDashActivePanel() {
   _syncDashBanner(tabId);
 
   if (tabId === "matrix") {
-    // The attention rollup is fetched HERE and only here — see the comment on
+    // The attention rollup is fetched HERE and only here, see the comment on
     // _hirarkiCache. The strip is painted twice on a cold cache: once from the
     // ringkasan that is already in hand, then again when this resolves, so the
     // four ringkasan-backed cards appear immediately instead of waiting.
@@ -780,7 +780,7 @@ async function _renderDashActivePanel() {
 }
 
 // ── PANEL 1: Matrix ────────────────────────────────────────────────────────
-/** JR / JB / ME from a UPT code's own prefix — the same rule the UPT-tipe
+/** JR / JB / ME from a UPT code's own prefix, the same rule the UPT-tipe
  *  filter already applies (`startsWith(uptTipe)`), pulled out once so the
  *  grouped header and the branch filter can never disagree on where a code
  *  belongs. */
@@ -793,14 +793,14 @@ function _branchOf(code) {
 }
 
 /**
- * One <td> for a real slot — the Kantor Wilayah column or an actual resort —
+ * One <td> for a real slot, the Kantor Wilayah column or an actual resort,
  * covering both "has assets" and "exists, currently has none." Never called
  * for a slot that does not exist for this region at all; see
  * _matrixSlotEmptyCell() for that.
  *
  * `data-tip` + `tabindex="0"` replace the old `title` attribute: `title`
  * never fires on touch, so every informative cell is readable through the
- * SAME mechanism regardless of input device — see _wireMatrixInfo().
+ * SAME mechanism regardless of input device, see _wireMatrixInfo().
  */
 function _matrixCell(upt, countsByLokasi, groupStart) {
   const judul = upt._kantor ? `${upt.nama} (${upt.upt})` : upt.upt;
@@ -810,7 +810,7 @@ function _matrixCell(upt, countsByLokasi, groupStart) {
 
   if (!n) {
     // A dash HERE is a real answer: this UPT exists, this region has it, and
-    // it currently holds zero assets — worth saying, unlike a slot that does
+    // it currently holds zero assets, worth saying, unlike a slot that does
     // not correspond to anything for this row at all (_matrixSlotEmptyCell,
     // no text, no data-tip, hatched). Muted colour keeps it visually distinct
     // from the bold SO/TSO counts a real cell prints.
@@ -839,7 +839,7 @@ function _matrixCell(upt, countsByLokasi, groupStart) {
 }
 
 /** A column slot this region simply does not have (fewer UPTs in that branch
- *  than the widest region needs). Structural, not data — no text, no tap
+ *  than the widest region needs). Structural, not data, no text, no tap
  *  target, no tooltip; there is nothing to say about it. */
 function _matrixSlotEmptyCell(groupStart) {
   return `<td class="dash-matrix-slot-empty${groupStart ? " dash-matrix-group-start" : ""}" aria-hidden="true"></td>`;
@@ -849,7 +849,7 @@ function _matrixSlotEmptyCell(groupStart) {
  * One delegated listener for the whole table, wired once (thead/tbody are
  * replaced wholesale on every render, but the <table> element itself is
  * not). Reads `data-tip` off whatever cell was hovered, tapped, or
- * keyboard-focused and writes it into #dash-matrix-info — the SAME
+ * keyboard-focused and writes it into #dash-matrix-info, the SAME
  * mechanism for a mouse, a finger and a keyboard, because `title` tooltips
  * never fire on touch at all.
  */
@@ -877,7 +877,7 @@ function _wireMatrixInfo(table) {
 /**
  * The ⚑ flag badge is a door into Perlu Perhatian scoped to just that
  * region. A SEPARATE delegated listener from _wireMatrixInfo() above, which
- * answers a different question ("what does this cell mean") — adding this
+ * answers a different question ("what does this cell mean"), adding this
  * alongside it rather than folding the two together means neither can break
  * the other. Guarded the same way: wired once per <table> element, which
  * survives the thead/tbody replacement every render does.
@@ -908,17 +908,17 @@ function _renderMatrixPanel(agg, hir) {
   // FIX 3: Jangan membuang BALAIYASA. Gunakan seluruh lokasiData.
   let regions = lokasiData.filter((r) => (r.tipe || "").toUpperCase() !== "BALAIYASA");
 
-  // KANTOR WILAYAH — the region's own code, as its own column.
+  // KANTOR WILAYAH, the region's own code, as its own column.
   //
   // 680 of the seeded fleet's 1,077 assets (63%) carry a PARENT code as their
-  // `id_lokasi` — D1 alone holds 87, DIVRE VIII and VIV 66 each — rather than a
+  // `id_lokasi`, D1 alone holds 87, DIVRE VIII and VIV 66 each, rather than a
   // resort code like JR1.3. The matrix sums only the resorts it draws, so all
   // 680 were absent from every row and the table totalled 397 while the KPI
   // strip directly above it said 1,077. The panel was under-reporting by nearly
   // two thirds and nothing on screen said so.
   //
   // This column is where those assets live. It is deliberately NOT one of the
-  // branch groups below — it is a different kind of place — and it is omitted
+  // branch groups below, it is a different kind of place, and it is omitted
   // entirely when a JR/JB/ME branch filter is active, because an asset
   // registered at the wilayah office has no branch and folding it into "JR"
   // would put non-JR machines under a JR heading.
@@ -926,7 +926,7 @@ function _renderMatrixPanel(agg, hir) {
   const adaKantor = !uptTipe;
 
   // Masukkan UPT ke region induk masing-masing, filtered by branch (if any)
-  // and sorted naturally within each region — the same natural-order
+  // and sorted naturally within each region, the same natural-order
   // comparator the app already uses for UPT labels everywhere else.
   const uptByParent = {};
   regions.forEach((r) => {
@@ -940,8 +940,8 @@ function _renderMatrixPanel(agg, hir) {
   });
   Object.values(uptByParent).forEach((arr) => arr.sort((a, b) => compareNaturalLabel(a.upt, b.upt)));
 
-  // Every code actually DRAWN for a region — KW plus its own (branch-
-  // filtered) UPTs — independent of how those are laid out into columns.
+  // Every code actually DRAWN for a region, KW plus its own (branch-
+  // filtered) UPTs, independent of how those are laid out into columns.
   // Totals, the flag count and the per-slot cells all key off this same
   // list, so a row's summary can never disagree with what its own cells show.
   const drawnCodesFor = (region) => {
@@ -956,8 +956,8 @@ function _renderMatrixPanel(agg, hir) {
 
   if (adaKantor) {
     // GROUPED MODE (Semua branches): fixed-width column BLOCKS per branch, so
-    // column N means the same branch-slot on every row — a region with 3 JR
-    // and a region with 9 JR both start their JR block in the same place —
+    // column N means the same branch-slot on every row, a region with 3 JR
+    // and a region with 9 JR both start their JR block in the same place,
     // instead of a region's own UPT count deciding what each numbered column
     // holds, which is what made mixed JR/JB/ME columns unreadable before.
     const BRANCHES = ["JR", "JB", "ME"];
@@ -1028,7 +1028,7 @@ function _renderMatrixPanel(agg, hir) {
       return cells.join("");
     };
   } else {
-    // SINGLE-BRANCH MODE — one flat, ungrouped set of columns; nothing to
+    // SINGLE-BRANCH MODE, one flat, ungrouped set of columns; nothing to
     // separate when only one branch is on screen at all.
     const maxUpt = Math.max(1, ...regions.map((r) => uptByParent[r.code].length));
     const numRow = Array.from(
@@ -1062,7 +1062,7 @@ function _renderMatrixPanel(agg, hir) {
 
   // Body Table
   //
-  // Facts computed ONCE per region, keyed by code — sorting needs to read
+  // Facts computed ONCE per region, keyed by code, sorting needs to read
   // regionSo/regionTso/avail/flagN before the row order is decided, and the
   // row itself must print exactly the same numbers, so this is the one place
   // either is derived rather than recomputing inside .map() a second time.
@@ -1085,7 +1085,7 @@ function _renderMatrixPanel(agg, hir) {
     // Replaces the Benchmark Δ, which compared this region against a
     // hardcoded 59% that no screen in the app could ever set. The flag counts
     // machines in this region that need somebody to do something today, summed
-    // over exactly the codes this row draws — the same rule regionSo/regionTso
+    // over exactly the codes this row draws, the same rule regionSo/regionTso
     // follow, so the flag can never disagree with the row it sits on.
     let flagN = 0;
     if (hir && hir.per_lokasi) {
@@ -1097,7 +1097,7 @@ function _renderMatrixPanel(agg, hir) {
     factsByRegion[region.code] = { total, regionSo, regionTso, avail, flagN };
   });
 
-  // Sort control — see _dashFilters.matrix.sortRegion and the select built in
+  // Sort control, see _dashFilters.matrix.sortRegion and the select built in
   // _renderDashFilterRow(). "nama-asc" is the default and reads the region
   // list in the same alphabetical order it has always used.
   const sortRegion = _dashFilterFor("matrix").sortRegion || "nama-asc";
@@ -1123,7 +1123,7 @@ function _renderMatrixPanel(agg, hir) {
       const { total, regionSo, regionTso, avail, flagN } = factsByRegion[region.code];
       const availStr = avail !== null ? `${avail}%` : "—";
 
-      // A door into Perlu Perhatian scoped to just this region — see
+      // A door into Perlu Perhatian scoped to just this region, see
       // _wireMatrixFlag() above and openDashDrill(mode, opts) in
       // js/views/dash-drill.js. Zero stays a plain span: there is nothing to
       // click through to.
@@ -1189,9 +1189,9 @@ function _renderAvailPanel(agg) {
   const minRate = Math.min(...rates);
 
   const barColors = rates.map((v) => {
-    if (v === maxRate) return "rgba(34,197,94,0.85)";   // green – highest
-    if (v === minRate) return "rgba(239,68,68,0.85)";   // red   – lowest
-    return "rgba(59,130,246,0.75)";                      // blue  – rest
+    if (v === maxRate) return "rgba(34,197,94,0.85)";   // green, highest
+    if (v === minRate) return "rgba(239,68,68,0.85)";   // red, lowest
+    return "rgba(59,130,246,0.75)";                      // blue, rest
   });
 
   const isDark = document.documentElement.classList.contains("dark");
@@ -1360,7 +1360,7 @@ function _renderTrendPanel(agg) {
   if (!canvas) return;
   _hideChartSkeleton("trend");
 
-  // This tab's own year. It is never "" — _renderDashFilterRow seeds it with
+  // This tab's own year. It is never "", _renderDashFilterRow seeds it with
   // the newest year that holds data, because the chart is twelve months of ONE
   // year and has nothing to draw for "Semua Tahun". The previous code accepted
   // an empty value and silently substituted the current calendar year, which
@@ -1441,7 +1441,7 @@ function _renderTrendPanel(agg) {
  * Keep the KPI strip honest about what it is counting.
  *
  * The strip sits ABOVE the tabs, so with per-tab filters it has to say which
- * tab's filter it is following — otherwise "Total 250" over a panel showing the
+ * tab's filter it is following, otherwise "Total 250" over a panel showing the
  * whole fleet is simply a wrong number with no way to tell.
  *
  * Laporan Perbaikan and Kurva MCF filter by LOKASI, not by alat kerja, so the
@@ -1460,7 +1460,7 @@ function _renderTrendPanel(agg) {
 // their own filter state; Laporan Perbaikan and Kurva MCF instead publish the
 // region label and dateline their endpoint resolved, through
 // window.setDashBanner(), and _syncDashBanner() reads that back. Two functions
-// writing the same node directly is the bug this shape avoids — the loser
+// writing the same node directly is the bug this shape avoids, the loser
 // would depend on which fetch resolved last.
 const _DASH_BANNER = {
   matrix: { judul: "Matriks Kesiapan" },
@@ -1473,7 +1473,7 @@ const _DASH_BANNER = {
 
 // What repair-dashboard.js last published. Held rather than written straight
 // through, because that tab's load() resolves AFTER _syncDashBanner() has
-// already run for it — without a cache the first paint would show a stale
+// already run for it, without a cache the first paint would show a stale
 // sub-line until the next tab switch.
 let _dashBannerRepair = { sub: "", dateline: "" };
 
@@ -1490,7 +1490,7 @@ function setDashBanner({ sub, dateline } = {}) {
 }
 window.setDashBanner = setDashBanner;
 
-/** The filter triple as a sentence — lifted out of the deleted "Menghitung:"
+/** The filter triple as a sentence, lifted out of the deleted "Menghitung:"
  *  caption, whose information belongs in the header, not in a footnote. */
 function _dashScopeLabel(tabId) {
   const f = _dashFilterFor(tabId);
@@ -1504,12 +1504,12 @@ function _dashScopeLabel(tabId) {
 }
 
 // ══════════════════════════════════════════════════════════════════════
-// BANNER ORG LINE — the signed-in user's own scope, not hardcoded text
+// BANNER ORG LINE, the signed-in user's own scope, not hardcoded text
 // ══════════════════════════════════════════════════════════════════════
 //
 // The letterhead's right-hand line used to be a static "UPT MEKANIK / JALAN
 // REL DAN JEMBATAN" for every user regardless of who signed in. Resolved
-// entirely from the JWT already sitting in `authToken` — NO new request:
+// entirely from the JWT already sitting in `authToken`, NO new request:
 // tools/verify/test_boot.py asserts the dashboard opens at 0 requests and
 // that budget must not regress, so this must never call GET /me (that
 // pattern exists in js/views/repair-dashboard.js's resolveDefaultRegion(),
@@ -1525,14 +1525,14 @@ function _resolveDashBannerOrg() {
   const idLokasi = payload?.id_lokasi;
   if (idLokasi) {
     // A DAOP/DIVRE/PUSAT/BALAIYASA code is already the altitude a letterhead
-    // wants — ADMIN_WILAYAH, PETUGAS_GUDANG and PIMPINAN are scoped directly
+    // wants, ADMIN_WILAYAH, PETUGAS_GUDANG and PIMPINAN are scoped directly
     // to one of those. Checked first, exact match only.
     const direct = lokasiData.find((l) => l.code === idLokasi);
     if (direct) {
       _dashBannerOrgText = direct.name;
       return _dashBannerOrgText;
     }
-    // A UPT-level code (JR1.7, ME2, ...) is too granular for a letterhead —
+    // A UPT-level code (JR1.7, ME2...) is too granular for a letterhead,
     // resolve UP to its parent region, the same rule the matrix and every
     // regional filter already use.
     const parentCode = getParentLokasiCode(idLokasi);
@@ -1542,7 +1542,7 @@ function _resolveDashBannerOrg() {
       return _dashBannerOrgText;
     }
   }
-  // SUPER_ADMIN and TEKNISI are deliberately unscoped — no id_lokasi at all —
+  // SUPER_ADMIN and TEKNISI are deliberately unscoped, no id_lokasi at all,
   // so the line falls back to the role itself, formatted exactly the way
   // #topbar-role already does it (js/shell.js).
   _dashBannerOrgText = (payload?.role || _currentRole || "").replace("_", " ");

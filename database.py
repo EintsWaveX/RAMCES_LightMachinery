@@ -9,7 +9,7 @@ load_dotenv()
 # Format: postgresql://<username>:<password>@<host>:<port>/<database_name>
 #
 # Read from DATABASE_URL, with NO fallback. There used to be a hardcoded local
-# development URL here so a fresh checkout booted with no setup — but it carried
+# development URL here so a fresh checkout booted with no setup, but it carried
 # a real password in a tracked file, which is a liability the moment the repo
 # leaves one machine. Copy `.env.example` to `.env` instead; the error below
 # says exactly that.
@@ -23,7 +23,7 @@ if not SQLALCHEMY_DATABASE_URL:
 # ── Engine ────────────────────────────────────────────────────────────────
 #
 # This was previously a bare `create_engine(URL)`, which inherits a pool of 5
-# connections plus 10 overflow — a hard ceiling of 15 concurrent DB-touching
+# connections plus 10 overflow, a hard ceiling of 15 concurrent DB-touching
 # requests, after which request 16 blocks for 30 seconds and then 500s. Several
 # endpoints hold their connection for the length of the handler, so a handful of
 # people on the Riwayat screen was enough to stall everything else.

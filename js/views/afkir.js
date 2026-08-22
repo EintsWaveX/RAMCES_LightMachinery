@@ -52,7 +52,7 @@ function renderAfkirCards() {
 
   let filtered = _afkirDb.filter((item) => {
     // Afkir assets are excluded from _historySummary by design, so the identity
-    // falls back to the row's own lokasi — which is correct here: a written-off
+    // falls back to the row's own lokasi, which is correct here: a written-off
     // asset has no "current vs home" distinction left to make.
     const ident = assetLokasiIdentity(item);
 
@@ -86,7 +86,7 @@ function renderAfkirCards() {
     return true;
   });
 
-  // Same shared renderer and the same filter keys as Kelola Data Aset — the
+  // Same shared renderer and the same filter keys as Kelola Data Aset, the
   // two views hold one shape in two variables, so surfacing it is one function.
   window.renderFilterChips?.("afkir-filter-chips", _afkirSortFilters, () => {
     resetPage("afkir");
@@ -111,7 +111,7 @@ function renderAfkirCards() {
       return new Date(a.waktu_update || 0) - new Date(b.waktu_update || 0);
     if (_afkirSortDir === "count-desc" || _afkirSortDir === "count-asc") {
       // Counts ride on the afkir payload itself. They used to be looked up in
-      // _historySummary, which excludes AFKIR assets by design — so every score
+      // _historySummary, which excludes AFKIR assets by design, so every score
       // was 0 and both directions were no-ops.
       const hits = (x) => (x.repair_count || 0) + (x.mutasi_count || 0);
       return _afkirSortDir === "count-desc" ? hits(b) - hits(a) : hits(a) - hits(b);

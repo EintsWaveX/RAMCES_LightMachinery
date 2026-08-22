@@ -1,12 +1,12 @@
 """
-RAMCES — application assembly.
+RAMCES, application assembly.
 
 This file used to be the whole backend, 5.9k lines of it. It now holds only what
 cannot live in a router: the app object and its middleware, the WebSocket
 endpoint and its presence heartbeat, the router includes, and the static file
 serving that must be registered last.
 
-Everything else is the `api/` package — see api/__init__.py for the layout and
+Everything else is the `api/` package, see api/__init__.py for the layout and
 for the one invariant that keeps it working: **no module in api/ may import
 main**, because main imports all of them to call include_router.
 
@@ -37,12 +37,12 @@ models.Base.metadata.create_all(bind=engine)
 load_dotenv()
 
 
-# The migration mechanism — idempotent, IF NOT EXISTS-guarded DDL. It is DEFINED
+# The migration mechanism, idempotent, IF NOT EXISTS-guarded DDL. It is DEFINED
 # in api/schema.py but still CALLED here, at the point in the module body it has
 # always occupied: after create_all() and before the app exists. Keeping the call
 # at import time is deliberate. Moving it into a lifespan would be a behaviour
 # change smuggled into a re-organisation, and two of its statements normalise
-# `status_terakhir`/`kondisi` to upper case — a contract get_all_aset and
+# `status_terakhir`/`kondisi` to upper case, a contract get_all_aset and
 # export_mutasi rely on when they compare those columns raw.
 from api.schema import _ensure_schema  # noqa: E402
 
@@ -51,7 +51,7 @@ _ensure_schema()
 app = FastAPI(title="RAMCES Asset API")
 
 # Everything this app serves is text: app.js was 470 KB on the wire, index.html
-# 383 KB, and /api/history/summary 98.6 KB — all uncompressed. This JSON and JS
+# 383 KB, and /api/history/summary 98.6 KB, all uncompressed. This JSON and JS
 # compresses roughly 8:1, which makes one line of middleware the single largest
 # performance win available here.
 #
@@ -66,7 +66,7 @@ app.add_middleware(GZipMiddleware, minimum_size=1000)
 # static route serves js/, assets/ and landing.html from the same origin, so no
 # cross-origin request is ever made and CORS has nothing to permit. The previous
 # configuration paired `allow_origins=["*"]` with `allow_credentials=True`,
-# which is an invalid combination the CORS spec requires browsers to reject —
+# which is an invalid combination the CORS spec requires browsers to reject,
 # it granted nothing and only advertised that any origin was welcome to try.
 #
 # If a genuinely separate frontend is ever added, re-add CORSMiddleware with an
@@ -94,12 +94,12 @@ from api.deps import ALGORITHM, SECRET_KEY  # noqa: E402
 # WebSocket ROUTE stays here, but the registry it fans out through has to be
 # importable by the routers: every mutating endpoint awaits
 # manager.broadcast(...) after commit, and main.py imports those routers to
-# include them — so keeping `manager` here would be a hard import cycle.
+# include them, so keeping `manager` here would be a hard import cycle.
 from api.realtime import manager  # noqa: E402
 
 # Re-export. seeds/pengguna.py does `from main import get_password_hash` to seed
 # the bootstrap SUPER_ADMIN. seeds/ is gitignored, so nothing in the tracked
-# tree points at it and no check here covers it — if this line goes, the
+# tree points at it and no check here covers it, if this line goes, the
 # `pengguna` seed step breaks and nobody finds out until the next reseed.
 from api.deps import get_password_hash  # noqa: E402,F401
 
@@ -151,7 +151,7 @@ def _touch_last_seen(username: Optional[str], view: Optional[str] = None):
 
 # Last time each user's row was actually written. The heartbeat fires every 30s
 # per open tab, and `last_seen` is only ever read to render "online N minutes
-# ago" — so writing it that often was pure load for no visible difference.
+# ago", so writing it that often was pure load for no visible difference.
 _LAST_STAMP: dict = {}
 _STAMP_INTERVAL_SECONDS = 60
 
@@ -161,7 +161,7 @@ async def _touch_last_seen_async(username: Optional[str], view: Optional[str] = 
     Presence stamp, off the event loop and throttled.
 
     `_touch_last_seen` is blocking psycopg2, and every caller of it lives inside
-    the `async` WebSocket handler — so a connect, SELECT, UPDATE and COMMIT ran
+    the `async` WebSocket handler, so a connect, SELECT, UPDATE and COMMIT ran
     on the event loop, stalling every other request and socket on the worker. It
     also opened its own session outside `get_db()`, competing for the same pool;
     when that pool was exhausted the loop froze for the full pool timeout.
@@ -203,7 +203,7 @@ async def websocket_endpoint(websocket: WebSocket, token: Optional[str] = None):
             data = await websocket.receive_text()
             if data == "ping":
                 await websocket.send_text("pong")
-                # The heartbeat doubles as the liveness stamp — throttled, so a
+                # The heartbeat doubles as the liveness stamp, throttled, so a
                 # room full of open tabs is not a room full of UPDATEs.
                 await _touch_last_seen_async(username)
             elif data.startswith("view:") and username:
@@ -228,7 +228,7 @@ async def websocket_endpoint(websocket: WebSocket, token: Optional[str] = None):
 # ==================================================================
 # ── ROUTERS ───────────────────────────────────────────────────────
 # ==================================================================
-# Bare APIRouter()s — no prefix, no tags, no router-level dependencies. Every
+# Bare APIRouter()s, no prefix, no tags, no router-level dependencies. Every
 # route already carries its absolute /api/... path, so a prefix would change it;
 # tags and router-level dependencies would change the OpenAPI document, which is
 # the gate this re-organisation is verified against.
@@ -269,7 +269,7 @@ async def add_cache_headers(request, call_next):
 
     StaticFiles (the /assets mount) does not set it either, so this covers both
     that mount and the catch-all below in one place. API responses are left
-    alone — they must never be cached.
+    alone, they must never be cached.
     """
     response = await call_next(request)
     path = request.url.path
@@ -281,7 +281,7 @@ async def add_cache_headers(request, call_next):
     return response
 
 
-# `file_response_conditional` lives in api/files.py — it is shared with the
+# `file_response_conditional` lives in api/files.py, it is shared with the
 # public Model/Type photo route in api/master.py, so it cannot live here.
 
 

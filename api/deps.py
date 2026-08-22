@@ -3,18 +3,18 @@ The hinge module: everything more than one router needs.
 
 Four blocks, in this order:
 
-1. **The lokasi hierarchy.** The `lokasi` table is flat — a UPT's parent is
+1. **The lokasi hierarchy.** The `lokasi` table is flat, a UPT's parent is
    derived from its ID string. `resolve_lokasi_scope()` is the only sanctioned
    way to filter by region (never `LIKE 'D1%'`, which misses `JR1.3`, nor
    `LIKE 'VI%'`, which over-matches VI/VII/VIII/VIV), and `assert_region_scope` /
    `assert_aset_region_scope` are the only sanctioned way to enforce an
-   ADMIN_WILAYAH's limit — never a bare `==`, because a token carries a parent
+   ADMIN_WILAYAH's limit, never a bare `==`, because a token carries a parent
    code (`D1`) while assets live at UPT codes (`JR1.7`).
 
    The TTL cache is ONE unit: `_LokasiRow`, `_LOKASI_CACHE_TTL`, `_lokasi_cache`,
    `_lokasi_cache_lock`, `invalidate_lokasi_cache` and `lokasi_rows`. Splitting
    any part of it into another module gives you two caches, and a lokasi edit
-   then invalidates the one nobody reads — stale scopes for 60 s, intermittently.
+   then invalidates the one nobody reads, stale scopes for 60 s, intermittently.
    api/master.py imports only the `invalidate_lokasi_cache` NAME.
 
 2. **`get_db`.** It must be exactly one object across the whole application.
@@ -33,7 +33,7 @@ Four blocks, in this order:
 
 `normalise_peruntukan` / `normalise_sumber_pengadaan` are aset-only callers, but
 they stay in this module because they are the canonical gate for two closed sets
-baked into the composite primary key — this is where a reader looks for them.
+baked into the composite primary key, this is where a reader looks for them.
 """
 
 import os
@@ -57,7 +57,7 @@ from database import SessionLocal
 
 # database.py already calls this at import, and main.py calls it again; it is
 # idempotent. Repeating it here makes this module safe to import from any entry
-# point that is not main.py — a snapshot script, a REPL — before SECRET_KEY is
+# point that is not main.py, a snapshot script, a REPL, before SECRET_KEY is
 # read a few dozen lines below.
 load_dotenv()
 
@@ -65,14 +65,14 @@ load_dotenv()
 # ==================================================================
 # ── LOKASI HIERARCHY HELPERS ──────────────────────────────────────
 # ==================================================================
-# The `lokasi` table is flat — there is no parent_id column. The parent of a
+# The `lokasi` table is flat, there is no parent_id column. The parent of a
 # UPT/resort is encoded in its id: "JR1.3" belongs to DAOP "D1", "JRIII.7" to
 # DIVRE "VIII", "BY1A" to Balaiyasa "BY1". The same rule lives in seed.py
 # (get_parent_lokasi_code) and js/core.js (getParentLokasiCode); keep all three
 # in step when changing it.
 
-# Only I–IV exist in the seeded master data, but the regex below accepts up to
-# IX. Without the V–IX rows a "JRV.1"-style code resolved to a code on the
+# Only I, IV exist in the seeded master data, but the regex below accepts up to
+# IX. Without the V, IX rows a "JRV.1"-style code resolved to a code on the
 # client (js/core.js) and to None here, so the same asset landed in two
 # different buckets depending on which side did the maths. Keep this table
 # byte-identical to `romanMap` in js/core.js and `_ROMAN_MAP` in seed.py.
@@ -87,8 +87,8 @@ _ROMAN_TO_DIVRE = {
     "VIII": "VVIII",
     "IX": "VIX",
 }
-# `J[RB]`, not `JR`: the resort tree has TWO branches — JR (jalan rel) and JB
-# (jembatan) — and only JR was ever matched here. Every JB resort in
+# `J[RB]`, not `JR`: the resort tree has TWO branches, JR (jalan rel) and JB
+# (jembatan), and only JR was ever matched here. Every JB resort in
 # `KATALOG SFM.xlsx ▸ KATALOG UPT` (38 of the 240) therefore resolved to no
 # parent at all, which put its assets outside every regional filter, scope
 # check and dashboard bucket. Keep byte-identical to seed.py and js/core.js.
@@ -99,17 +99,17 @@ _RE_UPT_ARAB = re.compile(r"^J[RB]\s*(\d+)\.", re.IGNORECASE)
 _RE_UPT_ROMAN = re.compile(
     r"^J[RB]\s*(IV|IX|VIII|VII|VI|V|I{1,3})(?:\.|$)", re.IGNORECASE
 )
-# MEKANIK — the THIRD branch of the resort tree. 14 rows in
+# MEKANIK, the THIRD branch of the resort tree. 14 rows in
 # `KATALOG SFM.xlsx ▸ KATALOG UPT` (ME1.1, ME1.2, ME2..ME9, MEI..MEIV) that
-# RAMCES had no rows for at all until rev0.5.2 — the same hole the JB branch was
+# RAMCES had no rows for at all until rev0.5.2, the same hole the JB branch was
 # in, and found the same way: by comparing the database against the workbook.
 #
 # THE `$` ANCHOR IS LOAD-BEARING. Alternation in both Python and JS is
 # leftmost-first, not longest-first, so `I{1,3}` is tried before `IV`. With the
 # anchor, "MEIV" fails on `I` and backtracks to the correct branch; without it,
-# "MEIV" matches `I` and returns VI — MEKANIK DIVRE IV's assets land silently in
+# "MEIV" matches `I` and returns VI, MEKANIK DIVRE IV's assets land silently in
 # DIVRE I, with no error and both regions' totals still summing correctly.
-# If a future sheet adds "MEI.2", widen to `(?:\.\d+)?$` — never to a prefix match.
+# If a future sheet adds "MEI.2", widen to `(?:\.\d+)?$`, never to a prefix match.
 _RE_UPT_MEKANIK_ARAB = re.compile(r"^ME\s*(\d+)(?:\.\d+)?$", re.IGNORECASE)
 _RE_UPT_MEKANIK_ROMAN = re.compile(
     r"^ME\s*(IV|IX|VIII|VII|VI|V|I{1,3})$", re.IGNORECASE
@@ -229,7 +229,7 @@ def resolve_lokasi_scope(db: Session, id_lokasi: Optional[str]):
     if parent is not None and (parent.tipe or "").upper() == "UPT":
         return [parent.id_lokasi], parent, [parent]
 
-    # ~250 rows — one scan in Python beats duplicating the roman-numeral map in
+    # ~250 rows, one scan in Python beats duplicating the roman-numeral map in
     # an unindexable SQL CASE expression.
     target = id_lokasi.upper()
     children = [r for r in rows if get_parent_lokasi_code(r.id_lokasi) == target]
@@ -260,7 +260,7 @@ def resolve_home_lokasi(db: Session, aset) -> Optional[str]:
 
     `aset.id_lokasi` is normally the answer, but an asset mutated to a workshop
     for repair carries the workshop code until it is sent back. In that window
-    the owning region is the origin of the first mutation that moved it there —
+    the owning region is the origin of the first mutation that moved it there,
     the same value the summary endpoint exposes as `original_lokasi_code`.
     Returns None only if the asset has no location at all.
     """
@@ -284,7 +284,7 @@ def assert_region_scope(db: Session, current_user, id_lokasi: Optional[str], pes
     The comparison MUST go through `resolve_lokasi_scope`, never `==`. A token
     only ever carries a PARENT code, because the login region selector lists
     DAOP/DIVRE/BALAIYASA rows and excludes UPTs (`fetchLoginRegions` in
-    js/api.js) — while assets live at UPT codes like `JR1.7`. An exact-equality
+    js/api.js), while assets live at UPT codes like `JR1.7`. An exact-equality
     check therefore rejected an admin's own assets ('JR1.7' != 'D1') and, where
     no check existed at all, let it write into other regions. This helper is the
     single place that rule now lives, so both directions stay correct.
@@ -300,7 +300,7 @@ def assert_region_scope(db: Session, current_user, id_lokasi: Optional[str], pes
 
 def assert_aset_region_scope(db: Session, current_user, aset, pesan: str):
     """
-    Same guard, but for an existing asset — tested against where it BELONGS.
+    Same guard, but for an existing asset, tested against where it BELONGS.
 
     An asset away at a Balaiyasa carries the workshop code in `id_lokasi`, which
     is in no DAOP's scope. Checking that raw value would lock the owning region
@@ -316,19 +316,19 @@ def assert_pengadaan_scope(current_user, id_pengadaan: int):
     An ADMIN_WILAYAH may only register assets procured by its own region.
 
     The client's own feature matrix states it: *"admin daerah hanya input
-    pengadaan 2"*. Procurement code 1 is PUSAT — a national purchase, which a
+    pengadaan 2"*. Procurement code 1 is PUSAT, a national purchase, which a
     regional admin is not the one recording.
 
     ── Why this is a 400 and not a nudge ──
 
     `sumber_pengadaan` is baked into the asset's COMPOSITE PRIMARY KEY as its
     third segment (`6.RGM.1.24.A.D1`). A wrong value is therefore not a display
-    problem that can be edited later — correcting it regenerates the key and
+    problem that can be edited later, correcting it regenerates the key and
     rewrites every child row. Refusing at the boundary is much cheaper than any
     repair afterwards.
 
     Kept OUT of `normalise_sumber_pengadaan()` deliberately. That function has no
-    user context and answers a different question — "is this a legal value?" —
+    user context and answers a different question, "is this a legal value?",
     while this one answers "may *you* write it?". Folding a scope rule into a
     validator is how the region checks went wrong before: it belongs beside
     `assert_region_scope`, which is exactly where it now is.
@@ -345,7 +345,7 @@ def assert_pengadaan_scope(current_user, id_pengadaan: int):
 
 
 # `peruntukan` and `sumber_pengadaan` are closed sets that get baked into the
-# asset's composite primary key. Both used to fall back silently — an unknown
+# asset's composite primary key. Both used to fall back silently, an unknown
 # peruntukan became the literal "X" (an ID segment no decoder can map, invisible
 # to every peruntukan filter) and anything that was not exactly "PUSAT" became
 # procurement code 2, i.e. DAOP/DIVRE. An unchecked radio in the edit form was
@@ -388,7 +388,7 @@ def normalise_sumber_pengadaan(nilai: Optional[str]) -> tuple:
 
 
 # DIVRE nama_lokasi holds a province ("SUMATERA UTARA"), which reads wrong in a
-# "<kota>, <tanggal>" dateline — pin the seat of each region explicitly.
+# "<kota>, <tanggal>" dateline, pin the seat of each region explicitly.
 REGION_KOTA_OVERRIDE = {
     "VI": "Medan",
     "VII": "Padang",
@@ -398,13 +398,13 @@ REGION_KOTA_OVERRIDE = {
     "BY2": "Prabumulih",
     "BY3": "Bandung",
 }
-DEFAULT_KOTA = "Bandung"  # PT KAI HQ — used for the unscoped/global view
+DEFAULT_KOTA = "Bandung"  # PT KAI HQ, used for the unscoped/global view
 
 _RE_DAOP = re.compile(r"^DAOP\s+(\d+)\s+(.*)$", re.IGNORECASE)
 _RE_DIVRE = re.compile(r"^DIVRE\s+([IVX]+)\s+(.*)$", re.IGNORECASE)
 _RE_BALAIYASA = re.compile(r"^BALAI\s*YASA\s+(.*)$", re.IGNORECASE)
 # Deliberately JR-only, unlike the parent regexes above. `short_lokasi_label()`
-# strips this prefix, and the two branches reuse the same numbering — "JR 1.1
+# strips this prefix, and the two branches reuse the same numbering, "JR 1.1
 # Jakartakota" and "JB 1.1 Tanah Abang" are different places. Dropping the
 # letter from a jembatan resort would print it as "1.1 Tanah Abang", visually a
 # peer of the jalan-rel resorts. JB names fall through and render verbatim.
@@ -424,7 +424,7 @@ def build_region_labels(parent, id_lokasi: Optional[str], db: Session = None):
 
     nama = (parent.nama_lokasi or parent.id_lokasi).strip()
 
-    # A UPT is not a region — a dateline of "Jr 1.3 Pasarsenen, 7 Agustus 2026"
+    # A UPT is not a region, a dateline of "Jr 1.3 Pasarsenen, 7 Agustus 2026"
     # is nonsense. Take the city from the UPT's own DAOP/DIVRE parent.
     if (parent.tipe or "").upper() == "UPT":
         label = short_lokasi_label(parent.id_lokasi, nama)
@@ -472,7 +472,7 @@ def short_lokasi_label(id_lokasi: Optional[str], nama_lokasi: Optional[str]) -> 
 
 
 def upt_sort_key(lokasi_row):
-    """Natural resort ordering: 1.1, 1.2, ... 1.10, 1.25 — not lexicographic."""
+    """Natural resort ordering: 1.1, 1.2... 1.10, 1.25, not lexicographic."""
     m = _RE_UPT_NAMA.match((lokasi_row.nama_lokasi or "").strip())
     seg = m.group(1) if m else (lokasi_row.id_lokasi or "")
     head, _, tail = seg.partition(".")
@@ -502,7 +502,7 @@ ALGORITHM = "HS256"
 
 # The closed set of roles. `require_role([...])` reads whatever list a route
 # passes, so nothing previously stopped a typo'd role name from being stored on
-# a user row and matching no guard anywhere — the account simply lost access to
+# a user row and matching no guard anywhere, the account simply lost access to
 # everything with no error at creation time.
 #
 # Five since rev0.5.2. The three-role model no longer described the application:
@@ -531,7 +531,7 @@ ROLES = (
 #
 # This used to be the bare literal "ADMIN_WILAYAH" inside assert_region_scope,
 # which meant a PETUGAS_GUDANG or PIMPINAN holding an id_lokasi would have been
-# silently unrestricted — the widening would have quietly granted national
+# silently unrestricted, the widening would have quietly granted national
 # scope to two brand-new roles. `id_lokasi IS NULL` still means nationwide, for
 # all three.
 REGION_SCOPED_ROLES = frozenset({"ADMIN_WILAYAH", "PETUGAS_GUDANG", "PIMPINAN"})
@@ -563,7 +563,7 @@ def verify_password(plain: str, hashed: str) -> bool:
 _DUMMY_HASH = get_password_hash(secrets.token_urlsafe(32))
 
 
-# Password rules, applied wherever a password is set. Deliberately minimal —
+# Password rules, applied wherever a password is set. Deliberately minimal,
 # a length floor catches the actual failure mode (one-character passwords on a
 # shared workstation) without pushing technicians towards a sticky note.
 PASSWORD_MIN_LEN = 8
@@ -603,7 +603,7 @@ def get_current_user(
 
     # Checked HERE, not only in login(). Tokens last 12 hours, so a status
     # enforced at sign-in alone would let a suspended or rejected account keep
-    # working for the rest of the day on the token it already holds — which is
+    # working for the rest of the day on the token it already holds, which is
     # the whole window an admin suspends someone to close.
     #
     # 401 rather than 403 on purpose: `apiFetch` force-logs-out on 401 and

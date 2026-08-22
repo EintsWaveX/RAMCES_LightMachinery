@@ -1,5 +1,5 @@
 """
-The server-side twin of `js/search.js` — one matcher, expressed in SQL.
+The server-side twin of `js/search.js`, one matcher, expressed in SQL.
 
 ── Why this module exists ──
 Every list in this app used to filter an in-memory copy of the whole fleet.
@@ -7,7 +7,7 @@ Every list in this app used to filter an in-memory copy of the whole fleet.
 three shapes a location term can take, and it decides an asset's location in
 exactly one place so a label printed on a card is by construction findable by
 searching that string. The cost was that the client had to hold every asset to
-search it — 1.06 MB and 460 ms at 1,121 assets, on every login and after every
+search it, 1.06 MB and 460 ms at 1,121 assets, on every login and after every
 mutation, growing linearly with the fleet.
 
 Moving the paging to the server means the SERVER now has to answer the same
@@ -15,8 +15,8 @@ question, and "close enough" is not an option: a filter that disagrees with the
 client's by one row is a fleet member that cannot be found by anyone who reads
 the card and types what it says. So this module is a deliberate, line-by-line
 port, and `tools/verify/test_paging.py` asserts the two agree on the real fleet
-by running BOTH — the client matcher inside Chrome over a full local copy, and
-these filters over the database — and comparing the id sets.
+by running BOTH, the client matcher inside Chrome over a full local copy, and
+these filters over the database, and comparing the id sets.
 
 ── The three rules that are easy to get wrong ──
 
@@ -25,12 +25,12 @@ these filters over the database — and comparing the id sets.
    `id_lokasi`, so an asset that has ever been transferred is searched, filtered
    and labelled under where it started. `identity_lokasi_expr()` is that rule in
    SQL. Note this is NOT `resolve_home_lokasi()`, which only substitutes while
-   the asset is sitting at a Balaiyasa — the two answer different questions and
+   the asset is sitting at a Balaiyasa, the two answer different questions and
    the difference is visible on any permanently redeployed machine.
 
 2. **A region label is a code SET, never a LIKE.** "DAOP 1" must not match DAOP
    10, and `LIKE 'VI%'` over-matches VI/VII/VIII/VIV. The term is resolved to an
-   explicit set of `lokasi` codes in Python — the table is 273 rows and cached —
+   explicit set of `lokasi` codes in Python, the table is 273 rows and cached,
    and the SQL is an `IN ()`. `region_term_codes()` is the port of
    `resolveRegionTermToCodes()`, token-prefix matched so the ordinal compares as
    a whole token.
@@ -41,7 +41,7 @@ these filters over the database — and comparing the id sets.
 ── Whitespace ──
 `normalizeSearchText()` collapses runs of whitespace on BOTH sides of the
 comparison. Here the term is collapsed the same way, and the two free-text NAME
-columns are collapsed in SQL as well — they are the only ones where a stored
+columns are collapsed in SQL as well, they are the only ones where a stored
 value could contain a run of whitespace, and they live in 104- and 87-row
 dimension tables, so the un-indexable `regexp_replace` costs nothing. The code,
 enum and date columns are compared with a plain `ilike`.
@@ -64,7 +64,7 @@ from api.deps import get_parent_lokasi_code, lokasi_rows
 # exactly this test, and the identity names below depend on the same split.
 PARENT_TIPE = ("DAOP", "DIVRE", "PUSAT", "BALAIYASA")
 
-# "DAOP 1", "DIVRE III", "BALAI YASA", "DAERAH OPERASI 5" — a region NAME with
+# "DAOP 1", "DIVRE III", "BALAI YASA", "DAERAH OPERASI 5", a region NAME with
 # its ordinal, matched whole so the ordinal is a token and not a substring.
 _RE_REGION_TERM = re.compile(
     r"^(DAOP|DAERAH OPERASI|DIVRE|DIVISI REGIONAL|BALAI ?YASA)(?: ([0-9]+|[IVX]+))?$"
@@ -103,7 +103,7 @@ def region_term_codes(db, term: str) -> Optional[Set[str]]:
     """
     `resolveRegionTermToCodes()`: a region LABEL → every lokasi code it covers
     (the parent plus each resort beneath it). None when the term is not a region
-    label at all, or names no region that exists — both cases fall through to the
+    label at all, or names no region that exists, both cases fall through to the
     bare-code and free-text shapes, exactly as the client does.
     """
     norm = normalize_search_text(term)
@@ -135,10 +135,10 @@ def _identity_names(by_code, code: str):
     whose identity lokasi is `code`.
 
     The client reads uptName out of `_uptByCode` (UPT rows only) and falls back
-    through the mutation's origin name and the asset's own `lokasi_name` — all
+    through the mutation's origin name and the asset's own `lokasi_name`, all
     three of which are the same row's `nama_lokasi`, so one lookup reproduces the
     chain. parentName comes from `_lokasiByCode` (parent rows only), falling back
-    to the bare parent CODE when the parent is not a parent row — which is what
+    to the bare parent CODE when the parent is not a parent row, which is what
     an unparseable code produces.
     """
     entry = by_code.get(code)
@@ -161,8 +161,8 @@ def lokasi_codes_matching_term(db, term: str) -> Optional[Set[str]]:
     "a term that matches no location", which is a real answer and not the same
     thing.
 
-    Inverting it is what keeps the rule in ONE place. The alternative — pushing
-    the three term shapes into SQL — needs the roman-numeral parent map in an
+    Inverting it is what keeps the rule in ONE place. The alternative, pushing
+    the three term shapes into SQL, needs the roman-numeral parent map in an
     unindexable CASE and would be a second copy of the rule the moment either
     side changed.
     """
@@ -201,11 +201,11 @@ def own_region_codes(db, current_user) -> Set[str]:
     The client reads `id_lokasi` out of the JWT, derives `myRegion` from it, and
     keeps an asset when `identity.parentCode === myRegion || identity.uptCode
     === myLokasiRaw`. A token only ever carries a PARENT code (D1, VIII, BY1),
-    so the second half only fires for the rare account pinned to a UPT — but it
+    so the second half only fires for the rare account pinned to a UPT, but it
     is in the client's condition, so it is in this one.
 
     An account with no `id_lokasi` gets the empty set, which narrows to nothing.
-    The alternative — treating it as "no filter" — would silently show a
+    The alternative, treating it as "no filter", would silently show a
     regionless user the whole fleet under a control labelled "Aset Saya".
     """
     mine = (current_user.id_lokasi or "").strip() if current_user is not None else ""
@@ -222,7 +222,7 @@ def own_region_codes(db, current_user) -> Set[str]:
 
 def lokasi_codes_matching_code(db, wanted: str) -> Optional[Set[str]]:
     """
-    `lokasiMatchesCode()` inverted — the "Lokasi" dropdown in every sort modal,
+    `lokasiMatchesCode()` inverted, the "Lokasi" dropdown in every sort modal,
     which is code-valued. A parent code keeps the parent row itself and every
     resort beneath it; a UPT code keeps only that resort.
     """
@@ -259,7 +259,7 @@ def canonical_pengadaan(value) -> str:
 def pengadaan_values(db, wanted: str):
     """
     Every `sumber_pengadaan` value stored in `aset` that canonicalises to the
-    same thing as `wanted`. A tiny DISTINCT, then an `IN ()` — which beats
+    same thing as `wanted`. A tiny DISTINCT, then an `IN ()`, which beats
     reimplementing the canonicalisation as a SQL CASE and keeps the two spellings
     of the rule from drifting.
     """
@@ -299,7 +299,7 @@ def identity_lokasi_expr():
 
 def peruntukan_letter_expr():
     """
-    `decodeAsetId(id).peruntukan` — the LETTER baked into the composite id, not
+    `decodeAsetId(id).peruntukan`, the LETTER baked into the composite id, not
     the `peruntukan` COLUMN. The two can legitimately disagree (an edit changes
     the column; the id is only minted once), and the KDAK and Kelola Data Aset
     filters have always read the id.
@@ -318,7 +318,7 @@ def peruntukan_letter_expr():
 
 def id_urutan_expr():
     """
-    `parseInt(id_aset.split(".")[0]) || 0` — the sequence number the "Nomor urut"
+    `parseInt(id_aset.split(".")[0]) || 0`, the sequence number the "Nomor urut"
     range filter compares against. A legacy dashed id has no leading number, so
     `parseInt` yields NaN and the client coerces it to 0; the CASE does the same
     rather than dropping the row.
@@ -363,13 +363,13 @@ def _text_search_conditions(term: str, KA, AV):
 # ── The Pantau Riwayat search extras ───────────────────────────────────────
 #
 # `_historySearchMatches()` passes eleven MORE fields to `assetMatchesSearch`
-# via its `extra` argument — the technician who filed the last report, the
+# via its `extra` argument, the technician who filed the last report, the
 # certificate number, the reason for the last transfer. Searching a technician's
 # name on the screen that displays it has to work, so they are ported too.
 #
 # Each source row contributes ONE correlated scalar subquery returning its
 # searchable fields joined with CHR(1). A separator is needed because a plain
-# concatenation lets a term match ACROSS a field boundary — "SO" + "GAMBIR"
+# concatenation lets a term match ACROSS a field boundary, "SO" + "GAMBIR"
 # would answer to a search for "O GAM", which the client would not. CHR(1)
 # cannot appear in a term typed into an HTML input, so no boundary is spannable.
 
@@ -392,7 +392,7 @@ def _latest_repair_text():
         .outerjoin(P, P.id_pengguna == RK.id_pengguna)
         .where(RK.id_aset == models.Aset.id_aset)
         # `latest_repair` is row_number() over waktu_lapor DESC in
-        # /api/history/summary — the same single ordering, no tiebreak.
+        # /api/history/summary, the same single ordering, no tiebreak.
         .order_by(RK.waktu_lapor.desc())
         .limit(1)
         .correlate(models.Aset)
@@ -417,7 +417,7 @@ def _latest_kalibrasi_text():
         .outerjoin(P, P.id_pengguna == RKAL.id_pengguna)
         .where(RKAL.id_aset == models.Aset.id_aset)
         # The endpoint sorts ASC and takes the LAST element; reversing the same
-        # two keys and taking the first is the same row, NULL dates included —
+        # two keys and taking the first is the same row, NULL dates included,
         # ASC is NULLS LAST and DESC is NULLS FIRST in PostgreSQL.
         .order_by(RKAL.tanggal_kalibrasi.desc(), RKAL.waktu_input.desc())
         .limit(1)
@@ -429,7 +429,7 @@ def _latest_kalibrasi_text():
 def _mutasi_text(first: bool):
     """
     The latest transfer's destination/officer/reason, or the FIRST transfer's
-    origin NAME — `original_lokasi_name`, which the mutation cards print and the
+    origin NAME, `original_lokasi_name`, which the mutation cards print and the
     search therefore has to see.
     """
     RM = models.RiwayatMutasi
@@ -480,7 +480,7 @@ def apply_aset_filters(query, db, *, q=None, alat=None, pengadaan=None,
     over `aset`. The caller supplies the query so the same builder serves
     `/api/aset` and `/api/history/summary`.
 
-    `scope_codes` is the "Aset Saya" narrowing — an explicit code set from the
+    `scope_codes` is the "Aset Saya" narrowing, an explicit code set from the
     caller, because it is derived from the CALLER's token, not from a parameter.
 
     Every argument is optional and an absent one applies no filter, which is what
@@ -499,7 +499,7 @@ def apply_aset_filters(query, db, *, q=None, alat=None, pengadaan=None,
         codes = lokasi_codes_matching_term(db, term)
         if codes:
             conds.append(ident.in_(list(codes)))
-        # Pantau Riwayat adds its own fields to the SAME or_ — they widen the
+        # Pantau Riwayat adds its own fields to the SAME or_, they widen the
         # match, so appending them after a filter() had already been applied
         # would narrow it instead.
         if extra_q is not None:
@@ -515,7 +515,7 @@ def apply_aset_filters(query, db, *, q=None, alat=None, pengadaan=None,
     if pengadaan:
         vals = pengadaan_values(db, pengadaan)
         # An empty list means the term canonicalises to something no row stores.
-        # `in_([])` is the correct answer — zero rows — not "no filter".
+        # `in_([])` is the correct answer, zero rows, not "no filter".
         query = query.filter(models.Aset.sumber_pengadaan.in_(vals or []))
 
     if peruntukan:
@@ -572,7 +572,7 @@ def event_count_expr():
     """
     `_eventCount()` in SQL: repair events + transfers.
 
-    Repair events are TSO rows only — an SO row is a repair being CLOSED, and
+    Repair events are TSO rows only, an SO row is a repair being CLOSED, and
     counting both double-counts every completed job. That is the same rule
     `repair_count_map` in `/api/history/summary` applies, so the number the
     cards print and the number this sorts by cannot disagree.
@@ -601,7 +601,7 @@ def apply_aset_sort(query, field: Optional[str], direction: Optional[str]):
     Order a query over `aset` the way the client's comparators did.
 
     Every branch appends `id_aset` as the final tiebreak. `Array.prototype.sort`
-    is stable, so equal rows kept the order they arrived in — which was
+    is stable, so equal rows kept the order they arrived in, which was
     `/api/aset`'s own `ORDER BY id_aset`. Without the tiebreak here, two rows
     with the same purchase date could swap between page 1 and a re-fetch of
     page 1, which is the paging bug that shows a row twice and another never.
@@ -611,7 +611,7 @@ def apply_aset_sort(query, field: Optional[str], direction: Optional[str]):
     if direction in ("date-desc", "date-asc"):
         col = models.Aset.tanggal_pembelian
         # NULLS: `new Date(null)` is the epoch on the client, i.e. the oldest
-        # possible value — so a missing date sorts last descending, first
+        # possible value, so a missing date sorts last descending, first
         # ascending. Postgres defaults NULLS LAST on DESC, which agrees.
         order = col.desc() if direction == "date-desc" else col.asc()
         return query.order_by(order, models.Aset.id_aset)
@@ -628,7 +628,7 @@ def apply_aset_sort(query, field: Optional[str], direction: Optional[str]):
         col = func.upper(func.coalesce(KA.nama_alat, models.Aset.kode_alat))
     else:
         # cast to text first: the client compares `(v || "").toString()`, so
-        # tanggal_pembelian sorts as "YYYY-MM-DD" — which happens to agree with
+        # tanggal_pembelian sorts as "YYYY-MM-DD", which happens to agree with
         # date order, but coalescing a DATE with '' is a type error in SQL.
         col = func.upper(func.coalesce(cast(SORT_FIELDS[field](), String), ""))
 

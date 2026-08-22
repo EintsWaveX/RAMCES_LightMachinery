@@ -28,9 +28,9 @@ let _histSortFilters = {};
 // one showing all of them, and the only way to find out was to reopen the
 // modal. These are that state, surfaced and individually removable.
 //
-// All three views write the SAME filter keys — `_sortFilters`,
+// All three views write the SAME filter keys, `_sortFilters`,
 // `_afkirSortFilters` and `_kdakSortFilters` are three variables holding one
-// shape — so this is one renderer rather than three, and a key added in one
+// shape, so this is one renderer rather than three, and a key added in one
 // place appears in all three.
 
 const FILTER_CHIP_LABELS = {
@@ -111,7 +111,7 @@ function renderFilterChips(containerId, filters, onChange, extra) {
 window.renderFilterChips = renderFilterChips;
 
 // ══════════════════════════════════════════════════════════════════════
-// YEAR DROPDOWNS — one rule, eight pickers
+// YEAR DROPDOWNS, one rule, eight pickers
 // ══════════════════════════════════════════════════════════════════════
 //
 // The rule, requested by the client and applied everywhere a year can be
@@ -122,7 +122,7 @@ window.renderFilterChips = renderFilterChips;
 // What this replaced walked from the oldest year present all the way to the
 // current year and printed every gap as "2019 (kosong)". On the seeded fleet
 // that is three real years buried among a column of dead ones, and the dead
-// ones are selectable — picking one empties the list with no explanation.
+// ones are selectable, picking one empties the list with no explanation.
 //
 // The count is scoped to the CALLING MENU's own rows, not to the fleet: the
 // number beside a year in Pantau Riwayat is how many history rows fall in it,
@@ -149,7 +149,7 @@ function yearOptionLabel(year, counts) {
  *
  * `keep` is the currently-selected value. It is always included even when its
  * count has dropped to zero, so a refetch can never silently reset a filter the
- * user set — the option stays, reading "2019 (0)", and they can see why the
+ * user set, the option stays, reading "2019 (0)", and they can see why the
  * list is empty rather than watching their selection vanish.
  */
 function _yearOptionsFor(counts, keep) {
@@ -164,7 +164,7 @@ function _yearOptionsFor(counts, keep) {
  * Fill one year <select>.
  *
  * `allLabel` is the text of the leading "no filter" option, or null to omit it
- * entirely — Tren Perbaikan plots twelve months of ONE year, so "Semua Tahun"
+ * entirely, Tren Perbaikan plots twelve months of ONE year, so "Semua Tahun"
  * has no meaning there and offering it only invites a selection the chart
  * cannot honour.
  */
@@ -212,7 +212,7 @@ function fillYearSelect(sel, counts, allLabel = "Semua Tahun") {
  * Fill a from/to pair. Both get the same option list.
  *
  * With no `rows`, the counts come from the fleet ROLLUP rather than from a
- * client-side array — since rev0.4.5 `db` and `_historySummary` are one page
+ * client-side array, since rev0.4.5 `db` and `_historySummary` are one page
  * each, and counting a page would offer a Tahun Beli list that changed every
  * time the user turned to the next one. Pass `rows` explicitly where the
  * question really is about a specific list (Pulihkan Aset Afkir counts
@@ -331,7 +331,7 @@ function _syncSortPanels(fieldVal, customChecked, panelPrefix, allLabelId, custo
     allLabel.classList.add("hidden");
     customPanels.classList.remove("hidden");
 
-    // Hide every sub-panel first. This must list ALL prefix families — a
+    // Hide every sub-panel first. This must list ALL prefix families, a
     // missing one means that modal's panels stack instead of swapping when the
     // user changes the sort criterion.
     customPanels
@@ -340,7 +340,7 @@ function _syncSortPanels(fieldVal, customChecked, panelPrefix, allLabelId, custo
       )
       .forEach((p) => p.classList.add("hidden"));
     // Show the one matching the active prefix + field. Scoped to THIS modal's
-    // container — a global id lookup could reveal a panel belonging to another
+    // container, a global id lookup could reveal a panel belonging to another
     // sort modal when two of them use different names for the same field.
     const panel = customPanels.querySelector(
       `#${panelPrefix}-panel-${CSS.escape(fieldVal)}`,
@@ -351,7 +351,7 @@ function _syncSortPanels(fieldVal, customChecked, panelPrefix, allLabelId, custo
 
 // ── DB Sort Modal ──
 document.getElementById("btn-sort-db")?.addEventListener("click", () => {
-  // "sort-id-tahun-from/-to" exist in no HTML — the call was a no-op.
+  // "sort-id-tahun-from/-to" exist in no HTML, the call was a no-op.
   _populateYearDropdowns("sort-tgl-from", "sort-tgl-to");
   _populateSortDropdowns("sort");
 
@@ -453,8 +453,8 @@ document.querySelectorAll(".sort-dir-btn").forEach((btn) => {
 
 // The <select> value doubles as a panel id, so some options are named after the
 // PANEL rather than the data field. Sorting used the raw value as a property
-// key, so "Peruntukan" sorted on item.unit_peruntukan — a field that does not
-// exist — and silently did nothing. Map panel id → real field in one place.
+// key, so "Peruntukan" sorted on item.unit_peruntukan, a field that does not
+// exist, and silently did nothing. Map panel id → real field in one place.
 const SORT_FIELD_ALIAS = {
   unit_peruntukan: "peruntukan",
   kode_alat_name: "kode_alat_name",

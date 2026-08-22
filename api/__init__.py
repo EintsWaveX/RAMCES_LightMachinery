@@ -6,7 +6,7 @@ Layout
     deps.py        get_db, auth, require_role, the lokasi/region scope helpers
     files.py       PROJECT_ROOT, the uploads tree, cache headers, 304 support
     realtime.py    ConnectionManager + the `manager` singleton
-    schema.py      _ensure_schema() — the migration mechanism
+    schema.py      _ensure_schema(), the migration mechanism
     schemas.py     every Pydantic request model
     auth.py        login, /me, users CRUD
     master.py      alat kerja, lokasi, UPT, Model/Type, documents

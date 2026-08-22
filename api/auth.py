@@ -2,7 +2,7 @@
 Login, the current user, and user administration.
 
 `/api/login` used to verify no password at all and CREATED any unknown username
-with whatever role the request body claimed — so anyone who could reach the app
+with whatever role the request body claimed, so anyone who could reach the app
 typed a name, sent role="SUPER_ADMIN", and received a full-privilege token. The
 shape that replaced it is load-bearing:
 
@@ -25,7 +25,7 @@ has to be importable rather than living in main.py beside the WebSocket route.
 ⚠️ ROUTE ORDER ⚠️
 `DELETE /api/users/me` MUST stay registered before `DELETE /api/users/{user_id}`.
 Starlette matches in registration order, so with the parameterised route first
-"me" was coerced to an int, failed, and returned 422 — `delete_own_account` was
+"me" was coerced to an int, failed, and returned 422, `delete_own_account` was
 unreachable for its whole life. Fixed in rev0.5.2; do not reorder them back.
 
 ROLE CHECKS ARE ALLOW-LISTS, NEVER `!= "TEKNISI"`. The negative form silently
@@ -74,7 +74,7 @@ from api.schemas import (
 router = APIRouter()
 
 # What an ADMIN_WILAYAH may create, edit or delete. It is a REGIONAL appointment
-# holder, so it staffs its own region — technicians and the warehouse clerk —
+# holder, so it staffs its own region, technicians and the warehouse clerk,
 # but cannot mint another regional admin, a national read-only account, or a
 # super admin. Used by create_user, update_user, delete_user and the approval
 # endpoint, so the four cannot disagree about what "manage my region" means.
@@ -89,8 +89,8 @@ _LOGIN_GAGAL = "Username atau password salah."
 
 
 # What a suspended or unapproved account is told. Deliberately specific: unlike
-# a wrong password, this is not something an attacker learns anything from — you
-# already proved you hold the credentials — and the user genuinely needs to know
+# a wrong password, this is not something an attacker learns anything from, you
+# already proved you hold the credentials, and the user genuinely needs to know
 # that waiting for an admin is the next step rather than retyping.
 _STATUS_PESAN = {
     "PENDING": (
@@ -107,8 +107,8 @@ def _captcha_required(ip: str, username: str) -> bool:
     Should this attempt have to solve a captcha?
 
     PROGRESSIVE: only once a bucket has already tripped. A captcha on every
-    login would be a permanent tax on the people the limit is not aimed at —
-    technicians signing in on a phone at a resort — to slow an attack that has
+    login would be a permanent tax on the people the limit is not aimed at,
+    technicians signing in on a phone at a resort, to slow an attack that has
     not started. And it is never a LOCKOUT: a lockout keyed on username is a
     denial-of-service primitive, since anyone who knows a username can trigger
     it deliberately.
@@ -125,7 +125,7 @@ def login(form_data: LoginForm, request: Request, db: Session = Depends(get_db))
 
     ── What this endpoint deliberately does NOT do ──
     It does not create accounts. It previously registered any unknown username
-    on the spot, with whatever `role` the request body claimed — so anyone who
+    on the spot, with whatever `role` the request body claimed, so anyone who
     could reach the app typed a name, sent role="SUPER_ADMIN", and received a
     full-privilege token, which made every require_role([...]) guard behind it
     decorative. Accounts are now created only through POST /api/users/create or
@@ -192,7 +192,7 @@ def login(form_data: LoginForm, request: Request, db: Session = Depends(get_db))
 
     # AFTER the password check, deliberately. Reporting "menunggu persetujuan"
     # to anyone who merely types the username would turn this endpoint into an
-    # oracle for which accounts exist and what state they are in — the same
+    # oracle for which accounts exist and what state they are in, the same
     # reason a wrong password and an unknown username share one message.
     status = (user.status or "AKTIF").upper()
     if status != "AKTIF":
@@ -203,7 +203,7 @@ def login(form_data: LoginForm, request: Request, db: Session = Depends(get_db))
 
     # A correct password clears the counters. Without this, someone who mistypes
     # nine times and then succeeds stays one attempt from a captcha for the next
-    # quarter of an hour — punishing precisely the person this does not target.
+    # quarter of an hour, punishing precisely the person this does not target.
     ratelimit.clear("login:ip", ip)
     ratelimit.clear("login:user", uname.lower())
 
@@ -228,8 +228,8 @@ def get_captcha(request: Request):
     """
     A fresh challenge: `{token, svg, expires_in}`.
 
-    Unauthenticated by necessity — it is used by the login and registration
-    forms — and therefore rate-limited itself, or it becomes a free CPU sink.
+    Unauthenticated by necessity, it is used by the login and registration
+    forms, and therefore rate-limited itself, or it becomes a free CPU sink.
     The SVG travels inside the JSON rather than as a second `<img src>` request,
     so there is no challenge id, nothing to store, and nothing to go stale
     between two uvicorn workers. See api/captcha.py.
@@ -259,7 +259,7 @@ def register(form: RegisterForm, request: Request, db: Session = Depends(get_db)
       * **It does not issue a token.** Registering is not signing in.
       * **It does not say whether the username was taken.** A registration form
         that distinguishes "sudah terdaftar" from success is a username
-        enumeration oracle open to the whole internet — worse than the login
+        enumeration oracle open to the whole internet, worse than the login
         one, because no password is needed to query it. Both answers are the
         same sentence; a genuine user who owns the name recovers through the
         admin, which is the path they need anyway.
@@ -294,7 +294,7 @@ def register(form: RegisterForm, request: Request, db: Session = Depends(get_db)
             username=username,
             hashed_password=get_password_hash(form.password),
             # An inert placeholder. It is never consulted while status is
-            # PENDING — login refuses the account outright — and the approval
+            # PENDING, login refuses the account outright, and the approval
             # endpoint overwrites it. TEKNISI is used rather than something like
             # "NONE" so the row satisfies the ROLES tuple if anything ever reads
             # it without checking status first.
@@ -336,7 +336,7 @@ async def approve_user(
         raise HTTPException(status_code=400, detail=f"Peran tidak dikenal: {body.role}")
 
     # A regional admin staffs its own region and cannot mint a peer, a national
-    # read-only account or a super admin — the same list create_user, update_user
+    # read-only account or a super admin, the same list create_user, update_user
     # and delete_user use, so the four cannot disagree about what the appointment
     # means.
     if current_user.role == "ADMIN_WILAYAH":
@@ -456,7 +456,7 @@ def create_user(
             hashed_password=get_password_hash(user_data.password),
             role=user_data.role,
             id_lokasi=region,
-            # An admin-created account is active immediately — the approval step
+            # An admin-created account is active immediately, the approval step
             # exists to vet SELF-registration, and an admin creating an account
             # has already done the vetting.
             status="AKTIF",
@@ -476,7 +476,7 @@ def set_user_password(
     current_user: models.Pengguna = Depends(get_current_user),
 ):
     """
-    Set a password — either your own (old password required) or, as SUPER_ADMIN,
+    Set a password, either your own (old password required) or, as SUPER_ADMIN,
     anyone's (a reset, no old password needed).
 
     This is what makes the "akun belum memiliki password" state recoverable:
@@ -493,7 +493,7 @@ def set_user_password(
             status_code=403, detail="Hanya SUPER ADMIN yang dapat menyetel password lain."
         )
 
-    # Changing your own password proves you know the current one — otherwise an
+    # Changing your own password proves you know the current one, otherwise an
     # unattended session becomes a permanent account takeover.
     if is_self and target.hashed_password:
         if not data.password_lama or not verify_password(
@@ -522,7 +522,7 @@ def get_all_users(
         # Through resolve_lokasi_scope, never a bare `==`. A token carries a
         # PARENT code (D1) while the users it manages carry UPT codes (JR1.7),
         # so the equality form matched nothing and a regional admin saw an empty
-        # user list — the exact failure this helper's docstring describes.
+        # user list, the exact failure this helper's docstring describes.
         scope, _parent, _children = resolve_lokasi_scope(db, current_user.id_lokasi)
         query = query.filter(
             models.Pengguna.id_lokasi.in_(scope or [current_user.id_lokasi]),
@@ -533,7 +533,7 @@ def get_all_users(
 
     users = query.order_by(models.Pengguna.role, models.Pengguna.username).all()
 
-    # "Online" means an open WebSocket right now — not a recent last_seen, which
+    # "Online" means an open WebSocket right now, not a recent last_seen, which
     # would keep showing people as present long after they closed the tab.
     online = manager.online_usernames()
     lokasi_names = {
@@ -550,12 +550,12 @@ def get_all_users(
                 "role": u.role,
                 "id_lokasi": u.id_lokasi,
                 "nama_lokasi": lokasi_names.get(u.id_lokasi) or u.id_lokasi,
-                # Whether the account can log in at all. The HASH is never sent —
-                # only the fact that one exists — so Pusat Data can flag rows
+                # Whether the account can log in at all. The HASH is never sent,
+                # only the fact that one exists, so Pusat Data can flag rows
                 # that predate authentication and are therefore locked out.
                 "has_password": bool(u.hashed_password),
                 # AKTIF | PENDING | DITOLAK | NONAKTIF. Pusat Data ▸ Pengguna
-                # renders PENDING rows as an approvals queue — without this the
+                # renders PENDING rows as an approvals queue, without this the
                 # only way to find a registration would be to notice a new name.
                 "status": (u.status or "AKTIF").upper(),
                 "nama_lengkap": u.nama_lengkap,
@@ -640,7 +640,7 @@ def update_user(
 
 # Registered BEFORE /api/users/{user_id}. Starlette matches in registration
 # order, so with the parameterised route first "me" was coerced to an int,
-# failed, and returned 422 — delete_own_account was unreachable for its whole
+# failed, and returned 422, delete_own_account was unreachable for its whole
 # life. The literal path must come first; this is the ordering, not a
 # preference.
 @router.delete("/api/users/me")
@@ -669,7 +669,7 @@ def delete_user(
             status_code=400, detail="Tidak bisa menghapus akun sendiri dari sini."
         )
     # There was NO region check here at all, so an ADMIN_WILAYAH could delete
-    # any user id it liked — including a SUPER_ADMIN. `update_user` above had
+    # any user id it liked, including a SUPER_ADMIN. `update_user` above had
     # one and this did not, which is the kind of asymmetry that only shows up
     # when the two are read side by side.
     if current_user.role == "ADMIN_WILAYAH":

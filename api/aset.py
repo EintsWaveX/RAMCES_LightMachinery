@@ -2,14 +2,14 @@
 Assets: CRUD, afkir/pulihkan, mutasi, kalibrasi, and the public QR card.
 
 **Asset IDs are composite and both sides parse them.** The format is
-`<urutan>.<kode_alat>.<pengadaan>.<yy>.<peruntukan>.<lokasi>` — e.g.
-`6.RGM.1.24.A.D1` — generated in `create_aset` and decoded by `decodeAsetId()`
+`<urutan>.<kode_alat>.<pengadaan>.<yy>.<peruntukan>.<lokasi>`, e.g.
+`6.RGM.1.24.A.D1`, generated in `create_aset` and decoded by `decodeAsetId()`
 in js/search.js and again in landing.html.
 
 Three consequences live in this module:
 
 - **`peruntukan` and `sumber_pengadaan` are closed sets and are load-bearing.**
-  Both are baked into the primary key, so a bad value is not a display bug — it
+  Both are baked into the primary key, so a bad value is not a display bug, it
   is a malformed PK that cannot be corrected later without rewriting every child
   row. `normalise_peruntukan()` / `normalise_sumber_pengadaan()` (api/deps.py)
   are the only accepted way in and raise 400 rather than guessing. They replaced
@@ -20,14 +20,14 @@ Three consequences live in this module:
   recomputed the same count.
 - **`update_aset` distinguishes "absent" from "explicitly null"** via
   `model_fields_set`, because `AsetUpdate` leaves `id_varian` and `nomor_seri`
-  optional. A payload that does not mention them leaves them alone — the KDAK
+  optional. A payload that does not mention them leaves them alone, the KDAK
   edit form used to send exactly such a payload, and every edit there destroyed
   the asset's specification and serial number.
 
 **Balaiyasa is a workshop, never a reporting region.**
 `assert_aset_region_scope()` resolves the HOME location before applying an
 ADMIN_WILAYAH's limit, so a region is never locked out of assets it has itself
-sent to a workshop — including recalling them.
+sent to a workshop, including recalling them.
 
 `status_terakhir` ∈ SO / TSO / AFKIR. There is no `is_afkir` boolean: afkir is a
 status value, and nearly every query filters `!= "AFKIR"`. Every status change
@@ -36,13 +36,13 @@ latest one.
 
 Certificates are stored under uploads/sertifikat/ with a SERVER-generated
 filename (never a client-supplied path) and download is Bearer-authenticated, so
-a plain <a href> 401s — the client goes through apiFetch → blob → objectURL. The
+a plain <a href> 401s, the client goes through apiFetch → blob → objectURL. The
 flow is deliberately two-step: POST /api/kalibrasi returns id_kalibrasi, then
 POST /api/kalibrasi/{id}/sertifikat attaches the file as FormData.
 
 Route order note: `GET /api/kalibrasi/sertifikat/{nama_file}` is kept above
-`GET /api/kalibrasi/{id_aset}`. They cannot actually collide — the first has
-four path segments and `{id_aset}` will not match across a `/` — but the order
+`GET /api/kalibrasi/{id_aset}`. They cannot actually collide, the first has
+four path segments and `{id_aset}` will not match across a `/`, but the order
 costs nothing and the reasoning is not obvious to the next reader.
 
 `get_public_aset` is the only unauthenticated route here: landing.html is
@@ -115,7 +115,7 @@ async def create_aset(
 
     peruntukan_norm, kode_peruntukan = normalise_peruntukan(aset_in.peruntukan)
     sumber_norm, id_pengadaan = normalise_sumber_pengadaan(aset_in.sumber_pengadaan)
-    # "admin daerah hanya input pengadaan 2" — the client's own matrix. Checked
+    # "admin daerah hanya input pengadaan 2", the client's own matrix. Checked
     # here rather than inside the normaliser, which is role-blind by design.
     assert_pengadaan_scope(current_user, id_pengadaan)
 
@@ -124,7 +124,7 @@ async def create_aset(
     # Derived from the highest sequence number in use, NOT from a row count.
     # With count+1, deleting any asset of this type made the next create reuse a
     # number that still belonged to a live asset, and the collision check below
-    # then rejected it — permanently, since retrying recomputed the same count.
+    # then rejected it, permanently, since retrying recomputed the same count.
     urutan_terpakai = [
         int(row[0].split(".")[0])
         for row in db.query(models.Aset.id_aset)
@@ -164,7 +164,7 @@ async def create_aset(
     db.add(db_aset)
 
     # Inisiasi Riwayat Awal (Sesuai perbaikan arsitektur sebelumnya)
-    # id_lokasi/peruntukan are set here for parity with seed.py — without them
+    # id_lokasi/peruntukan are set here for parity with seed.py, without them
     # every dashboard query has to COALESCE back to the asset to place the row.
     inisiasi_riwayat = models.RiwayatKondisi(
         id_aset=generated_id_aset,
@@ -186,8 +186,8 @@ async def create_aset(
 # Pagination
 # ══════════════════════════════════════════════════════════════════════
 #
-# `/api/aset` and `/api/history/summary` returned the ENTIRE fleet — roughly
-# 4.5 MB and 16 MB at 10,000 assets — on every login and again after every
+# `/api/aset` and `/api/history/summary` returned the ENTIRE fleet, roughly
+# 4.5 MB and 16 MB at 10,000 assets, on every login and again after every
 # mutation. They now carry the same {total, limit, offset, items} envelope that
 # `get_transfer_history` and `get_stok_movements` already used.
 #
@@ -233,7 +233,7 @@ def get_all_aset(
     ── This used to be a superset gate; it is now the whole answer ──
     Until rev0.4.5 these filters only narrowed what went over the wire and the
     client's matcher ran last and decided. That was correct but it meant the
-    client had to hold the entire fleet — 1.06 MB and 460 ms at 1,121 assets, on
+    client had to hold the entire fleet, 1.06 MB and 460 ms at 1,121 assets, on
     every login and after every mutation. Kelola Data Aset now renders straight
     from a page of this endpoint, so the filters have to be EXACT.
 
@@ -241,17 +241,17 @@ def get_all_aset(
     exact, and `tools/verify/test_paging.py` asserts the two agree by running
     both over the real fleet and comparing the id sets. In particular:
 
-      q            the full matcher — a region label resolves to an explicit
+      q            the full matcher, a region label resolves to an explicit
                    code set ("DAOP 1" never matches DAOP 10), a bare code
                    compares exactly, free text is a substring over NAMES only
       lokasi/upt   compared against the asset's IDENTITY location, which is the
                    origin of its first transfer rather than where it sits today
-      peruntukan   read out of the composite id, not the column — see
+      peruntukan   read out of the composite id, not the column, see
                    `peruntukan_letter_expr()`
       milik_saya   "Aset Saya": the caller's own region, from the token
 
     `kode_alat`, `id_lokasi`, `status` and `tahun` are the ORIGINAL superset
-    parameters and are kept working unchanged — `landing.html` and the export
+    parameters and are kept working unchanged, `landing.html` and the export
     paths still send them.
     """
     query = (
@@ -265,7 +265,7 @@ def get_all_aset(
         )
         # Raw comparison, not func.upper(): _ensure_schema() normalises the
         # column on boot, and wrapping it in a function makes both indexes on it
-        # unusable — this filter was a sequential scan of `aset`.
+        # unusable, this filter was a sequential scan of `aset`.
         .filter(models.Aset.status_terakhir != "AFKIR")
     )
 
@@ -307,12 +307,12 @@ def get_all_aset(
 
     # `total` before paging, then the page itself. Not `_page_envelope()`: the
     # card facts below are batched over the page's ids, which needs the rows in
-    # hand — the same shape /api/history/summary uses, and for the same reason.
+    # hand, the same shape /api/history/summary uses, and for the same reason.
     total = query.order_by(None).count()
 
     # SO/TSO for the WHOLE filtered set, not the page. The KPI tiles above the
     # Kelola Data Aset cards describe "how much matches", which paging must not
-    # change — they used to be computed from a client-side copy of the fleet.
+    # change, they used to be computed from a client-side copy of the fleet.
     st_rows = db.execute(
         query.order_by(None)
         .with_entities(models.Aset.status_terakhir, func.count())
@@ -363,7 +363,7 @@ def get_all_aset(
             # batched query each over the ids on this page.
             #
             # `identitas_lokasi` in particular is `assetLokasiIdentity().uptCode`
-            # — the origin of the asset's first transfer — so the client no
+            # the origin of the asset's first transfer, so the client no
             # longer derives it, and the label on the card is by construction
             # the value the server filtered on.
             "identitas_lokasi": ident,
@@ -390,7 +390,7 @@ def _card_facts(db: Session, ids):
     the identity location, the recorded-activity count the "jumlah" sort uses,
     the latest calibration verdict and the transfer count.
 
-    Four batched queries scoped to ONE PAGE of ids — never the fleet. Written
+    Four batched queries scoped to ONE PAGE of ids, never the fleet. Written
     the same way `/api/history/summary` batches its six, because the alternative
     (correlated subqueries inside the ORM serialiser) is per-row and invisible.
     """
@@ -421,7 +421,7 @@ def _card_facts(db: Session, ids):
         .group_by(RM.id_aset)
         .all()
     )
-    # TSO rows only — an SO row is a repair being CLOSED, and counting both
+    # TSO rows only, an SO row is a repair being CLOSED, and counting both
     # double-counts every completed job. Same rule as `repair_count_map`.
     rep_count = dict(
         db.query(RK.id_aset, func.count())
@@ -479,7 +479,7 @@ def get_afkir_aset(db: Session = Depends(get_db)):
             for r in db.query(models.RiwayatKondisi.id_aset, func.count())
             .filter(
                 models.RiwayatKondisi.id_aset.in_(afkir_ids),
-                # TSO only — an SO row closes a repair, so counting both would
+                # TSO only, an SO row closes a repair, so counting both would
                 # double-count every completed job.
                 models.RiwayatKondisi.kondisi == "TSO",
             )
@@ -532,7 +532,7 @@ async def afkir_aset(
     if not aset:
         raise HTTPException(status_code=404, detail="Aset tidak ditemukan.")
     aset.status_terakhir = "AFKIR"
-    # Record the transition — without a riwayat row the afkir is invisible to
+    # Record the transition, without a riwayat row the afkir is invisible to
     # every history/export/dashboard query.
     db.add(
         models.RiwayatKondisi(
@@ -563,7 +563,7 @@ async def pulihkan_aset(
             status_code=400, detail="Aset ini tidak dalam status AFKIR."
         )
     aset.status_terakhir = "SO"
-    # Record the recovery, mirroring afkir_aset — an AFKIR→SO transition with no
+    # Record the recovery, mirroring afkir_aset, an AFKIR→SO transition with no
     # riwayat row leaves a hole in the asset's timeline.
     db.add(
         models.RiwayatKondisi(
@@ -634,7 +634,7 @@ async def create_kalibrasi(
     db: Session = Depends(get_db),
     # Was open to every logged-in user. Recording a calibration is a
     # field task like reporting a condition, so it carries the same
-    # audience — PETUGAS_GUDANG and PIMPINAN have no business filing one.
+    # audience, PETUGAS_GUDANG and PIMPINAN have no business filing one.
     current_user: models.Pengguna = Depends(
         require_role(["SUPER_ADMIN", "ADMIN_WILAYAH", "TEKNISI"])
     ),
@@ -677,7 +677,7 @@ async def create_kalibrasi(
 
 # The upload directories, the extension allowlists and _save_upload /
 # _save_certificate / _drop_upload are imported from api/files.py at the top of
-# this module — they are shared with the master routes, which attach documents
+# this module, they are shared with the master routes, which attach documents
 # and photos to alat kerja and Model/Type rows.
 
 
@@ -704,7 +704,7 @@ async def upload_sertifikat_kalibrasi(
     # the whole worker for the duration of the write.
     stored = await asyncio.to_thread(_save_certificate, file, id_kalibrasi)
 
-    # Replacing an existing certificate — drop the old file so uploads don't pile up.
+    # Replacing an existing certificate, drop the old file so uploads don't pile up.
     _drop_upload(SERTIFIKAT_DIR, record.file_sertifikat)
 
     record.file_sertifikat = stored
@@ -728,7 +728,7 @@ def get_kalibrasi_jatuh_tempo(
     The bell is session-scoped on purpose: there is no notifications table, and
     inventing one means deciding what "read" means per user across devices. A
     calibration due date does not need that decision. It is not an event that
-    happened once — it is a condition that is either true right now or is not,
+    happened once, it is a condition that is either true right now or is not,
     and it stops being true when somebody calibrates the machine. So this
     endpoint answers the condition, every caller re-reads it, and nothing is
     ever marked read or goes stale.
@@ -746,7 +746,7 @@ def get_kalibrasi_jatuh_tempo(
     teaches people to ignore the list.
 
     Scoped with `resolve_lokasi_scope()` so an ADMIN_WILAYAH sees its own
-    region — never a bare `==`, which misses every UPT under the parent.
+    region, never a bare `==`, which misses every UPT under the parent.
     """
     AS = models.Aset
     KA = models.KategoriAlat
@@ -762,7 +762,7 @@ def get_kalibrasi_jatuh_tempo(
         scope_code = current_user.id_lokasi
     lokasi_ids, _parent, _children = resolve_lokasi_scope(db, scope_code)
 
-    # Latest calibration per asset — the same row_number the card facts and the
+    # Latest calibration per asset, the same row_number the card facts and the
     # history summary pick, so all three agree on which record is "latest".
     rn = func.row_number().over(
         partition_by=RKAL.id_aset,
@@ -807,7 +807,7 @@ def get_kalibrasi_jatuh_tempo(
         elif berlaku <= batas:
             segera.append(row)
 
-    # Soonest first within each bucket, and the most urgent bucket first — the
+    # Soonest first within each bucket, and the most urgent bucket first, the
     # list is a work queue, so its order is the order to act in.
     lewat.sort(key=lambda r: r["tanggal_berlaku"])
     segera.sort(key=lambda r: r["tanggal_berlaku"])
@@ -836,7 +836,7 @@ def download_sertifikat(
 ):
     """
     Serve a stored certificate. Authenticated, and deliberately NOT routed
-    through the public static handler — certificates are not public assets.
+    through the public static handler, certificates are not public assets.
     """
     # basename() strips any traversal attempt before it reaches the filesystem.
     safe = os.path.basename(nama_file)
@@ -1049,7 +1049,7 @@ async def update_aset(
     new_id_aset = f"{nomor_urut}.{aset_in.kode_alat}.{id_pengadaan}.{year_str}.{kode_peruntukan}.{aset_in.parent_lokasi}"
 
     # `id_varian` and `nomor_seri` are optional in the schema, so a payload that
-    # simply does not mention them used to null both out — the Kelola Data Alat
+    # simply does not mention them used to null both out, the Kelola Data Alat
     # Kerja edit form sends exactly such a payload, and every edit there quietly
     # destroyed the asset's serial number and specification. Treat "absent" as
     # "leave alone" and only write what the caller actually sent.
@@ -1062,7 +1062,7 @@ async def update_aset(
     )
 
     if new_id_aset == id_aset:
-        # ID unchanged — simple field update
+        # ID unchanged, simple field update
         old_aset.kode_alat = aset_in.kode_alat
         old_aset.id_lokasi = aset_in.id_lokasi
         old_aset.tanggal_pembelian = aset_in.tanggal_pembelian
@@ -1074,7 +1074,7 @@ async def update_aset(
         await manager.broadcast("REFRESH_ASSET_LIST")
         return {"message": "Aset berhasil diperbarui.", "id_aset": new_id_aset}
 
-    # ID changes — check for collision
+    # ID changes, check for collision
     if db.query(models.Aset).filter_by(id_aset=new_id_aset).first():
         raise HTTPException(
             status_code=400,
@@ -1115,15 +1115,15 @@ async def update_aset(
     return {"message": "Aset berhasil diperbarui.", "id_aset": new_id_aset}
 
 
-# The whole sparepart inventory — kategori, parts, gudang, the append-only stok
-# ledger, transfers, pemakaian and the stock dashboard — moved to
+# The whole sparepart inventory, kategori, parts, gudang, the append-only stok
+# ledger, transfers, pemakaian and the stock dashboard, moved to
 # api/inventaris.py. api/riwayat.py imports `_net_stok_map` from it so a repair
 # checks sufficiency against the same implementation the standalone movement
 # endpoint uses.
 
 # `_varian_payload` is the ONE shape for a Model/Type and now lives in
-# api/master.py. `get_public_aset` below is its other caller — the QR card must
-# render the identical spec block the SPA does — so it is imported rather than
+# api/master.py. `get_public_aset` below is its other caller, the QR card must
+# render the identical spec block the SPA does, so it is imported rather than
 # reimplemented. (This route moves to api/aset.py, which takes the import with it.)
 from api.master import _varian_payload, dokumen_payload  # noqa: E402
 
@@ -1147,7 +1147,7 @@ def get_public_aset(id_aset: str, db: Session = Depends(get_db)):
     Historically this returned five keys, two of which lied: `kode_alat` carried
     the tool's display NAME and `id_lokasi` carried `nama_lokasi`. The landing
     page fed that name into a code→name resolver, which naturally failed, which
-    is why its "UPT" row was permanently "—". Codes and names are now separate
+    is why its "UPT" row was permanently ", ". Codes and names are now separate
     keys, and the old two are kept as aliases so nothing that reads them breaks.
     """
     aset = (
@@ -1172,12 +1172,12 @@ def get_public_aset(id_aset: str, db: Session = Depends(get_db)):
     )
 
     # One shape for the spec block, shared with /api/master/varian and the SPA
-    # spec card — the three used to be built separately and drifted.
+    # spec card, the three used to be built separately and drifted.
     v = aset.varian_ref
     spesifikasi = _varian_payload(v) if v is not None else None
 
     # Also surfaced OUTSIDE `spesifikasi`, because 49 of the 87 seeded models
-    # are bare rows and plenty of assets resolve to no model at all — and those
+    # are bare rows and plenty of assets resolve to no model at all, and those
     # are precisely the machines whose only documentation is the tool-type
     # spektek. Hanging the list off the model would have hidden it from exactly
     # the technicians who need it most.
@@ -1188,7 +1188,7 @@ def get_public_aset(id_aset: str, db: Session = Depends(get_db)):
         # ── Jenis alat ──
         "kode_alat_code": aset.kode_alat,
         "nama_alat": nama_alat,
-        "kode_alat": nama_alat,  # legacy alias — carries the NAME, not the code
+        "kode_alat": nama_alat,  # legacy alias, carries the NAME, not the code
         # Katalog flags. `perlu_kalibrasi` is what lets the landing page hide
         # its Kalibrasi tab for a tool that is serviced but never calibrated,
         # instead of offering a form that would only ever produce fiction.
@@ -1202,7 +1202,7 @@ def get_public_aset(id_aset: str, db: Session = Depends(get_db)):
         # `parent_code` is None when the asset is homed directly at a DAOP rather
         # than a resort; in that case there is no separate UPT to show.
         "upt_nama": nama_lokasi if parent_code else None,
-        "id_lokasi": nama_lokasi or aset.id_lokasi,  # legacy alias — the NAME
+        "id_lokasi": nama_lokasi or aset.id_lokasi,  # legacy alias, the NAME
         # ── Status & pengadaan ──
         "status_terakhir": aset.status_terakhir,
         "peruntukan": aset.peruntukan,

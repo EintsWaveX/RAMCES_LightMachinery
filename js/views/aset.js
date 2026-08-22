@@ -43,7 +43,7 @@ window.openEdit = (uid) => {
   if (_v("kalib-teknisi")) _v("kalib-teknisi").value = currentUser;
   if (_v("edit-kondisi")) _v("edit-kondisi").value = "";
 
-  // Pre-select peruntukan radio — radio values are A/B/C/D, stored value is full name
+  // Pre-select peruntukan radio, radio values are A/B/C/D, stored value is full name
   const _PERUNTUKAN_REV = { "JALAN REL": "A", "JEMBATAN": "B", "MEKANIK": "C", "BALAIYASA": "D" };
   const preselectedUnit = _PERUNTUKAN_REV[item.peruntukan] || item.peruntukan || "";
   document.querySelectorAll('input[name="edit-unit"]').forEach((r) => {
@@ -73,7 +73,7 @@ window.openEdit = (uid) => {
     _v("edit-card-nama").textContent = item.kode_alat_name || item.kode_alat;
 
   // Status badge + the colour strip along the top of the card. Both go through
-  // the .badge component layer rather than hand-rolled Tailwind — this was one
+  // the .badge component layer rather than hand-rolled Tailwind, this was one
   // of the twenty drifting copies assets/style.css exists to retire.
   const statusEl = _v("edit-card-status");
   if (statusEl) {
@@ -167,7 +167,7 @@ window.openEdit = (uid) => {
 
   // A genset is serviced, not calibrated. Hiding the tab for tool types the
   // katalog does not flag keeps the form from producing records that cannot
-  // mean anything — same rule as landing.html's tab strip.
+  // mean anything, same rule as landing.html's tab strip.
   const kalibBtn = document.getElementById("edit-tab-kalibrasi");
   kalibBtn?.classList.toggle("hidden", item.perlu_kalibrasi !== true);
   _switchEditFormTab("perbaikan");
@@ -204,13 +204,13 @@ async function _loadEditSpecCard(idVarian) {
 }
 
 // Invalidated by the WebSocket refresh so an edited Model/Type shows up
-// without a reload — see handleSocketMessage in js/shell.js.
+// without a reload, see handleSocketMessage in js/shell.js.
 window.invalidateVarianCache = function () {
   _varianCache = null;
 };
 
 // ══════════════════════════════════════════════════════════════════════════
-// PARTS PICKER — spareparts consumed by the repair being reported
+// PARTS PICKER, spareparts consumed by the repair being reported
 //
 // Submits inside the /api/perbaikan body, so the condition report and the
 // stock movements land in one transaction. See catat_perbaikan() in main.py.
@@ -261,7 +261,7 @@ async function _reloadPakaiParts(item) {
   const params = new URLSearchParams();
   // "Tampilkan semua" drops BOTH scoping filters, because a technician who
   // reaches for it is usually fitting something the catalogue never associated
-  // with this tool at all — a generic bolt, a length of cable.
+  // with this tool at all, a generic bolt, a length of cable.
   if (!semua) {
     if (item.kode_alat) params.set("kode_alat", item.kode_alat);
     if (item.id_varian) params.set("id_varian", item.id_varian);
@@ -508,7 +508,7 @@ window.deleteAset = async (uid) => {
 };
 
 function switchDetailTab(tab, uid) {
-  // This was a near-identical copy of _setHistoryTab in shell.js — the same six
+  // This was a near-identical copy of _setHistoryTab in shell.js, the same six
   // class arrays, the same swap, already drifting apart. Both go through the
   // one segmented-control helper now.
   setSegmented(
@@ -537,7 +537,7 @@ async function loadDetailRepair(uid) {
       return;
     }
 
-    // Filter out KALIBRASI entries — they belong to the Kalibrasi tab only.
+    // Filter out KALIBRASI entries, they belong to the Kalibrasi tab only.
     // A caller's policy, not a rendering concern: renderRepairRows() renders
     // whatever rows it is handed.
     const repairEntries = history.filter((h) => h.kondisi !== "KALIBRASI");
@@ -571,7 +571,7 @@ async function loadDetailRepair(uid) {
 /** Region + UPT display names for a stored lokasi code: exact UPT-code match,
  * then exact parent-code match, then the code itself as a last resort.
  *
- * Deliberately NOT resolveLokasi() from js/search.js — that adds two more
+ * Deliberately NOT resolveLokasi() from js/search.js, that adds two more
  * fallback branches (fuzzy match by UPT/parent NAME) that a stored code never
  * needs, and substituting it was rejected rather than risk a behaviour change
  * for input this function was never exercised against. */
@@ -589,22 +589,22 @@ function resolveLokasiCode(kode) {
 }
 
 /**
- * The condition-history table body — one <tr> per row, eight columns. Shared
+ * The condition-history table body, one <tr> per row, eight columns. Shared
  * by loadDetailRepair() (the asset detail view) and the Dashboard drill-down
  * modal, so the two can never drift.
  *
- * `rows` is expected already filtered of KALIBRASI entries — see the caller's
+ * `rows` is expected already filtered of KALIBRASI entries, see the caller's
  * note above; this renderer does not re-apply that filter.
  *
  * `opts`:
- *   pemakaian   — the `.per_riwayat` map from GET /api/aset/{uid}/pemakaian,
+ *   pemakaian, the `.per_riwayat` map from GET /api/aset/{uid}/pemakaian,
  *                 keyed by id_riwayat, fed to _pakaiChips().
- *   onlyKondisi — optional "SO" | "TSO". When set, only rows whose kondisi
+ *   onlyKondisi, optional "SO" | "TSO". When set, only rows whose kondisi
  *                 matches are rendered (row numbering restarts over the
  *                 filtered set). loadDetailRepair() passes nothing here, so
  *                 its output is unchanged; the Dashboard modal uses it when
  *                 opened from the Siap Operasi / Tidak Siap card.
- *   asetTerkait — the asset row (asetById/summaryFor), used only as a
+ *   asetTerkait, the asset row (asetById/summaryFor), used only as a
  *                 fallback for legacy rows written before id_lokasi/peruntukan
  *                 were captured per-row.
  */
@@ -740,14 +740,14 @@ async function loadDetailKalibrasi(uid) {
 }
 
 /**
- * The certificate-history table body — one <tr> per row, nine columns.
+ * The certificate-history table body, one <tr> per row, nine columns.
  * Shared by loadDetailKalibrasi() (the asset detail view) and the Dashboard
  * drill-down modal.
  *
  * `opts`:
- *   uid       — the asset id, threaded into the delete button's
+ *   uid, the asset id, threaded into the delete button's
  *               loadDetailKalibrasi(uid) refresh call.
- *   canDelete — computed by the CALLER from _currentRole; this renderer does
+ *   canDelete, computed by the CALLER from _currentRole; this renderer does
  *               not read role state itself.
  */
 window.renderKalibrasiRows = function renderKalibrasiRows(rows, opts = {}) {
@@ -879,7 +879,7 @@ async function loadDetailMutasi(uid) {
 }
 
 /**
- * The mutasi tab's origin bar ONLY — "Lokasi Asal" / "Lokasi Sekarang" plus
+ * The mutasi tab's origin bar ONLY, "Lokasi Asal" / "Lokasi Sekarang" plus
  * the sudah_kembali badge. Shared by loadDetailMutasi() (the asset detail
  * view) and the Dashboard drill-down modal, which deliberately shows only
  * this block and not the full timeline below it.
@@ -888,7 +888,7 @@ async function loadDetailMutasi(uid) {
  *
  * The returned/not-returned pill was hand-rolled inline Tailwind; converted
  * here to the .badge component layer per CLAUDE.md ("status badges go
- * through .badge, never inline Tailwind") — .badge-so for "sudah kembali",
+ * through .badge, never inline Tailwind").badge-so for "sudah kembali",
  * .badge-move for "belum kembali" (the same orange "SEDANG TERMUTASI" state
  * used elsewhere for an asset still away from its origin). This is the one
  * intentional visual change in this extraction.
@@ -930,7 +930,7 @@ const cardDetailRow = (label, val) =>
 // finally has real numbers behind it.
 function _eventCount(item) {
   // `jumlah_kejadian` is the server's own figure, added to /api/aset in
-  // rev0.4.5 and computed by the same rule — TSO rows plus transfers, never
+  // rev0.4.5 and computed by the same rule, TSO rows plus transfers, never
   // every riwayat row, because an SO row is a repair being CLOSED. Sorting by
   // it now happens server-side; this remains for the summary-shaped rows on
   // Pantau Riwayat and for the parity harness.
@@ -1000,11 +1000,11 @@ document.getElementById("btn-db-density")?.addEventListener("click", () => {
 });
 
 /**
- * Kelola Data Aset — ONE page, filtered and sorted by the server.
+ * Kelola Data Aset, ONE page, filtered and sorted by the server.
  *
  * Until rev0.4.5 this filtered, sorted and sliced a client-side copy of the
  * whole fleet. Everything it used to do in JavaScript now travels as query
- * parameters, and `api/query.py` applies the identical rules — including the
+ * parameters, and `api/query.py` applies the identical rules, including the
  * three location term shapes and the identity-location rule that decides which
  * region an asset belongs to. `tools/verify/test_paging.py` asserts the two
  * agree; if you change a filter here, change it there and re-run it.
@@ -1027,7 +1027,7 @@ async function renderDbCards() {
   const searchQ = searchInput?.value || "";
   // "Aset Saya" narrows the list to the region the logged-in user belongs to.
   // The server reads the region out of the caller's own token rather than
-  // trusting a parameter — see own_region_codes() in api/query.py.
+  // trusting a parameter, see own_region_codes() in api/query.py.
   const mode = isTeknisi ? "public" : modeSelect ? modeSelect.value : "public";
   const myLokasiRaw = getJwtPayload(authToken)?.id_lokasi || "";
   const myRegion = getParentLokasiCode(myLokasiRaw) || myLokasiRaw;
@@ -1064,7 +1064,7 @@ async function renderDbCards() {
   // already gone out, so re-issue it rather than render the empty page.
   if (meta.stale) return renderDbCards();
 
-  // Stats describe the whole FILTERED set, not the current page — they answer
+  // Stats describe the whole FILTERED set, not the current page, they answer
   // "how much matches", which paging must not change. `ringkas` is computed by
   // the server over the same filter, before the slice.
   const fleetTotal = (await getRingkasan()).total;
@@ -1110,13 +1110,13 @@ async function renderDbCards() {
       const peruntukanName = item.peruntukan ? item.peruntukan : "—";
 
       // Location comes from the shared identity, the same call the search and
-      // the filters above make — so what the card prints is by construction
+      // the filters above make, so what the card prints is by construction
       // what a search for that string will find.
       const ident = assetLokasiIdentity(item);
       const rawUptCode = ident.uptCode;
       const lokasiName = ident.parentName || "—";
 
-      // UPT — show em-dash when the stored code is a parent Lokasi (not a UPT)
+      // UPT, show em-dash when the stored code is a parent Lokasi (not a UPT)
       const isDirectLokasi =
         !uptDatabase.some((u) => u.upt === rawUptCode) &&
         lokasiData.some((l) => l.code === rawUptCode);
@@ -1146,7 +1146,7 @@ async function renderDbCards() {
 
       // Badge 2: Kalibrasi.
       // These three badges are why the SPA used to download the entire
-      // /api/history/summary at login. They ride on /api/aset itself now —
+      // /api/history/summary at login. They ride on /api/aset itself now,
       // batched over the ids on this page, see _card_facts() in api/aset.py.
       //
       // The four-branch ladder that used to be inline here is now
@@ -1256,7 +1256,7 @@ window.openMutasiModal = (uid) => {
     return uptName !== "—" ? `${parentName} (${uptName})` : parentName;
   }
 
-  // ── Lokasi Asal (ORIGINAL — sebelum mutasi) ──
+  // ── Lokasi Asal (ORIGINAL, sebelum mutasi) ──
   const rawOriginal = summaryItem?.mutasi?.original_lokasi_code || item.id_lokasi_raw || item.id_lokasi || "";
   const rawKini = item.id_lokasi_raw || item.id_lokasi || "";
   const originalDisplay = formatLocationDisplay(rawOriginal);

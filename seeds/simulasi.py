@@ -1,15 +1,15 @@
 """
-Simulated operational history — marked, reversible, and off by default.
+Simulated operational history, marked, reversible, and off by default.
 
 A default `manage.py seed` produces a system that is entirely green: all 1,121
 assets `SO`, one opening condition row each, and zero mutations, calibrations or
 part usage. Five dashboard panels are therefore empty or meaningless on a fresh
-install — Matriks Kesiapan, Grafik Ketersediaan, Tren Perbaikan, Laporan
+install, Matriks Kesiapan, Grafik Ketersediaan, Tren Perbaikan, Laporan
 Perbaikan and Kurva MCF.
 
 This module fills them. It exists in tension with a rule the rest of this
-package enforces hard — *the imported fleet is REAL, and repair records invented
-against it are indistinguishable from fact a year later* — so it resolves that
+package enforces hard, *the imported fleet is REAL, and repair records invented
+against it are indistinguishable from fact a year later*, so it resolves that
 tension rather than ignoring it:
 
   * **Every fabricated row is attributed to a dedicated `SIMULASI` account** and
@@ -36,7 +36,7 @@ opening row. Nothing else has to be remembered.
 
 The state machine below used to live inside `seeds/dummy.py`'s creation loop,
 which is why it only ever ran against the 100 demo assets. It carries four rules
-that took three rounds to get right — the Balaiyasa attribution rule, the
+that took three rounds to get right, the Balaiyasa attribution rule, the
 peruntukan redistribution rule, calibration gated on the katalog flag, and the
 "never home an asset at a workshop" safety net. Writing a second copy for the
 real fleet would have duplicated all four. `dummy.py` imports this instead, so
@@ -69,8 +69,8 @@ _SIM_RNG_SEED = 20260816
 #
 # The first cut reused the demo generator's numbers unchanged and produced a
 # fleet that was **21% written off and 37% currently broken**. Those weights
-# were fine for 100 demo machines bought 2015–2023; against the real fleet —
-# 1,055 of 1,121 bought in 2025 or 2026 — they compound into a maintenance
+# were fine for 100 demo machines bought 2015, 2023; against the real fleet,
+# 1,055 of 1,121 bought in 2025 or 2026, they compound into a maintenance
 # record that would be alarming rather than illustrative, and a demo nobody
 # believes is worse than an empty one.
 #
@@ -79,13 +79,13 @@ _SIM_RNG_SEED = 20260816
 #   * **Time-to-repair is not time-between-failures.** This was the interesting
 #     one. A single event gap made every repair take two to thirteen months, so
 #     a machine that broke usually had not been fixed by the time the simulation
-#     reached today — and 37% of the fleet came out "currently under repair" no
+#     reached today, and 37% of the fleet came out "currently under repair" no
 #     matter how the failure weights were tuned. Availability is not really a
 #     function of how often things break; it is a function of how fast they come
 #     back. Splitting the two gaps moved SO from 60% to 85% on its own.
 #   * **Write-off is BUDGET-CONSTRAINED, not per-machine random.** AFKIR is an
 #     absorbing state, so any per-event probability compounds toward "eventually
-#     everything is scrapped" as the simulated period lengthens — which is how
+#     everything is scrapped" as the simulated period lengthens, which is how
 #     the first run reached 21%. A fleet-level quota is easier to reason about
 #     and closer to how the decision is actually made.
 #   * **A machine does not stay broken forever.** An asset left TSO by the last
@@ -93,7 +93,7 @@ _SIM_RNG_SEED = 20260816
 #     is deliberately a point-in-time count, so a stale TSO corrupts exactly the
 #     number that is hardest to sanity-check.
 #
-# Result: 85.0% SO · 11.1% TSO · 3.9% AFKIR — targets a rail maintenance fleet
+# Result: 85.0% SO · 11.1% TSO · 3.9% AFKIR, targets a rail maintenance fleet
 # would recognise. `seeds/verify.py` asserts the result lands in that band, so a
 # future retune cannot quietly produce nonsense again.
 GAP_SEHAT_HARI = (60, 400)    # SO → next notable event
@@ -139,7 +139,7 @@ def simulasi_user(db):
 
 
 # ══════════════════════════════════════════════════════════════════════
-# Context — the lookups the state machine needs, built once
+# Context, the lookups the state machine needs, built once
 # ══════════════════════════════════════════════════════════════════════
 
 class SimContext:
@@ -187,7 +187,7 @@ class SimContext:
             self.redistribusi_pool.setdefault(peruntukan_letter_for(_id), []).append(_id)
 
         # Which tool types actually get calibrated, straight from the katalog
-        # flag rather than a hardcoded set — a genset is serviced, not
+        # flag rather than a hardcoded set, a genset is serviced, not
         # calibrated, and seeding certificates for one would be fiction.
         self.kalibrasi_codes = {
             row[0]
@@ -198,8 +198,8 @@ class SimContext:
 
         # ── Sparepart consumption ──
         # Parts that fit each tool type, and the live balance per (part, gudang).
-        # `id_varian IS NULL` means "fits every model of this tool" — the common
-        # case — so it is included for every asset of that kode_alat.
+        # `id_varian IS NULL` means "fits every model of this tool", the common
+        # case, so it is included for every asset of that kode_alat.
         self.parts_by_alat: dict = {}
         for p in db.query(models.SparePart).all():
             if p.kode_alat:
@@ -239,7 +239,7 @@ class SimContext:
         True for a Balaiyasa or anything parented by one.
 
         The `BY*A` rows are typed "UPT", so excluding them by tipe alone is not
-        enough — they have to be resolved to their parent.
+        enough, they have to be resolved to their parent.
         """
         if id_lokasi in getattr(self, "balaiyasa_ids", []):
             return True
@@ -256,7 +256,7 @@ def _consume_parts(ctx, riwayat, aset):
     Spend a few compatible spareparts on one completed repair.
 
     Writes an `OUT` movement and the `pemakaian_sparepart` row that links it to
-    the repair — the same pairing `catat_perbaikan()` produces at runtime, which
+    the repair, the same pairing `catat_perbaikan()` produces at runtime, which
     is what makes Laporan Perbaikan's `top_sparepart` and the fast/slow
     classification reflect consumption that actually happened.
 
@@ -320,7 +320,7 @@ def simulate_history(ctx, aset, mulai=None, kondisi_awal="SO", pakai_sparepart=T
     """
     Append a plausible operational history to ONE existing asset.
 
-    Does NOT write the opening condition row — the caller already has one
+    Does NOT write the opening condition row, the caller already has one
     (`seeds/aset.py` for the imported fleet, `seeds/dummy.py` for demo assets),
     and that row is what `hapus()` restores from. Writing a second would break
     the undo and inflate `f_masuk`.
@@ -342,8 +342,8 @@ def simulate_history(ctx, aset, mulai=None, kondisi_awal="SO", pakai_sparepart=T
     #
     # `seeds/aset.py` stamps the opening "Aset Baru" record at 08:00 on the
     # purchase date. Defaulting to midnight put every simulated history BEFORE
-    # the registration it follows from — monitoring starting before the machine
-    # was recorded — which is both nonsense to read and enough to make the
+    # the registration it follows from, monitoring starting before the machine
+    # was recorded, which is both nonsense to read and enough to make the
     # `LAG` in `_scoped_repair_events()` treat the registration as an event in
     # the middle of the asset's life. Keep this later than `JAM_REGISTRASI`
     # there; `seeds/dummy.py` passes its own `mulai` and orders by id_riwayat.
@@ -359,7 +359,7 @@ def simulate_history(ctx, aset, mulai=None, kondisi_awal="SO", pakai_sparepart=T
     #     client's workbook; everything below it was invented.
     #   * It makes the idempotency gate EXACT. Gating on "has any simulated
     #     condition row" was not enough: an asset can legitimately produce no
-    #     events at all — `rng.randint(0, 15)` rolls zero, or the first gap
+    #     events at all, `rng.randint(0, 15)` rolls zero, or the first gap
     #     already runs past today, which is the common case for the 326 assets
     #     bought in 2026. Those assets were then re-simulated on every run, and
     #     a second `--simulasi` added another 429 condition rows. That is the
@@ -402,7 +402,7 @@ def simulate_history(ctx, aset, mulai=None, kondisi_awal="SO", pakai_sparepart=T
             else:
                 kondisi = rng.choices(["SO", "AFKIR"], weights=[92, 8])[0]
                 if kondisi == "AFKIR" and not ctx.boleh_afkir():
-                    kondisi = "SO"   # budget spent — repaired instead
+                    kondisi = "SO"   # budget spent, repaired instead
                 riwayat = models.RiwayatKondisi(
                     id_aset=aset.id_aset,
                     id_pengguna=ctx.id_pengguna,
@@ -445,7 +445,7 @@ def simulate_history(ctx, aset, mulai=None, kondisi_awal="SO", pakai_sparepart=T
         elif kondisi == "SO":
             aksi = rng.choices(["MUTASI", "KONDISI"], weights=[30, 70])[0]
             # Redistribute only among resorts of the SAME peruntukan. A
-            # redistribution is a permanent move — it rewrites `home_lokasi`,
+            # redistribution is a permanent move, it rewrites `home_lokasi`,
             # and the write-back stamps that onto `aset.id_lokasi`. Choosing
             # freely parked a JALAN REL machine at a jembatan resort
             # permanently, which the peruntukan rule forbids and no real import
@@ -469,7 +469,7 @@ def simulate_history(ctx, aset, mulai=None, kondisi_awal="SO", pakai_sparepart=T
             else:
                 kondisi = rng.choices(["TSO", "AFKIR"], weights=[94, 6])[0]
                 if kondisi == "AFKIR" and not ctx.boleh_afkir():
-                    kondisi = "TSO"  # budget spent — it breaks, but survives
+                    kondisi = "TSO"  # budget spent, it breaks, but survives
                 db.add(models.RiwayatKondisi(
                     id_aset=aset.id_aset,
                     id_pengguna=ctx.id_pengguna,
@@ -514,7 +514,7 @@ def simulate_history(ctx, aset, mulai=None, kondisi_awal="SO", pakai_sparepart=T
     #
     # The loop stops when it runs out of events or reaches today, so an asset
     # can be left TSO by a failure that happened a year ago. That is what pushed
-    # the first run to 37% of the fleet "currently under repair" — a figure that
+    # the first run to 37% of the fleet "currently under repair", a figure that
     # says nothing except that the simulation stopped.
     #
     # `sedang` on the repair dashboard is deliberately a POINT-IN-TIME count, so
@@ -566,7 +566,7 @@ def simulate_history(ctx, aset, mulai=None, kondisi_awal="SO", pakai_sparepart=T
 
 def _already_simulated(db, id_pengguna) -> set:
     """
-    Assets that already carry simulated history — the identity gate.
+    Assets that already carry simulated history, the identity gate.
 
     Exact, because  writes its boundary marker row for
     EVERY asset it touches, including the ones whose simulation legitimately
@@ -634,7 +634,7 @@ def hapus(db) -> dict:
     touches it. Deleting the SIMULASI rows and reading that one back is a
     complete undo.
 
-    Children first — `pemakaian_sparepart` points at both `riwayat_kondisi` and
+    Children first, `pemakaian_sparepart` points at both `riwayat_kondisi` and
     `sparepart_stok`, so it has to go before either.
     """
     user = db.query(models.Pengguna).filter_by(username=SIMULASI_USERNAME).first()
@@ -686,7 +686,7 @@ def hapus(db) -> dict:
     )
     db.flush()
 
-    # Restore from the surviving opening row — the earliest one left for each
+    # Restore from the surviving opening row, the earliest one left for each
     # asset, which by construction is the import/creation record.
     opening = {}
     for r in (

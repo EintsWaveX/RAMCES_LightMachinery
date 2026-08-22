@@ -1,5 +1,5 @@
 """
-RAMCES seeding — an ordered registry of idempotent steps.
+RAMCES seeding, an ordered registry of idempotent steps.
 
 This replaced a single 1,274-line `seed.py` that mixed master data, the real
 fleet import, a synthetic history generator, the sparepart catalogue, warehouses
@@ -10,7 +10,7 @@ and the opening stock ledger. Splitting it buys three things:
   * **Every step is idempotent, and that is now ASSERTED.** The previous
     `seed_aset_real` renumbered on sequence collision instead of recognising a
     row it had already imported, so a second `seed.py` run silently DOUBLED the
-    real fleet — the database this rewrite was written against held 2,242 assets
+    real fleet, the database this rewrite was written against held 2,242 assets
     for a 1,121-row workbook. `verify_all()` would have caught that on the first
     re-run.
   * **A new developer can find things.** One concern per module, named after the
@@ -26,8 +26,8 @@ names its model as free text that the importer resolves against that table.
 `dokumen` runs early because it writes to `kategori_alat`, which the model rows
 then inherit from.
 
-`seed_katalog.py` keeps its separate role: it is the DATA — the transcription of
-`KATALOG SFM.xlsx` and `Rekap Spek RAMCES.docx` — and holds no writers.
+`seed_katalog.py` keeps its separate role: it is the DATA, the transcription of
+`KATALOG SFM.xlsx` and `Rekap Spek RAMCES.docx`, and holds no writers.
 """
 
 import sys
@@ -80,7 +80,7 @@ STEPS = [
     ("inventaris", inventaris.run, "Gudang, kategori, sparepart, stok awal", True),
     ("pengguna", pengguna.run, "Akun SUPER_ADMIN awal", True),
     ("dummy", dummy.run, "100 aset contoh + simulasi riwayat perawatan", False),
-    # Also off by default, and for the same reason as `dummy` — but this one
+    # Also off by default, and for the same reason as `dummy`, but this one
     # writes against the REAL fleet, so the bar is higher. Every row it creates
     # is attributed to a dedicated SIMULASI account and tagged in `keterangan`,
     # and `manage.py hapus-simulasi` removes all of it exactly. Without it the
@@ -107,7 +107,7 @@ def run_steps(
     Execute the registry in order. Returns a process exit code.
 
     Each step gets its OWN session and commits itself, so a failure late in the
-    list does not roll back the work that already succeeded — re-running picks
+    list does not roll back the work that already succeeded, re-running picks
     up where it stopped rather than starting from nothing.
     """
     selected = set(only) if only else None
@@ -137,7 +137,7 @@ def run_steps(
             kwargs = {"total_aset": total_aset} if name == "dummy" else {}
             fn(db, **kwargs)
             db.commit()
-        except Exception as exc:  # noqa: BLE001 — report and continue
+        except Exception as exc:  # noqa: BLE001, report and continue
             db.rollback()
             failures.append(name)
             print(f"  ! GAGAL: {exc}")
@@ -153,6 +153,6 @@ def run_steps(
     return 0 if verify_all() else 1
 
 
-# `seed_all()` was kept as a backwards-compatible shim and had no callers —
+# `seed_all()` was kept as a backwards-compatible shim and had no callers,
 # seed.py and reset.py both call run_steps() directly.
 __all__ = ["STEPS", "STEP_NAMES", "run_steps", "verify_all", "simulasi"]

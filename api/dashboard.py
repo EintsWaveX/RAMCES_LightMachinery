@@ -2,7 +2,7 @@
 The two repair dashboards: Laporan Perbaikan and the MCF curve.
 
 Both are filled by a single `load()` on the client
-(js/views/repair-dashboard.js), so they share `_repair_year_counts` — the
+(js/views/repair-dashboard.js), so they share `_repair_year_counts`, the
 `[{tahun, jumlah}]` shape both year pickers render, which is the server half of
 the rule that a year dropdown only offers years that hold data.
 
@@ -12,8 +12,8 @@ Two things here are load-bearing and easy to undo:
   repair but is never based at one, and the repair still belongs to the
   DAOP/DIVRE that owns the asset. `get_aset_perbaikan_dashboard` drops
   `balaiyasa_lokasi_ids()` from its resort buckets, and scopes `sedang` and
-  `workshop_list` by `home_lokasi_expr` — `resolve_home_lokasi()` expressed in
-  SQL — while still GROUPING by current position, so the row shows where the
+  `workshop_list` by `home_lokasi_expr`, `resolve_home_lokasi()` expressed in
+  SQL, while still GROUPING by current position, so the row shows where the
   machine physically is. Keeping the filter and the grouping in step is what
   preserves `sedang == sum(workshop_list[].jumlah)`.
 - **`home_lokasi_expr` is deliberately a LOCAL** inside
@@ -70,7 +70,7 @@ def _repair_year_counts(db, lokasi_ids):
 
     The count is what makes the year picker honest. The dropdowns used to walk
     from the oldest year present to the current one and label every gap
-    "(kosong)"; the client asked for the inverse — only years with data, each
+    "(kosong)"; the client asked for the inverse, only years with data, each
     saying how much. Sending the counts from here means the repair dashboard's
     two pickers show the same shape as every client-side one without
     re-deriving anything.
@@ -140,13 +140,13 @@ def _scoped_repair_events(year: int, lokasi_ids):
     The window subquery joined to aset, restricted to `year` and `lokasi_ids`,
     reduced to three flags:
 
-      f_masuk   — a machine ENTERED the down state (kondisi = 'TSO' AND prev <> 'TSO')
-      f_selesai — a repair was completed          (kondisi = 'SO'    AND prev = 'TSO')
-      f_afkir   — a repair ended in scrapping     (kondisi = 'AFKIR' AND prev = 'TSO')
+      f_masuk, a machine ENTERED the down state (kondisi = 'TSO' AND prev <> 'TSO')
+      f_selesai, a repair was completed          (kondisi = 'SO'    AND prev = 'TSO')
+      f_afkir, a repair ended in scrapping     (kondisi = 'AFKIR' AND prev = 'TSO')
 
     `prev_kondisi` is NULL for an asset's first row, and `NULL = 'TSO'` is NULL,
     so the CASE falls through. That is what stops the automatic "Aset Baru" /
-    "Pencatatan aset baru" creation rows from inflating `selesai` — no keterangan
+    "Pencatatan aset baru" creation rows from inflating `selesai`, no keterangan
     string-matching needed, which matters because the two creation paths write
     different keterangan values.
 
@@ -154,8 +154,8 @@ def _scoped_repair_events(year: int, lokasi_ids):
     It used to be a bare `kondisi = 'TSO'`, counting every fault REPORT rather
     than every entry INTO the down state. That silently broke the reconciling
     identity `masuk == selesai + diafkir + sedang`: filing TSO on a machine
-    that is already TSO — an ordinary second fault report on a machine still
-    awaiting parts — added one to `masuk` while `sedang`, a point-in-time count
+    that is already TSO, an ordinary second fault report on a machine still
+    awaiting parts, added one to `masuk` while `sedang`, a point-in-time count
     of assets in the state, could not move. `selesai` and `diafkir` were
     already transition-based; `masuk` was the odd one out.
 
@@ -163,7 +163,7 @@ def _scoped_repair_events(year: int, lokasi_ids):
     an asset whose very first record is TSO did enter the down state.
 
     The seeded data contains zero consecutive TSO pairs, so this changes no
-    existing figure — it stops the identity from breaking once technicians can
+    existing figure, it stops the identity from breaking once technicians can
     file repeat reports, which recording sparepart usage makes routine.
     """
     ev = _repair_events_subquery()
@@ -202,7 +202,7 @@ def _scoped_repair_events(year: int, lokasi_ids):
             #   d_uptime   anything -> TSO   how long it was UP before failing
             #
             # `d_uptime` requires prev_kondisi IS NOT NULL, so an asset's very
-            # first row contributes nothing — there is no interval before it.
+            # first row contributes nothing, there is no interval before it.
             # The first interval that DOES count is registration -> first
             # failure, i.e. purchase -> first failure, which is real because
             # rev0.4.4 stamps the registration row at tanggal_pembelian rather
@@ -247,8 +247,8 @@ def _repair_facts(db, year, lokasi_ids):
 
     ── Why this exists ──
     `_scoped_repair_events()` returns a subquery EXPRESSION, not a result. It
-    was consumed by four separate `db.execute()` calls — headline totals, the
-    trend series, per-resort and per-alat — so PostgreSQL re-ran the whole
+    was consumed by four separate `db.execute()` calls, headline totals, the
+    trend series, per-resort and per-alat, so PostgreSQL re-ran the whole
     thing four times per dashboard load, including the deliberately unfiltered
     `LAG` over every row of `riwayat_kondisi`, and planned the nested subquery
     four times as well.
@@ -263,7 +263,7 @@ def _repair_facts(db, year, lokasi_ids):
 
     ── The grouping key ──
     `(bucket, eff_lokasi, kode_alat)`, where `bucket` is the YEAR when "Semua
-    Tahun" is active and the MONTH otherwise — which is exactly the resolution
+    Tahun" is active and the MONTH otherwise, which is exactly the resolution
     the trend series is drawn at, so no finer key is needed. Every consumer is
     a sum over some projection of that key, so aggregating in Python is exact,
     not an approximation:
@@ -298,7 +298,7 @@ def _repair_facts(db, year, lokasi_ids):
             func.coalesce(func.sum(S.c.d_uptime), 0),
             # ...and the matching DENOMINATORS. `f_selesai + f_afkir` happens to
             # equal the number of d_repair values, but only because a repair
-            # closes exactly once — counting the durations directly means the
+            # closes exactly once, counting the durations directly means the
             # two cannot drift apart if that ever stops being true.
             func.count(S.c.d_repair),
             func.count(S.c.d_uptime),
@@ -333,11 +333,11 @@ def get_aset_perbaikan_dashboard(
     Aggregated repair dashboard matching the printed UPT "Laporan Perbaikan
     Alat Kerja" report.
 
-    id_lokasi — DAOP/DIVRE/BALAIYASA code (auto-includes its UPT children), or a
+    id_lokasi, DAOP/DIVRE/BALAIYASA code (auto-includes its UPT children), or a
                 single UPT code. Omit for a global view.
-    year      — defaults to the current year, or the most recent year that has
+    year, defaults to the current year, or the most recent year that has
                 data if the current year has none.
-    all_years — "Semua Tahun": aggregate every year instead of one. The trend
+    all_years, "Semua Tahun": aggregate every year instead of one. The trend
                 series then carries one point per YEAR rather than per month,
                 flagged by `trend_mode` so the chart can label its axis.
                 Distinct from omitting `year`, which still resolves to a single
@@ -368,7 +368,7 @@ def get_aset_perbaikan_dashboard(
             year = years_with_data[0]
 
     # ONE scan of the LAG window, grouped by (bucket, lokasi, alat). The four
-    # aggregations below are projections of that one result set — see
+    # aggregations below are projections of that one result set, see
     # _repair_facts() for why they are no longer four queries.
     facts = _repair_facts(db, year, lokasi_ids)
 
@@ -379,13 +379,13 @@ def get_aset_perbaikan_dashboard(
 
     # ── Reliability: MTBF and MTTR ───────────────────────────────────────────
     #
-    # MTTR — mean time to repair: how long a machine stays DOWN, averaged over
+    # MTTR, mean time to repair: how long a machine stays DOWN, averaged over
     #        the repairs that actually closed (returned to service or scrapped).
-    # MTBF — mean time between failures: how long it stays UP, averaged over the
+    # MTBF, mean time between failures: how long it stays UP, averaged over the
     #        failures that had a preceding event to measure from.
     #
     # Both come out of `facts`, which is the SAME single window scan the four
-    # aggregations above read — see `_repair_facts()`. Adding them to `get_mcf()`
+    # aggregations above read, see `_repair_facts()`. Adding them to `get_mcf()`
     # instead would have put a second scan of `riwayat_kondisi` on the same page
     # load, which is exactly the cost rev0.4.5 removed.
     #
@@ -397,7 +397,7 @@ def get_aset_perbaikan_dashboard(
     #
     # An asset that has never failed contributes NO interval, so it cannot pull
     # MTBF up. The figure therefore describes the machines that do break, not the
-    # fleet — which is what a maintenance planner wants, and what the tile says.
+    # fleet, which is what a maintenance planner wants, and what the tile says.
     detik_perbaikan = sum(f[6] for f in facts)
     detik_operasi = sum(f[7] for f in facts)
     n_perbaikan = sum(f[8] for f in facts)
@@ -414,7 +414,7 @@ def get_aset_perbaikan_dashboard(
     #
     # Scoping "sedang" by the raw `id_lokasi` meant sending a broken machine to a
     # workshop DELETED it from its own DAOP's under-repair count and moved it
-    # under the Balaiyasa — the same misattribution the repair endpoint already
+    # under the Balaiyasa, the same misattribution the repair endpoint already
     # guards against, and the reason `masuk` (which is home-attributed) drifted
     # from `selesai + diafkir + sedang` exactly when workshop traffic was high.
     _by_ids = balaiyasa_lokasi_ids(db)
@@ -438,7 +438,7 @@ def get_aset_perbaikan_dashboard(
         else AS.id_lokasi
     )
 
-    # SEDANG is point-in-time (assets currently TSO), not year-scoped — it is a
+    # SEDANG is point-in-time (assets currently TSO), not year-scoped, it is a
     # live workshop count, and must agree with sum(workshop_list[].jumlah).
     sedang_q = select(func.count()).select_from(AS).where(
         AS.status_terakhir == "TSO"
@@ -503,7 +503,7 @@ def get_aset_perbaikan_dashboard(
     # the whole year. "Semua Tahun" → one point per year instead; 12 months
     # summed across a decade would be meaningless (every January added up).
     #
-    # `bucket` is already the right resolution for whichever mode is active —
+    # `bucket` is already the right resolution for whichever mode is active,
     # the year when "Semua Tahun" is on, the month otherwise.
     b_map = {}
     for bucket, _lok, _alat, mk, sl, *_ in facts:
@@ -543,7 +543,7 @@ def get_aset_perbaikan_dashboard(
         r_map[lok] = (prev[0] + mk, prev[1] + sl)
 
     # A Balaiyasa is a workshop, not an operating region, so it must never be a
-    # row in a resort table — "BALAIYASA CIREBONPRUNJAKAN" listed alongside
+    # row in a resort table, "BALAIYASA CIREBONPRUNJAKAN" listed alongside
     # "1.3 Pasarsenen" is what this drops. seed.py now records every repair
     # against the asset's owning region, so in a freshly seeded database this
     # loop finds nothing; it is here so legacy rows written against a workshop
@@ -598,7 +598,7 @@ def get_aset_perbaikan_dashboard(
     # ── Per alat kerja ───────────────────────────────────────────────────────
     # The name map stands in for the INNER JOIN this used to carry: a kode_alat
     # with no kategori_alat row was dropped from this list (and only this list),
-    # and still is. 104 rows, one query — it does not re-scan the window.
+    # and still is. 104 rows, one query, it does not re-scan the window.
     alat_names = dict(
         db.execute(select(KA.kode_alat, KA.nama_alat)).all()
     )
@@ -645,7 +645,7 @@ def get_aset_perbaikan_dashboard(
     ]
 
     return {
-        # None when "Semua Tahun" is active — the client shows the label rather
+        # None when "Semua Tahun" is active, the client shows the label rather
         # than a number, and re-sends all_years on the next request.
         "tahun": year,
         "all_years": year is None,
@@ -705,7 +705,7 @@ def get_aset_ringkasan(
 ):
     """
     Every fleet-wide number the dashboard, the KPI strip and the Kelola Data
-    Alat Kerja tiles print — as counts, not as assets.
+    Alat Kerja tiles print, as counts, not as assets.
 
     ── Why ──
     Four dashboard panels, two stat strips and three modals all reduced an
@@ -719,18 +719,18 @@ def get_aset_ringkasan(
     395 KB for `/api/aset`.
 
     ── The groupings, and which screen each one feeds ──
-      per_lokasi     Matriks Kesiapan, Grafik Ketersediaan, the bar chart —
+      per_lokasi     Matriks Kesiapan, Grafik Ketersediaan, the bar chart,
                      all three key on the asset's CURRENT `id_lokasi`, never
                      the identity location the search uses. They roll UPT up
                      into the parent themselves; the raw per-code counts are
                      sent so that rollup stays exactly where it already is
       per_alat       the "Jenis Alat Kerja" modal and the KDAK alat filter
-      per_bulan      Tren Kesiapan — twelve months of one year, by purchase
+      per_bulan      Tren Kesiapan, twelve months of one year, by purchase
                      date (the panel reads `waktu_update || tanggal_pembelian`
                      and `/api/aset` has never carried `waktu_update`)
       tahun_counts   the year dropdowns, scoped by alat + pengadaan but NOT by
                      tahun, so the list does not collapse to the year already
-                     chosen — same rule as `_renderDashFilterRow`
+                     chosen, same rule as `_renderDashFilterRow`
       bulan_ini      the KDAK "baru bulan ini" tile
 
     AFKIR is excluded throughout, exactly as `db` was.
@@ -792,13 +792,13 @@ def get_aset_ringkasan(
     so = sum(v["so"] for v in per_lokasi.values())
     tso = sum(v["tso"] for v in per_lokasi.values())
 
-    # The sequence number `create_aset` would mint next, per kode_alat — what
+    # The sequence number `create_aset` would mint next, per kode_alat, what
     # the KDAK live id preview prints for the first segment.
     #
     # Deliberately NOT filtered by anything above: it must match `create_aset`'s
     # own rule exactly, which is max over EVERY asset of that kode_alat, AFKIR
     # included. The client used to derive this from its cached fleet, which
-    # excludes AFKIR — so a scrapped asset holding the highest number made the
+    # excludes AFKIR, so a scrapped asset holding the highest number made the
     # preview disagree with the id the server then minted. Answering it here
     # makes the preview exact rather than an estimate.
     urut = func.max(
@@ -847,7 +847,7 @@ def get_aset_ringkasan(
     }
 
 
-# ── Hirarki — kalibrasi + mutasi state, per RAW lokasi ──────────────
+# ── Hirarki, kalibrasi + mutasi state, per RAW lokasi ──────────────
 
 @router.get("/api/aset/dashboard/hirarki")
 def get_aset_dashboard_hirarki(
@@ -863,7 +863,7 @@ def get_aset_dashboard_hirarki(
     and its "Perlu Perhatian" drill-down.
 
     `alat` / `pengadaan` / `tahun` are the identical triple `get_aset_ringkasan()`
-    takes, canonicalised the same way through `pengadaan_values()` — the two
+    takes, canonicalised the same way through `pengadaan_values()`, the two
     endpoints are meant to be called with the same filter state and must agree
     on what they scope in. `hari` is the calibration horizon (default 30),
     matching `KALIBRASI_SEGERA_HARI` on the client and the `hari` default on
@@ -871,13 +871,13 @@ def get_aset_dashboard_hirarki(
 
     ── Group by the RAW `aset.id_lokasi` ──
     Not `identity_lokasi_expr()` and not `resolve_home_lokasi()`. Every other
-    dashboard panel — `ringkasan.per_lokasi`, the matrix, the availability
-    chart — keys on the raw column, and this endpoint feeds the same matrix.
+    dashboard panel, `ringkasan.per_lokasi`, the matrix, the availability
+    chart, keys on the raw column, and this endpoint feeds the same matrix.
     Keying on the asset's first-transfer identity or its home-while-at-a-
     Balaiyasa location instead would move assets between regions on screen
     relative to every other panel; the two disagree on 213 of 1,077 seeded
     assets. This is deliberately DIFFERENT from `get_aset_perbaikan_dashboard`,
-    which scopes its `sedang` count by `home_lokasi_expr` on purpose — that
+    which scopes its `sedang` count by `home_lokasi_expr` on purpose, that
     endpoint is a report about which DAOP owns a repair, this one is a rollup
     of where machines physically sit right now. A machine parked at a
     Balaiyasa is therefore counted under the WORKSHOP's code here, not its
@@ -892,36 +892,36 @@ def get_aset_dashboard_hirarki(
     is on or before `today + hari` and not already `lewat`.
 
     `belum` is counted in the `kalibrasi` block but DELIBERATELY EXCLUDED from
-    `perhatian` — a machine that has never been calibrated already reads "BLM
+    `perhatian`, a machine that has never been calibrated already reads "BLM
     KALIBRASI" on every card, and folding hundreds of them into an "attention"
     figure would read as a sudden backlog on a fresh install. Same reasoning the
     notification bell uses to exclude `belum_pernah`.
 
-    ── Mutation state — THREE separate signals, only one of them actionable ──
+    ── Mutation state, THREE separate signals, only one of them actionable ──
     `mut_pernah` is the coarse fact the Mutasi KPI card lists: the asset has at
-    least one `riwayat_mutasi` row at all. Not actionable on its own — 213 of
+    least one `riwayat_mutasi` row at all. Not actionable on its own, 213 of
     1,077 seeded assets have moved at least once, most of them permanently
     redeployed and settled at their new home.
 
     `mut_belum_kembali` is `aset.id_lokasi <> first_mutasi.id_lokasi_asal` over
-    assets that have moved — the same predicate as `mutasi_sudah_kembali` at
+    assets that have moved, the same predicate as `mutasi_sudah_kembali` at
     api/aset.py:375, negated, reusing the same `row_number() ... rn == 1`
     first-mutation subquery `_card_facts()` uses rather than inventing a fourth
     copy of it. It is reported but NOT fed into `perhatian`: it is true for
     every permanently redeployed machine, not just ones that are away and
     should come back, so folding it in would make "Perlu Perhatian" read a
-    near-constant ~20% of the fleet and never go down — the exact noise problem
+    near-constant ~20% of the fleet and never go down, the exact noise problem
     `kal_belum` is already excluded for.
 
     `mut_di_balaiyasa` is the one that actually feeds `perhatian`: the asset's
     CURRENT `aset.id_lokasi` is in `balaiyasa_lokasi_ids(db)`. A machine sitting
-    at a workshop right now is away for repair and someone should recall it —
+    at a workshop right now is away for repair and someone should recall it,
     that is genuinely actionable, and it clears itself the moment the machine
     comes back, unlike `mut_belum_kembali` which stays true forever for a
     redeployed asset.
 
     ── `perhatian` is a de-duplicated UNION, not a sum ──
-    Computed per asset — one row per asset, before any grouping — as a single
+    Computed per asset, one row per asset, before any grouping, as a single
     boolean `tso OR kal_lewat OR kal_segera OR mut_di_balaiyasa`, assigned ONCE
     to `perhatian_cond` below so that changing which mutation signal counts as
     "actionable" is a one-line edit rather than a rewrite. Summing that 0/1 flag
@@ -929,18 +929,18 @@ def get_aset_dashboard_hirarki(
     that is both TSO and sitting at a Balaiyasa contributes exactly 1, not 2.
     The three figures nested under `perhatian` (`tso`, `kalibrasi`, `mutasi`)
     are the individual reason counts and MAY overlap each other and
-    `perhatian.total` — only `.total` is deduplicated.
+    `perhatian.total`, only `.total` is deduplicated.
 
     ── No schema change ──
     Reads `aset`, `kategori_alat`, `riwayat_kalibrasi` and `riwayat_mutasi`
     exactly as they are, and calls the already-cached `balaiyasa_lokasi_ids()`.
-    No new column, no new index — `models.py` and `_ensure_schema()` are
+    No new column, no new index, `models.py` and `_ensure_schema()` are
     untouched by this endpoint.
 
     One grouped query does all of it: every flag is a per-asset 0/1 computed in
     the SELECT list against two LEFT JOINed one-row-per-asset subqueries, then
     summed by `GROUP BY aset.id_lokasi`. The response stays O(number of lokasi
-    codes) — at most ~273 rows — never O(fleet size).
+    codes), at most ~273 rows, never O(fleet size).
     """
     AS_ = models.Aset
     KA = models.KategoriAlat
@@ -959,7 +959,7 @@ def get_aset_dashboard_hirarki(
     if tahun:
         conds.append(extract("year", AS_.tanggal_pembelian) == tahun)
 
-    # Latest kalibrasi per asset — byte-identical rule to get_kalibrasi_jatuh_tempo().
+    # Latest kalibrasi per asset, byte-identical rule to get_kalibrasi_jatuh_tempo().
     krn = func.row_number().over(
         partition_by=RKAL.id_aset,
         order_by=(RKAL.tanggal_kalibrasi.desc(), RKAL.waktu_input.desc()),
@@ -969,7 +969,7 @@ def get_aset_dashboard_hirarki(
     ).subquery()
     latest_kal = select(kal_ranked).where(kal_ranked.c.rn == 1).subquery()
 
-    # First mutation per asset — the same subquery shape _card_facts() uses.
+    # First mutation per asset, the same subquery shape _card_facts() uses.
     mrn = func.row_number().over(
         partition_by=RM.id_aset, order_by=RM.waktu_mutasi.asc()
     ).label("rn")
@@ -997,7 +997,7 @@ def get_aset_dashboard_hirarki(
     mut_di_balaiyasa_cond = AS_.id_lokasi.in_(by_ids)
 
     # THE union that feeds `perhatian`. `kal_belum` and `mut_belum_kembali` are
-    # excluded on purpose — see the docstring. Swapping which mutation signal
+    # excluded on purpose, see the docstring. Swapping which mutation signal
     # counts as actionable is a one-line edit here.
     perhatian_cond = tso_cond | kal_lewat_cond | kal_segera_cond | mut_di_balaiyasa_cond
 
@@ -1080,7 +1080,7 @@ def get_aset_dashboard_hirarki(
             "di_balaiyasa": tot_di_balaiyasa,
         },
         # `tso` / `kalibrasi` / `mutasi` here are individual reason counts and
-        # may overlap each other and `.total` — only `.total` is deduplicated.
+        # may overlap each other and `.total`, only `.total` is deduplicated.
         "perhatian": {
             "total": tot_perhatian,
             "tso": tot_tso,
@@ -1091,7 +1091,7 @@ def get_aset_dashboard_hirarki(
     }
 
 
-# ── MCF — Mean Cumulative Function (repair trend) ──────────────────
+# ── MCF, Mean Cumulative Function (repair trend) ──────────────────
 
 @router.get("/api/aset/dashboard/mcf")
 def get_mcf(
@@ -1175,7 +1175,7 @@ def get_mcf(
             "bulan": label,
             "perbaikan": n,
             "kumulatif": cumulative,
-            # MCF — repairs per asset. Rounded to 4dp: with a few hundred assets
+            # MCF, repairs per asset. Rounded to 4dp: with a few hundred assets
             # a single month's increment is ~0.003, so 2dp would flatten the curve.
             "mcf": round(cumulative / n_at_risk, 4) if n_at_risk else 0.0,
         })

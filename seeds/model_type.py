@@ -1,5 +1,5 @@
 """
-Model/Type rows (`alat_varian`) — the second level of tool identity.
+Model/Type rows (`alat_varian`), the second level of tool identity.
 
 The data comes from `seed_katalog.iter_all_models()`, which merges three
 sources in order: the 14 fully-specified models transcribed from
@@ -12,7 +12,7 @@ only models of `HTT HAND TIE TAMPER`).
 import models
 from seed_katalog import iter_all_models
 
-# Written on every run so a shorter spec CLEARS a slot it no longer fills —
+# Written on every run so a shorter spec CLEARS a slot it no longer fills,
 # except that a None is never written over an existing value, see below.
 SPEC_FIELDS = [
     f"spek{i}_{part}" for i in range(1, 6) for part in ("label", "nilai")
@@ -40,7 +40,7 @@ def run(db):
 
         changed = False
         for field in SPEC_FIELDS:
-            # Never overwrite a hand-entered value with None — an admin who
+            # Never overwrite a hand-entered value with None, an admin who
             # filled a slot the seed leaves blank must not lose it on the next
             # run. This is why the seed can be re-run against a live database.
             new = m.get(field)

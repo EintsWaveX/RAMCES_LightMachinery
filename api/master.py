@@ -4,7 +4,7 @@ Master data: alat kerja, lokasi, UPT, Model/Type, and their documents.
 Two levels of tool identity live here and conflating them is the mistake this
 codebase already made once:
 
-- **Alat kerja** (`kategori_alat`) is the tool TYPE — 104 rows, mastered by the
+- **Alat kerja** (`kategori_alat`) is the tool TYPE, 104 rows, mastered by the
   client's KATALOG SFM spreadsheet. Its `perlu_kalibrasi` flag is what gates the
   Kalibrasi form; a genset is serviced, not calibrated.
 - **Model/Type** (`alat_varian`) is a specific make and model of that tool.
@@ -13,7 +13,7 @@ codebase already made once:
 five free-form `Spesifikasi Utama` slots into `spesifikasi: [{label, nilai}]`,
 precomputes `judul`, and resolves each attachment to a single URL. `/api/master/varian`,
 the create/update responses and `get_public_aset` (api/aset.py, which imports it)
-all go through it — one directed edge, master → nothing.
+all go through it, one directed edge, master → nothing.
 
 **Documents belong to the ALAT KERJA, and models inherit them.** The client files
 its spektek and manual PDFs against tool types: one file covers four tools,
@@ -25,7 +25,7 @@ carries `url_spek`/`file_spek`/`url_manual`/`file_manual` too, and
 
 **Photos are public; documents are not.** `GET /uploads/foto_alat/{nama_file}`
 is unauthenticated because landing.html is reached by scanning a QR code with no
-session — which is exactly why photos live in their own directory. It is
+session, which is exactly why photos live in their own directory. It is
 registered in this router, and this router is included before main.py's
 catch-all, which hard-404s the whole `uploads/` tree.
 
@@ -94,7 +94,7 @@ def get_master_alat(db: Session = Depends(get_db)):
             "perlu_kalibrasi": bool(r.perlu_kalibrasi),
             "kelompok": r.kelompok,
             # Tool-type documents. Resolved to a URL the same way
-            # `_varian_payload()` does — an upload wins over a pasted link —
+            # `_varian_payload()` does, an upload wins over a pasted link,
             # so Pusat Data can show and manage what every model inherits.
             "spek": (
                 f"/api/master/varian/dokumen/{r.file_spek}"
@@ -132,8 +132,8 @@ async def upload_dokumen_alat(
 
     Distinct from the per-model route below it: these documents describe the
     tool TYPE and every model of that tool inherits them when it has none of its
-    own (see `_varian_payload()`). That is how the client actually files them —
-    one PDF covers four tools — and it is the only way a spec sheet reaches an
+    own (see `_varian_payload()`). That is how the client actually files them,
+    one PDF covers four tools, and it is the only way a spec sheet reaches an
     asset whose Model/Type row was never filled in.
     """
     row = db.query(models.KategoriAlat).filter_by(kode_alat=kode).first()
@@ -298,7 +298,7 @@ def get_alat_varian(
     # for the tool-type document fallback; lazily it would be one extra SELECT
     # per model, and this endpoint returns all 87 at boot.
     #
-    # Its `dokumen` collection rides along on a selectinload — ONE extra query
+    # Its `dokumen` collection rides along on a selectinload, ONE extra query
     # for the whole result set rather than 87. A joinedload would multiply the
     # model rows by their document count instead.
     q = db.query(models.AlatVarian).options(
@@ -318,13 +318,13 @@ def dokumen_payload(kat) -> list:
 
     `kategori_alat.file_spek` / `file_manual` hold ONE basename each, so before
     `dokumen_alat` existed the seeder's second document for a tool overwrote its
-    first and three files — 5.6 MB across AMB, IMP and LMP — were on disk and
+    first and three files, 5.6 MB across AMB, IMP and LMP, were on disk and
     reachable by nothing. This is the list that makes them reachable; the single
     columns remain as the PRIMARY document and still drive `_varian_payload()`'s
     fallback, so nothing that already worked had to change.
 
     Every entry resolves to `/api/master/varian/dokumen/<basename>`, which is
-    Bearer-authenticated — documents are not public, only photos are. The client
+    Bearer-authenticated, documents are not public, only photos are. The client
     must therefore route these through apiFetch, never a plain `<a href>`, which
     is why `is_upload` is stated rather than implied.
     """
@@ -344,7 +344,7 @@ def dokumen_payload(kat) -> list:
         }
         for d in rows
     ]
-    # SPEK before MANUAL, primary before the rest — the order the spec card
+    # SPEK before MANUAL, primary before the rest, the order the spec card
     # prints them in, decided once here rather than in each of its two callers.
     out.sort(key=lambda d: (d["jenis"] != "SPEK", not d["utama"], d["judul"]))
     return out
@@ -357,13 +357,13 @@ def _varian_payload(v, katalog=None) -> dict:
 
     Three things are resolved here rather than on the client:
 
-      * `spesifikasi` — the five label/value slots collapsed into an ordered
+      * `spesifikasi`, the five label/value slots collapsed into an ordered
         array with the empty ones dropped, because the labels differ per tool
         and no renderer should have to know the slot numbering.
-      * `foto` / `spek` / `manual` — an uploaded file always WINS over a pasted
+      * `foto` / `spek` / `manual`, an uploaded file always WINS over a pasted
         link, so a model that has both resolves to the copy we control.
       * the TOOL-TYPE FALLBACK for the two documents. The client files its
-        spektek and manual PDFs against alat kerja, not against models — one
+        spektek and manual PDFs against alat kerja, not against models, one
         covers four tools at once, and several cover tools that have no model
         row at all. When this model carries neither a file nor a link, the
         parent `kategori_alat`'s document is used and the payload is flagged
@@ -451,7 +451,7 @@ def _varian_payload(v, katalog=None) -> dict:
 
 # Everything an admin may set through the JSON create/update routes. The
 # uploads are handled separately, and the retired kapasitas/daya/dimensi/berat
-# quartet is deliberately not here — writing it would resurrect a second,
+# quartet is deliberately not here, writing it would resurrect a second,
 # competing spec shape.
 _VARIAN_SPEC_FIELDS = (
     "merk",
@@ -550,7 +550,7 @@ async def update_alat_varian(
         payload["nama_varian"] = nama
 
     # Same two required rows as create, but only checked when the caller is
-    # actually touching them — a partial update must not be forced to resend
+    # actually touching them, a partial update must not be forced to resend
     # fields it is not changing.
     for field, label in (("merk", "Merk"), ("tipe_model", "Model/Type")):
         if field in payload and not (payload[field] or "").strip():
@@ -608,7 +608,7 @@ async def upload_foto_varian(
     if not row:
         raise HTTPException(status_code=404, detail="Model/Type tidak ditemukan.")
 
-    # Off the event loop — this writes up to 10 MB synchronously and the
+    # Off the event loop, this writes up to 10 MB synchronously and the
     # handler is async, so on a slow disk it would freeze the whole worker.
     stored = await asyncio.to_thread(
         _save_upload, file, FOTO_ALAT_DIR, f"foto_{id_varian}", ALLOWED_IMAGE_EXT
@@ -695,7 +695,7 @@ async def serve_foto_varian(nama_file: str, request: Request):
     Serve a Model/Type photo. DELIBERATELY UNAUTHENTICATED.
 
     landing.html is reached by scanning an asset's QR code, with no session and
-    often by someone who has none — the spec card and its photo are the whole
+    often by someone who has none, the spec card and its photo are the whole
     point of that page. Certificates and reference documents stay behind
     `get_current_user`; only this directory is public, which is why photos live
     in their own directory rather than alongside them.
@@ -726,7 +726,7 @@ def download_dokumen_varian(
 ):
     """
     Serve a Spek Lengkap / Manual Instruction upload. AUTHENTICATED, matching
-    calibration certificates — unlike the photo route below, these are
+    calibration certificates, unlike the photo route below, these are
     internal reference documents and no anonymous QR scan needs them.
     """
     safe = os.path.basename(nama_file)

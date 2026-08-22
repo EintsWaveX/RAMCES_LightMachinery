@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════════════════
-// Captcha widget — shared by index.html and landing.html
+// Captcha widget, shared by index.html and landing.html
 //
 // ⚠️ SELF-CONTAINED IIFE, exporting exactly ONE global. That is not a style
 // preference, it is the only shape that can be loaded by both pages.
@@ -8,7 +8,7 @@
 // `authToken`, `getJwtPayload`, `showToast` and `getParentLokasiCode` inline.
 // Classic scripts share one global lexical scope, so loading any of the js/
 // files that also declare those names would be a fatal SyntaxError that blanks
-// the QR page — and NEITHER checker would catch it: tools/check_js.py scans
+// the QR page, and NEITHER checker would catch it: tools/check_js.py scans
 // js/, tools/check_html.py reads index.html, and nothing reads landing.html.
 // Same pattern as js/a11y-modal.js, for the same reason.
 //
@@ -75,7 +75,7 @@
   /**
    * Mount the widget into `containerId`.
    *
-   * `base` is the API origin prefix — "" on index.html (same origin) and
+   * `base` is the API origin prefix, "" on index.html (same origin) and
    * whatever landing.html resolved for its own fetches.
    */
   function mount(containerId, base = "") {
@@ -105,8 +105,8 @@
   /**
    * Show or hide the widget's wrapper, mounting it the first time it is shown.
    *
-   * Login asks for a captcha PROGRESSIVELY — the server answers
-   * `X-Captcha-Required: 1` once a rate-limit bucket trips — so on a normal
+   * Login asks for a captcha PROGRESSIVELY, the server answers
+   * `X-Captcha-Required: 1` once a rate-limit bucket trips, so on a normal
    * sign-in this never runs and the form has no captcha in it at all.
    */
   function toggle(wrapperId, containerId, show, base = "") {
@@ -116,7 +116,7 @@
     if (show) mount(containerId, base);
   }
 
-  /** A fresh challenge after a failed submit — the old one is spent or wrong. */
+  /** A fresh challenge after a failed submit, the old one is spent or wrong. */
   function refresh(containerId, base = "") {
     if (mounted.has(containerId)) load(containerId, base);
   }

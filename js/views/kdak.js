@@ -52,7 +52,7 @@ let _kdakSortDir = "date-desc";
 let _kdakSortFilters = {};
 
 /**
- * Kelola Data Alat Kerja — ONE page, filtered and sorted by the server.
+ * Kelola Data Alat Kerja, ONE page, filtered and sorted by the server.
  *
  * The same conversion as Kelola Data Aset, and for the same reason: this used
  * to filter and sort a client-side copy of the whole fleet. `_kdakSortFilters`
@@ -104,7 +104,7 @@ async function renderKdakTable() {
   const _kdakPage = serverPage("kdak", page.total, page.items);
   if (_kdakPage.stale) return renderKdakTable();
 
-  // The count reports the whole filtered set, not the page — it answers "how
+  // The count reports the whole filtered set, not the page, it answers "how
   // many match", which paging must not change.
   if (countEl) countEl.textContent = `${page.total} aset`;
 
@@ -123,8 +123,8 @@ async function renderKdakTable() {
         ? `<span class="badge badge-so"><i class="fas fa-circle text-[6px]"></i>SO</span>`
         : `<span class="badge badge-tso"><i class="fas fa-circle text-[6px]"></i>TSO</span>`;
 
-      // Badge 2: Kalibrasi. Carried by /api/aset since rev0.4.5 —
-      // see _card_facts() — rather than by a fleet-wide summary download.
+      // Badge 2: Kalibrasi. Carried by /api/aset since rev0.4.5,
+      // see _card_facts(), rather than by a fleet-wide summary download.
       // Same one rule as Kelola Data Aset; see kalibrasiBadgeState().
       const kalibBadge = window.kalibrasiBadgeHtml(a);
 
@@ -220,7 +220,7 @@ function _renderGroupList(containerId, groups, iconClass, colorClass, opts = {})
 }
 
 // The three grouping views below roll the WHOLE fleet up, so they take it as an
-// argument rather than reading `db` — which is now one page. `ensureFleet()`
+// argument rather than reading `db`, which is now one page. `ensureFleet()`
 // fetches it once, on the first modal that asks, and caches it until a mutation.
 function _buildAlatGroups(fleet, filterCode, sortVal) {
   const map = {};
@@ -263,7 +263,7 @@ function _buildLokasiGroups(fleet, filterLokasi, filterUpt, sortVal) {
   let arr = Object.values(map);
   if (sortVal === "count-desc") arr.sort((a, b) => b.count - a.count);
   else if (sortVal === "count-asc") arr.sort((a, b) => a.count - b.count);
-  // Natural order, so 1.2 comes before 1.10 — a plain localeCompare on the
+  // Natural order, so 1.2 comes before 1.10, a plain localeCompare on the
   // label puts "1.10" first, which reads as a bug in a numbered resort list.
   else if (sortVal === "name-asc") arr.sort((a, b) => compareNaturalLabel(a.name, b.name));
   else if (sortVal === "name-desc") arr.sort((a, b) => compareNaturalLabel(b.name, a.name));
@@ -460,13 +460,13 @@ document.getElementById("kdak-confirm-ok")?.addEventListener("click", async () =
 
 // ── KDAK Edit ──
 // ══════════════════════════════════════════════════════════════════════════
-// STEP 1b — MODEL/TYPE
+// STEP 1b, MODEL/TYPE
 //
 // Client request: "setelah input 1. alat kerja, tambahkan model alat kerja".
 // Both KDAK forms (Tambah and Edit) carry the same step; neither could set a
 // Model/Type before, so every asset's model came from seed.py and nowhere else.
 //
-// Reads the `_varianByAlat` index that masterdata.js already maintains — one
+// Reads the `_varianByAlat` index that masterdata.js already maintains, one
 // fetch of /master/varian serves the whole session.
 // ══════════════════════════════════════════════════════════════════════════
 
@@ -501,7 +501,7 @@ function fillModelSelect(selectId, kodeAlat, selectedId) {
 }
 
 /**
- * "+ Tambah Model/Type baru…" — hand over to Pusat Data ▸ Model/Type with the
+ * "+ Tambah Model/Type baru…", hand over to Pusat Data ▸ Model/Type with the
  * alat kerja pre-filled. The same shortcut shape Kelola Inventaris uses for
  * Gudang, so a missing prerequisite never dead-ends a form.
  */
@@ -543,7 +543,7 @@ window.fillModelSelect = fillModelSelect;
 //         e.g. 6.RGM.1.24.A.D1
 //
 // Five of those six segments come from choices made in this form, and all five
-// are part of the asset's composite PRIMARY KEY — so a wrong pick is not a
+// are part of the asset's composite PRIMARY KEY, so a wrong pick is not a
 // display bug, it is a malformed key that cannot be corrected later without
 // rewriting every child row. The preview exists to put that consequence on
 // screen while the choice is still cheap.
@@ -566,7 +566,7 @@ const KDAK_ID_SEGMENTS = [
 /**
  * The sequence number a NEW asset of this kode_alat would most likely get.
  *
- * create_aset() takes max(urutan) + 1 over every asset sharing the kode_alat —
+ * create_aset() takes max(urutan) + 1 over every asset sharing the kode_alat,
  * never a row count, because deleting one would then make the next create reuse
  * a live number.
  *
@@ -577,7 +577,7 @@ const KDAK_ID_SEGMENTS = [
  * the id the server went on to mint. The server's max is over every row.
  *
  * Still returns null if the rollup has not arrived, and the caller still renders
- * a placeholder for this ONE segment — every other segment is the user's own
+ * a placeholder for this ONE segment, every other segment is the user's own
  * input and stays exact either way.
  */
 function _kdakNextUrutan(kodeAlat) {
@@ -608,11 +608,11 @@ function _kdakReadSegments(cfg) {
   return {
     urutan: cfg.urutan,
     alat: val(cfg.alat),
-    // 1 = PUSAT, 2 = DAOP/DIVRE — normalise_sumber_pengadaan() in api/deps.py.
+    // 1 = PUSAT, 2 = DAOP/DIVRE, normalise_sumber_pengadaan() in api/deps.py.
     pengadaan: pengadaanRaw ? (pengadaanRaw === "PUSAT" ? "1" : "2") : "",
     tahun,
     peruntukan: KDAK_PERUNTUKAN_KODE[radio(cfg.unit)] || "",
-    // The PARENT wilayah code, never the UPT — the UPT is stored on the row.
+    // The PARENT wilayah code, never the UPT, the UPT is stored on the row.
     lokasi: val(cfg.lokasi),
   };
 }
@@ -641,7 +641,7 @@ function renderIdPreview(cfg) {
   }
 
   // Step completion. `.is-done` for a step that has a value, `.is-active` for
-  // the first that does not — so the form always says where to go next.
+  // the first that does not, so the form always says where to go next.
   let activeMarked = false;
   for (const step of cfg.steps) {
     const el = document.getElementById(step.id);
@@ -741,7 +741,7 @@ window.openKdakEdit = function(idAset) {
     alatSel.value = a.kode_alat || "";
   }
 
-  // Step 1b — Model/Type and the per-unit serial
+  // Step 1b, Model/Type and the per-unit serial
   fillModelSelect("kdak-edit-model", a.kode_alat, a.id_varian);
   const seriEl = document.getElementById("kdak-edit-seri");
   if (seriEl) seriEl.value = a.nomor_seri || "";
@@ -787,7 +787,7 @@ window.openKdakEdit = function(idAset) {
 //
 // The UPT dropdown must offer only the resorts that can hold an asset of the
 // chosen peruntukan. It offered all of them: JALAN REL + DAOP 1 listed 31
-// options — 25 JR, 4 JB, 2 ME — so six of them produced an asset whose id_aset
+// options, 25 JR, 4 JB, 2 ME, so six of them produced an asset whose id_aset
 // peruntukan segment contradicted the resort named in the same id. Since the
 // importer began deriving peruntukan from the resort prefix, this form was the
 // only remaining way to create that contradiction.
@@ -813,8 +813,8 @@ function kdakSyncUpt(which, { keepUpt = false } = {}) {
   applyUptSelect(lokasiSel?.value || "", uptSel, unit);
 
   // On open, the asset's stored UPT is re-selected when it is still offered.
-  // When it is NOT — an existing asset whose resort disagrees with its own
-  // peruntukan, which the old unfiltered form could produce — it is dropped
+  // When it is NOT, an existing asset whose resort disagrees with its own
+  // peruntukan, which the old unfiltered form could produce, it is dropped
   // rather than forced back in, so saving the form corrects the row instead of
   // silently preserving the contradiction. The preview repaints either way, so
   // the change is visible before submit.
@@ -826,7 +826,7 @@ function kdakSyncUpt(which, { keepUpt = false } = {}) {
 window.kdakSyncUpt = kdakSyncUpt;
 
 document.getElementById("kdak-edit-lokasi")?.addEventListener("change", () => {
-  kdakSyncUpt("edit"); // clears any stale UPT — see applyUptSelect
+  kdakSyncUpt("edit"); // clears any stale UPT, see applyUptSelect
 });
 document.querySelectorAll('input[name="kdak-edit-unit"]').forEach((r) =>
   r.addEventListener("change", () => kdakSyncUpt("edit")),
@@ -1003,9 +1003,9 @@ function setupKdakListeners() {
     }),
   );
 
-  // Sort button — open modal, populate dropdowns
+  // Sort button, open modal, populate dropdowns
   document.getElementById("kdak-btn-sort")?.addEventListener("click", () => {
-    // "kdak-sort-id-tahun-from/-to" exist in no HTML — the call was a no-op.
+    // "kdak-sort-id-tahun-from/-to" exist in no HTML, the call was a no-op.
     _populateYearDropdowns("kdak-sort-tgl-from", "kdak-sort-tgl-to");
 
     // Sync panels and Terbaru/Terlama visibility for current field
@@ -1052,7 +1052,7 @@ function setupKdakListeners() {
         });
       }
     });
-    // UPT is cascade-driven by Lokasi — reset on modal open
+    // UPT is cascade-driven by Lokasi, reset on modal open
     const uptSel = document.getElementById("kdak-sort-lok-upt");
     if (uptSel) uptSel.innerHTML = `<option value="">— Pilih Lokasi dahulu —</option>`;
     _filterUptByLokasi("kdak-sort-lok-lokasi", "kdak-sort-lok-upt");
@@ -1098,7 +1098,7 @@ function setupKdakListeners() {
     _syncSortPanels(field, e.target.checked, "kdak-sort", "kdak-sort-all-data-label", "kdak-sort-custom-panels");
     });
 
-  // Sort direction buttons — purple theme
+  // Sort direction buttons, purple theme
   document.querySelectorAll(".kdak-sort-dir-btn").forEach((btn) => {
     btn.addEventListener("click", () => {
       _kdakSortDir = btn.dataset.kdakDir;
@@ -1172,7 +1172,7 @@ document.getElementById("kdak-btn-reset-sort")?.addEventListener("click", () => 
     b.classList.add("border-gray-200", "dark:border-gray-600", "bg-white", "dark:bg-gray-700", "text-gray-500");
   });
   // Reset CLEARS the form and leaves the modal open, matching the other three
-  // modals — this one used to close itself, so "reset" read as "cancel" and the
+  // modals, this one used to close itself, so "reset" read as "cancel" and the
   // user could not see that anything had been cleared.
   showToast("Nilai sort pada menu ini telah direset.", "info");
   resetPage("kdak");
@@ -1228,7 +1228,7 @@ document.getElementById("kdak-card-per-alat")?.addEventListener("click", async (
 
     const alatFilter = document.getElementById("kdak-alat-filter");
     if (alatFilter) {
-      // Which tool types the fleet actually holds — from the rollup's per_alat
+      // Which tool types the fleet actually holds, from the rollup's per_alat
       // keys rather than from a client-side scan of every asset.
       const existing = new Set(Object.keys((await getRingkasan()).per_alat));
       alatFilter.innerHTML =
@@ -1256,7 +1256,7 @@ document.getElementById("kdak-card-per-lokasi")?.addEventListener("click", async
 
     const lokasiFilter = document.getElementById("kdak-lokasi-filter");
     if (lokasiFilter) {
-      // Which parent regions actually hold assets — from the rollup's per_lokasi
+      // Which parent regions actually hold assets, from the rollup's per_lokasi
       // keys rather than from a scan of every asset.
       const usedParents = new Set(
         Object.keys((await getRingkasan()).per_lokasi).map(

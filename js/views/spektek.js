@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════════════════
-// Model/Type spec card — ONE renderer, three consumers.
+// Model/Type spec card, ONE renderer, three consumers.
 //
 // The block that shows a machine's photo, Merk, Model/Type and its five
 // specification rows appears in three places: the public QR card
@@ -11,7 +11,7 @@
 // then five FREE-FORM rows whose labels differ per tool ("Max. Torque" on an
 // impact wrench, "Runtime" on a work light). The server has already collapsed
 // those five slots into `spec.spesifikasi = [{label, nilai}]` and resolved
-// `spec.foto` / `spec.spek` / `spec.manual` to one URL each — see
+// `spec.foto` / `spec.spek` / `spec.manual` to one URL each, see
 // `_varian_payload()` in main.py. Do not re-derive any of that here.
 //
 // Part of the RAMCES frontend: plain classic scripts in a fixed order, one

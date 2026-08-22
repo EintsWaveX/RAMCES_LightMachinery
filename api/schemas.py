@@ -3,8 +3,8 @@ Every Pydantic request model in the application.
 
 One module rather than one per router, for three reasons:
 
-- `PemakaianItem` is nested inside `PerbaikanCreate` — a repair reports its
-  condition and consumes its spare parts in ONE request body — while belonging
+- `PemakaianItem` is nested inside `PerbaikanCreate`, a repair reports its
+  condition and consumes its spare parts in ONE request body, while belonging
   conceptually to inventaris. Per-router placement would force a riwayat →
   inventaris import purely for a data class.
 - FastAPI derives OpenAPI component names from `__name__`. Keeping them in one
@@ -34,14 +34,14 @@ class LoginForm(BaseModel):
     username: str
     password: str
     # Kept only so an older client's payload still parses. `login()` IGNORES
-    # both and reads role/region from the stored row — a client that picks its
+    # both and reads role/region from the stored row, a client that picks its
     # own role is not authenticated, it is self-declared.
     role: Optional[str] = None
     id_lokasi: Optional[str] = None
     # OPTIONAL, and enforced in the handler instead.
     #
-    # Login asks for a captcha PROGRESSIVELY — only once a rate-limit bucket has
-    # tripped — so most sign-ins never send one. Making these required on the
+    # Login asks for a captcha PROGRESSIVELY, only once a rate-limit bucket has
+    # tripped, so most sign-ins never send one. Making these required on the
     # model would 422 every ordinary login from any client that does not send
     # them, which is exactly how landing.html's sign-in was broken: it posted a
     # payload missing a field the model insisted on, and every QR-page sign-in
@@ -55,7 +55,7 @@ class RegisterForm(BaseModel):
     Self-registration. Note what is NOT here: `role` and `id_lokasi`.
 
     A registrant never picks either. Letting the client choose its own role was
-    the privilege escalation removed in rev0.5.0 — an unauthenticated form that
+    the privilege escalation removed in rev0.5.0, an unauthenticated form that
     accepted `role` would be the same hole with a friendlier label. The account
     is created PENDING with an inert role and no region, and an admin assigns
     both at approval.
@@ -73,7 +73,7 @@ class UserApprove(BaseModel):
     What an admin assigns AT the moment of approval.
 
     Approval is its own endpoint rather than a `status` field on `UserUpdate`,
-    because this is the moment privilege is granted — it deserves a route that
+    because this is the moment privilege is granted, it deserves a route that
     can be found, guarded and audited on its own, not a value smuggled through
     the general-purpose edit form.
     """
@@ -162,7 +162,7 @@ class PerbaikanCreate(BaseModel):
     peruntukan: Optional[str] = None
     id_lokasi: Optional[str] = None
     # Parts consumed. Rides on the SAME request as the condition report so both
-    # land in one transaction — see catat_perbaikan().
+    # land in one transaction, see catat_perbaikan().
     pemakaian: Optional[List[PemakaianItem]] = None
 
 
@@ -190,7 +190,7 @@ class SparePartKategoriCreate(BaseModel):
 
 class SparePartCreate(BaseModel):
     # A part is WHAT IT IS plus WHAT IT FITS. There is no sku/part_number and no
-    # identification or supplier block any more — see models.SparePart for the
+    # identification or supplier block any more, see models.SparePart for the
     # ten columns that were dropped and why.
     nama_part: str
     id_kategori: Optional[int] = None
@@ -263,7 +263,7 @@ class GudangUpdate(BaseModel):
 # ── Model/Type (alat_varian) ───────────────────────────────────────
 # Shaped by `Rekap Spek RAMCES.docx`: Merk, Model/Type, five free-form spec
 # pairs, a photo and two reference documents. `kapasitas`/`daya`/`dimensi`/
-# `berat` are deliberately ABSENT — they are superseded by the pairs and only
+# `berat` are deliberately ABSENT, they are superseded by the pairs and only
 # still exist in the table for the one-off backfill in `_ensure_schema()`.
 class _AlatVarianSpecBase(BaseModel):
     keterangan: Optional[str] = None

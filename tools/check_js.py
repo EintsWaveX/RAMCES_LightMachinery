@@ -5,19 +5,19 @@ Structural checks for the js/ frontend.
 
 There is no Node.js on this machine, so `node --check` and every linter that
 depends on it are unavailable. This stands in for them. It does not type-check
-or evaluate anything — it catches the three failures that a large mechanical
+or evaluate anything, it catches the three failures that a large mechanical
 edit to js/ actually causes, all of which are invisible until the page is
 opened and by then present as a blank screen:
 
   1. Unbalanced brackets, from a bad cut or a mis-paired edit.
   2. The SAME top-level `let`/`const`/`function` declared in two files. The
      files are classic scripts sharing one global lexical environment, so this
-     is a fatal SyntaxError that kills the whole page — and nothing warns you.
+     is a fatal SyntaxError that kills the whole page, and nothing warns you.
   3. A call to something that is declared nowhere, i.e. a function lost in a
      move.
   4. TOP-LEVEL code calling a function that a LATER file declares. Function
      declarations hoist within their own file, but the files are evaluated in
-     the order index.html lists them — so `debounce()` called at core.js eval
+     the order index.html lists them, so `debounce()` called at core.js eval
      time, when it lives in search.js, throws and kills the rest of core.js and
      with it the whole page. Check 3 cannot see this: the identifier does
      exist, just not yet.
@@ -50,7 +50,7 @@ KNOWN_GLOBALS = {
     "getComputedStyle", "HTMLElement", "Node", "NodeList", "DocumentFragment",
     "Symbol", "BigInt", "Proxy", "Reflect", "WeakMap", "WeakSet", "Function",
     "Infinity", "NaN", "undefined", "globalThis", "self", "top", "parent",
-    # CDN libraries — see the <script> list at the bottom of index.html
+    # CDN libraries, see the <script> list at the bottom of index.html
     "Chart", "XLSX", "jspdf", "jsPDF", "QRCode", "html2canvas", "tailwind",
 }
 
@@ -115,7 +115,7 @@ def strip_literals(src):
 
 
 # The order index.html loads these in. Anything not listed is checked last,
-# which is the safe assumption. Keep in step with the <script> tags — the
+# which is the safe assumption. Keep in step with the <script> tags, the
 # comment block at the bottom of index.html is the source of truth.
 LOAD_ORDER = [
     "core.js",
@@ -177,14 +177,14 @@ def _defer_bodies(text):
     """
     Blank out every function body that does NOT run at evaluation time.
 
-    A body is kept when it is immediately invoked — `(function(){...})()` and
+    A body is kept when it is immediately invoked, `(function(){...})()` and
     `(() => {...})()` both execute as the file is parsed, so a call inside one
     is every bit as early as a call at the top level. That is exactly where the
     bug this check exists for lived: an IIFE in core.js reaching for debounce()
     from search.js.
 
-    Everything else — an event handler, a callback, a named function nobody has
-    called yet — runs later, by which time every file has been evaluated.
+    Everything else, an event handler, a callback, a named function nobody has
+    called yet, runs later, by which time every file has been evaluated.
     """
     out = list(text)
     i = 0

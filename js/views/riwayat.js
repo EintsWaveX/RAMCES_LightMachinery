@@ -8,7 +8,7 @@
 // ═══════════════════════════════════════════════════════════════════════
 
 // Per-mode empty states. All three used to print the same grey inline block,
-// which said only that the grid was empty — never whether that is because
+// which said only that the grid was empty, never whether that is because
 // nothing has been recorded or because a filter excluded everything. Those
 // call for different next actions, so they get different copy.
 const HISTORY_EMPTY = {
@@ -44,7 +44,7 @@ function _historyEmptyState(mode, searchQ, filters) {
 // ═══════════════════════════════════════════════════════════════════════
 //
 // All three tabs used to filter, sort and slice `_historySummary`, a copy of
-// the whole fleet's history rollup — 667 KB and 317 ms, downloaded at login
+// the whole fleet's history rollup, 667 KB and 317 ms, downloaded at login
 // whether or not this screen was ever opened.
 //
 // `_historySummary` is now the CURRENT PAGE. Everything the filters did in
@@ -53,7 +53,7 @@ function _historyEmptyState(mode, searchQ, filters) {
 // (technician, certificate number, transfer reason) and the per-tab gate.
 // `tools/verify/test_paging.py` asserts client and server agree on all of it.
 //
-// One helper, three tabs — the same shape `_historySearchMatches` and
+// One helper, three tabs, the same shape `_historySearchMatches` and
 // `_historyFilterMatches` shared, so a tab cannot silently ignore a criterion.
 // Those two remain: they are what the parity harness compares against.
 async function _loadHistoryTab(tab, key) {
@@ -91,7 +91,7 @@ async function renderHistoryCards() {
     return;
   }
 
-  // Slice AFTER filter + sort — both of which now happen on the server,
+  // Slice AFTER filter + sort, both of which now happen on the server,
   // before it counts. A narrowed list can leave the user past the end, and
   // unlike the client paginator we cannot clamp and slice in one pass.
   const _page = serverPage("history-repair", res.total, res.items);
@@ -102,7 +102,7 @@ async function renderHistoryCards() {
 
   if (!_page.items.length) {
     // Per-mode wording, and it distinguishes "nothing recorded yet" from
-    // "nothing matches your filter" — those need different next actions.
+    // "nothing matches your filter", those need different next actions.
     container.innerHTML = _historyEmptyState("repair", searchQ, _histSortFilters);
     return;
   }
@@ -197,7 +197,7 @@ async function renderHistoryCards() {
 
 // Shared search across the nine fields a Pantau Riwayat card actually shows.
 // All three tabs use it, so searching by teknisi or lokasi behaves the same
-// everywhere — Kalibrasi and Mutasi used to match on id_aset alone.
+// everywhere, Kalibrasi and Mutasi used to match on id_aset alone.
 function _historySearchMatches(item, q) {
   if (!q) return true;
   // Location goes through assetMatchesSearch, which understands region labels;
@@ -205,7 +205,7 @@ function _historySearchMatches(item, q) {
   return assetMatchesSearch(item, q, [
     // Perbaikan card
     item.repair?.latest_teknisi, item.repair?.latest_keterangan, item.repair?.latest_kondisi,
-    // Kalibrasi card — searching "LULUS" or a certificate number should work on
+    // Kalibrasi card, searching "LULUS" or a certificate number should work on
     // the tab that actually displays them.
     item.kalibrasi?.latest_status, item.kalibrasi?.latest_nomor_sertifikat,
     item.kalibrasi?.latest_pelaksana, item.kalibrasi?.latest_keterangan,
@@ -215,7 +215,7 @@ function _historySearchMatches(item, q) {
   ]);
 }
 
-// Shared filter for the three Pantau Riwayat tabs — every criterion the sort
+// Shared filter for the three Pantau Riwayat tabs, every criterion the sort
 // modal can set, read in one place so no tab can silently ignore one.
 function _historyFilterMatches(item, f) {
   if (f.alat && item.kode_alat !== f.alat) return false;
@@ -245,7 +245,7 @@ function _historyFilterMatches(item, f) {
 }
 
 // Shared comparator covering all SIX directions. Kalibrasi implemented only
-// asc/desc, so its four other buttons fell through to an A–Z compare and
+// asc/desc, so its four other buttons fell through to an A, Z compare and
 // appeared to do nothing.
 function _historyComparator(a, b) {
   if (_histSortDir === "date-desc")
@@ -274,7 +274,7 @@ async function renderKalibrasiCards() {
     return;
   }
 
-  // Slice AFTER filter + sort — both of which now happen on the server,
+  // Slice AFTER filter + sort, both of which now happen on the server,
   // before it counts. A narrowed list can leave the user past the end, and
   // unlike the client paginator we cannot clamp and slice in one pass.
   const _page = serverPage("history-kalibrasi", res.total, res.items);
@@ -347,7 +347,7 @@ async function renderMutasiCards() {
     return;
   }
 
-  // Slice AFTER filter + sort — both of which now happen on the server,
+  // Slice AFTER filter + sort, both of which now happen on the server,
   // before it counts. A narrowed list can leave the user past the end, and
   // unlike the client paginator we cannot clamp and slice in one pass.
   const _page = serverPage("history-mutasi", res.total, res.items);

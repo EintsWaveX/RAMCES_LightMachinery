@@ -7,7 +7,7 @@ Condition reports, repairs, the history summary and the streaming exports.
 deliberate:
 
 - One transaction, one commit. A short stock rolls the condition report back
-  rather than recording a repair that consumed nothing — and equally, a failed
+  rather than recording a repair that consumed nothing, and equally, a failed
   report cannot have already taken parts out of the warehouse. The `db.flush()`
   inside `_record_pemakaian` is what makes it possible: `id_riwayat` is a serial
   and does not exist until the INSERT is issued.
@@ -15,7 +15,7 @@ deliberate:
   same part in one submit must be checked against their combined total; one at a
   time would let 2 × 6 units pass against a stock of 10.
 - It never computes stock itself. `_net_stok_map` is imported from
-  api/inventaris.py — the same map the standalone movement endpoint uses — and
+  api/inventaris.py, the same map the standalone movement endpoint uses, and
   each row points at the OUT movement it wrote via `id_stok`, so
   `sparepart_stok` stays the single source of truth.
 - It broadcasts BOTH `REFRESH_ASSET_LIST` and `REFRESH_INVENTARIS`: the ledger
@@ -26,8 +26,8 @@ rewrites a workshop `id_lokasi` to `resolve_home_lokasi()` before inserting, so
 a repair carried out at a Balaiyasa still belongs to the DAOP/DIVRE that owns
 the asset.
 
-Note `catat_perbaikan` carries TWO route decorators — `/api/perbaikan` and
-`/api/riwayat-kondisi` — on one function. Both must survive any move.
+Note `catat_perbaikan` carries TWO route decorators, `/api/perbaikan` and
+`/api/riwayat-kondisi`, on one function. Both must survive any move.
 
 The exports are `StreamingResponse` over a row-at-a-time JSON generator, and
 they open their OWN `SessionLocal()`: a `Depends(get_db)` generator is closed
@@ -79,7 +79,7 @@ async def catat_perbaikan(
     # to a riwayat_kondisi row, unlike the free adjustment at
     # POST /api/inventaris/stok which moved to PETUGAS_GUDANG in rev0.5.2.
     # Tightening this to exclude TEKNISI would break the one-transaction
-    # contract this handler exists for — and taking stock-write away there
+    # contract this handler exists for, and taking stock-write away there
     # while leaving this open would make that restriction cosmetic anyway.
     current_user: models.Pengguna = Depends(
         require_role(["SUPER_ADMIN", "ADMIN_WILAYAH", "TEKNISI"])
@@ -91,7 +91,7 @@ async def catat_perbaikan(
 
     # A condition report rewrites `aset.status_terakhir`, so it is a mutation and
     # falls under the same regional limit as editing or transferring. TEKNISI is
-    # deliberately unscoped here — condition reporting is its whole job, and it
+    # deliberately unscoped here, condition reporting is its whole job, and it
     # files against whichever asset it has physically been sent to.
     assert_aset_region_scope(
         db, current_user, aset,
@@ -146,7 +146,7 @@ async def catat_perbaikan(
     #
     # Deliberately inside the SAME transaction as the condition report. A short
     # stock must roll the report back rather than leave a repair on record that
-    # consumed nothing — and equally, a failed report must not have already
+    # consumed nothing, and equally, a failed report must not have already
     # taken parts out of the warehouse.
     #
     # `flush()` is what makes it work: RiwayatKondisi.id_riwayat is a serial and
@@ -173,7 +173,7 @@ def _record_pemakaian(db, riwayat, aset, items, current_user) -> list:
     """
     Write the OUT movements and the pemakaian rows for one repair.
 
-    Does NOT commit — the caller owns the transaction, which is the whole point
+    Does NOT commit, the caller owns the transaction, which is the whole point
     (see catat_perbaikan). Returns a summary list for the response.
 
     Stock sufficiency is checked with the same `_net_stok_map()` the standalone
@@ -296,7 +296,7 @@ def get_riwayat_aset(
     return [
         {
             "no": i,
-            # Needed to attach each row's sparepart usage — /api/aset/{id}/pemakaian
+            # Needed to attach each row's sparepart usage, /api/aset/{id}/pemakaian
             # groups by exactly this key.
             "id_riwayat": r.id_riwayat,
             "waktu_lapor": r.waktu_lapor.strftime("%Y-%m-%d %H:%M:%S")
@@ -342,7 +342,7 @@ def get_history_summary(
 
     `id_aset` narrows the response to a single asset. The QR landing page needs
     exactly one row, and without this parameter it downloaded the entire fleet
-    summary — 98.6 KB at 200 assets, megabytes at scale — and then `.find()`-ed
+    summary, 98.6 KB at 200 assets, megabytes at scale, and then `.find()`-ed
     one entry out of it, four times per page view, on a phone in the field.
 
     Returns the standard {total, limit, offset, items} envelope. This is the
@@ -355,7 +355,7 @@ def get_history_summary(
     Pantau Riwayat now renders from a page of this endpoint rather than from a
     client-side copy of the whole fleet, so the filters have to be exact. They
     are the same set `/api/aset` takes and go through the same `api/query.py`
-    port of `js/search.js` — plus two things only this screen has:
+    port of `js/search.js`, plus two things only this screen has:
 
       q       also matches the eleven fields the history CARDS show and the
               asset payload does not: the technician who filed the last report,
@@ -414,7 +414,7 @@ def get_history_summary(
             # never name different records. The comparison is against a
             # correlated MAX rather than a join, because a join to the latest
             # row would need the whole row_number subquery inlined into a
-            # filter — this asks the narrower question directly.
+            # filter, this asks the narrower question directly.
             RKAL = models.RiwayatKalibrasi
             terbaru = (
                 select(func.max(RKAL.tanggal_berlaku))
@@ -478,7 +478,7 @@ def get_history_summary(
     # How many repair events each asset has had. The frontend's "urutkan by
     # jumlah perbaikan" had nothing to sort on: the summary carries one row per
     # asset, so counting rows client-side always returned 1. Only TSO rows count
-    # — an SO row is a repair being CLOSED, and counting both double-counts every
+    # an SO row is a repair being CLOSED, and counting both double-counts every
     # completed job.
     repair_count_map = {
         r[0]: int(r[1] or 0)
@@ -527,7 +527,7 @@ def get_history_summary(
     # Calibration: scoped to the assets in this response, ordered so the LAST
     # element of each list is the latest.
     #
-    # This was `db.query(models.RiwayatKalibrasi).all()` — every calibration row
+    # This was `db.query(models.RiwayatKalibrasi).all()`, every calibration row
     # ever written, including for the AFKIR assets excluded 200 lines above,
     # fully hydrated into ORM objects, on every request, just to keep the newest
     # one per asset. It was the only un-batched query in an otherwise carefully
@@ -695,7 +695,7 @@ def get_history_summary(
 #
 # The exports are the largest responses this app produces. Assembling them as
 # one Python list and handing that to FastAPI's JSON encoder held the whole
-# payload in memory twice — once as dicts, once as the encoded bytes — and sent
+# payload in memory twice, once as dicts, once as the encoded bytes, and sent
 # nothing until the last row was formatted.
 #
 # These emit the SAME bytes a normal JSON response would, one row at a time.
@@ -732,7 +732,7 @@ def _stream_json_rows(rows):
 @router.get("/api/export/riwayat")
 def export_riwayat(
     # Proses Laporan is hidden from TEKNISI, so without a guard here the menu
-    # gating would be decorative — the endpoint stays one fetch away.
+    # gating would be decorative, the endpoint stays one fetch away.
     current_user: models.Pengguna = Depends(
         require_role(
             ["SUPER_ADMIN", "ADMIN_WILAYAH", "PETUGAS_GUDANG", "PIMPINAN"]
@@ -743,7 +743,7 @@ def export_riwayat(
     Every asset x every condition report, as {"active": [...], "afkir": [...]}.
 
     STREAMED, not built in memory. At 100k history rows the assembled list was
-    ~30 MB of Python dicts plus the same again once FastAPI serialised it — one
+    ~30 MB of Python dicts plus the same again once FastAPI serialised it, one
     request could double the process's resident memory, and the client waited
     for the whole thing before receiving a byte.
 
@@ -759,7 +759,7 @@ def export_riwayat(
         """
         One query for the whole batch, grouped in Python.
 
-        This used to issue one SELECT per asset — and `pengguna_ref` was not in
+        This used to issue one SELECT per asset, and `pengguna_ref` was not in
         the joinedload, so it lazy-loaded a second time per riwayat ROW. At 10k
         assets and 100k history rows that is ~110,000 round trips for a single
         request. Now it is exactly one, regardless of fleet size.
@@ -842,7 +842,7 @@ def export_riwayat(
         db = SessionLocal()
         try:
             for i, (key, afkir) in enumerate((("active", False), ("afkir", True))):
-                # Was a `hasattr(models.Aset, "status_terlahir")` ternary — a typo
+                # Was a `hasattr(models.Aset, "status_terlahir")` ternary, a typo
                 # of `status_terakhir` that only worked because hasattr returned
                 # False and the else-branch happened to be correct.
                 q = (
@@ -873,7 +873,7 @@ def export_mutasi(
         )
     ),
 ):
-    """Every transfer, as a flat JSON array. Streamed — see export_riwayat."""
+    """Every transfer, as a flat JSON array. Streamed, see export_riwayat."""
 
     def build_rows(db):
         # Two queries total, not O(assets x mutations).
@@ -934,7 +934,7 @@ def export_mutasi(
                         else m.id_lokasi_tujuan,
                         # The raw CODES, alongside the display names. Proses Laporan
                         # used to reverse-look-up a code from the name against the
-                        # parent list only, which cannot resolve a UPT name — so its
+                        # parent list only, which cannot resolve a UPT name, so its
                         # asal/tujuan filters silently matched nothing. Names are for
                         # display; codes are what filters compare.
                         "id_lokasi_asal": m.id_lokasi_asal,

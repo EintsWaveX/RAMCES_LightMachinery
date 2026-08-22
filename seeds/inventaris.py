@@ -12,7 +12,7 @@ submit, so `gudang` genuinely must come first.
 `SPAREPART_CATALOG` is keyed by the OLD invented alat-kerja codes, because that
 is how the client's parts PDF is organised. Every key goes through
 `remap_kode()` onto a real katalog `kode_alat`, and `remap_model()` supplies the
-Model/Type the parts belong to where the old code named one — which is what lets
+Model/Type the parts belong to where the old code named one, which is what lets
 the repair form narrow the picker to the machine in front of the technician.
 See EXTRA_ALAT_REMAP in seed_katalog.py for why that remapping exists at all.
 """
@@ -45,7 +45,7 @@ GUDANG_DATA = [
 # The 26-entry EXTRA_ALAT_DATA table that lived here is gone.
 #
 # It invented codes so the sparepart catalogue had something to hang off, but
-# most of its entries are MODELS, not alat kerja — `HTT 220 V`, `HTT 3 PHASE`,
+# most of its entries are MODELS, not alat kerja, `HTT 220 V`, `HTT 3 PHASE`,
 # `GEISMAR HTT` and `HTT PORTABLE` are four models of the single katalog entry
 # `HTT HAND TIE TAMPER`, and four codes outright collided with a katalog code
 # meaning something else. seed_katalog.EXTRA_ALAT_REMAP maps every one of them
@@ -310,7 +310,7 @@ def seed_spareparts():
 
     The catalogue is keyed by the OLD invented codes, so every key goes through
     `remap_kode()` onto a real katalog `kode_alat`, and `remap_model()` gives
-    the Model/Type the parts belong to where the old code named one — which is
+    the Model/Type the parts belong to where the old code named one, which is
     what lets the repair form filter parts down to the machine in front of the
     technician. Safe to run multiple times (skips existing rows).
     """
@@ -321,7 +321,7 @@ def seed_spareparts():
         # and the codes this used to invent were models all along.
         #
         # `id_varian` is set ONLY where the old code named one of SEVERAL
-        # competing models of the same tool — the HTT family (HTT 220 V,
+        # competing models of the same tool, the HTT family (HTT 220 V,
         # HTT 3 PHASE, GEISMAR HTT, HTT PORTABLE) is the case the column exists
         # for, since a 220 V carburettor genuinely does not fit the 3-phase unit.
         #
@@ -343,7 +343,7 @@ def seed_spareparts():
             kode = remap_kode(old_kode)
             nama_model = remap_model(old_kode)
             if not nama_model or len(sources_per_kode[kode]) < 2:
-                continue  # tool-generic — see above
+                continue  # tool-generic, see above
             row = (
                 db.query(models.AlatVarian)
                 .filter_by(kode_alat=kode, nama_varian=nama_model)
@@ -371,7 +371,7 @@ def seed_spareparts():
                 if existing:
                     kat_cache[key] = existing.id_kategori
                 else:
-                    # nama = "ENGINE – MESIN POTONG REL" style
+                    # nama = "ENGINE, MESIN POTONG REL" style
                     alat_row = db.query(models.KategoriAlat).filter_by(kode_alat=kode_alat).first()
                     alat_nama = alat_row.nama_alat if alat_row else kode_alat
                     nama_kat = f"{subsistem} – {alat_nama}"
@@ -404,7 +404,7 @@ def seed_spareparts():
                 for nama_part in parts:
                     # Dedupe on the MODEL too, not just the tool type. Four old
                     # catalogue keys collapse onto HTT alone, and each is a
-                    # different machine — a "BUSI" for the 220 V unit is not the
+                    # different machine, a "BUSI" for the 220 V unit is not the
                     # same row as the 3-phase one. Keying on kode_alat only
                     # would have silently dropped every part after the first.
                     existing = (
@@ -446,7 +446,7 @@ def seed_spareparts():
 
 def seed_gudang():
     """
-    Seeds the flat warehouse list — and ONLY that.
+    Seeds the flat warehouse list, and ONLY that.
 
     This function used to be `seed_gudang_dan_varian()` and did three unrelated
     things: create warehouses, assign a RANDOM Model/Type to every asset that
@@ -457,7 +457,7 @@ def seed_gudang():
     the worst kind: a serial number is what a technician reads off the machine's
     nameplate to confirm they are looking at the right unit, and a made-up one
     that RAMCES presents as fact is actively misleading in the field. The model
-    assignment was the same problem one level up — the importer already resolves
+    assignment was the same problem one level up, the importer already resolves
     each workbook row's Model column and creates a visibly-incomplete row when it
     cannot, which is the honest outcome.
     """
@@ -483,7 +483,7 @@ def seed_gudang():
 #
 # This generator used the global `random`, which meant every full reset produced
 # a different number of ledger rows (936 one day, 1021 the next) for identical
-# inputs. `seed.py` was still idempotent — the step skips a populated table — but
+# inputs. `seed.py` was still idempotent, the step skips a populated table, but
 # two resets could not be compared, which is precisely the check that catches a
 # seeding regression.
 #
@@ -553,7 +553,7 @@ def seed_stok_awal():
                     balance += qty
                     rows += 1
                 elif balance > 0:
-                    # Never issue more than is on hand — the ledger must not go
+                    # Never issue more than is on hand, the ledger must not go
                     # negative, or the dashboard reports phantom MINUS rows.
                     qty = rng.randint(1, max(1, min(balance, stok_min * 3)))
                     db.add(models.SparePartStok(
@@ -589,7 +589,7 @@ def seed_stok_awal():
 
 def run(db):
     """Registry entry point. Each helper below opens its own session, which is
-    why `db` is accepted but not threaded through — they predate the registry
+    why `db` is accepted but not threaded through, they predate the registry
     and their transactional boundaries are load-bearing (seed_stok_awal in
     particular must see the parts committed by seed_spareparts)."""
     seed_spareparts()
