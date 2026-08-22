@@ -45,7 +45,7 @@ engine = create_engine(
     # Fail fast rather than making the caller wait out the 30s default; a
     # saturated pool should surface as an error, not as a hung page.
     pool_timeout=10,
-    connect_args={"connect_timeout": 5, "application_name": "sima-kai"},
+    connect_args={"connect_timeout": 5, "application_name": "ramces"},
 )
 
 # SessionLocal will be used to create individual database sessions for each request

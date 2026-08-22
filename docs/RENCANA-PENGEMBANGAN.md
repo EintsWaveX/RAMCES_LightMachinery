@@ -1,6 +1,6 @@
 # RAMCES — Development Roadmap
 
-**Audience:** whoever maintains SIMA-KAI / RAMCES next.
+**Audience:** whoever maintains RAMCES next.
 **Scope:** what to *do* to the system. For how the system already *works*, read
 [CLAUDE.md](../CLAUDE.md) — this document deliberately does not repeat it.
 

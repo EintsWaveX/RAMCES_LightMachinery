@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-SIMA-KAI (UI brand name: **RAMCES**) — an asset-management system for PT Kereta Api Indonesia's light machinery (*alat kerja*): generators, tampers, rail grinders, etc. It tracks each asset's condition history, transfers between regions, calibration records, and a sparepart inventory ledger.
+**RAMCES** — an asset-management system for PT Kereta Api Indonesia's light machinery (*alat kerja*): generators, tampers, rail grinders, etc. It tracks each asset's condition history, transfers between regions, calibration records, and a sparepart inventory ledger.
 
 Domain vocabulary, DB column names, and all UI strings are **Indonesian**. Keep new user-facing text and column names in Indonesian to match.
 

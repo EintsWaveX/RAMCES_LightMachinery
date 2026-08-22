@@ -1,5 +1,5 @@
 """
-SIMA-KAI (RAMCES) — application assembly.
+RAMCES — application assembly.
 
 This file used to be the whole backend, 5.9k lines of it. It now holds only what
 cannot live in a router: the app object and its middleware, the WebSocket
@@ -48,7 +48,7 @@ from api.schema import _ensure_schema  # noqa: E402
 
 _ensure_schema()
 
-app = FastAPI(title="SIMA-KAI Asset API")
+app = FastAPI(title="RAMCES Asset API")
 
 # Everything this app serves is text: app.js was 470 KB on the wire, index.html
 # 383 KB, and /api/history/summary 98.6 KB — all uncompressed. This JSON and JS

@@ -383,7 +383,7 @@ async function downloadKdakSampleExcel() {
   wsInstr["!cols"] = [{ wch: 22 }, { wch: 14 }, { wch: 14 }, { wch: 8 }, { wch: 50 }];
   XLSX.utils.book_append_sheet(wb, wsInstr, "Petunjuk");
 
-  XLSX.writeFile(wb, "Template_Import_Aset_SIMAKAI.xlsx");
+  XLSX.writeFile(wb, "Template_Import_Aset_RAMCES.xlsx");
 }
 
 // ── Import Excel handler ──
